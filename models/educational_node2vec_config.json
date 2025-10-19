@@ -1,0 +1,30 @@
+{
+  "node2vec_config": {
+    "dimensions": 128,
+    "walk_length": 30,
+    "num_walks": 200,
+    "p": 1.0,
+    "q": 0.5,
+    "workers": 4,
+    "window": 10,
+    "min_count": 1,
+    "batch_words": 10000
+  },
+  "domain_weights": {
+    "StudentWithSpecialNeeds": 3.0,
+    "PedagogicalMethodology": 3.0,
+    "StudentCharacteristic": 2.5,
+    "Context": 2.0,
+    "LearningResource": 2.0,
+    "Lighting": 1.5,
+    "Colour": 1.5,
+    "Furniture": 1.5,
+    "Acoustic": 1.5,
+    "InteractiveBoard": 1.8,
+    "EnvironmentalBarrier": 1.2,
+    "EnvironmentalSupport": 1.2
+  },
+  "training_date": "2025-09-19T17:49:24.109182",
+  "num_nodes": 109,
+  "embedding_dim": 128
+}

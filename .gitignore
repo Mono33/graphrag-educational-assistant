@@ -1,0 +1,116 @@
+# Environment variables with secrets
+.env
+.env.local.backup
+.env.aura
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+env/
+ENV/
+venv.bak/
+env.bak/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*.swn
+.cursor/
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+logs/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+*.cover
+.hypothesis/
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.orig
+
+# Large model files (optional - uncomment if NOT using Git LFS)
+# models/*.npz
+# models/*.pkl
+
+# Gradio temporary files
+.gradio/
+flagged/
+
+# Neo4j data (if running locally)
+neo4j_data/
+.neo4j/
+
+# Old/backup directories
+OLD/
+backup/
+archive/
+
+# HF Space directory (managed separately)
+hf-space-graphrag-educational-assistant/
+../hf-space-graphrag-educational-assistant/
+
+# Non-mandatory files folder (not to be pushed)
+NOTPUSHED/
+
+# Test output files
+*_test_output.json
+*_comparison_results.json
+educational_graph_audit_report.json
+relationship_validation_report.json
+
+# Migrations and scripts (not needed for deployment)
+neo4j_migrations/
+scripts/
+
+# Scripts output (if scripts folder is enabled)
+# scripts/output/
+# scripts/*.log
+
+# Shell scripts (optional - uncomment if you don't need them)
+# setup_neo4j.sh
+# update-hf-space.sh
+
