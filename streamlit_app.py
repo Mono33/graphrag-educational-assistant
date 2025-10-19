@@ -207,7 +207,7 @@ def main():
     """Main Streamlit app"""
     
     # Title and description
-    st.title("🎓 GraphRAG Educational Assistant")
+    st.title("🎓 GraphRAG Educational Assistant - UDL")
     st.markdown("""
     **Sistema di supporto pedagogico per insegnanti italiani basato su Knowledge Graph**
     
