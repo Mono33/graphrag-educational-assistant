@@ -9,9 +9,9 @@ import re
 from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass
 from neo4j import GraphDatabase
-from langchain_community.llms import OpenAI
-from langchain.chains import LLMChain
-from langchain.prompts import PromptTemplate
+from langchain_openai import OpenAI
+from langchain_core.prompts import PromptTemplate
+from langchain_core.output_parsers import StrOutputParser
 from langchain_community.callbacks.manager import get_openai_callback
 import logging
 
@@ -88,9 +88,10 @@ class Text2CypherConverter:
             max_tokens=500
         )
         
-        # Create the prompt template
+        # Create the prompt template and chain using LCEL
         self.prompt_template = self._create_prompt_template()
-        self.chain = LLMChain(llm=self.llm, prompt=self.prompt_template)
+        self.output_parser = StrOutputParser()
+        self.chain = self.prompt_template | self.llm | self.output_parser
     
     def _create_prompt_template(self) -> PromptTemplate:
         """Create a comprehensive prompt template for text2cypher conversion"""
@@ -209,8 +210,8 @@ Cypher: MATCH (a:Acoustic)-[r:INCREASES]->(c:CognitiveConstraint) RETURN a.name,
         """Convert natural language question to Cypher query"""
         try:
             with get_openai_callback() as cb:
-                # Generate Cypher query
-                result = self.chain.run(question=question)
+                # Generate Cypher query using LCEL
+                result = self.chain.invoke({"question": question})
                 
                 # Clean the result
                 cypher_query = self._clean_cypher_query(result)
