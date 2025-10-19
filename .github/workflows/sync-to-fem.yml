@@ -1,0 +1,36 @@
+name: Sync to FEM-modena
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:  # Allow manual trigger from GitHub UI
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout personal repo
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Fetch all history for proper sync
+    
+    - name: Configure Git
+      run: |
+        git config --global user.name "GitHub Actions Bot"
+        git config --global user.email "actions@github.com"
+    
+    - name: Add FEM-modena remote
+      run: |
+        git remote add fem https://x-access-token:${{ secrets.FEM_MODENA_PAT }}@github.com/FEM-modena/graphrag-educational-assistant.git
+    
+    - name: Push to FEM-modena
+      run: |
+        git push fem HEAD:main --force
+    
+    - name: Sync tags (optional)
+      run: |
+        git push fem --tags || true
+
