@@ -7,9 +7,9 @@ Transforms structured EducationalContext into natural language responses for Ita
 import logging
 from typing import Dict, List, Optional
 from dataclasses import asdict
-from langchain_community.llms import OpenAI
-from langchain.chains import LLMChain
-from langchain.prompts import PromptTemplate
+from langchain_openai import OpenAI
+from langchain_core.prompts import PromptTemplate
+from langchain_core.output_parsers import StrOutputParser
 from context_builder import EducationalContext, ConfidenceLevel
 
 logger = logging.getLogger(__name__)
@@ -36,9 +36,10 @@ class EducationalResponseGenerator:
             max_tokens=1500
         )
         
-        # Load prompt templates
+        # Load prompt templates and create chain using LCEL
         self.prompt_template = self._create_prompt_template()
-        self.chain = LLMChain(llm=self.llm, prompt=self.prompt_template)
+        self.output_parser = StrOutputParser()
+        self.chain = self.prompt_template | self.llm | self.output_parser
     
     def _create_prompt_template(self) -> PromptTemplate:
         """Create comprehensive prompt template for educational response generation"""
@@ -184,8 +185,8 @@ Generate your pedagogical response:"""
             # Prepare prompt inputs
             prompt_inputs = self._prepare_prompt_inputs(educational_context, original_query)
             
-            # Generate response
-            response_text = self.chain.run(**prompt_inputs)
+            # Generate response using LCEL chain
+            response_text = self.chain.invoke(prompt_inputs)
             
             # Post-process response
             formatted_response = self._post_process_response(response_text, educational_context)
