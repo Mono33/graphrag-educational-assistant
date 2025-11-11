@@ -18,6 +18,7 @@ from graph_retriever import EnhancedMultilingualText2Cypher
 from llm_chain import EducationalResponseGenerator
 from context_builder import EducationalContext
 from config import config
+from query_metrics import MetricsCalculator, QueryMetrics
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -25,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 # Page configuration
 st.set_page_config(
-    page_title="🎓 GraphRAG Educational Assistant - UDL",
+    page_title="🎓 GraphRAG Educational Assistant - Multi-Domain",
     page_icon="🎓",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -61,22 +62,77 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 @st.cache_resource
-def initialize_system():
-    """Initialize the GraphRAG system components (cached)"""
-    logger.info("Initializing GraphRAG system...")
-    processor = EnhancedMultilingualText2Cypher(use_vectors=True)
-    generator = EducationalResponseGenerator(
-        openai_api_key=config.openai.api_key,
-        language="italian"
+def initialize_system(domain: str = "all", use_vectors: bool = True):
+    """Initialize the GraphRAG system components (cached per domain)
+    
+    Args:
+        domain: Domain to initialize for ('udl', 'neuro', 'all')
+        use_vectors: Enable Node2Vec semantic search (default: True)
+    """
+    logger.info(f"Initializing GraphRAG system (domain={domain}, use_vectors={use_vectors})...")
+    processor = EnhancedMultilingualText2Cypher(
+        use_vectors=use_vectors,
+        domain=domain,
+        config={'max_nodes': 15, 'max_edges': 30}
     )
-    logger.info("System initialized successfully!")
-    return processor, generator
+    logger.info(f"System initialized successfully! (Node2Vec: {'✅ Enabled' if use_vectors else '❌ Disabled'})")
+    return processor
 
-async def process_query_async(query: str, processor, generator):
-    """Process query through the full pipeline"""
+@st.cache_resource
+def get_metrics_calculator(mode: str = "hybrid_auto", domain: str = "all"):
+    """Initialize metrics calculator (cached per domain)
+    
+    Args:
+        mode: Evaluation mode ('simple', 'hybrid', 'research', 'hybrid_auto')
+        domain: Domain filter ('udl', 'neuro', 'all')
+    
+    Returns:
+        MetricsCalculator instance
+    """
+    # Initialize OpenAI client for hybrid_auto, hybrid, and research modes
+    openai_client = None
+    if mode in ['hybrid_auto', 'hybrid', 'research']:
+        try:
+            from openai import OpenAI
+            openai_client = OpenAI(api_key=config.openai.api_key)
+            logger.info(f"OpenAI client initialized for metrics (mode={mode})")
+        except Exception as e:
+            logger.warning(f"Could not initialize OpenAI client: {e}. Falling back to 'simple' mode.")
+            mode = 'simple'
+    
+    # Initialize with domain support for automatic Italian→English translation
+    calculator = MetricsCalculator(
+        mode=mode, 
+        domain=domain, 
+        openai_client=openai_client,
+        relevance_threshold=60.0,  # Context Relevance fallback threshold
+        faithfulness_low_threshold=40.0,  # Low faithfulness threshold
+        faithfulness_high_threshold=90.0  # High faithfulness threshold
+    )
+    logger.info(f"MetricsCalculator initialized (mode={mode}, domain={domain})")
+    return calculator
+
+def get_generator(domain: str):
+    """Get domain-specific response generator"""
+    return EducationalResponseGenerator(
+        openai_api_key=config.openai.api_key,
+        language="italian",
+        domain=domain,
+        model=config.openai.model  # Uses model from .env (e.g., gpt-4o)
+    )
+
+async def process_query_async(query: str, domain: str, processor, generator):
+    """Process query through the full pipeline
+    
+    Args:
+        query: Natural language query
+        domain: Domain filter ('udl', 'neuro', 'all')
+        processor: GraphRAG processor
+        generator: Response generator
+    """
     try:
-        # Get retrieval result
-        result = await processor.process_query_with_retrieval(query)
+        # Get retrieval result (now with domain support)
+        result = await processor.process_query_with_retrieval(query, domain=domain)
         
         # Generate response
         educational_context_obj = result.get('educational_context_obj')
@@ -107,11 +163,16 @@ def format_pipeline_stages(result: Dict) -> str:
     """Format pipeline execution stages for display"""
     stages = []
     
+    # Show domain info
+    domain = result.get('domain', 'N/A')
+    stages.append(f"🏷️ **Domain:** {domain.upper()}\n")
+    
     # Stage 1: Text2Cypher
     cypher_result = result.get('cypher_result', {})
     is_valid = cypher_result.get('metadata', {}).get('is_valid', False)
-    stages.append(f"### ✅ Stage 1: Text2Cypher")
+    stages.append(f"### ✅ Stage 1: Text2Cypher (Domain-Aware)")
     stages.append(f"**Status:** {'Valid ✓' if is_valid else 'Invalid ✗'}")
+    stages.append(f"**Domain:** {domain}")
     stages.append(f"**Generated Cypher:**")
     stages.append(f"```cypher\n{cypher_result.get('cypher_query', 'N/A')}\n```")
     
@@ -206,12 +267,16 @@ def format_evidence(result: Dict):
 def main():
     """Main Streamlit app"""
     
+    # Initialize query_metrics at the very start (before sidebar renders)
+    if 'query_metrics' not in st.session_state:
+        st.session_state['query_metrics'] = []
+    
     # Title and description
-    st.title("🎓 GraphRAG Educational Assistant - UDL")
+    st.title("🎓 GraphRAG Educational Assistant - Multi-Domain")
     st.markdown("""
     **Sistema di supporto pedagogico per insegnanti italiani basato su Knowledge Graph**
     
-    Fai domande in italiano su strategie didattiche per studenti con bisogni educativi speciali.
+    Fai domande in italiano su strategie didattiche, neuroscienze dell'apprendimento, e bisogni educativi speciali.
     """)
     
     # Sidebar
@@ -227,10 +292,15 @@ def main():
         
         ### 💡 Esempi di domande
         
+        **UDL (Universal Design for Learning):**
         - "Ci sono strategie per studenti ipovedenti?"
         - "Il mio studente ha l'ADHD, cosa posso fare?"
         - "Metodologie per disturbi dello spettro autistico?"
-        - "Come aiutare studenti senza motivazione?"
+        
+        **Neuro (Neuroscience):**
+        - "Come la memoria di lavoro supporta l'apprendimento?"
+        - "Quali emozioni facilitano la creatività?"
+        - "Come migliorare l'attenzione selettiva?"
         
         ### ℹ️ Tecnologie
         
@@ -247,17 +317,120 @@ def main():
         show_pipeline = st.checkbox("Mostra Pipeline Stages", value=True)
         show_evidence = st.checkbox("Mostra Evidence", value=True)
         show_context = st.checkbox("Mostra Context", value=False)
+        
+        st.divider()
+        
+        # Query Metrics Dashboard
+        st.header("📊 Metriche Query")
+        if 'last_metrics' in st.session_state:
+            # Get metrics for CURRENT QUERY ONLY (not averages)
+            last_metrics = st.session_state['last_metrics']
+            
+            # Top row: Confidence & Performance
+            st.markdown("### 📈 Confidence & Performance")
+            col1, col2 = st.columns(2)
+            with col1:
+                # Get confidence from last query
+                last_confidence = st.session_state.get('last_confidence', 'MEDIUM')
+                
+                # Map confidence to emoji
+                confidence_emoji = {
+                    'VERY_HIGH': '🟢',
+                    'HIGH': '🟢',
+                    'MEDIUM': '🟡',
+                    'LOW': '🟠',
+                    'VERY_LOW': '🔴'
+                }
+                emoji = confidence_emoji.get(last_confidence, '⚪')
+                
+                st.metric(
+                    "Confidence", 
+                    f"{emoji} {last_confidence}",
+                    help="LLM's confidence in the response quality (VERY_HIGH=95%, HIGH=80%, MEDIUM=60%, LOW=40%, VERY_LOW=20%)"
+                )
+            with col2:
+                st.metric(
+                    "Response Time", 
+                    f"{last_metrics['response_time_sec']:.2f}s",
+                    help="Time taken to process THIS query"
+                )
+            
+            # Bottom row: Quality & Intelligence
+            st.markdown("### 🎯 Quality Metrics")
+            col3, col4 = st.columns(2)
+            with col3:
+                st.metric(
+                    "Context Relevance", 
+                    f"{last_metrics['context_relevance']:.1f}%",
+                    help="How relevant is retrieved context to THIS query"
+                )
+                st.metric(
+                    "Query Complexity", 
+                    last_metrics['query_complexity'],
+                    help="Complexity of THIS query (SIMPLE/MEDIUM/COMPLEX)"
+                )
+            with col4:
+                st.metric(
+                    "Answer Faithfulness", 
+                    f"{last_metrics['faithfulness']:.1f}%",
+                    help="Is the LLM response grounded in the context for THIS query?"
+                )
+                st.metric(
+                    "Graph Coverage", 
+                    f"{last_metrics['graph_coverage']:.1f} hops",
+                    help="Exploration depth in the knowledge graph for THIS query"
+                )
+            
+            # Download metrics (all queries history)
+            if 'query_metrics' in st.session_state and len(st.session_state['query_metrics']) > 0:
+                st.divider()
+                metrics_df = pd.DataFrame(st.session_state['query_metrics'])
+                csv = metrics_df.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="📥 Download All Queries CSV",
+                    data=csv,
+                    file_name=f"query_metrics_{time.strftime('%Y%m%d_%H%M%S')}.csv",
+                    mime="text/csv",
+                    use_container_width=True,
+                    help="Download metrics for all queries in this session"
+                )
+        else:
+            st.info("Nessuna metrica disponibile. Esegui una query per iniziare il tracking.")
     
-    # Initialize system
-    with st.spinner("🔄 Inizializzazione sistema..."):
-        processor, generator = initialize_system()
-    
-    # Main query interface
+    # Domain selector (moved before initialization for domain-specific loading)
     st.header("💬 Fai una Domanda")
+    
+    domain_options = {
+        "UDL (Universal Design for Learning)": "udl",
+        "Neuro (Neuroscience)": "neuro",
+        "All Domains (Cross-Domain)": "all"
+    }
+    
+    selected_domain_label = st.selectbox(
+        "📚 Seleziona il dominio di conoscenza:",
+        options=list(domain_options.keys()),
+        index=0,  # Default to UDL (first option)
+        help="Scegli il dominio specifico per ottenere risposte più accurate"
+    )
+    
+    selected_domain = domain_options[selected_domain_label]
+    
+    # Initialize system with selected domain (processor is cached per domain)
+    with st.spinner(f"🔄 Inizializzazione sistema per dominio: {selected_domain}..."):
+        processor = initialize_system(domain=selected_domain, use_vectors=True)
+    
+    # Show info about selected domain
+    domain_info = {
+        "udl": "🎯 Focus su strategie didattiche per studenti con bisogni educativi speciali (BES, DSA, disabilità)",
+        "neuro": "🧠 Focus su neuroscienze dell'apprendimento (attenzione, memoria, emozioni, funzioni esecutive)",
+        "all": "🌐 Ricerca in tutti i domini (può combinare UDL e Neuro)"
+    }
+    st.info(f"{domain_info[selected_domain]} | **Node2Vec: ✅ Abilitato** (ricerca semantica attiva)")
+
     
     query = st.text_area(
         "Inserisci la tua domanda in italiano:",
-        placeholder="Es: Ci sono strategie per studenti con ADHD?",
+        placeholder="Es: Ci sono strategie per studenti con ADHD?" if selected_domain == "udl" else "Es: Come la memoria di lavoro supporta l'apprendimento?",
         height=100,
         key="query_input"
     )
@@ -268,13 +441,64 @@ def main():
     
     # Process query
     if submit_button and query.strip():
-        with st.spinner("🔄 Elaborazione in corso..."):
-            # Run async function
-            result = asyncio.run(process_query_async(query, processor, generator))
+        start_time = time.time()
+        with st.spinner(f"🔄 Elaborazione in corso (Domain: {selected_domain_label})..."):
+            # Create domain-specific generator
+            generator = get_generator(selected_domain)
+            # Run async function with domain parameter
+            result = asyncio.run(process_query_async(query, selected_domain, processor, generator))
+            
+            # Calculate processing time
+            elapsed_time = time.time() - start_time
+            
+            # Track query metrics
+            if 'query_metrics' not in st.session_state:
+                st.session_state['query_metrics'] = []
+            
+            # Extract data from result
+            cypher_result = result.get('cypher_result', {})
+            retrieval_result = result.get('retrieval_result')
+            llm_response = result.get('llm_response', {})
+            
+            # Calculate quality metrics using MetricsCalculator
+            # Calculator is domain-aware and automatically translates Italian queries
+            # Mode: 'hybrid_auto' = smart fallback (Version A + Version B when needed)
+            metrics_calculator = get_metrics_calculator(mode="hybrid_auto", domain=selected_domain)
+            
+            query_metrics = metrics_calculator.calculate_all(
+                query=query,  # Pass original query, calculator handles translation
+                retrieved_nodes=retrieval_result.nodes if retrieval_result else [],
+                llm_response=llm_response.get('response', ''),
+                cypher_query=cypher_result.get('cypher_query', ''),
+                total_relationships=retrieval_result.metadata.get('total_triples', 0) if retrieval_result else 0,
+                domain=selected_domain  # Pass domain for correct Italian→English translation
+            )
+            
+            # Store metrics in a flat dictionary for DataFrame
+            metrics = {
+                'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'),
+                'query': query[:100],  # Truncate for display
+                'domain': selected_domain,
+                'response_time_sec': round(elapsed_time, 2),
+                'context_relevance': query_metrics.context_relevance,
+                'faithfulness': query_metrics.faithfulness,
+                'query_complexity': query_metrics.query_complexity,
+                'graph_coverage': query_metrics.graph_coverage,
+                'total_nodes': query_metrics.total_nodes,
+                'total_relationships': query_metrics.total_relationships,
+                'evaluation_mode': query_metrics.evaluation_mode
+            }
+            st.session_state['query_metrics'].append(metrics)
             
             # Store in session state
             st.session_state['last_result'] = result
             st.session_state['last_query'] = query
+            st.session_state['last_domain'] = selected_domain_label
+            st.session_state['last_metrics'] = metrics
+            st.session_state['last_confidence'] = llm_response.get('confidence', 'MEDIUM')
+            
+            # Force a rerun to update sidebar metrics immediately
+            st.rerun()
     
     # Display results
     if 'last_result' in st.session_state:
@@ -284,6 +508,11 @@ def main():
         
         # Response
         st.header("📝 Risposta")
+        
+        # Show domain badge
+        if 'last_domain' in st.session_state:
+            st.caption(f"🏷️ Domain: **{st.session_state['last_domain']}**")
+        
         llm_response = result.get('llm_response', {})
         response_text = llm_response.get('response', 'No response generated')
         

@@ -58,6 +58,7 @@ desktop.ini
 # Logs
 *.log
 logs/
+ingestion_log_*.txt
 
 # Testing
 .pytest_cache/
@@ -72,9 +73,17 @@ htmlcov/
 *.bak
 *.orig
 
-# Large model files (optional - uncomment if NOT using Git LFS)
+# Large model files - DECISION: Push for now (3 MB acceptable)
+# Uncomment these lines if models grow >10 MB or when using Git LFS:
 # models/*.npz
 # models/*.pkl
+
+# Note: Current model files (~3 MB total):
+# - models/neuro_node2vec_model.pkl (~2 MB)
+# - models/neuro_node2vec_embeddings.npz (~600 KB)
+# - models/neuro_node2vec_config.json (~5 KB)
+# These are small enough to commit directly.
+# When adding 5+ domains, migrate to Git LFS.
 
 # Gradio temporary files
 .gradio/
@@ -95,12 +104,40 @@ hf-space-graphrag-educational-assistant/
 
 # Non-mandatory files folder (not to be pushed)
 NOTPUSHED/
+NeuroData/
+KG_NEURO_Transformed.xlsx
+*_Transformed.xlsx
+kg_neuro_neo4j.json
+*_neo4j.json
 
 # Test output files
 *_test_output.json
 *_comparison_results.json
 educational_graph_audit_report.json
 relationship_validation_report.json
+
+# Temporary analysis/report files (not needed for deployment)
+AUDIT_SCRIPTS_ANALYSIS.md
+COMPARISON_REPORT.md
+INGESTION_IMPROVEMENTS.md
+FINAL_METRICS_FIX.md
+PASCALCASE_FIX_COMPLETE.md
+GIT_DEPLOYMENT_GUIDE.md
+FILES_TO_PUSH_CHECKLIST.md
+PUSH_TO_GITHUB_NOW.md
+EXCLUSION_EXPLANATIONS.md
+neuro_audit_report.md
+neuro_audit_report.json
+query_metrics.csv
+*_metrics_*.csv
+
+# Verification scripts (temporary utilities)
+verify_ingestion.py
+verify_alignment.py
+test_new_embeddings.py
+test_hybrid_translation.py
+generate_connectivity_recommendations.py
+check_*.py
 
 # Migrations and scripts (not needed for deployment)
 neo4j_migrations/

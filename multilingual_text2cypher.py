@@ -21,18 +21,20 @@ class MultilingualText2Cypher:
             config.neo4j.uri,
             config.neo4j.user,
             config.neo4j.password,
-            config.openai.api_key
+            config.openai.api_key,
+            config.openai.model  # Uses model from .env (e.g., gpt-4o)
         )
         
-        # Comprehensive Italian → English educational term mapping
+        # UDL-specific Italian → English educational term mapping
         # Mapped to ACTUAL node names in your Neo4j database
-        self.italian_terms = {
+        self.udl_terms = {
             # Special Educational Needs - Map to actual StudentWithSpecialNeeds nodes
             "ipovedenti": "Blind",  # ✅ Exists in your data
             "disabilità uditive": "Deaf",  # ✅ Exists in your data  
             "disabilità": "Physical disability",  # ✅ Exists in your data
             "disabilità fisica": "Physical disability",  # ✅ Exact match
             "dislessia": "Language difficulties due to foreign origin",  # ✅ Closest match
+            "difficoltà linguistiche": "Language difficulties due to foreign origin",  # ✅ CRITICAL: Direct mapping for linguistic difficulties
             "ADHD": "Adhd",  # ✅ Exists (case sensitive)
             "deficit di attenzione": "Attention Deficit",  # ✅ Exists
             "autismo": "Autism spectrum disorder",  # ✅ Exists
@@ -186,6 +188,80 @@ class MultilingualText2Cypher:
             "migliorare": "improve"
         }
         
+        # Neuro-specific Italian → English term mapping
+        self.neuro_terms = {
+            # Neuroscience Core Concepts
+            "attenzione": "attention",
+            "attenzione selettiva": "selective attention",
+            "attenzione divisa": "divided attention",
+            "attenzione sostenuta": "sustained attention",
+            
+            # Memory Systems
+            "memoria": "memory",
+            "memoria di lavoro": "working memory",
+            "memoria a lungo termine": "long term memory",
+            "memoria a breve termine": "short term memory",
+            "consolidamento": "consolidation",
+            
+            # Executive Functions
+            "funzioni esecutive": "executive functions",
+            "controllo esecutivo": "executive control",
+            "controllo cognitivo": "cognitive control",
+            "controllo inibitorio": "inhibitory control",
+            "flessibilità cognitiva": "cognitive flexibility",
+            
+            # Thinking & Cognition
+            "pensiero critico": "critical thinking",
+            "creatività": "creativity",
+            "pensiero divergente": "divergent thinking",
+            "risoluzione problemi": "problem solving",
+            "ragionamento": "reasoning",
+            
+            # Emotions & Motivation
+            "emozioni": "emotions",
+            "emozioni positive": "positive emotions",
+            "emozioni negative": "negative emotions",
+            "motivazione": "motivation",
+            "motivazione intrinseca": "intrinsic motivation",
+            "motivazione estrinseca": "extrinsic motivation",
+            "regolazione emotiva": "emotional regulation",
+            
+            # Learning Processes
+            "apprendimento": "learning",
+            "carico cognitivo": "cognitive load",
+            "risultati apprendimento": "learning outcomes",
+            "processi cognitivi": "cognitive processes",
+            "elaborazione informazioni": "information processing",
+            
+            # Stress & Mindset
+            "stress": "stress",
+            "stress positivo": "positive stress",
+            "stress negativo": "negative stress",
+            "mentalità crescita": "growth mindset",
+            "mentalità fissa": "fixed mindset",
+            "resilienza": "resilience",
+            
+            # Metacognition
+            "metacognizione": "metacognition",
+            "autoregolazione": "self regulation",
+            "consapevolezza": "awareness",
+            "monitoraggio": "monitoring",
+            "valutazione": "evaluation",
+            
+            # Social & Communication
+            "cognizione sociale": "social cognition",
+            "apprendimento sociale": "social learning",
+            "comunicazione": "communication",
+            "comprensione sociale": "social understanding",
+            
+            # General Terms
+            "cervello": "brain",
+            "neurale": "neural",
+            "cognitivo": "cognitive",
+            "affettivo": "affective",
+            "comportamentale": "behavioral"
+        }
+        
         # Advanced query patterns for complex educational concepts
         self.query_patterns = {
             "udl_queries": [
@@ -210,13 +286,17 @@ class MultilingualText2Cypher:
             "posso", "sono", "può", "hanno", "studenti", "bambini", "lezione",
             # Educational indicators
             "obiettivi", "classe", "metodologie", "strategie", "valutazione",
-            "apprendimento", "insegnare", "adattare", "facilitare", "supportare"
+            "apprendimento", "insegnare", "adattare", "facilitare", "supportare",
+            # Neuroscience indicators (NEW!)
+            "mentalità", "crescita", "differenza", "significa", "stress", 
+            "positivo", "negativo", "motivazione", "intrinseca", "estrinseca"
         ]
         
         query_lower = query.lower()
         italian_count = sum(1 for word in italian_indicators if word in query_lower)
         
-        return "italian" if italian_count >= 2 else "english"
+        # Lower threshold to 1 for better detection (was 2)
+        return "italian" if italian_count >= 1 else "english"
     
     def detect_query_type(self, query: str) -> List[str]:
         """Detect the type of educational query for better processing"""
@@ -229,17 +309,160 @@ class MultilingualText2Cypher:
         
         return detected_types
     
-    def enhance_italian_query(self, italian_query: str) -> str:
-        """Enhanced Italian query processing with educational context"""
+    def _calculate_translation_coverage(self, original: str, translated: str) -> float:
+        """
+        Calculate how much of the original Italian query was successfully translated.
+        
+        Args:
+            original: Original Italian query
+            translated: Translated query (may be partial)
+            
+        Returns:
+            Coverage percentage (0.0 to 1.0)
+        """
+        # Extract meaningful words (ignore stopwords and short words)
+        italian_stopwords = {'il', 'lo', 'la', 'i', 'gli', 'le', 'un', 'uno', 'una', 'di', 'a', 'da', 
+                            'in', 'con', 'su', 'per', 'tra', 'fra', 'e', 'o', 'ma', 'se', 'che', 'chi'}
+        
+        original_words = set(w.lower() for w in original.split() if len(w) > 2 and w.lower() not in italian_stopwords)
+        translated_words = set(w.lower() for w in translated.split() if len(w) > 2 and w.lower() not in italian_stopwords)
+        
+        if not original_words:
+            return 1.0
+        
+        # Count how many Italian words still remain in translated text (= not translated)
+        untranslated_count = sum(1 for word in original_words if word in translated_words)
+        
+        # Coverage = percentage of words that WERE translated
+        coverage = 1.0 - (untranslated_count / len(original_words))
+        
+        return coverage
+    
+    def _translate_with_openai(self, italian_query: str, domain: str) -> str:
+        """
+        Fallback translation using OpenAI API (for queries with low dictionary coverage).
+        
+        This ensures 100% coverage for any Italian query, even with uncommon terms.
+        Cost: ~$0.0001 per query (gpt-4o-mini)
+        
+        Args:
+            italian_query: Original Italian query
+            domain: Domain context ('udl', 'neuro', 'all')
+            
+        Returns:
+            Fully translated English query
+        """
+        try:
+            from openai import OpenAI
+            import os
+            
+            # Initialize OpenAI client
+            api_key = os.getenv("OPENAI_API_KEY")
+            if not api_key:
+                logger.error("OPENAI_API_KEY not found in environment")
+                return italian_query
+            
+            client = OpenAI(api_key=api_key)
+            
+            # Set context based on domain
+            if domain == "neuro":
+                context = "neuroscience and cognitive science"
+            elif domain == "udl":
+                context = "education and Universal Design for Learning"
+            else:
+                context = "education"
+            
+            # Translation prompt
+            prompt = f"""Translate this Italian query to English. Context: {context}.
+Keep technical terms accurate and preserve the meaning.
+
+Italian: {italian_query}
+English:"""
+            
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",  # Fast and cheap
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0,  # Deterministic
+                max_tokens=150
+            )
+            
+            translated = response.choices[0].message.content.strip()
+            
+            # Remove any quotes that OpenAI might add
+            translated = translated.strip('"\'')
+            
+            logger.info(f"[OpenAI Translation] {italian_query[:50]}... → {translated[:50]}...")
+            
+            return translated
+            
+        except Exception as e:
+            logger.error(f"OpenAI translation failed: {e}")
+            return italian_query  # Fallback to original
+    
+    def enhance_italian_query(self, italian_query: str, domain: str = None) -> str:
+        """
+        Enhanced Italian query processing with HYBRID translation approach.
+        
+        HYBRID STRATEGY:
+        1. Try dictionary-based translation (fast, free)
+        2. Calculate translation coverage
+        3. If coverage < 50%, use OpenAI translation (accurate, small cost)
+        
+        This ensures 100% coverage while minimizing API costs.
+        
+        Args:
+            italian_query: Italian language query
+            domain: Domain filter ('udl', 'neuro', 'all', or None)
+        """
         enhanced_query = italian_query
         
-        # Replace Italian terms with English equivalents (order matters - longer terms first)
-        sorted_terms = sorted(self.italian_terms.items(), key=lambda x: len(x[0]), reverse=True)
+        # Select appropriate term dictionary based on domain
+        if domain == "udl":
+            italian_terms = self.udl_terms
+        elif domain == "neuro":
+            # For Neuro domain, ONLY use neuroscience terms
+            # Filter out UDL-triggering pedagogical terms
+            italian_terms = self.neuro_terms.copy()
+            
+            # Remove terms that trigger UDL patterns in Neuro domain
+            udl_trigger_terms = {
+                "strategie": "",  # Don't translate - keeps query focused on concepts
+                "metodologie": "",  # Don't translate
+                "attività": "",  # Don't translate
+                "verifiche": "",  # Don't translate (avoid Assessment label)
+                "valutazione": "",  # Don't translate
+            }
+            
+            # Keep only neuroscience terms, remove UDL triggers
+            for term in udl_trigger_terms:
+                if term in italian_terms:
+                    del italian_terms[term]
+                    
+        elif domain == "all" or domain is None:
+            # Merge both dictionaries for cross-domain or unspecified
+            italian_terms = {**self.udl_terms, **self.neuro_terms}
+        else:
+            italian_terms = self.udl_terms  # Default to UDL
+        
+        # STEP 1: Dictionary-based translation (fast, free)
+        sorted_terms = sorted(italian_terms.items(), key=lambda x: len(x[0]), reverse=True)
         
         for italian_term, english_term in sorted_terms:
             # Case-insensitive replacement
             pattern = re.compile(re.escape(italian_term), re.IGNORECASE)
             enhanced_query = pattern.sub(english_term, enhanced_query)
+        
+        # STEP 2: Calculate translation coverage
+        coverage = self._calculate_translation_coverage(italian_query, enhanced_query)
+        
+        logger.info(f"[Translation] Dictionary coverage: {coverage:.0%}")
+        
+        # STEP 3: If coverage is low, use OpenAI fallback
+        if coverage < 0.5:
+            logger.warning(f"[Translation] Coverage {coverage:.0%} < 50%, using OpenAI fallback")
+            enhanced_query = self._translate_with_openai(italian_query, domain)
+        else:
+            logger.info(f"[Translation] Coverage {coverage:.0%} >= 50%, using dictionary translation")
         
         # Detect query types for additional context
         query_types = self.detect_query_type(italian_query)
@@ -247,16 +470,19 @@ class MultilingualText2Cypher:
         # Add educational context based on query type
         context_parts = ["Educational query"]
         
-        if "udl_queries" in query_types:
+        # For Neuro domain, use neuroscience-specific context (not pedagogical)
+        if domain == "neuro":
+            context_parts = ["Neuroscience query"]
+        elif "udl_queries" in query_types:
             context_parts.append("Universal Design for Learning context")
         
-        if "special_needs_queries" in query_types:
+        if "special_needs_queries" in query_types and domain != "neuro":
             context_parts.append("Special Educational Needs context")
         
-        if "assessment_queries" in query_types:
+        if "assessment_queries" in query_types and domain != "neuro":
             context_parts.append("Assessment and evaluation context")
         
-        if "differentiation_queries" in query_types:
+        if "differentiation_queries" in query_types and domain != "neuro":
             context_parts.append("Differentiated instruction context")
         
         context_prefix = f"{': '.join(context_parts)}: "
@@ -264,23 +490,29 @@ class MultilingualText2Cypher:
         
         return enhanced_query
     
-    def process_query(self, query: str, execute: bool = True) -> Dict:
-        """Process query with enhanced multilingual and educational support"""
+    def process_query(self, query: str, domain: str = None, execute: bool = True) -> Dict:
+        """Process query with enhanced multilingual and educational support
+        
+        Args:
+            query: Natural language query in Italian or English
+            domain: Domain filter ('udl', 'neuro', 'all', or None)
+            execute: Whether to execute the query
+        """
         original_query = query
         language = self.detect_language(query)
         query_types = self.detect_query_type(query)
         
-        logger.info(f"Processing {language} query with types {query_types}: {query[:50]}...")
+        logger.info(f"Processing {language} query (domain={domain}) with types {query_types}: {query[:50]}...")
         
-        # Enhance Italian queries for better Neo4j mapping
+        # Enhance Italian queries for better Neo4j mapping with domain-specific terms
         if language == "italian":
-            enhanced_query = self.enhance_italian_query(query)
+            enhanced_query = self.enhance_italian_query(query, domain=domain)
             logger.info(f"Enhanced query: {enhanced_query}")
         else:
             enhanced_query = query
         
-        # Process with text2cypher pipeline
-        result = self.pipeline.process_question(enhanced_query, execute=execute)
+        # Process with text2cypher pipeline (now with domain support)
+        result = self.pipeline.process_question(enhanced_query, domain=domain, execute=execute)
         
         # Add comprehensive multilingual metadata
         result.update({

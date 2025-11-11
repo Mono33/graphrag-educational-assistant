@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Node2Vec Training Script for Educational Knowledge Graph
+Node2Vec Training Script for Educational Knowledge Graph.
 Trains embeddings to capture educational concept relationships and semantic similarities
 """
 
@@ -19,11 +19,21 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 class EducationalNode2VecTrainer:
-    """Train Node2Vec embeddings for educational concepts"""
+    """Train Node2Vec embeddings for educational concepts with domain awareness"""
     
-    def __init__(self, neo4j_driver, config: Optional[Dict] = None):
+    def __init__(self, neo4j_driver, domain: str = "all", config: Optional[Dict] = None):
+        """Initialize Node2Vec trainer with domain-specific configuration
+        
+        Args:
+            neo4j_driver: Neo4j driver instance
+            domain: Domain to train on ('udl', 'neuro', 'all')
+            config: Optional configuration overrides
+        """
         self.driver = neo4j_driver
+        self.domain = domain
         self.config = config or {}
+        
+        logger.info(f"Initializing Node2Vec trainer for domain: {domain}")
         
         # Node2Vec hyperparameters optimized for educational graphs
         self.node2vec_config = {
@@ -39,7 +49,8 @@ class EducationalNode2VecTrainer:
         }
         
         # Educational domain weights (higher = more important for walks)
-        self.domain_weights = {
+        # UDL domain weights
+        udl_weights = {
             'StudentWithSpecialNeeds': 3.0,
             'PedagogicalMethodology': 3.0,
             'StudentCharacteristic': 2.5,
@@ -54,27 +65,123 @@ class EducationalNode2VecTrainer:
             'EnvironmentalSupport': 1.2
         }
         
+        # Neuro domain weights (synced with graph_retriever.py domain_boosts)
+        # Based on neuro_audit_report.json: 478 nodes, 195 labels, 111 relationship types
+        neuro_weights = {
+            # TOP 10 MOST FREQUENT LABELS
+            'Attention': 2.2,                    # 22 nodes, hub node
+            'CriticalThinking': 2.0,             # 15 nodes
+            'ExtrinsicMotivation': 1.9,          # 14 nodes
+            'ExecutiveFunctions': 2.1,           # 12 nodes, high connectivity
+            'IntrinsicMotivation': 2.0,          # 11 nodes
+            'LearningOutcomes': 1.8,             # 10 nodes
+            'TeachingPractices': 1.8,            # 10 nodes
+            'LearningDevelopment': 1.7,          # 9 nodes
+            'NegativeStressDistress': 1.7,       # 9 nodes, high out-degree
+            'Motivation': 1.6,                   # 8 nodes
+            
+            # HUB NODES (high connectivity)
+            'CognitiveFlexibility': 2.0,
+            'KnowledgeConstructionAttention': 1.9,
+            'PrefrontalCortexActivation': 1.9,
+            'OptimalAttentionalNetworkActivation': 1.8,
+            
+            # AUTHORITY NODES (learning targets)
+            'Creativity': 1.8,
+            'Memory': 1.7,
+            'MemoryEncoding': 1.6,
+            'MemorySystems': 1.6,
+            
+            # CRITICAL COGNITIVE PROCESSES
+            'WorkingMemory': 1.7,
+            'Metacognition': 1.6,
+            'SelfRegulation': 1.5,
+            'CognitiveControl': 1.6,
+            'CognitiveProcesses': 1.6,
+            
+            # AFFECTIVE & MOTIVATIONAL
+            'EmotionalRegulation': 1.6,
+            'EmotionalWellBeing': 1.4,
+            'PositiveEmotions': 1.6,
+            'NegativeEmotions': 1.5,
+            'AffectiveProcesses': 1.5,
+            
+            # MINDSET & GROWTH
+            'GrowthMindset': 1.7,
+            'FixedMindset': 1.5,
+            'Mindset': 1.6,
+            
+            # STRESS & COPING
+            'PositiveStressEustress': 1.6,
+            'StressResponse': 1.5,
+            'LongTermGrowth': 1.5,
+            'LongTermDecline': 1.4,
+            'AdaptiveCoping': 1.4,
+            'MaladaptiveCoping': 1.4,
+            
+            # SOCIAL & COMMUNICATION
+            'SocialCognition': 1.5,
+            'SocialLearning': 1.4,
+            'Communication': 1.4,
+            
+            # EDUCATIONAL OUTCOMES
+            'LearningEngagement': 1.5,
+            'LearningPerformance': 1.6,
+            'EducationalSupport': 1.5,
+            
+            # ADDITIONAL IMPORTANT
+            'HigherOrderThinking': 1.5,
+            'LowerOrderThinking': 1.3,
+            'ProblemSolving': 1.4,
+            'LongTermMemory': 1.5,
+            'PersonalGrowth': 1.4,
+            'Strengths': 1.4,
+            'CognitiveStrengths': 1.4,
+            'ReflectiveThinking': 1.3,
+            'Consolidation': 1.3,
+            'MotivationalModulation': 1.3,
+            'BrainAdaptability': 1.4,
+            'Vulnerability': 1.3,
+            'Resilience': 1.5,
+            'CognitiveBias': 1.3
+        }
+        
+        # Select domain weights based on training domain
+        if self.domain == "neuro":
+            self.domain_weights = neuro_weights
+        elif self.domain == "udl":
+            self.domain_weights = udl_weights
+        else:  # "all" - combine both
+            self.domain_weights = {**udl_weights, **neuro_weights}
+        
         self.model = None
         self.node_embeddings = None
         self.node_index = None
         self.reverse_index = None
     
     def extract_graph_data(self) -> Tuple[nx.Graph, Dict[str, str]]:
-        """Extract graph data from Neo4j and build NetworkX graph"""
-        logger.info("Extracting graph data from Neo4j...")
+        """Extract graph data from Neo4j and build NetworkX graph with domain filtering"""
+        logger.info(f"Extracting graph data from Neo4j (domain: {self.domain})...")
         
         G = nx.Graph()
         node_labels = {}  # node_id -> label mapping
         
         with self.driver.session() as session:
-            # Get all nodes with their properties
-            nodes_query = """
-            MATCH (n)
-            RETURN id(n) as node_id, n.name as name, labels(n) as labels, 
-                   n.category as category, n.description as description
-            """
-            
-            result = session.run(nodes_query)
+            # Get nodes with optional domain filtering
+            if self.domain and self.domain != "all":
+                nodes_query = """
+                MATCH (n {domain: $domain})
+                RETURN id(n) as node_id, n.name as name, labels(n) as labels, 
+                       n.category as category, n.description as description
+                """
+                result = session.run(nodes_query, domain=self.domain)
+            else:
+                nodes_query = """
+                MATCH (n)
+                RETURN id(n) as node_id, n.name as name, labels(n) as labels, 
+                       n.category as category, n.description as description
+                """
+                result = session.run(nodes_query)
             for record in result:
                 node_id = record['node_id']
                 name = record['name']
@@ -98,13 +205,19 @@ class EducationalNode2VecTrainer:
                     weight = self.domain_weights.get(main_label, 1.0)
                     G.nodes[node_id]['domain_weight'] = weight
             
-            # Get all relationships
-            rels_query = """
-            MATCH (a)-[r]->(b)
-            RETURN id(a) as source_id, id(b) as target_id, type(r) as rel_type
-            """
-            
-            result = session.run(rels_query)
+            # Get relationships with optional domain filtering
+            if self.domain and self.domain != "all":
+                rels_query = """
+                MATCH (a {domain: $domain})-[r]->(b {domain: $domain})
+                RETURN id(a) as source_id, id(b) as target_id, type(r) as rel_type
+                """
+                result = session.run(rels_query, domain=self.domain)
+            else:
+                rels_query = """
+                MATCH (a)-[r]->(b)
+                RETURN id(a) as source_id, id(b) as target_id, type(r) as rel_type
+                """
+                result = session.run(rels_query)
             for record in result:
                 source_id = record['source_id']
                 target_id = record['target_id']
@@ -193,9 +306,12 @@ class EducationalNode2VecTrainer:
         
         return results
     
-    def save_model(self, model_path: str = "models/educational_node2vec"):
-        """Save trained model and embeddings"""
-        os.makedirs(os.path.dirname(model_path), exist_ok=True)
+    def save_model(self, model_path: str = None):
+        """Save trained model and embeddings with domain-specific path"""
+        if model_path is None:
+            model_path = f"models/{self.domain}_node2vec"
+        
+        os.makedirs(os.path.dirname(model_path) if os.path.dirname(model_path) else "models", exist_ok=True)
         
         # Save Node2Vec model
         model_file = f"{model_path}_model.pkl"
@@ -213,6 +329,7 @@ class EducationalNode2VecTrainer:
         config_file = f"{model_path}_config.json"
         with open(config_file, 'w') as f:
             json.dump({
+                'domain': self.domain,
                 'node2vec_config': self.node2vec_config,
                 'domain_weights': self.domain_weights,
                 'training_date': datetime.now().isoformat(),
@@ -222,8 +339,11 @@ class EducationalNode2VecTrainer:
         
         logger.info(f"Model saved to {model_path}")
     
-    def load_model(self, model_path: str = "models/educational_node2vec"):
-        """Load pre-trained model and embeddings"""
+    def load_model(self, model_path: str = None):
+        """Load pre-trained model and embeddings from domain-specific path"""
+        if model_path is None:
+            model_path = f"models/{self.domain}_node2vec"
+        
         try:
             # Load Node2Vec model
             model_file = f"{model_path}_model.pkl"
@@ -244,9 +364,12 @@ class EducationalNode2VecTrainer:
             logger.error(f"Failed to load model: {e}")
             return False
     
-    def train_and_save(self, model_path: str = "models/educational_node2vec"):
-        """Complete training pipeline"""
-        logger.info("Starting Node2Vec training pipeline...")
+    def train_and_save(self, model_path: str = None):
+        """Complete training pipeline with domain-specific model path"""
+        logger.info(f"Starting Node2Vec training pipeline for domain: {self.domain}...")
+        
+        if model_path is None:
+            model_path = f"models/{self.domain}_node2vec"
         
         # Step 1: Extract graph data
         G, node_labels = self.extract_graph_data()
@@ -263,20 +386,54 @@ class EducationalNode2VecTrainer:
         logger.info("Node2Vec training pipeline completed!")
         return self.model
 
-def test_node2vec_similarities(trainer: EducationalNode2VecTrainer):
-    """Test Node2Vec with educational concept similarities"""
-    test_concepts = [
-        "Adhd",
-        "Autism spectrum disorder", 
-        "Cooperative Learning",
-        "Blind",
-        "Cognitive disability [mild, moderate, severe]",
-        "Physical disability",
-        "Deaf",
-        "Visual impairment"
-    ]
+def get_test_concepts(domain: str) -> List[str]:
+    """Get domain-specific test concepts for validation
     
-    print("\n🔍 Node2Vec Similarity Test Results:")
+    Note: Use actual node NAMES from Neo4j, not label names!
+    Node2Vec indexes by the 'name' property, not the label.
+    """
+    if domain == "neuro":
+        return [
+            "Intrinsic Motivation",
+            "Growth Mindset",
+            "Working Memory",
+            "Attention",
+            "Metacognition",
+            "Optimal Arousal",  # PositiveStressEustress node
+            "Executive Functions",
+            "Emotional Regulation",
+            "Critical Thinking",
+            "Creativity"
+        ]
+    elif domain == "udl":
+        return [
+            "Adhd",
+            "Autism spectrum disorder",
+            "Cooperative Learning",
+            "Blind",
+            "Deaf",
+            "Cognitive disability [mild, moderate, severe]",
+            "Physical disability",
+            "Flipped Classroom"
+        ]
+    else:  # "all"
+        return [
+            "Intrinsic Motivation",
+            "Adhd",
+            "Cooperative Learning",
+            "Growth Mindset",
+            "Autism spectrum disorder",
+            "Working Memory",
+            "Blind",
+            "Metacognition"
+        ]
+
+def test_node2vec_similarities(trainer: EducationalNode2VecTrainer, test_concepts: List[str] = None):
+    """Test Node2Vec with domain-specific concept similarities"""
+    if test_concepts is None:
+        test_concepts = get_test_concepts(trainer.domain)
+    
+    print(f"\n🔍 Node2Vec Similarity Test Results (Domain: {trainer.domain})")
     print("=" * 60)
     
     for concept in test_concepts:
@@ -284,16 +441,30 @@ def test_node2vec_similarities(trainer: EducationalNode2VecTrainer):
         print("-" * 40)
         
         similar = trainer.find_similar_concepts(concept, top_k=5)
-        for i, (similar_name, score) in enumerate(similar, 1):
-            print(f"  {i}. {similar_name} (similarity: {score:.3f})")
+        if similar:
+            for i, (similar_name, score) in enumerate(similar, 1):
+                print(f"  {i}. {similar_name} (similarity: {score:.3f})")
+        else:
+            print(f"  ⚠️ Concept '{concept}' not found in embeddings")
 
-def main():
-    """Main training function"""
+def main(domain: str = "all"):
+    """Main training function with domain selection
+    
+    Args:
+        domain: Domain to train ('udl', 'neuro', 'all')
+    """
     from config import config
     from neo4j import GraphDatabase
     
     # Setup logging
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    
+    logger.info(f"=" * 60)
+    logger.info(f"Node2Vec Training - Domain: {domain.upper()}")
+    logger.info(f"=" * 60)
     
     # Create Neo4j driver
     neo4j_driver = GraphDatabase.driver(
@@ -301,9 +472,10 @@ def main():
         auth=(config.neo4j.user, config.neo4j.password)
     )
     
-    # Initialize trainer
+    # Initialize trainer with domain
     trainer = EducationalNode2VecTrainer(
         neo4j_driver=neo4j_driver,
+        domain=domain,
         config={
             'dimensions': 128,
             'walk_length': 30,
@@ -315,17 +487,41 @@ def main():
     )
     
     try:
-        # Train and save model
-        model = trainer.train_and_save("models/educational_node2vec")
+        # Train and save model (auto uses domain-specific path)
+        model = trainer.train_and_save()
         
-        # Test similarities
-        test_node2vec_similarities(trainer)
+        # Test with domain-specific concepts
+        test_concepts = get_test_concepts(domain)
+        test_node2vec_similarities(trainer, test_concepts)
+        
+        logger.info(f"\n✅ Training completed successfully!")
+        logger.info(f"📁 Model saved to: models/{domain}_node2vec")
+        logger.info(f"🎯 Ready to use in graph retriever with use_vectors=True")
         
     except Exception as e:
-        logger.error(f"Training failed: {e}")
+        logger.error(f"❌ Training failed: {e}")
+        import traceback
+        traceback.print_exc()
         raise
     finally:
         trainer.driver.close()
 
 if __name__ == "__main__":
-    main()
+    import sys
+    
+    # Parse command line arguments
+    if len(sys.argv) > 1:
+        domain = sys.argv[1].lower()
+        if domain not in ['udl', 'neuro', 'all']:
+            print(f"❌ Invalid domain: {domain}")
+            print("Usage: python train_node2vec.py [udl|neuro|all]")
+            print("  udl   - Train on UDL data only")
+            print("  neuro - Train on Neuro data only")
+            print("  all   - Train on all domains (default)")
+            sys.exit(1)
+    else:
+        domain = "all"
+        print("ℹ️  No domain specified, using 'all' (train on all domains)")
+        print("Usage: python train_node2vec.py [udl|neuro|all]\n")
+    
+    main(domain)

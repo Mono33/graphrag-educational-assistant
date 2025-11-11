@@ -2,10 +2,19 @@
 
 AI-powered educational assistant that combines Knowledge Graphs (Neo4j) with Retrieval-Augmented Generation (RAG) to provide personalized teaching recommendations in Italian.
 
-![Python](https://img.shields.io/badge/python-3.8+-blue.svg)
+![Python](https://img.shields.io/badge/python-3.10+-blue.svg)
 ![Neo4j](https://img.shields.io/badge/neo4j-5.0+-green.svg)
 ![Streamlit](https://img.shields.io/badge/streamlit-1.28+-red.svg)
-![OpenAI](https://img.shields.io/badge/openai-GPT--3.5-orange.svg)
+![OpenAI](https://img.shields.io/badge/openai-GPT--4o-orange.svg)
+![Node2Vec](https://img.shields.io/badge/Node2Vec-Enabled-brightgreen.svg)
+
+---
+
+## 🚀 **Quick Start**
+
+**New to this project? Start here!** → [**QUICKSTART.md**](QUICKSTART.md)
+
+Get up and running in 5 minutes with our step-by-step guide.
 
 ---
 
@@ -34,7 +43,7 @@ Hybrid Graph Retriever (Neo4j + Node2Vec)
     ↓
 Context Builder (Structured Educational Context)
     ↓
-Response Generator (GPT-3.5 LLM)
+Response Generator (GPT-4o LLM)
     ↓
 Natural Italian Response
 ```

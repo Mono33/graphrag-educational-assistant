@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-config.py - Configuration settings for the GraphRAG text2cypher module
+config.py - Configuration settings for the GraphRAG text2cypher module.
 """
 
 import os

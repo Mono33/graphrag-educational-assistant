@@ -56,8 +56,16 @@ class EducationalContext:
 class PedagogicalKnowledgeBase:
     """Educational domain knowledge and best practices"""
     
-    def __init__(self):
-        self.methodology_categories = {
+    def __init__(self, domain: str = "udl"):
+        """Initialize knowledge base with domain-specific data
+        
+        Args:
+            domain: Domain filter ('udl', 'neuro', 'all')
+        """
+        self.domain = domain
+        
+        # UDL-specific methodology categories
+        self.udl_methodology_categories = {
             'Cooperative Learning': {
                 'category': 'Collaborative Pedagogy',
                 'best_for': ['social_interaction', 'peer_learning', 'inclusion'],
@@ -120,7 +128,95 @@ class PedagogicalKnowledgeBase:
             }
         }
         
-        self.special_needs_mapping = {
+        # Neuro-specific methodology/concept categories
+        self.neuro_methodology_categories = {
+            'Working Memory': {
+                'category': 'Cognitive Process',
+                'best_for': ['information_retention', 'task_completion', 'learning_efficiency'],
+                'implementation': 'Minimize cognitive load, chunk information, use rehearsal strategies',
+                'applications': [
+                    'Reduce distractions during instruction',
+                    'Break tasks into smaller steps',
+                    'Use visual aids to support verbal information'
+                ],
+                'special_needs_adaptations': [
+                    'Provide written instructions alongside verbal',
+                    'Allow extra processing time',
+                    'Use multimodal presentation'
+                ]
+            },
+            'Attention': {
+                'category': 'Cognitive Process',
+                'best_for': ['focus', 'concentration', 'task_engagement'],
+                'implementation': 'Manage attentional resources, minimize distractions, vary stimuli',
+                'applications': [
+                    'Use attention-grabbing signals',
+                    'Implement focused work periods',
+                    'Vary teaching methods to maintain engagement'
+                ],
+                'special_needs_adaptations': [
+                    'Provide movement breaks',
+                    'Use fidget tools appropriately',
+                    'Structure environment to reduce distractions'
+                ]
+            },
+            'Executive Functions': {
+                'category': 'Cognitive Control',
+                'best_for': ['planning', 'organization', 'self_regulation'],
+                'implementation': 'Teach explicit strategies, provide scaffolding, model processes',
+                'applications': [
+                    'Use planning templates',
+                    'Teach self-monitoring strategies',
+                    'Implement goal-setting practices'
+                ],
+                'special_needs_adaptations': [
+                    'Provide external organization systems',
+                    'Use checklists and visual schedules',
+                    'Break long-term projects into milestones'
+                ]
+            },
+            'Emotions': {
+                'category': 'Affective Process',
+                'best_for': ['motivation', 'engagement', 'learning_climate'],
+                'implementation': 'Create positive emotional climate, recognize emotions in learning',
+                'applications': [
+                    'Build growth mindset',
+                    'Celebrate progress and effort',
+                    'Create psychologically safe environment'
+                ],
+                'special_needs_adaptations': [
+                    'Teach emotional regulation strategies',
+                    'Provide safe spaces for emotional processing',
+                    'Use mindfulness techniques'
+                ]
+            },
+            'Motivation': {
+                'category': 'Affective Process',
+                'best_for': ['engagement', 'persistence', 'goal_pursuit'],
+                'implementation': 'Foster intrinsic motivation, provide autonomy and choice',
+                'applications': [
+                    'Connect learning to student interests',
+                    'Offer choices in assignments',
+                    'Provide meaningful feedback'
+                ],
+                'special_needs_adaptations': [
+                    'Use individualized reward systems',
+                    'Break goals into achievable steps',
+                    'Highlight personal growth'
+                ]
+            }
+        }
+        
+        # Select methodology categories based on domain
+        if domain == "neuro":
+            self.methodology_categories = self.neuro_methodology_categories
+        elif domain == "all":
+            self.methodology_categories = {**self.udl_methodology_categories, **self.neuro_methodology_categories}
+        else:  # default to UDL
+            self.methodology_categories = self.udl_methodology_categories
+        
+        # UDL-specific special needs mapping
+        self.udl_special_needs_mapping = {
             'Blind': ['visual_impairment', 'tactile_learning', 'audio_support'],
             'Deaf': ['hearing_impairment', 'visual_learning', 'sign_language'],
             'Physical disability': ['mobility_accommodation', 'assistive_technology', 'environmental_modification'],
@@ -130,6 +226,26 @@ class PedagogicalKnowledgeBase:
             'Autism spectrum disorder': ['routine_structure', 'sensory_considerations', 'social_support'],
             'NoPersonalMotivation': ['engagement_strategies', 'relevance_connection', 'choice_provision']
         }
+        
+        # Neuro-specific concept mapping
+        self.neuro_special_needs_mapping = {
+            'Attention': ['focus_support', 'distraction_management', 'engagement_strategies'],
+            'Working Memory': ['cognitive_load_reduction', 'chunking_strategies', 'rehearsal_support'],
+            'Executive Functions': ['planning_support', 'organization_strategies', 'self_regulation_tools'],
+            'Emotions': ['emotional_climate', 'motivation_enhancement', 'stress_management'],
+            'Motivation': ['intrinsic_motivation', 'goal_setting', 'autonomy_support'],
+            'Creativity': ['divergent_thinking', 'idea_generation', 'risk_taking_support'],
+            'Critical Thinking': ['analytical_skills', 'problem_solving', 'metacognition'],
+            'Memory': ['encoding_strategies', 'retrieval_practice', 'consolidation_support']
+        }
+        
+        # Select special needs mapping based on domain
+        if domain == "neuro":
+            self.special_needs_mapping = self.neuro_special_needs_mapping
+        elif domain == "all":
+            self.special_needs_mapping = {**self.udl_special_needs_mapping, **self.neuro_special_needs_mapping}
+        else:  # default to UDL
+            self.special_needs_mapping = self.udl_special_needs_mapping
         
         self.fallback_strategies = {
             'no_results': [
@@ -147,31 +263,109 @@ class PedagogicalKnowledgeBase:
         }
 
 class MethodologyRanker:
-    """Ranks and prioritizes educational methodologies"""
+    """Ranks and prioritizes educational methodologies with dynamic balancing"""
     
     def __init__(self, knowledge_base: PedagogicalKnowledgeBase):
         self.kb = knowledge_base
     
     def rank_methodologies(self, nodes: List[Dict], query_metadata: Dict) -> List[MethodologyRecommendation]:
-        """Rank methodologies based on relevance and evidence"""
-        recommendations = []
+        """
+        Rank methodologies with dynamic balancing for comparison queries.
         
-        for node in nodes:
+        PHASE 2 ENHANCEMENT: Scalable, no hardcoding, works for ANY labels.
+        """
+        # Step 1: Filter valid methodologies
+        valid_nodes = []
+        logger.info(f"[DEBUG] Ranking {len(nodes)} nodes for recommendations")
+        
+        for i, node in enumerate(nodes):
+            logger.info(f"[DEBUG] Node {i+1}: name='{node.get('name', 'N/A')}', labels={node.get('labels', [])}, keys={list(node.keys())}")
+            
             if self._is_methodology(node):
-                recommendation = self._create_recommendation(node, query_metadata)
-                if recommendation:
-                    recommendations.append(recommendation)
+                logger.info(f"[DEBUG] Node {i+1} ACCEPTED as methodology")
+                valid_nodes.append(node)
+            else:
+                logger.info(f"[DEBUG] Node {i+1} REJECTED - not a valid methodology")
+        
+        # Step 2: Apply dynamic balancing if needed (PHASE 2 - Scalable solution)
+        query_intent = self._detect_query_intent(query_metadata.get('original_query', ''))
+        
+        if query_intent['is_comparison']:
+            logger.info(f"[Smart Ranking] Comparison query detected, applying dynamic balancing...")
+            balanced_nodes = self._apply_dynamic_balancing(valid_nodes, target_size=15)
+        else:
+            # Standard ranking (no balancing needed)
+            balanced_nodes = valid_nodes
+        
+        # Step 3: Create recommendations
+        recommendations = []
+        for node in balanced_nodes:
+            recommendation = self._create_recommendation(node, query_metadata)
+            if recommendation:
+                recommendations.append(recommendation)
         
         # Sort by relevance score (descending)
         recommendations.sort(key=lambda x: x.relevance_score, reverse=True)
         
+        logger.info(f"[DEBUG] Final recommendations: {len(recommendations)}")
         return recommendations
     
     def _is_methodology(self, node: Dict) -> bool:
-        """Check if node represents a pedagogical methodology"""
+        """Check if node represents a pedagogical methodology or neuroscience concept"""
         labels = node.get('labels', [])
-        return any(label in ['PedagogicalMethodology', 'TeachingApproach', 'LearningStrategy'] 
-                  for label in labels)
+        # UDL methodologies
+        udl_labels = ['PedagogicalMethodology', 'TeachingApproach', 'LearningStrategy']
+        # Neuro concepts (SYNCED with graph_retriever.py domain_boosts - Nov 2025)
+        # Based on neuro_audit_report.json: 478 nodes, 195 unique labels
+        neuro_labels = [
+            # Core cognitive processes (most frequent)
+            'Attention', 'CriticalThinking', 'ExtrinsicMotivation', 'ExecutiveFunctions',
+            'IntrinsicMotivation', 'LearningOutcomes', 'TeachingPractices', 'LearningDevelopment',
+            'NegativeStressDistress', 'Motivation',
+            
+            # Hub nodes (high connectivity)
+            'CognitiveFlexibility', 'KnowledgeConstructionAttention', 'PrefrontalCortexActivation',
+            'OptimalAttentionalNetworkActivation',
+            
+            # Authority nodes (key outcomes)
+            'Creativity', 'Memory', 'MemoryEncoding', 'MemorySystems',
+            
+            # Critical cognitive
+            'WorkingMemory', 'Metacognition', 'SelfRegulation', 'CognitiveControl', 'CognitiveProcesses',
+            
+            # Affective & motivational
+            'EmotionalRegulation', 'EmotionalWellBeing', 'PositiveEmotions', 'NegativeEmotions',
+            'AffectiveProcesses',
+            
+            # Mindset & growth
+            'GrowthMindset', 'FixedMindset', 'Mindset',
+            
+            # Stress & coping
+            'PositiveStressEustress', 'NegativeStressDistress', 'StressResponse',  # StressResponse = physiological stress
+            'LongTermGrowth', 'LongTermDecline',
+            'AdaptiveCoping', 'MaladaptiveCoping',
+            
+            # Social & communication
+            'SocialCognition', 'SocialLearning', 'Communication',
+            
+            # Educational outcomes
+            'LearningEngagement', 'LearningPerformance', 'EducationalSupport',
+            
+            # Additional important
+            'HigherOrderThinking', 'LowerOrderThinking', 'ProblemSolving',
+            'LongTermMemory', 'PersonalGrowth', 'Strengths', 'CognitiveStrengths',
+            'ReflectiveThinking', 'Consolidation', 'MotivationalModulation',
+            
+            # Additional labels found during testing (Nov 2025)
+            'BrainAdaptability',  # e.g., Neuroplasticity
+            'Vulnerability',      # e.g., Learned Helplessness, Disengagement, Perfectionism
+            'Resilience',         # exists as both category and label
+            'CognitiveBias',      # e.g., Overconfidence Bias
+            
+            # Generic fallback
+            'LearningProcess', 'Emotions', 'Concept'  # Concept = fallback for inferred labels
+        ]
+        return any(label in udl_labels + neuro_labels for label in labels)
     
     def _create_recommendation(self, node: Dict, query_metadata: Dict) -> Optional[MethodologyRecommendation]:
         """Create a methodology recommendation from a node"""
@@ -229,10 +423,19 @@ class MethodologyRanker:
             vector_score = node.get('vector_similarity', 0.0)
             base_score += vector_score * 0.2
         
-        # Context-specific boosts
-        if query_metadata.get('educational_context') == 'special_needs':
+        # Context-specific boosts (domain-aware)
+        educational_context = query_metadata.get('educational_context', 'general')
+        
+        if educational_context == 'special_needs':
+            # UDL domain: boost nodes with adaptation/inclusion keywords
             if any(adaptation in str(node).lower() 
                   for adaptation in ['inclusive', 'adaptive', 'support']):
+                base_score += 0.1
+        
+        elif educational_context == 'neuroscience':
+            # Neuro domain: boost nodes with cognitive/affective keywords
+            if any(keyword in str(node).lower() 
+                  for keyword in ['cognitive', 'memory', 'attention', 'emotion', 'motivation']):
                 base_score += 0.1
         
         return min(base_score, 1.0)
@@ -260,6 +463,240 @@ class MethodologyRanker:
             return ConfidenceLevel.LOW
         else:
             return ConfidenceLevel.VERY_LOW
+    
+    # ========================================================================
+    # PHASE 2: DYNAMIC BALANCING (Scalable, No Hardcoding)
+    # ========================================================================
+    
+    def _detect_query_intent(self, query: str) -> Dict:
+        """
+        Detect if query is a comparison query (e.g., "A vs B", "difference between A and B").
+        
+        Scalable: Works for ANY comparison, not hardcoded for specific labels.
+        
+        Returns:
+            {'is_comparison': bool, 'comparison_keywords': list}
+        """
+        query_lower = query.lower()
+        
+        # Comparison keywords (multilingual)
+        comparison_keywords = [
+            # English
+            'difference', 'differences', 'vs', 'versus', 'compare', 'comparison',
+            'contrast', 'compared to', 'different from', 'differ', 'distinguish',
+            # Italian
+            'differenza', 'differenze', 'confronto', 'confrontare', 'rispetto a',
+            'diverso', 'diversa', 'distinguere', 'distingue', 'tra'
+        ]
+        
+        found_keywords = [kw for kw in comparison_keywords if kw in query_lower]
+        
+        is_comparison = len(found_keywords) > 0
+        
+        if is_comparison:
+            logger.info(f"[Intent Detection] Comparison query detected (keywords: {found_keywords})")
+        
+        return {
+            'is_comparison': is_comparison,
+            'comparison_keywords': found_keywords
+        }
+    
+    def _apply_dynamic_balancing(self, nodes: List[Dict], target_size: int = 15) -> List[Dict]:
+        """
+        Apply dynamic balancing to ensure fair representation of different label groups.
+        
+        SCALABLE SOLUTION:
+        - NO hardcoded label pairs
+        - Works for ANY labels in ANY domain
+        - Auto-detects imbalanced distribution (needs balancing)
+        - Distributes target_size across top labels fairly
+        
+        Algorithm:
+        1. Analyze label distribution (count nodes per label)
+        2. Check if balancing is needed (comparison query with 2+ labels)
+        3. If needed → balance by distributing slots fairly
+        4. If not needed → use standard ranking
+        
+        Args:
+            nodes: List of valid methodology nodes
+            target_size: Target number of nodes to return (default: 15)
+            
+        Returns:
+            Balanced list of nodes (max target_size nodes)
+        """
+        if not nodes:
+            return []
+        
+        # Step 1: Analyze label distribution
+        label_distribution = self._analyze_label_distribution(nodes)
+        
+        # Step 2: Check if balancing is needed
+        # For comparison queries, we ALWAYS want balanced representation if 2+ labels
+        top_labels = sorted(label_distribution.items(), key=lambda x: x[1], reverse=True)
+        
+        if len(top_labels) < 2:
+            # Only 1 label type, no balancing needed
+            logger.info(f"[Smart Ranking] Only 1 label type, using standard ranking")
+            return sorted(nodes, key=lambda n: n.get('rank_score', 0), reverse=True)[:target_size]
+        
+        # Step 3: Apply balancing (for ALL comparison queries with 2+ labels)
+        logger.info(f"[Smart Ranking] Applying balancing for {len(top_labels)} labels")
+        balanced_nodes = self._balance_by_labels(nodes, label_distribution, target_size)
+        
+        return balanced_nodes
+    
+    def _analyze_label_distribution(self, nodes: List[Dict]) -> Dict[str, int]:
+        """
+        Count nodes per label (works for ANY labels, not hardcoded).
+        
+        Returns:
+            {'IntrinsicMotivation': 20, 'ExtrinsicMotivation': 5, ...}
+        """
+        distribution = {}
+        
+        for node in nodes:
+            labels = node.get('labels', [])
+            if isinstance(labels, str):
+                labels = [labels]
+            
+            for label in labels:
+                if label:  # Skip empty labels
+                    distribution[label] = distribution.get(label, 0) + 1
+        
+        logger.info(f"[Smart Ranking] Label distribution: {distribution}")
+        return distribution
+    
+    def _detect_dominant_labels(self, distribution: Dict[str, int], threshold: float = 0.7) -> List[str]:
+        """
+        Detect labels that dominate >70% of nodes (unbalanced).
+        
+        Scalable: Works for any label names, any domain.
+        
+        Args:
+            distribution: Label counts
+            threshold: Dominance threshold (default: 0.7 = 70%)
+            
+        Returns:
+            List of dominant label names
+        """
+        if not distribution:
+            return []
+        
+        total = sum(distribution.values())
+        dominant = []
+        
+        for label, count in distribution.items():
+            ratio = count / total
+            if ratio > threshold:
+                dominant.append(label)
+                logger.info(
+                    f"[Smart Ranking] Dominant label detected: {label} "
+                    f"({count}/{total} = {ratio:.0%})"
+                )
+        
+        return dominant
+    
+    def _balance_by_labels(
+        self, 
+        nodes: List[Dict], 
+        distribution: Dict[str, int], 
+        target_size: int = 15
+    ) -> List[Dict]:
+        """
+        Dynamic balancing: Distribute target_size across top N labels.
+        
+        Scalable formula:
+        - If 2 labels: 7/7/1 split (balanced)
+        - If 3 labels: 5/5/5 split
+        - If 4+ labels: Equal distribution
+        
+        NO hardcoded label names!
+        
+        Args:
+            nodes: List of nodes to balance
+            distribution: Label counts
+            target_size: Target number of nodes (default: 15)
+            
+        Returns:
+            Balanced list of nodes
+        """
+        # Get top labels by count
+        sorted_labels = sorted(distribution.items(), key=lambda x: x[1], reverse=True)
+        top_labels = [label for label, count in sorted_labels if count > 0]
+        
+        if len(top_labels) <= 1:
+            # Only one label type, standard ranking
+            logger.info(f"[Smart Ranking] Only 1 label type, using standard ranking")
+            return sorted(nodes, key=lambda n: n.get('rank_score', 0), reverse=True)[:target_size]
+        
+        # Calculate slots per label (dynamic!)
+        if len(top_labels) == 2:
+            slots_per_label = [7, 7, 1]  # 7+7+1 = 15 (2 main + 1 other)
+            logger.info(f"[Smart Ranking] 2 labels detected → 7/7/1 split")
+        elif len(top_labels) == 3:
+            slots_per_label = [5, 5, 5]  # 5+5+5 = 15
+            logger.info(f"[Smart Ranking] 3 labels detected → 5/5/5 split")
+        else:
+            # 4+ labels: distribute equally
+            base_slots = target_size // len(top_labels)
+            slots_per_label = [base_slots] * len(top_labels)
+            logger.info(f"[Smart Ranking] {len(top_labels)} labels detected → equal distribution")
+        
+        # Group nodes by label
+        nodes_by_label = {label: [] for label in top_labels}
+        other_nodes = []
+        
+        for node in nodes:
+            node_labels = node.get('labels', [])
+            if isinstance(node_labels, str):
+                node_labels = [node_labels]
+            
+            matched = False
+            for label in top_labels:
+                if label in node_labels:
+                    nodes_by_label[label].append(node)
+                    matched = True
+                    break
+            
+            if not matched:
+                other_nodes.append(node)
+        
+        # Rank within each label group and take top N slots
+        balanced_results = []
+        
+        for i, label in enumerate(top_labels[:len(slots_per_label)]):
+            # Sort by rank_score within this label group
+            label_nodes = sorted(
+                nodes_by_label[label],
+                key=lambda n: n.get('rank_score', 0),
+                reverse=True
+            )
+            
+            # Take top N slots for this label
+            slots = slots_per_label[i] if i < len(slots_per_label) else 0
+            selected = label_nodes[:slots]
+            balanced_results.extend(selected)
+            
+            logger.info(
+                f"[Smart Ranking] Label '{label}': {len(label_nodes)} nodes → selected top {len(selected)}"
+            )
+        
+        # Fill remaining slots with other nodes (if any)
+        remaining_slots = target_size - len(balanced_results)
+        if remaining_slots > 0 and other_nodes:
+            other_sorted = sorted(other_nodes, key=lambda n: n.get('rank_score', 0), reverse=True)
+            extra = other_sorted[:remaining_slots]
+            balanced_results.extend(extra)
+            logger.info(f"[Smart Ranking] Added {len(extra)} 'other' nodes to fill remaining slots")
+        
+        # Log final distribution
+        final_distribution = self._analyze_label_distribution(balanced_results)
+        logger.info(
+            f"[Smart Ranking] Final balanced distribution ({len(balanced_results)} nodes): "
+            f"{final_distribution}"
+        )
+        
+        return balanced_results
 
 class EvidenceSynthesizer:
     """Synthesizes evidence from graph relationships and semantic similarities"""
@@ -324,8 +761,14 @@ class EvidenceSynthesizer:
 class EducationalContextBuilder:
     """Main context builder that orchestrates the transformation"""
     
-    def __init__(self):
-        self.knowledge_base = PedagogicalKnowledgeBase()
+    def __init__(self, domain: str = "udl"):
+        """Initialize context builder with domain-specific knowledge
+        
+        Args:
+            domain: Domain filter ('udl', 'neuro', 'all')
+        """
+        self.domain = domain
+        self.knowledge_base = PedagogicalKnowledgeBase(domain=domain)
         self.methodology_ranker = MethodologyRanker(self.knowledge_base)
         self.evidence_synthesizer = EvidenceSynthesizer()
     
@@ -368,9 +811,9 @@ class EducationalContextBuilder:
                 all_recommendations, len(triples), metadata
             )
             
-            # Get fallback strategies if needed
+            # Get fallback strategies if needed (pass metadata for data gap detection)
             fallback_strategies = self._get_fallback_strategies(
-                confidence_assessment, student_profile
+                confidence_assessment, student_profile, metadata
             )
             
             context = EducationalContext(
@@ -521,11 +964,42 @@ class EducationalContextBuilder:
     def _get_fallback_strategies(
         self, 
         confidence: ConfidenceLevel, 
-        student_profile: StudentProfile
+        student_profile: StudentProfile,
+        metadata: Dict = None
     ) -> List[str]:
-        """Get fallback strategies based on confidence and context"""
+        """Get fallback strategies based on confidence and context
+        
+        Args:
+            confidence: Confidence level
+            student_profile: Student profile
+            metadata: Optional metadata with data gap indicators
+        """
         
         fallbacks = []
+        
+        # Check for data gaps (Priority 4: Honest messaging)
+        if metadata:
+            used_fallback = metadata.get('used_fallback', False)
+            has_contamination = metadata.get('has_udl_contamination', False)
+            
+            if used_fallback:
+                if self.domain == "neuro":
+                    fallbacks.append(
+                        "⚠️ NOTA: Il knowledge graph di neuroscienze contiene principalmente concetti teorici. "
+                        "La relazione specifica richiesta non è presente nei dati, ma vengono forniti concetti correlati. "
+                        "Per espandere il grafo con più relazioni, consulta il team di neuroscienze."
+                    )
+                else:
+                    fallbacks.append(
+                        "⚠️ NOTA: I dati specifici richiesti non sono presenti nel knowledge graph. "
+                        "Le raccomandazioni si basano su concetti correlati disponibili."
+                    )
+            
+            if has_contamination and self.domain == "neuro":
+                fallbacks.append(
+                    "ℹ️ SUGGERIMENTO: Per strategie didattiche pratiche, seleziona il dominio 'UDL (Universal Design for Learning)' "
+                    "o 'All Domains' per raccomandazioni integrate."
+                )
         
         if confidence in [ConfidenceLevel.LOW, ConfidenceLevel.VERY_LOW]:
             fallbacks.extend(self.knowledge_base.fallback_strategies['low_confidence'])

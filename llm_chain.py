@@ -7,8 +7,8 @@ Transforms structured EducationalContext into natural language responses for Ita
 import logging
 from typing import Dict, List, Optional
 from dataclasses import asdict
-from langchain_openai import OpenAI
-from langchain_core.prompts import PromptTemplate
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from context_builder import EducationalContext, ConfidenceLevel
 
@@ -20,7 +20,7 @@ class EducationalResponseGenerator:
     Generates pedagogically sound, actionable responses for Italian teachers
     """
     
-    def __init__(self, openai_api_key: str, language: str = "italian", temperature: float = 0.7):
+    def __init__(self, openai_api_key: str, language: str = "italian", temperature: float = 0.7, domain: str = "udl", model: str = "gpt-3.5-turbo-16k"):
         """
         Initialize the response generator
         
@@ -28,12 +28,16 @@ class EducationalResponseGenerator:
             openai_api_key: OpenAI API key
             language: Target language for responses (default: italian)
             temperature: LLM temperature (0.7 for creative but coherent responses)
+            domain: Domain for responses ('udl', 'neuro', 'all')
+            model: OpenAI model to use (e.g., 'gpt-4o', 'gpt-3.5-turbo-16k')
         """
         self.language = language
-        self.llm = OpenAI(
+        self.domain = domain
+        self.llm = ChatOpenAI(
             openai_api_key=openai_api_key,
-            temperature=temperature,
-            max_tokens=1500
+            model=model,  # Uses model from config (e.g., gpt-4o from .env)
+            temperature=temperature,  # 0.7 is optimal for creative educational responses
+            max_tokens=1500  # Sufficient for detailed teacher responses
         )
         
         # Load prompt templates and create chain using LCEL
@@ -41,13 +45,25 @@ class EducationalResponseGenerator:
         self.output_parser = StrOutputParser()
         self.chain = self.prompt_template | self.llm | self.output_parser
     
-    def _create_prompt_template(self) -> PromptTemplate:
+    def _create_prompt_template(self) -> ChatPromptTemplate:
         """Create comprehensive prompt template for educational response generation"""
         
         if self.language == "italian":
-            template = """Sei un esperto consulente pedagogico italiano specializzato in metodologie didattiche inclusive e differenziate.
+            # Domain-specific system prompt
+            if self.domain == "neuro":
+                system_prompt = """Sei un esperto di neuroscienze dell'apprendimento italiano, specializzato nell'applicazione pratica delle scoperte neuroscientifiche all'educazione.
 
-Il tuo compito è fornire raccomandazioni chiare, pratiche e pedagogicamente solide per insegnanti italiani.
+Il tuo compito è fornire raccomandazioni chiare, pratiche e scientificamente solide per insegnanti italiani, basate su principi neuroscientifici."""
+            elif self.domain == "all":
+                system_prompt = """Sei un esperto consulente educativo italiano con competenze in pedagogia, metodologie didattiche inclusive e neuroscienze dell'apprendimento.
+
+Il tuo compito è fornire raccomandazioni chiare, pratiche e scientificamente solide per insegnanti italiani."""
+            else:  # default udl
+                system_prompt = """Sei un esperto consulente pedagogico italiano specializzato in metodologie didattiche inclusive e differenziate.
+
+Il tuo compito è fornire raccomandazioni chiare, pratiche e pedagogicamente solide per insegnanti italiani."""
+            
+            user_message = """
 
 CONTESTO DELLA DOMANDA:
 Domanda originale: {original_query}
@@ -95,13 +111,18 @@ IMPORTANTE:
 - Se la confidenza è BASSA o VERY_LOW, enfatizza la necessità di supporto specialistico
 
 Genera la tua risposta pedagogica:"""
+            
+            return ChatPromptTemplate.from_messages([
+                ("system", system_prompt),
+                ("human", user_message)
+            ])
         
         else:  # English fallback
-            template = """You are an expert educational consultant specializing in inclusive and differentiated teaching methodologies.
+            system_prompt = """You are an expert educational consultant specializing in inclusive and differentiated teaching methodologies.
 
-Your task is to provide clear, practical, and pedagogically sound recommendations for teachers.
-
-QUERY CONTEXT:
+Your task is to provide clear, practical, and pedagogically sound recommendations for teachers."""
+            
+            user_message = """QUERY CONTEXT:
 Original question: {original_query}
 Student profile: {student_profile}
 Educational context: {educational_context_type}
@@ -146,20 +167,10 @@ IMPORTANT:
 
 Generate your pedagogical response:"""
         
-        return PromptTemplate(
-            input_variables=[
-                "original_query",
-                "student_profile",
-                "educational_context_type",
-                "primary_methodologies",
-                "supporting_methodologies",
-                "evidence_summary",
-                "implementation_priority",
-                "confidence_level",
-                "fallback_strategies"
-            ],
-            template=template
-        )
+            return ChatPromptTemplate.from_messages([
+                ("system", system_prompt),
+                ("human", user_message)
+            ])
     
     async def generate_response(
         self, 
@@ -367,9 +378,9 @@ Tuttavia, ecco alcune raccomandazioni di base basate sul contesto educativo:
 {chr(10).join([f'{i}. {p}' for i, p in enumerate(context.implementation_priority[:3], 1)])}
 
 Per un supporto più dettagliato, ti consiglio di:
-- Consultare un pedagogista specializzato
-- Rivedere le linee guida UDL (Universal Design for Learning)
+- Consultare uno specialista dell'educazione
 - Collaborare con il team di supporto educativo della tua scuola
+- Approfondire le ricerche più recenti nel campo
 
 Se hai bisogno di ulteriore assistenza, non esitare a chiedere!"""
         else:
@@ -384,9 +395,9 @@ However, here are some basic recommendations based on the educational context:
 {chr(10).join([f'{i}. {p}' for i, p in enumerate(context.implementation_priority[:3], 1)])}
 
 For more detailed support, I recommend:
-- Consult a specialized pedagogist
-- Review UDL (Universal Design for Learning) guidelines
+- Consult an education specialist
 - Collaborate with your school's educational support team
+- Explore recent research in the field
 
 If you need further assistance, don't hesitate to ask!"""
         
