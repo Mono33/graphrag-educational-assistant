@@ -12,6 +12,9 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from context_builder import EducationalContext, ConfidenceLevel
 
+# Import domain configuration system
+from domains import get_domain_config
+
 logger = logging.getLogger(__name__)
 
 class EducationalResponseGenerator:
@@ -49,16 +52,38 @@ class EducationalResponseGenerator:
         """Create comprehensive prompt template for educational response generation"""
         
         if self.language == "italian":
-            # Domain-specific system prompt
-            if self.domain == "neuro":
+            # Domain-specific system prompt using domain config
+            # ============================================================================
+            # 🧹 CLEANUP TODO: The elif/else blocks below can be SAFELY REMOVED
+            # after confirming the domain config refactoring works correctly.
+            # 
+            # WHAT TO REMOVE:
+            #   - elif self.domain == "neuro" block → Now in domains/neuro_domain.py → get_system_prompt()
+            #   - else (udl) block → Now in domains/udl_domain.py → get_system_prompt()
+            #
+            # KEEP:
+            #   - elif self.domain == "all" block → Still needed for cross-domain queries
+            #
+            # ESTIMATED LINES SAVED: ~10 lines
+            # DATE MARKED: Nov 2025
+            # ============================================================================
+            domain_config = get_domain_config(self.domain)
+            if domain_config:
+                system_prompt = domain_config.get_system_prompt()
+            elif self.domain == "neuro":
+                # 🧹 BACKUP - Can be removed after refactoring is stable.
+                # This logic now exists in: domains/neuro_domain.py → get_system_prompt()
                 system_prompt = """Sei un esperto di neuroscienze dell'apprendimento italiano, specializzato nell'applicazione pratica delle scoperte neuroscientifiche all'educazione.
 
 Il tuo compito è fornire raccomandazioni chiare, pratiche e scientificamente solide per insegnanti italiani, basate su principi neuroscientifici."""
             elif self.domain == "all":
+                # KEEP: Still needed for cross-domain queries
                 system_prompt = """Sei un esperto consulente educativo italiano con competenze in pedagogia, metodologie didattiche inclusive e neuroscienze dell'apprendimento.
 
 Il tuo compito è fornire raccomandazioni chiare, pratiche e scientificamente solide per insegnanti italiani."""
             else:  # default udl
+                # 🧹 BACKUP - Can be removed after refactoring is stable.
+                # This logic now exists in: domains/udl_domain.py → get_system_prompt()
                 system_prompt = """Sei un esperto consulente pedagogico italiano specializzato in metodologie didattiche inclusive e differenziate.
 
 Il tuo compito è fornire raccomandazioni chiare, pratiche e pedagogicamente solide per insegnanti italiani."""

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Streamlit Demo Interface for GraphRAG Educational Assistant
-Same interface as Gradio version with all pipeline stages, evidence, and comparison
+Same interface as Gradio version with all pipeline stages, evidence, and comparison.
 """
 
 import streamlit as st

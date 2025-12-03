@@ -18,6 +18,9 @@ import time
 from functools import lru_cache
 from sklearn.metrics.pairwise import cosine_similarity
 
+# Import domain configuration system
+from domains import get_domain_config
+
 logger = logging.getLogger(__name__)
 
 @dataclass
@@ -54,93 +57,9 @@ class HybridGraphRetriever:
         if self.use_vectors:
             self._load_node2vec_model(domain=domain)
         
-        # Educational domain boosts (higher = more relevant)
-        self.domain_boosts = {
-            # UDL domain labels (UNTOUCHED)
-            'StudentWithSpecialNeeds': 2.0,
-            'PedagogicalMethodology': 2.0,
-            'StudentCharacteristic': 1.5,
-            'Context': 1.5,
-            'Lighting': 1.2,
-            'Colour': 1.2,
-            'Furniture': 1.2,
-            'Acoustic': 1.2,
-            'InteractiveBoard': 1.3,
-            'EnvironmentalBarrier': 1.1,
-            'EnvironmentalSupport': 1.1,
-            
-            # Neuro domain labels (UPDATED from neuro_audit_report.json - Nov 2025)
-            # Based on actual ingested data: 478 nodes, 195 unique labels, 111 relationship types
-            
-            # TOP 10 MOST FREQUENT LABELS (from audit)
-            'Attention': 2.2,                    # 22 nodes - most frequent, hub node (49 out + 7 in relationships)
-            'CriticalThinking': 2.0,             # 15 nodes - 2nd most frequent
-            'ExtrinsicMotivation': 2.0,          # 14 nodes - 3rd most frequent ✅ EQUALIZED with Intrinsic
-            'ExecutiveFunctions': 2.1,           # 12 nodes - 4th most frequent, high connectivity
-            'IntrinsicMotivation': 2.0,          # 11 nodes - 5th most frequent
-            'LearningOutcomes': 1.8,             # 10 nodes - 6th most frequent
-            'TeachingPractices': 1.8,            # 10 nodes - 6th most frequent (tied)
-            'LearningDevelopment': 1.7,          # 9 nodes - 8th most frequent
-            'NegativeStressDistress': 1.7,       # 9 nodes - 8th most frequent (tied), high out-degree
-            'Motivation': 1.6,                   # 8 nodes - 10th most frequent
-            
-            # HUB NODES (high outgoing connectivity - information sources)
-            'CognitiveFlexibility': 2.0,         # 1 node but 16 total connections (hub + authority)
-            'KnowledgeConstructionAttention': 1.9, # 1 node but 14 connections, drives learning
-            'PrefrontalCortexActivation': 1.9,   # 1 node but 13 connections, central to cognition
-            'OptimalAttentionalNetworkActivation': 1.8, # 6 in + 3 out = 9 connections
-            
-            # AUTHORITY NODES (high incoming connectivity - learning targets)
-            'Creativity': 1.8,                   # 7 nodes, 20 incoming + 19 outgoing = 39 connections
-            'Memory': 1.7,                       # 1 node but 9 incoming (key outcome)
-            'MemoryEncoding': 1.6,               # 7 incoming relationships
-            'MemorySystems': 1.6,                # 6 incoming relationships
-            
-            # CRITICAL COGNITIVE PROCESSES
-            'WorkingMemory': 1.7,                # 6 nodes - essential for learning
-            'Metacognition': 1.6,                # 4 nodes - self-regulation
-            'SelfRegulation': 1.5,               # 4 nodes - adaptive control
-            'CognitiveControl': 1.6,             # 7 nodes - executive control
-            'CognitiveProcesses': 1.6,           # 4 nodes, 17 incoming (key target)
-            
-            # AFFECTIVE & MOTIVATIONAL
-            'EmotionalRegulation': 1.6,          # 8 nodes - affective process
-            'EmotionalWellBeing': 1.4,           # 6 nodes - wellbeing outcomes
-            'PositiveEmotions': 1.6,             # 7 nodes, 25 outgoing (drives learning)
-            'NegativeEmotions': 1.5,             # 7 nodes, 20 outgoing (interferes)
-            'AffectiveProcesses': 1.5,           # 3 nodes, 10 incoming + 3 outgoing
-            
-            # MINDSET & GROWTH
-            'GrowthMindset': 1.7,                # 5 nodes, 15 outgoing
-            'FixedMindset': 1.5,                 # 4 nodes, 9 outgoing + 1 incoming
-            'Mindset': 1.6,                      # 2 nodes, 14 out + 6 in = 20 connections
-            
-            # STRESS & COPING
-            'PositiveStressEustress': 1.6,       # 7 nodes, 17 outgoing
-            'LongTermGrowth': 1.5,               # 2 nodes, 8 incoming
-            'LongTermDecline': 1.4,              # 2 nodes, 6 incoming
-            'AdaptiveCoping': 1.4,               # 1 node, 1 incoming
-            'MaladaptiveCoping': 1.4,            # 3 nodes, 5 incoming
-            
-            # SOCIAL & COMMUNICATION
-            'SocialCognition': 1.5,              # 7 nodes, 6 out + 11 in = 17 connections
-            'SocialLearning': 1.4,               # 6 nodes - collaborative learning
-            'Communication': 1.4,                # 7 nodes, 9 out + 2 in
-            
-            # EDUCATIONAL OUTCOMES
-            'LearningEngagement': 1.5,           # 3 nodes, 3 incoming
-            'LearningPerformance': 1.6,          # 7 nodes, 15 incoming + 1 outgoing
-            'EducationalSupport': 1.5,           # 7 nodes, 17 outgoing
-            
-            # ADDITIONAL IMPORTANT LABELS
-            'HigherOrderThinking': 1.5,          # 3 nodes, 7 in + 3 out
-            'LowerOrderThinking': 1.3,           # 3 nodes, 3 in + 2 out
-            'ProblemSolving': 1.4,               # 3 nodes, 3 incoming
-            'LongTermMemory': 1.5,               # 2 nodes, 9 out + 1 in
-            'PersonalGrowth': 1.4,               # 3 nodes, 7 incoming
-            'Strengths': 1.4,                    # 6 nodes, 10 outgoing
-            'CognitiveStrengths': 1.4            # 4 nodes, 6 incoming
-        }
+        # Educational domain boosts - now loaded dynamically from domain configs
+        # This combines boosts from all domains for "all" queries, or uses domain-specific boosts
+        self.domain_boosts = self._load_domain_boosts()
         
         # Schema typo corrections (from your audit)
         self.schema_corrections = {
@@ -231,6 +150,90 @@ class HybridGraphRetriever:
             # Applied cognition
             'AppliedCognition', 'InformationLiteracy', 'KnowledgeIntegration',
             'KnowledgeOfCognition', 'SelfRegulatedLearning'
+        }
+    
+    def _load_domain_boosts(self) -> Dict[str, float]:
+        """Load domain boosts from domain configs
+        
+        Returns:
+            Dict mapping label names to boost values
+        """
+        # Try to load from domain configs
+        try:
+            udl_config = get_domain_config("udl")
+            neuro_config = get_domain_config("neuro")
+            
+            combined_boosts = {}
+            
+            # Add UDL boosts
+            if udl_config:
+                udl_boosts = udl_config.get_retrieval_boosts()
+                for label, boost in udl_boosts.get('label_boosts', {}).items():
+                    combined_boosts[label] = boost
+            
+            # Add Neuro boosts (may overlap with UDL, that's okay)
+            if neuro_config:
+                neuro_boosts = neuro_config.get_retrieval_boosts()
+                for label, boost in neuro_boosts.get('label_boosts', {}).items():
+                    combined_boosts[label] = boost
+            
+            if combined_boosts:
+                logger.info(f"✅ Loaded domain boosts from configs: {len(combined_boosts)} labels")
+                return combined_boosts
+        
+        except Exception as e:
+            logger.warning(f"⚠️  Could not load domain boosts from configs: {e}, using fallback")
+        
+        # ============================================================================
+        # 🧹 CLEANUP TODO: The following fallback dictionary can be SAFELY REMOVED
+        # after confirming the domain config refactoring works correctly.
+        # 
+        # WHAT TO REMOVE:
+        #   - The entire fallback return block below (~50 lines)
+        #   - UDL boosts → Now in domains/udl_domain.py → get_retrieval_boosts()
+        #   - Neuro boosts → Now in domains/neuro_domain.py → get_retrieval_boosts()
+        #
+        # ESTIMATED LINES SAVED: ~50 lines
+        # DATE MARKED: Nov 2025
+        # ============================================================================
+        
+        # 🧹 BACKUP - Fallback to hardcoded boosts if domain configs fail
+        logger.info("Using fallback domain boosts (hardcoded)")
+        return {
+            # UDL domain labels
+            'StudentWithSpecialNeeds': 2.0,
+            'PedagogicalMethodology': 2.0,
+            'StudentCharacteristic': 1.5,
+            'Context': 1.5,
+            'Lighting': 1.2,
+            'Colour': 1.2,
+            'Furniture': 1.2,
+            'Acoustic': 1.2,
+            'InteractiveBoard': 1.3,
+            'EnvironmentalBarrier': 1.1,
+            'EnvironmentalSupport': 1.1,
+            
+            # Neuro domain labels  
+            'Attention': 2.2,
+            'CriticalThinking': 2.0,
+            'ExtrinsicMotivation': 2.0,
+            'ExecutiveFunctions': 2.1,
+            'IntrinsicMotivation': 2.0,
+            'LearningOutcomes': 1.8,
+            'TeachingPractices': 1.8,
+            'LearningDevelopment': 1.7,
+            'NegativeStressDistress': 1.7,
+            'Motivation': 1.6,
+            'CognitiveFlexibility': 2.0,
+            'Creativity': 1.8,
+            'Memory': 1.7,
+            'WorkingMemory': 1.7,
+            'Metacognition': 1.6,
+            'EmotionalRegulation': 1.6,
+            'GrowthMindset': 1.7,
+            'FixedMindset': 1.5,
+            'Mindset': 1.6,
+            'PositiveStressEustress': 1.6
         }
     
     def _load_node2vec_model(self, domain: str = "all", model_path: str = None):
@@ -896,9 +899,15 @@ class HybridGraphRetriever:
             Adaptive threshold (e.g., 0.70-0.85)
         """
         # Base threshold by domain
-        if domain == "neuro":
+        # Get domain-specific similarity threshold using domain config
+        domain_config = get_domain_config(domain)
+        if domain_config:
+            base_threshold = domain_config.get_similarity_threshold()
+        elif domain == "neuro":
+            # Backward compatibility
             base_threshold = 0.70  # Neuro concepts are more interconnected
         elif domain == "udl":
+            # Backward compatibility
             base_threshold = 0.80  # UDL is more structured
         else:
             base_threshold = 0.75  # Default
@@ -1428,10 +1437,15 @@ class EnhancedMultilingualText2Cypher:
                 'metadata': retrieval_result.metadata
             }
             
-            # Determine educational context based on domain
-            if domain == 'udl':
+            # Determine educational context based on domain using domain config
+            domain_config = get_domain_config(domain)
+            if domain_config:
+                educational_context = domain_config.get_educational_context_type()
+            elif domain == 'udl':
+                # Backward compatibility
                 educational_context = 'special_needs'  # UDL focuses on disabilities/adaptations
             elif domain == 'neuro':
+                # Backward compatibility
                 educational_context = 'neuroscience'   # Neuro focuses on cognitive processes
             else:
                 educational_context = 'general'        # Cross-domain or unspecified

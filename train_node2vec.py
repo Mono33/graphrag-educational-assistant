@@ -16,6 +16,9 @@ from sklearn.metrics.pairwise import cosine_similarity
 import json
 from datetime import datetime
 
+# Import domain configuration system
+from domains import get_domain_config
+
 logger = logging.getLogger(__name__)
 
 class EducationalNode2VecTrainer:
@@ -146,13 +149,24 @@ class EducationalNode2VecTrainer:
             'CognitiveBias': 1.3
         }
         
-        # Select domain weights based on training domain
-        if self.domain == "neuro":
+        # Select domain weights using domain config
+        domain_config = get_domain_config(self.domain)
+        if domain_config:
+            self.domain_weights = domain_config.get_node2vec_weights()
+        elif self.domain == "neuro":
+            # Backward compatibility
             self.domain_weights = neuro_weights
         elif self.domain == "udl":
+            # Backward compatibility
             self.domain_weights = udl_weights
         else:  # "all" - combine both
-            self.domain_weights = {**udl_weights, **neuro_weights}
+            udl_config = get_domain_config("udl")
+            neuro_config = get_domain_config("neuro")
+            if udl_config and neuro_config:
+                self.domain_weights = {**udl_config.get_node2vec_weights(), **neuro_config.get_node2vec_weights()}
+            else:
+                # Fallback
+                self.domain_weights = {**udl_weights, **neuro_weights}
         
         self.model = None
         self.node_embeddings = None

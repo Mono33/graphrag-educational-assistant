@@ -10,6 +10,9 @@ from text2cypher import Text2CypherPipeline
 from config import config
 import logging
 
+# Import domain configuration system for scalable architecture
+from domains import get_domain_config
+
 logger = logging.getLogger(__name__)
 
 class MultilingualText2Cypher:
@@ -25,6 +28,23 @@ class MultilingualText2Cypher:
             config.openai.model  # Uses model from .env (e.g., gpt-4o)
         )
         
+        # ============================================================================
+        # 🧹 CLEANUP TODO: The following dictionaries can be SAFELY REMOVED
+        # after confirming the domain config refactoring works correctly.
+        # 
+        # WHAT TO REMOVE:
+        #   - self.udl_terms → Now in domains/udl_domain.py → get_italian_terms()
+        #   - self.neuro_terms → Now in domains/neuro_domain.py → get_italian_terms()
+        #
+        # NOTE: Currently the code at line ~448 still uses these directly.
+        # Before removing, update enhance_italian_query() to use domain configs.
+        #
+        # ESTIMATED LINES SAVED: ~230 lines
+        # DATE MARKED: Nov 2025
+        # ============================================================================
+        
+        # 🧹 BACKUP - Can be removed after refactoring is stable.
+        # This logic now exists in: domains/udl_domain.py → get_italian_terms()
         # UDL-specific Italian → English educational term mapping
         # Mapped to ACTUAL node names in your Neo4j database
         self.udl_terms = {
@@ -188,6 +208,8 @@ class MultilingualText2Cypher:
             "migliorare": "improve"
         }
         
+        # 🧹 BACKUP - Can be removed after refactoring is stable.
+        # This logic now exists in: domains/neuro_domain.py → get_italian_terms()
         # Neuro-specific Italian → English term mapping
         self.neuro_terms = {
             # Neuroscience Core Concepts
@@ -364,8 +386,11 @@ class MultilingualText2Cypher:
             
             client = OpenAI(api_key=api_key)
             
-            # Set context based on domain
-            if domain == "neuro":
+            # Set context based on domain using domain config
+            domain_config = get_domain_config(domain)
+            if domain_config:
+                context = domain_config.get_query_context()
+            elif domain == "neuro":
                 context = "neuroscience and cognitive science"
             elif domain == "udl":
                 context = "education and Universal Design for Learning"
@@ -403,6 +428,8 @@ English:"""
         """
         Enhanced Italian query processing with HYBRID translation approach.
         
+        EXACT COPY of logic from multilingual_text2cypher_old.py lines 402-491
+        
         HYBRID STRATEGY:
         1. Try dictionary-based translation (fast, free)
         2. Calculate translation coverage
@@ -416,7 +443,7 @@ English:"""
         """
         enhanced_query = italian_query
         
-        # Select appropriate term dictionary based on domain
+        # Select appropriate term dictionary based on domain (EXACT from old code lines 419-445)
         if domain == "udl":
             italian_terms = self.udl_terms
         elif domain == "neuro":

@@ -15,6 +15,9 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_community.callbacks.manager import get_openai_callback
 import logging
 
+# Import domain configuration system
+from domains import get_domain_config
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -128,6 +131,8 @@ class Text2CypherConverter:
     def _create_prompt_template(self, domain: str = None) -> ChatPromptTemplate:
         """Create a comprehensive prompt template for text2cypher conversion
         
+        EXACT COPY of logic from text2cypher_old.py lines 128-229
+        
         Args:
             domain: Domain for which to create the prompt (e.g., 'udl', 'neuro')
         """
@@ -135,15 +140,22 @@ class Text2CypherConverter:
         # Build schema description (domain-specific)
         schema_desc = self._build_schema_description()
         
-        # Create domain-specific few-shot examples
+        # Create domain-specific few-shot examples (EXACT logic from old code)
+        domain_config = get_domain_config(domain)
         if domain == "udl":
-            examples = self._get_udl_examples()
+            if domain_config:
+                examples = domain_config.get_few_shot_examples()
+            else:
+                examples = self._get_udl_examples()  # Fallback to old method
         elif domain == "neuro":
-            examples = self._get_neuro_examples(domain)
+            if domain_config:
+                examples = domain_config.get_few_shot_examples(domain)
+            else:
+                examples = self._get_neuro_examples(domain)  # Fallback to old method
         else:
             examples = self._create_few_shot_examples()  # Generic fallback
         
-        # Build system message with schema and instructions
+        # Build system message with schema and instructions (EXACT from old code lines 146-166)
         system_message = """You are a Neo4j Cypher query expert for an educational knowledge graph system.
 
 """ + schema_desc + """
@@ -165,7 +177,7 @@ IMPORTANT RULES:
     - ✅ GOOD: "MATCH (n) RETURN n"
 """
         
-        # Add domain-specific rules
+        # Add domain-specific rules (EXACT from old code lines 168-202)
         if domain == "neuro":
             system_message += """
 CRITICAL NEUROSCIENCE DOMAIN RULES (MUST FOLLOW):
@@ -201,7 +213,7 @@ EXAMPLES:
 """ + examples + """
 """
         
-        # Add domain-specific query patterns
+        # Add domain-specific query patterns (EXACT from old code lines 204-229)
         if domain == "udl":
             system_message += """
 QUERY PATTERNS (UDL):
@@ -262,8 +274,45 @@ Convert the natural language question to a Cypher query. Return ONLY the Cypher 
         
         return desc
     
+    def _format_examples_for_prompt(self, examples: List[Tuple[str, str]]) -> str:
+        """Format few-shot examples from domain config into prompt string
+        
+        Args:
+            examples: List of (question, cypher) tuples from domain config
+            
+        Returns:
+            Formatted examples string for prompt
+        """
+        formatted_lines = []
+        for question, cypher in examples:
+            formatted_lines.append(f'Question: "{question}"')
+            # Don't use f-string here! Cypher contains {domain: "..."} which breaks formatting
+            formatted_lines.append('Cypher: ' + cypher)
+            formatted_lines.append('')  # Empty line between examples
+        
+        return '\n'.join(formatted_lines).strip()
+    
+    # ============================================================================
+    # 🧹 CLEANUP TODO: The following backup methods can be SAFELY REMOVED
+    # after confirming the domain config refactoring works correctly.
+    # 
+    # WHAT TO REMOVE:
+    #   - _get_udl_examples() → Now in domains/udl_domain.py → get_few_shot_examples()
+    #   - _get_neuro_examples() → Now in domains/neuro_domain.py → get_few_shot_examples()
+    # 
+    # KEEP:
+    #   - _create_few_shot_examples() → Still needed for domain="all" (combines both)
+    #
+    # ESTIMATED LINES SAVED: ~133 lines
+    # DATE MARKED: Nov 2025
+    # ============================================================================
+    
     def _get_udl_examples(self) -> str:
-        """Get UDL-specific few-shot examples"""
+        """Get UDL-specific few-shot examples
+        
+        🧹 BACKUP - Can be removed after refactoring is stable.
+        This logic now exists in: domains/udl_domain.py → get_few_shot_examples()
+        """
         examples = """
 Question: "What teaching methods help students with ADHD?"
 Cypher: MATCH (s:StudentWithSpecialNeeds)-[r:SUGGESTS]->(m:PedagogicalMethodology) WHERE s.name = "Adhd" OR s.name = "Attention Deficit" RETURN m.name, m.category LIMIT 10
@@ -303,99 +352,102 @@ Cypher: MATCH (c:Context)-[r:SUGGESTS]->(m:PedagogicalMethodology) WHERE c.name 
     def _get_neuro_examples(self, domain: str = "neuro") -> str:
         """Get Neuro-specific few-shot examples based on actual Neuro data (Nov 2025)
         
+        🧹 BACKUP - Can be removed after refactoring is stable.
+        This logic now exists in: domains/neuro_domain.py → get_few_shot_examples()
+        
         All patterns verified against neuro_audit_report.json:
         - 478 nodes, 195 unique labels, 111 relationship types
         - Top relationships: SUPPORTS (41), ENHANCES (37), ENHANCE (29), LEADS_TO (22)
         - Focus on definition, comparison, and relationship queries
+        
+        NOTE: Domain filters are NOT included in examples - they are injected by _inject_domain_filter()
         """
-        # Use regular string and replace {DOMAIN} placeholder
         examples = """
 Question: "What is intrinsic motivation?"
-Cypher: MATCH (m:IntrinsicMotivation {{domain: "{domain}"}}) RETURN m, labels(m) as node_labels LIMIT 10
+Cypher: MATCH (m:IntrinsicMotivation) RETURN m, labels(m) as node_labels LIMIT 10
 
 Question: "What is extrinsic motivation?"
-Cypher: MATCH (m:ExtrinsicMotivation {{domain: "{domain}"}}) RETURN m, labels(m) as node_labels LIMIT 10
+Cypher: MATCH (m:ExtrinsicMotivation) RETURN m, labels(m) as node_labels LIMIT 10
 
 Question: "What is the difference between intrinsic and extrinsic motivation?"
-Cypher: MATCH (m:IntrinsicMotivation {{domain: "{domain}"}}) RETURN "Intrinsic" as type, m, labels(m) as node_labels UNION MATCH (m:ExtrinsicMotivation {{domain: "{domain}"}}) RETURN "Extrinsic" as type, m, labels(m) as node_labels LIMIT 20
+Cypher: MATCH (m:IntrinsicMotivation) RETURN "Intrinsic" as type, m, labels(m) as node_labels UNION MATCH (m:ExtrinsicMotivation) RETURN "Extrinsic" as type, m, labels(m) as node_labels LIMIT 20
 
 Question: "What is growth mindset?"
-Cypher: MATCH (g:GrowthMindset {{domain: "{domain}"}}) RETURN g, labels(g) as node_labels LIMIT 10
+Cypher: MATCH (g:GrowthMindset) RETURN g, labels(g) as node_labels LIMIT 10
 
 Question: "What is fixed mindset?"
-Cypher: MATCH (f:FixedMindset {{domain: "{domain}"}}) RETURN f, labels(f) as node_labels LIMIT 10
+Cypher: MATCH (f:FixedMindset) RETURN f, labels(f) as node_labels LIMIT 10
 
 Question: "What is the difference between growth mindset and fixed mindset?"
-Cypher: MATCH (g:GrowthMindset {{domain: "{domain}"}}) RETURN "Growth" as type, g, labels(g) as node_labels UNION MATCH (f:FixedMindset {{domain: "{domain}"}}) RETURN "Fixed" as type, f, labels(f) as node_labels LIMIT 20
+Cypher: MATCH (g:GrowthMindset) RETURN "Growth" as type, g, labels(g) as node_labels UNION MATCH (f:FixedMindset) RETURN "Fixed" as type, f, labels(f) as node_labels LIMIT 20
 
 Question: "What is positive stress?"
-Cypher: MATCH (s:PositiveStressEustress {{domain: "{domain}"}}) RETURN s, labels(s) as node_labels LIMIT 10
+Cypher: MATCH (s:PositiveStressEustress) RETURN s, labels(s) as node_labels LIMIT 10
 
 Question: "What is the difference between positive stress and negative stress?"
-Cypher: MATCH (s:PositiveStressEustress {{domain: "{domain}"}}) RETURN "Positive Stress" as type, s, labels(s) as node_labels UNION MATCH (s:NegativeStressDistress {{domain: "{domain}"}}) RETURN "Negative Stress" as type, s, labels(s) as node_labels LIMIT 20
+Cypher: MATCH (s:PositiveStressEustress) RETURN "Positive Stress" as type, s, labels(s) as node_labels UNION MATCH (s:NegativeStressDistress) RETURN "Negative Stress" as type, s, labels(s) as node_labels LIMIT 20
 
 Question: "What is attention?"
-Cypher: MATCH (a:Attention {{domain: "{domain}"}}) RETURN a, labels(a) as node_labels LIMIT 10
+Cypher: MATCH (a:Attention) RETURN a, labels(a) as node_labels LIMIT 10
 
 Question: "What is selective attention?"
-Cypher: MATCH (a:Attention {{domain: "{domain}", name: "Selective Attention"}}) RETURN a, labels(a) as node_labels
+Cypher: MATCH (a:Attention {name: "Selective Attention"}) RETURN a, labels(a) as node_labels
 
 Question: "What are executive functions?"
-Cypher: MATCH (e:ExecutiveFunctions {{domain: "{domain}"}}) RETURN e, labels(e) as node_labels LIMIT 10
+Cypher: MATCH (e:ExecutiveFunctions) RETURN e, labels(e) as node_labels LIMIT 10
 
 Question: "What is working memory?"
-Cypher: MATCH (w:WorkingMemory {{domain: "{domain}"}}) RETURN w, labels(w) as node_labels LIMIT 10
+Cypher: MATCH (w:WorkingMemory) RETURN w, labels(w) as node_labels LIMIT 10
 
 Question: "What is critical thinking?"
-Cypher: MATCH (c:CriticalThinking {{domain: "{domain}"}}) RETURN c, labels(c) as node_labels LIMIT 10
+Cypher: MATCH (c:CriticalThinking) RETURN c, labels(c) as node_labels LIMIT 10
 
 Question: "What is metacognition?"
-Cypher: MATCH (m:Metacognition {{domain: "{domain}"}}) RETURN m, labels(m) as node_labels LIMIT 10
+Cypher: MATCH (m:Metacognition) RETURN m, labels(m) as node_labels LIMIT 10
 
 Question: "What is emotional regulation?"
-Cypher: MATCH (e:EmotionalRegulation {{domain: "{domain}"}}) RETURN e, labels(e) as node_labels LIMIT 10
+Cypher: MATCH (e:EmotionalRegulation) RETURN e, labels(e) as node_labels LIMIT 10
 
 Question: "How does attention support learning?"
-Cypher: MATCH (a:Attention {{domain: "{domain}"}})-[r:SUPPORTS]->(o:OptimalAttentionalNetworkActivation {{domain: "{domain}"}}) RETURN a, type(r), o, labels(a) as source_labels, labels(o) as target_labels LIMIT 10
+Cypher: MATCH (a:Attention)-[r:SUPPORTS]->(o:OptimalAttentionalNetworkActivation) RETURN a, type(r), o, labels(a) as source_labels, labels(o) as target_labels LIMIT 10
 
 Question: "How does intrinsic motivation enhance executive functions?"
-Cypher: MATCH (i:IntrinsicMotivation {{domain: "{domain}"}})-[r:ENHANCES]->(e:ExecutiveFunctions {{domain: "{domain}"}}) RETURN i, type(r), e, labels(i) as source_labels, labels(e) as target_labels LIMIT 10
+Cypher: MATCH (i:IntrinsicMotivation)-[r:ENHANCES]->(e:ExecutiveFunctions) RETURN i, type(r), e, labels(i) as source_labels, labels(e) as target_labels LIMIT 10
 
 Question: "What does extrinsic motivation reduce?"
-Cypher: MATCH (e:ExtrinsicMotivation {{domain: "{domain}"}})-[r:REDUCES]->(target {{domain: "{domain}"}}) RETURN e, type(r), target, labels(e) as source_labels, labels(target) as target_labels LIMIT 10
+Cypher: MATCH (e:ExtrinsicMotivation)-[r:REDUCES]->(target) RETURN e, type(r), target, labels(e) as source_labels, labels(target) as target_labels LIMIT 10
 
 Question: "What leads to learning development?"
-Cypher: MATCH (source {{domain: "{domain}"}})-[r:LEADS_TO]->(l:LearningDevelopment {{domain: "{domain}"}}) RETURN source, type(r), l, labels(source) as source_labels, labels(l) as target_labels LIMIT 10
+Cypher: MATCH (source)-[r:LEADS_TO]->(l:LearningDevelopment) RETURN source, type(r), l, labels(source) as source_labels, labels(l) as target_labels LIMIT 10
 
 Question: "How does negative stress affect learning?"
-Cypher: MATCH (n:NegativeStressDistress {{domain: "{domain}"}})-[r:UNDERMINES|LEADS_TO]->(target {{domain: "{domain}"}}) RETURN n, type(r), target, labels(n) as source_labels, labels(target) as target_labels LIMIT 10
+Cypher: MATCH (n:NegativeStressDistress)-[r:UNDERMINES|LEADS_TO]->(target) RETURN n, type(r), target, labels(n) as source_labels, labels(target) as target_labels LIMIT 10
 
 Question: "What supports engagement?"
-Cypher: MATCH (source {{domain: "{domain}"}})-[r:SUPPORTS|DRIVES]->(k:KnowledgeConstructionAttention {{domain: "{domain}"}}) RETURN source, type(r), k, labels(source) as source_labels, labels(k) as target_labels LIMIT 10
+Cypher: MATCH (source)-[r:SUPPORTS|DRIVES]->(k:KnowledgeConstructionAttention) RETURN source, type(r), k, labels(source) as source_labels, labels(k) as target_labels LIMIT 10
 
 Question: "How does creativity enhance learning?"
-Cypher: MATCH (c:Creativity {{domain: "{domain}"}})-[r:ENHANCE|FACILITATES]->(target {{domain: "{domain}"}}) RETURN c, type(r), target, labels(c) as source_labels, labels(target) as target_labels LIMIT 10
+Cypher: MATCH (c:Creativity)-[r:ENHANCE|FACILITATES]->(target) RETURN c, type(r), target, labels(c) as source_labels, labels(target) as target_labels LIMIT 10
 
 Question: "What are the positive emotions?"
-Cypher: MATCH (p:PositiveEmotions {{domain: "{domain}"}}) RETURN p, labels(p) as node_labels LIMIT 10
+Cypher: MATCH (p:PositiveEmotions) RETURN p, labels(p) as node_labels LIMIT 10
 
 Question: "How do positive emotions enhance cognition?"
-Cypher: MATCH (p:PositiveEmotions {{domain: "{domain}"}})-[r:ENHANCE|ENHANCES]->(c:CognitiveProcesses {{domain: "{domain}"}}) RETURN p, type(r), c, labels(p) as source_labels, labels(c) as target_labels LIMIT 10
+Cypher: MATCH (p:PositiveEmotions)-[r:ENHANCE|ENHANCES]->(c:CognitiveProcesses) RETURN p, type(r), c, labels(p) as source_labels, labels(c) as target_labels LIMIT 10
 
 Question: "What is the relationship between mindset and learning?"
-Cypher: MATCH (m:Mindset {{domain: "{domain}"}})-[r]->(target {{domain: "{domain}"}}) RETURN m, type(r), target, labels(m) as source_labels, labels(target) as target_labels LIMIT 10
+Cypher: MATCH (m:Mindset)-[r]->(target) RETURN m, type(r), target, labels(m) as source_labels, labels(target) as target_labels LIMIT 10
 
 Question: "Come posso migliorare l'attenzione degli studenti?"
-Cypher: MATCH (a:Attention {{domain: "{domain}"}}) RETURN a, labels(a) as node_labels LIMIT 10
+Cypher: MATCH (a:Attention) RETURN a, labels(a) as node_labels LIMIT 10
 
 Question: "Quali sono i fattori che influenzano la memoria di lavoro?"
-Cypher: MATCH (w:WorkingMemory {{domain: "{domain}"}}) RETURN w, labels(w) as node_labels LIMIT 10
+Cypher: MATCH (w:WorkingMemory) RETURN w, labels(w) as node_labels LIMIT 10
 
 Question: "Come migliorare la motivazione intrinseca?"
-Cypher: MATCH (i:IntrinsicMotivation {{domain: "{domain}"}}) RETURN i, labels(i) as node_labels LIMIT 10
+Cypher: MATCH (i:IntrinsicMotivation) RETURN i, labels(i) as node_labels LIMIT 10
 """
-        # Replace {domain} placeholder with actual domain value
-        return examples.replace("{domain}", domain).strip()
+        return examples.strip()
     
     def _create_few_shot_examples(self) -> str:
         """Create generic few-shot examples (fallback)"""
@@ -534,7 +586,7 @@ Cypher: MATCH (i:IntrinsicMotivation {{domain: "{domain}"}}) RETURN i, labels(i)
             props = match.group(3)
             # Only add domain if not already present
             if 'domain:' not in props and 'domain =' not in props:
-                return f'({var}:{label} {{{props}, domain: "{domain}"}})'
+                return '(' + var + ':' + label + ' {' + props + ', domain: "' + domain + '"})'
             return match.group(0)
         query = re.sub(pattern2, add_domain_to_props, query)
         
@@ -549,10 +601,15 @@ Cypher: MATCH (i:IntrinsicMotivation {{domain: "{domain}"}}) RETURN i, labels(i)
         """
         import re
         
-        # Route to domain-specific repairs
-        if domain == "udl":
+        # Route to domain-specific repairs using domain config
+        domain_config = get_domain_config(domain)
+        if domain_config:
+            query = domain_config.repair_cypher_query(query)
+        elif domain == "udl":
+            # Backward compatibility if config not loaded
             query = self._repair_udl_query(query)
         elif domain == "neuro":
+            # Backward compatibility if config not loaded
             query = self._repair_neuro_query(query)
         
         # Apply common repairs (all domains)
@@ -964,9 +1021,9 @@ Cypher: MATCH (i:IntrinsicMotivation {{domain: "{domain}"}}) RETURN i, labels(i)
                     
                     # Convert to UNION query with domain filter
                     union_query = (
-                        f'MATCH ({var1}:{label1} {{domain: $domain}}) RETURN "{type1}" as type, {var1}.name as name, {var1}.description as description '
-                        f'UNION MATCH ({var2}:{label2} {{domain: $domain}}) RETURN "{type2}" as type, {var2}.name as name, {var2}.description as description '
-                        f'LIMIT 20'
+                        'MATCH (' + var1 + ':' + label1 + ' {domain: $domain}) RETURN "' + type1 + '" as type, ' + var1 + '.name as name, ' + var1 + '.description as description '
+                        'UNION MATCH (' + var2 + ':' + label2 + ' {domain: $domain}) RETURN "' + type2 + '" as type, ' + var2 + '.name as name, ' + var2 + '.description as description '
+                        'LIMIT 20'
                     )
                     logger.info(f"Converted Cartesian product to UNION query for {label1} vs {label2}")
                     return union_query
@@ -1182,7 +1239,7 @@ class Text2CypherPipeline:
         
         # Create simple definition query for the source node
         if domain and domain != "all":
-            fallback = f'MATCH ({var_name}:{label_name} {{domain: "{domain}"}}) RETURN {var_name}.name as name, {var_name}.category as category LIMIT 10'
+            fallback = 'MATCH (' + var_name + ':' + label_name + ' {domain: "' + domain + '"}) RETURN ' + var_name + '.name as name, ' + var_name + '.category as category LIMIT 10'
         else:
             fallback = f'MATCH ({var_name}:{label_name}) RETURN {var_name}.name as name, {var_name}.category as category LIMIT 10'
         

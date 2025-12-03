@@ -10,6 +10,9 @@ from dataclasses import dataclass
 from enum import Enum
 import re
 
+# Import domain configuration system
+from domains import get_domain_config
+
 logger = logging.getLogger(__name__)
 
 class ConfidenceLevel(Enum):
@@ -64,6 +67,25 @@ class PedagogicalKnowledgeBase:
         """
         self.domain = domain
         
+        # ============================================================================
+        # 🧹 CLEANUP TODO: The following dictionaries can be SAFELY REMOVED
+        # after confirming the domain config refactoring works correctly.
+        # 
+        # WHAT TO REMOVE:
+        #   - self.udl_methodology_categories → Now in domains/udl_domain.py → get_methodology_categories()
+        #   - self.neuro_methodology_categories → Now in domains/neuro_domain.py → get_methodology_categories()
+        #   - self.udl_special_needs_mapping → Now in domains/udl_domain.py → get_special_needs_mapping()
+        #   - self.neuro_special_needs_mapping → Now in domains/neuro_domain.py → get_special_needs_mapping()
+        #
+        # NOTE: Currently the code at lines ~219-261 still uses these directly.
+        # Before removing, update the domain selection logic to use domain configs.
+        #
+        # ESTIMATED LINES SAVED: ~180 lines
+        # DATE MARKED: Nov 2025
+        # ============================================================================
+        
+        # 🧹 BACKUP - Can be removed after refactoring is stable.
+        # This logic now exists in: domains/udl_domain.py → get_methodology_categories()
         # UDL-specific methodology categories
         self.udl_methodology_categories = {
             'Cooperative Learning': {
@@ -128,6 +150,8 @@ class PedagogicalKnowledgeBase:
             }
         }
         
+        # 🧹 BACKUP - Can be removed after refactoring is stable.
+        # This logic now exists in: domains/neuro_domain.py → get_methodology_categories()
         # Neuro-specific methodology/concept categories
         self.neuro_methodology_categories = {
             'Working Memory': {
@@ -207,14 +231,21 @@ class PedagogicalKnowledgeBase:
             }
         }
         
-        # Select methodology categories based on domain
-        if domain == "neuro":
+        # Select methodology categories based on domain using domain config
+        domain_config = get_domain_config(domain)
+        if domain_config:
+            self.methodology_categories = domain_config.get_methodology_categories()
+        elif domain == "neuro":
+            # Backward compatibility
             self.methodology_categories = self.neuro_methodology_categories
         elif domain == "all":
+            # Merge both domains
             self.methodology_categories = {**self.udl_methodology_categories, **self.neuro_methodology_categories}
         else:  # default to UDL
             self.methodology_categories = self.udl_methodology_categories
         
+        # 🧹 BACKUP - Can be removed after refactoring is stable.
+        # This logic now exists in: domains/udl_domain.py → get_special_needs_mapping()
         # UDL-specific special needs mapping
         self.udl_special_needs_mapping = {
             'Blind': ['visual_impairment', 'tactile_learning', 'audio_support'],
@@ -227,6 +258,8 @@ class PedagogicalKnowledgeBase:
             'NoPersonalMotivation': ['engagement_strategies', 'relevance_connection', 'choice_provision']
         }
         
+        # 🧹 BACKUP - Can be removed after refactoring is stable.
+        # This logic now exists in: domains/neuro_domain.py → get_special_needs_mapping()
         # Neuro-specific concept mapping
         self.neuro_special_needs_mapping = {
             'Attention': ['focus_support', 'distraction_management', 'engagement_strategies'],
@@ -239,10 +272,15 @@ class PedagogicalKnowledgeBase:
             'Memory': ['encoding_strategies', 'retrieval_practice', 'consolidation_support']
         }
         
-        # Select special needs mapping based on domain
-        if domain == "neuro":
+        # Select special needs mapping based on domain using domain config
+        domain_config_needs = get_domain_config(domain)
+        if domain_config_needs:
+            self.special_needs_mapping = domain_config_needs.get_special_needs_mapping()
+        elif domain == "neuro":
+            # Backward compatibility
             self.special_needs_mapping = self.neuro_special_needs_mapping
         elif domain == "all":
+            # Merge both domains
             self.special_needs_mapping = {**self.udl_special_needs_mapping, **self.neuro_special_needs_mapping}
         else:  # default to UDL
             self.special_needs_mapping = self.udl_special_needs_mapping
