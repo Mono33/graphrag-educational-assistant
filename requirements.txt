@@ -1,7 +1,13 @@
-# Streamlit GraphRAG Requirements
+# GraphRAG Educational Assistant Requirements
 
-# Web Framework
+# Web Frameworks
 streamlit>=1.28.0
+
+# API Framework (for FEM integration)
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+pydantic>=2.0.0
+python-multipart>=0.0.6
 
 # Core dependencies
 langchain>=0.1.0

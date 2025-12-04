@@ -1,0 +1,59 @@
+## CONTESTO DAL KNOWLEDGE GRAPH NEUROSCIENTIFICO
+
+**Contesto Educativo:** {{ educational_context_type }}
+**Profilo Studente:** {{ student_profile }}
+
+### Metodologie Raccomandate
+
+{% for method in primary_methodologies %}
+{{ loop.index }}. **{{ method.name }}** ({{ method.category }})
+   - Rilevanza: {{ "%.2f"|format(method.relevance_score) }}
+   - Confidenza: {{ method.confidence }}
+   - Implementazione: {{ method.implementation_guidance }}
+   {% if method.classroom_applications %}
+   - Applicazioni in classe:
+     {% for app in method.classroom_applications %}
+     • {{ app }}
+     {% endfor %}
+   {% endif %}
+   {% if method.special_considerations %}
+   - Considerazioni speciali:
+     {% for consideration in method.special_considerations %}
+     • {{ consideration }}
+     {% endfor %}
+   {% endif %}
+
+{% endfor %}
+
+{% if supporting_methodologies %}
+### Metodologie di Supporto
+
+{% for method in supporting_methodologies %}
+- **{{ method.name }}** ({{ method.category }}) - Rilevanza: {{ "%.2f"|format(method.relevance_score) }}
+{% endfor %}
+{% endif %}
+
+### Evidenza e Basi Teoriche
+
+{{ evidence_summary }}
+
+### Priorità di Implementazione
+
+{% for priority in implementation_priority %}
+{{ loop.index }}. {{ priority }}
+{% endfor %}
+
+### Livello di Confidenza: {{ confidence_level|upper }}
+
+{% if confidence_level in ['low', 'very_low'] %}
+⚠️ **Nota**: Il livello di confidenza è basso. Si consiglia di consultare uno specialista per raccomandazioni personalizzate.
+{% endif %}
+
+{% if fallback_strategies %}
+### Strategie Alternative
+
+{% for strategy in fallback_strategies %}
+- {{ strategy }}
+{% endfor %}
+{% endif %}
+

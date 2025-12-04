@@ -422,6 +422,7 @@ class HybridGraphRetriever:
                     # Pattern: {name: "Emotions", category: "Affective Processes"}
                     elif 'name' in sample_keys and any(k in sample_keys for k in ['category', 'description']):
                         logger.info(f"[CASE 3 TRIGGERED] Detected fallback scalar results with keys: {sample_keys}")
+                        logger.info(f"[CASE 3] alias_labels extracted: {alias_labels}")  # Debug: show extracted labels
                         for rec in records:
                             row = dict(rec)
                             if 'name' in row:
@@ -487,9 +488,12 @@ class HybridGraphRetriever:
         """
         From patterns like (m:PedagogicalMethodology) or (s:StudentWithSpecialNeeds),
         build {'m': 'PedagogicalMethodology', 's': 'StudentWithSpecialNeeds'}.
+        
+        Now also handles property filters: (t:TeachingPractices {domain: "neuro"})
         """
         alias_labels = {}
-        for alias, label in re.findall(r'\(\s*([A-Za-z_]\w*)\s*:\s*([A-Za-z][A-Za-z0-9_]*)\s*\)', cypher_query):
+        # Updated regex to handle optional property filters {domain: "..."}
+        for alias, label in re.findall(r'\(\s*([A-Za-z_]\w*)\s*:\s*([A-Za-z][A-Za-z0-9_]*)(?:\s*\{[^}]*\})?\s*\)', cypher_query):
             alias_labels[alias] = label
         return alias_labels
 
