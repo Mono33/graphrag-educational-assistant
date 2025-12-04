@@ -75,6 +75,11 @@ Natural Italian Response
    - Real-time pipeline visualization
    - Evidence and comparison views
 
+6. **FastAPI Module** (`api/`) 🆕
+   - REST API for external integrations
+   - Provides structured context for prompt injection
+   - See [API_INTEGRATION_GUIDE.md](API_INTEGRATION_GUIDE.md) for details
+
 ---
 
 ## 🚀 Quick Start
@@ -235,12 +240,18 @@ graphaixlearning/
 ├── config.py                       # Configuration management
 ├── train_node2vec.py               # Node2Vec training
 ├── data_ingestion_neo4j.py         # Neo4j data import
+├── api/                            # 🆕 FastAPI module for integrations
+│   ├── main.py                     # FastAPI app entry point
+│   ├── routes/context.py           # /api/v1/context endpoint
+│   ├── schemas/models.py           # Pydantic models
+│   └── graphrag_client.py          # Helper client for DEV team
 ├── models/                         # Node2Vec models
 │   ├── educational_node2vec_embeddings.npz
 │   ├── educational_node2vec_config.json
 │   └── educational_node2vec.pkl
-├── requirements_streamlit.txt      # Dependencies
+├── requirements.txt                # Dependencies
 ├── .env.example                    # Environment template
+├── API_INTEGRATION_GUIDE.md        # 🆕 API documentation
 └── README.md                       # This file
 ```
 
@@ -295,12 +306,18 @@ All responses are:
 
 ## 🚀 Deployment Options
 
-### 1. Local Development
+### 1. Local Development (Streamlit)
 ```bash
 streamlit run streamlit_app.py
 ```
 
-### 2. Cloud Deployment
+### 2. API Integration (FastAPI) 🆕
+```bash
+uvicorn api.main:app --reload --port 8000
+```
+See [API_INTEGRATION_GUIDE.md](API_INTEGRATION_GUIDE.md) for full documentation.
+
+### 3. Cloud Deployment
 - Use Neo4j Aura for cloud database
 - Deploy Streamlit app to Streamlit Cloud, Heroku, or AWS
 - Contact the development team for deployment guides
@@ -358,7 +375,7 @@ For questions or issues:
 ## 📊 Future Enhancements
 
 - [ ] Multi-language response generation (English, Spanish)
-- [ ] Integration with existing educational agent
+- [x] ~~Integration with existing educational agent~~ ✅ **DONE** (FastAPI module added)
 - [ ] Expanded knowledge graph (500+ concepts)
 - [ ] Student progress tracking
 - [ ] Collaborative filtering for recommendations
