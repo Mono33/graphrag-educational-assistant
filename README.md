@@ -278,7 +278,7 @@ For additional documentation and guides, see the `NOTPUSHED/` folder (local deve
 ## 🧪 Technologies Used
 
 - **[Neo4j](https://neo4j.com/)**: Graph database for knowledge representation
-- **[OpenAI GPT-3.5](https://openai.com/)**: Language model for response generation
+- **[OpenAI GPT-4o](https://openai.com/)**: Language model for response generation
 - **[LangChain](https://langchain.com/)**: LLM application framework
 - **[Streamlit](https://streamlit.io/)**: Web interface framework
 - **[Node2Vec](https://github.com/eliorc/node2vec)**: Graph embedding for semantic search
@@ -359,7 +359,7 @@ For questions or issues:
 
 ## 👥 Authors
 
-- **Louis** - Initial development - [Mono33](https://github.com/Mono33)
+- **Louis Mono, Angelo Casali** - Initial development - [Mono33](https://github.com/Mono33)
 - **FEM-modena Team** - Educational content and validation
 
 ---
