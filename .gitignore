@@ -139,6 +139,12 @@ test_hybrid_translation.py
 generate_connectivity_recommendations.py
 check_*.py
 
+# Migration scripts (local utilities, not for repo)
+export_neo4j_data.py
+import_neo4j_data.py
+MIGRATION_TO_FEM_GUIDE.md
+*_export.json
+
 # Migrations and scripts (not needed for deployment)
 neo4j_migrations/
 scripts/

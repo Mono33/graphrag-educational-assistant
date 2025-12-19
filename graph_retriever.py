@@ -535,6 +535,7 @@ class HybridGraphRetriever:
         Expand nodes with their educational neighbors (structural + vector-based).
         
         Now includes P1 filtering to remove irrelevant structural neighbors.
+        Now includes hop_distance tracking for Graph Coverage metric.
         
         Args:
             nodes: Initial nodes to expand from
@@ -546,29 +547,35 @@ class HybridGraphRetriever:
         seen_node_ids = set()
         
         for node in nodes:
-            # Add the original node
+            # Add the original node (hop_distance=0: direct query match)
             node_id = node.get('id') or node.get('name')
             if node_id and node_id not in seen_node_ids:
+                node['hop_distance'] = 0
+                node['retrieval_stage'] = 'direct_query'
                 expanded_nodes.append(self._normalize_node(node))
                 initial_nodes.append(node)  # Track for filtering
                 seen_node_ids.add(node_id)
             
-            # Get structural neighbors (direct relationships)
+            # Get structural neighbors (direct relationships) - hop_distance=1
             structural_neighbors = self._get_educational_neighbors(node, session)
             for neighbor in structural_neighbors:
                 neighbor_id = neighbor.get('id') or neighbor.get('name')
                 if neighbor_id and neighbor_id not in seen_node_ids:
                     neighbor['source'] = 'structural'
+                    neighbor['hop_distance'] = 1
+                    neighbor['retrieval_stage'] = 'structural_neighbor'
                     expanded_nodes.append(self._normalize_node(neighbor))
                     seen_node_ids.add(neighbor_id)
             
-            # Get vector-based neighbors (semantic similarity)
+            # Get vector-based neighbors (semantic similarity) - hop_distance=2
             if self.node2vec_loaded and self.use_vectors:
                 vector_neighbors = await self._get_vector_neighbors(node, seen_node_ids)
                 for neighbor in vector_neighbors:
                     neighbor_id = neighbor.get('id') or neighbor.get('name')
                     if neighbor_id and neighbor_id not in seen_node_ids:
                         neighbor['source'] = 'vector'
+                        neighbor['hop_distance'] = 2
+                        neighbor['retrieval_stage'] = 'vector_neighbor'
                         expanded_nodes.append(self._normalize_node(neighbor))
                         seen_node_ids.add(neighbor_id)
         
@@ -675,8 +682,11 @@ class HybridGraphRetriever:
             return []
     
     def _normalize_node(self, node: Dict) -> Dict:
-        """Normalize node data for consistent format"""
-        return {
+        """Normalize node data for consistent format
+        
+        Preserves hop_distance and retrieval_stage if present (for Graph Coverage metric).
+        """
+        normalized = {
             'id': node.get('id', ''),
             'name': node.get('name', ''),
             'category': node.get('category', ''),
@@ -685,6 +695,20 @@ class HybridGraphRetriever:
             'rel_type': node.get('rel_type', ''),
             'source_node': node.get('source_node', {})
         }
+        
+        # Preserve hop tracking metadata (backward compatible - only add if present)
+        if 'hop_distance' in node:
+            normalized['hop_distance'] = node['hop_distance']
+        if 'retrieval_stage' in node:
+            normalized['retrieval_stage'] = node['retrieval_stage']
+        if 'source' in node:
+            normalized['source'] = node['source']
+        if 'semantic_score' in node:
+            normalized['semantic_score'] = node['semantic_score']
+        if 'vector_similarity' in node:
+            normalized['vector_similarity'] = node['vector_similarity']
+        
+        return normalized
     
     async def _semantic_search(self, query: str, existing_nodes: List[Dict]) -> List[Dict]:
         """
@@ -754,6 +778,8 @@ class HybridGraphRetriever:
                     if node_details:
                         node_details['semantic_score'] = similarity_score
                         node_details['query_concept'] = concept
+                        node_details['hop_distance'] = 2  # Semantic search = 2 hops
+                        node_details['retrieval_stage'] = 'semantic_search'
                         semantic_nodes.append(self._normalize_node(node_details))
             
             # Sort by semantic score
@@ -806,6 +832,8 @@ class HybridGraphRetriever:
                 for record in result:
                     node = dict(record['n'])
                     node['semantic_score'] = record['relevance_score']
+                    node['hop_distance'] = 2  # Keyword semantic search = 2 hops
+                    node['retrieval_stage'] = 'keyword_semantic'
                     semantic_nodes.append(self._normalize_node(node))
             
             return semantic_nodes
