@@ -6,6 +6,7 @@ AI-powered educational assistant that combines Knowledge Graphs (Neo4j) with Ret
 ![Neo4j](https://img.shields.io/badge/neo4j-5.0+-green.svg)
 ![Streamlit](https://img.shields.io/badge/streamlit-1.28+-red.svg)
 ![OpenAI](https://img.shields.io/badge/openai-GPT--4o-orange.svg)
+![LangGraph](https://img.shields.io/badge/LangGraph-Multi--Agent-purple.svg)
 ![Node2Vec](https://img.shields.io/badge/Node2Vec-Enabled-brightgreen.svg)
 ![Hybrid](https://img.shields.io/badge/Hybrid_Embeddings-Node2Vec+OpenAI-blueviolet.svg)
 
@@ -27,10 +28,16 @@ Get up and running in 5 minutes with our step-by-step guide.
 - **💬 Natural Language Generation**: Produces natural Italian responses tailored for educators
 - **🖥️ Interactive Streamlit Interface**: Beautiful, user-friendly demo for live presentations
 - **📊 Evidence-Based Responses**: All recommendations backed by knowledge graph evidence
+- **🤖 Agentic GraphRAG Mode** 🆕: Multi-agent pipeline for intelligent lesson plan generation
+- **🎯 Intelligent Intent Detection** 🆕: Automatically detects 7 query types (lesson, definition, comparison, etc.)
+- **✍️ Adaptive Content Generation** 🆕: Generates different formats based on query intent
+- **🔄 Quality Control Loop** 🆕: Critic agent reviews and requests revisions automatically
 
 ---
 
 ## 🏗️ Architecture
+
+### Standard GraphRAG Mode
 
 ```
 User Query (Italian/English)
@@ -48,6 +55,46 @@ Response Generator (GPT-4o LLM)
     ↓
 Natural Italian Response
 ```
+
+### 🤖 Agentic GraphRAG Mode (NEW)
+
+Multi-agent pipeline powered by **LangGraph** for intelligent lesson plan generation:
+
+```
+User Query (Italian/English)
+    ↓
+┌────────────────────────────────────────────────────────┐
+│                  AGENTIC PIPELINE                       │
+│                                                         │
+│  ┌──────────────┐    ┌──────────────┐                 │
+│  │   PLANNER    │ →  │  RETRIEVER   │                 │
+│  │ Intent Detection│  │ GraphRAG Search│                │
+│  │ Query Analysis │  │ Knowledge Fetch│                │
+│  └──────────────┘    └──────────────┘                 │
+│         ↓                   ↓                          │
+│  ┌──────────────┐    ┌──────────────┐                 │
+│  │    WRITER    │ ←→ │   CRITIC     │ ←┐              │
+│  │Content Generator│ │Quality Review │  │ Revision    │
+│  │Adaptive Format │  │Score & Decide │  │ Loop        │
+│  └──────────────┘    └──────────────┘──┘              │
+└────────────────────────────────────────────────────────┘
+    ↓
+Generated Content (Lesson Plan / Definition / Comparison / etc.)
+```
+
+#### Query Intent Detection
+
+The Planner Agent automatically classifies queries into 7 intent types:
+
+| Intent | Trigger Examples | Output Format |
+|--------|------------------|---------------|
+| `lesson_creation` | "Crea una lezione sulla memoria" | Full lesson plan |
+| `activity_design` | "Attività di 30 min sulla metacognizione" | Structured activity |
+| `definition` | "Cos'è la neuroplasticità?" | Clear definition |
+| `comparison` | "Differenza tra memoria procedurale e dichiarativa" | Comparison table |
+| `explanation` | "Come funziona l'attenzione selettiva?" | Detailed explanation |
+| `recommendation` | "Quali strategie per studenti con ADHD?" | Strategy list |
+| `list` | "Elenca i tipi di memoria" | Enumerated list |
 
 ### Core Components:
 
@@ -75,11 +122,21 @@ Natural Italian Response
    - Interactive web application
    - Real-time pipeline visualization
    - Evidence and comparison views
+   - **Agent Mode toggle** for lesson generation 🆕
 
-6. **FastAPI Module** (`api/`) 🆕
+6. **FastAPI Module** (`api/`)
    - REST API for external integrations
    - Provides structured context for prompt injection
    - See [API_INTEGRATION_GUIDE.md](API_INTEGRATION_GUIDE.md) for details
+
+7. **Agentic GraphRAG** (`agent/`) 🆕
+   - **Orchestrator** (`orchestrator.py`): Main entry point, clean API
+   - **Planner Agent** (`agents/planner_agent.py`): Query analysis & intent detection
+   - **Retriever Agent** (`agents/retriever_agent.py`): GraphRAG knowledge retrieval
+   - **Writer Agent** (`agents/writer_agent.py`): Adaptive content generation
+   - **Critic Agent** (`agents/critic_agent.py`): Quality review & revision control
+   - **LangGraph Pipeline** (`graph/`): State machine orchestration
+   - **Intent-Specific Prompts** (`prompts/`): Optimized prompts per query type
 
 ---
 
@@ -262,13 +319,78 @@ Sì, ci sono diverse strategie efficaci per studenti con ADHD:
 
 ---
 
+## 🤖 Agent Mode Usage (NEW)
+
+### Using Agent Mode in Streamlit
+
+1. Launch the Streamlit app: `streamlit run streamlit_app.py`
+2. Toggle **"🤖 Modalità Agente"** in the sidebar
+3. Enter your query (lesson request, definition, comparison, etc.)
+4. The multi-agent pipeline will:
+   - Detect your query intent
+   - Search the knowledge graph
+   - Generate appropriate content
+   - Review and refine the output
+
+### Example Agent Queries:
+
+| Query Type | Example | What You Get |
+|------------|---------|--------------|
+| **Lesson Creation** | "Crea una lezione sulla motivazione per studenti con ADHD" | Full structured lesson plan |
+| **Activity Design** | "Attività di 30 minuti sulla metacognizione" | Detailed activity with timing |
+| **Definition** | "Cos'è la neuroplasticità?" | Clear, concise definition |
+| **Comparison** | "Qual è la differenza tra memoria a breve e lungo termine?" | Side-by-side comparison |
+| **Recommendation** | "Quali strategie per studenti con difficoltà di attenzione?" | Actionable strategy list |
+
+### Using Agent Mode Programmatically
+
+```python
+from agent import AgentOrchestrator
+
+# Initialize orchestrator
+orchestrator = AgentOrchestrator(
+    domain="neuro",      # or "udl"
+    language="it",       # or "en"
+    max_revisions=2
+)
+
+# Generate lesson plan (async)
+result = await orchestrator.create_lesson_plan(
+    "Crea una lezione sulla motivazione per studenti con ADHD"
+)
+
+# Access results
+print(result.lesson_plan)       # Generated content
+print(result.approved)          # True if critic approved
+print(result.scores)            # Quality scores
+print(result.query_intent)      # Detected intent type
+```
+
+### Testing the Agent Pipeline
+
+```bash
+# Interactive testing
+python test_agent.py
+
+# With options
+python test_agent.py --domain neuro --language it
+
+# Single query mode
+python test_agent.py --query "Crea una lezione sulla memoria"
+
+# Test intent detection
+python test_intent_detection.py
+```
+
+---
+
 ## 🛠️ Development
 
 ### Project Structure
 
 ```
 graphaixlearning/
-├── streamlit_app.py                # Streamlit interface
+├── streamlit_app.py                # Streamlit interface (with Agent Mode)
 ├── graph_retriever.py              # Hybrid retrieval + Node2Vec
 ├── text2cypher.py                  # Base Text2Cypher
 ├── multilingual_text2cypher.py     # Multilingual support
@@ -277,18 +399,42 @@ graphaixlearning/
 ├── config.py                       # Configuration management
 ├── train_node2vec.py               # Node2Vec training
 ├── data_ingestion_neo4j.py         # Neo4j data import
-├── api/                            # 🆕 FastAPI module for integrations
+│
+├── agent/                          # 🆕 Agentic GraphRAG (Multi-Agent Pipeline)
+│   ├── __init__.py                 # Package exports
+│   ├── orchestrator.py             # Main entry point (AgentOrchestrator)
+│   ├── agents/                     # Individual agents
+│   │   ├── planner_agent.py        # Query analysis & intent detection
+│   │   ├── retriever_agent.py      # GraphRAG knowledge retrieval
+│   │   ├── writer_agent.py         # Adaptive content generation
+│   │   └── critic_agent.py         # Quality review & scoring
+│   ├── graph/                      # LangGraph state machine
+│   │   ├── lesson_planner_graph.py # Pipeline definition
+│   │   ├── nodes.py                # Node implementations
+│   │   └── state.py                # AgentState TypedDict
+│   ├── prompts/                    # Intent-specific prompts
+│   │   ├── planner_prompt.py       # Planning prompts
+│   │   ├── writer_prompt.py        # Writing prompts (7 intents)
+│   │   └── critic_prompt.py        # Critique prompts
+│   └── tools/                      # Agent tools
+│       └── graphrag_tool.py        # GraphRAG wrapper for agents
+│
+├── api/                            # FastAPI module for integrations
 │   ├── main.py                     # FastAPI app entry point
 │   ├── routes/context.py           # /api/v1/context endpoint
 │   ├── schemas/models.py           # Pydantic models
 │   └── graphrag_client.py          # Helper client for DEV team
+│
 ├── models/                         # Node2Vec models
-│   ├── educational_node2vec_embeddings.npz
-│   ├── educational_node2vec_config.json
-│   └── educational_node2vec.pkl
-├── requirements.txt                # Dependencies
+│   ├── neuro_node2vec_embeddings.npz
+│   ├── neuro_node2vec_config.json
+│   └── neuro_node2vec_model.pkl
+│
+├── test_agent.py                   # 🆕 Interactive agent testing CLI
+├── test_intent_detection.py        # 🆕 Intent detection validation
+├── requirements.txt                # Dependencies (includes langgraph)
 ├── .env.example                    # Environment template
-├── API_INTEGRATION_GUIDE.md        # 🆕 API documentation
+├── API_INTEGRATION_GUIDE.md        # API documentation
 └── README.md                       # This file
 ```
 
@@ -317,6 +463,7 @@ For additional documentation and guides, see the `NOTPUSHED/` folder (local deve
 - **[Neo4j](https://neo4j.com/)**: Graph database for knowledge representation
 - **[OpenAI GPT-4o](https://openai.com/)**: Language model for response generation
 - **[LangChain](https://langchain.com/)**: LLM application framework
+- **[LangGraph](https://langchain-ai.github.io/langgraph/)** 🆕: Multi-agent orchestration framework
 - **[Streamlit](https://streamlit.io/)**: Web interface framework
 - **[Node2Vec](https://github.com/eliorc/node2vec)**: Graph embedding for semantic search
 - **[NetworkX](https://networkx.org/)**: Graph analysis library
@@ -411,10 +558,16 @@ For questions or issues:
 
 ## 📊 Future Enhancements
 
+- [x] ~~Integration with existing educational agent~~ ✅ **DONE** (FastAPI module)
+- [x] ~~Agentic GraphRAG multi-agent pipeline~~ ✅ **DONE** (LangGraph + 4 agents)
+- [x] ~~Intelligent query intent detection~~ ✅ **DONE** (7 intent types)
+- [x] ~~Adaptive content generation~~ ✅ **DONE** (Lesson, definition, comparison, etc.)
+- [x] ~~Quality control with revision loop~~ ✅ **DONE** (Critic agent + scoring)
 - [ ] Multi-language response generation (English, Spanish)
-- [x] ~~Integration with existing educational agent~~ ✅ **DONE** (FastAPI module added)
 - [ ] Expanded knowledge graph (500+ concepts)
 - [ ] Student progress tracking
+- [ ] Persistent memory for teacher interactions
+- [ ] Streaming response generation
 - [ ] Collaborative filtering for recommendations
 - [ ] Mobile-responsive interface
 
