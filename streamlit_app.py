@@ -533,6 +533,353 @@ def generate_filename(query: str, domain: str, format: str) -> str:
     filename = f"risposta_{domain_code}_{query_slug}_{timestamp}.{format}"
     return filename
 
+def render_agent_mode():
+    """
+    Render the Agent Mode UI - Lesson Plan Generator
+    
+    This function provides a complete UI for generating lesson plans
+    using the multi-agent pipeline: Planner → Retriever → Writer → Critic
+    """
+    st.header("🎓 Agent Mode: Lesson Plan Generator")
+    
+    st.markdown("""
+    **Genera piani di lezione completi** basati sul Knowledge Graph.
+    
+    Il sistema utilizza una pipeline multi-agente:
+    1. **Planner**: Analizza la tua richiesta e crea un piano di ricerca
+    2. **Retriever**: Recupera conoscenze dal Knowledge Graph
+    3. **Writer**: Genera il piano di lezione strutturato
+    4. **Critic**: Valuta la qualità e richiede revisioni se necessario
+    """)
+    
+    st.divider()
+    
+    # Domain and Language selectors for Agent mode
+    col1, col2 = st.columns(2)
+    with col1:
+        agent_domain = st.selectbox(
+            "📚 Dominio:",
+            ["neuro", "udl"],
+            index=0,
+            format_func=lambda x: "Neuro (Neuroscience)" if x == "neuro" else "UDL (Universal Design)",
+            key="agent_domain"
+        )
+    with col2:
+        agent_language = st.selectbox(
+            "🌍 Lingua output:",
+            ["it", "en"],
+            index=0,
+            format_func=lambda x: "Italiano 🇮🇹" if x == "it" else "English 🇬🇧",
+            key="agent_language"
+        )
+    
+    # Query input
+    st.markdown("### 📝 Descrivi la lezione che vuoi creare")
+    
+    agent_query = st.text_area(
+        "La tua richiesta:",
+        placeholder="Es: Crea una lezione di 45 minuti sulla metacognizione per studenti delle scuole superiori",
+        height=120,
+        key="agent_query_input",
+        help="Descrivi in dettaglio cosa vuoi: argomento, livello scolastico, durata, obiettivi specifici..."
+    )
+    
+    # Example queries
+    with st.expander("💡 Esempi di richieste", expanded=False):
+        st.markdown("""
+        **Lezioni complete:**
+        - "Crea una lezione di 45 minuti sulla metacognizione per studenti delle scuole superiori"
+        - "Progetta un'attività didattica sul growth mindset per bambini della scuola primaria"
+        
+        **Strategie specifiche:**
+        - "Come insegnare le strategie di memoria di lavoro agli studenti con difficoltà di apprendimento?"
+        - "Progetta un'unità didattica sull'attenzione e le funzioni esecutive per adolescenti con ADHD"
+        
+        **Quiz e valutazioni:**
+        - "Crea un quiz formativo sulla neuroplasticità per studenti universitari"
+        - "Progetta una verifica sulla regolazione emotiva con domande a risposta aperta"
+        """)
+    
+    # Generate button
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        generate_button = st.button(
+            "🚀 Genera Piano di Lezione",
+            type="primary",
+            use_container_width=True,
+            key="agent_generate_btn"
+        )
+    
+    # ═══════════════════════════════════════════════════════════════════════════
+    # PHASE 3: Handle upsell query (user clicked "Crea una lezione" button)
+    # ═══════════════════════════════════════════════════════════════════════════
+    upsell_query = st.session_state.get('agent_upsell_query')
+    if upsell_query:
+        # Show info about the conversion
+        upsell_type = st.session_state.get('agent_upsell_type', 'lesson')
+        type_emoji = "📚" if upsell_type == 'lesson' else "🎯"
+        type_label = "lezione completa" if upsell_type == 'lesson' else "attività pratica"
+        
+        st.info(f"{type_emoji} **Conversione in corso!** Sto generando una {type_label} basata sulla tua domanda precedente...")
+        
+        # Clear the upsell query from session state
+        del st.session_state['agent_upsell_query']
+        if 'agent_upsell_type' in st.session_state:
+            del st.session_state['agent_upsell_type']
+        
+        # Process the upsell query
+        _process_agent_query(upsell_query, agent_domain, agent_language)
+    # ═══════════════════════════════════════════════════════════════════════════
+    
+    # Process query (manual input)
+    if generate_button and agent_query.strip():
+        _process_agent_query(agent_query, agent_domain, agent_language)
+    
+    # Display results if available
+    if 'agent_result' in st.session_state and st.session_state['agent_result']:
+        _display_agent_results()
+
+
+def _process_agent_query(query: str, domain: str, language: str):
+    """Process query through the Agent pipeline"""
+    import asyncio
+    
+    # Show progress
+    progress_container = st.container()
+    
+    with progress_container:
+        st.markdown("### ⏳ Generazione in corso...")
+        
+        # Progress steps
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        try:
+            # Import the orchestrator
+            from agent.orchestrator import AgentOrchestrator
+            
+            # Step 1: Initialize
+            status_text.markdown("🔧 **Inizializzazione agenti...**")
+            progress_bar.progress(10)
+            
+            # Domain and language are passed to constructor, not to create_lesson_plan
+            orchestrator = AgentOrchestrator(
+                domain=domain,
+                language=language,
+                max_revisions=2
+            )
+            
+            # Step 2: Planning
+            status_text.markdown("📋 **Planner Agent**: Analisi della richiesta...")
+            progress_bar.progress(25)
+            
+            # Step 3: Execute pipeline (async)
+            status_text.markdown("🔍 **Retriever Agent**: Ricerca nel Knowledge Graph...")
+            progress_bar.progress(40)
+            
+            # Run the async orchestrator
+            result = asyncio.run(
+                orchestrator.create_lesson_plan(query=query)
+            )
+            
+            # Step 4: Writing
+            status_text.markdown("✍️ **Writer Agent**: Generazione piano di lezione...")
+            progress_bar.progress(70)
+            
+            # Step 5: Critique
+            status_text.markdown("🔬 **Critic Agent**: Valutazione qualità...")
+            progress_bar.progress(90)
+            
+            # Complete
+            progress_bar.progress(100)
+            
+            if result.success:
+                status_text.markdown("✅ **Completato!** Piano di lezione generato con successo.")
+            else:
+                status_text.markdown(f"⚠️ **Completato con avvisi**: {result.error or 'Vedi dettagli sotto'}")
+            
+            # Store result in session state
+            st.session_state['agent_result'] = result
+            st.session_state['agent_query'] = query
+            
+            # Force rerun to display results
+            time.sleep(0.5)
+            st.rerun()
+            
+        except Exception as e:
+            progress_bar.progress(100)
+            status_text.markdown(f"❌ **Errore**: {str(e)}")
+            logger.error(f"Agent pipeline error: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            st.error(f"Si è verificato un errore: {str(e)}")
+
+
+def _is_lesson_intent(intent: str) -> bool:
+    """Check if the intent is a lesson-type (not eligible for upsell)"""
+    lesson_intents = {"lesson_creation", "activity_design", "assessment", "unit_plan"}
+    return intent in lesson_intents
+
+
+def _get_content_type_label(intent: str) -> str:
+    """Get Italian label for the content type based on intent"""
+    labels = {
+        "definition": "Definizione",
+        "comparison": "Confronto",
+        "explanation": "Spiegazione",
+        "recommendation": "Raccomandazioni",
+        "list": "Elenco",
+        "lesson_creation": "Piano di Lezione",
+        "activity_design": "Attività"
+    }
+    return labels.get(intent, "Contenuto")
+
+
+def _display_agent_results():
+    """Display Agent mode results"""
+    result = st.session_state.get('agent_result')
+    query = st.session_state.get('agent_query', '')
+    
+    if not result:
+        return
+    
+    st.divider()
+    
+    # Get intent for display and upsell logic
+    query_intent = getattr(result, 'query_intent', 'lesson_creation') or 'lesson_creation'
+    key_concepts = getattr(result, 'key_concepts', []) or []
+    content_type_label = _get_content_type_label(query_intent)
+    
+    # Results header with status - adapt title based on intent
+    col1, col2, col3 = st.columns([2, 1, 1])
+    with col1:
+        if _is_lesson_intent(query_intent):
+            st.markdown("## 📄 Piano di Lezione Generato")
+        else:
+            st.markdown(f"## 📄 {content_type_label} Generata")
+    with col2:
+        if result.approved:
+            st.success("✅ Approvato")
+        else:
+            st.warning("⚠️ Non approvato")
+    with col3:
+        st.metric("Revisioni", result.revision_count)
+    
+    # Tabs for different views
+    tab1, tab2, tab3 = st.tabs(["📝 Piano di Lezione", "📊 Metriche", "🔍 Dettagli"])
+    
+    with tab1:
+        if result.lesson_plan:
+            # Display the lesson plan in markdown
+            st.markdown(result.lesson_plan)
+            
+            # ═══════════════════════════════════════════════════════════════════════
+            # PHASE 3: UPSELL BUTTONS - Show for non-lesson intents
+            # ═══════════════════════════════════════════════════════════════════════
+            if not _is_lesson_intent(query_intent) and key_concepts:
+                st.divider()
+                st.markdown("### 💡 Vuoi approfondire?")
+                st.caption("Trasforma questa risposta in materiale didattico strutturato:")
+                
+                upsell_col1, upsell_col2 = st.columns(2)
+                
+                # Generate concept string for the new query
+                concepts_str = ", ".join(key_concepts[:3])  # Limit to first 3 concepts
+                
+                with upsell_col1:
+                    if st.button(
+                        "📚 Crea una lezione completa",
+                        use_container_width=True,
+                        key="upsell_lesson_btn",
+                        help=f"Genera un piano di lezione completo su: {concepts_str}"
+                    ):
+                        # Store the new query and trigger re-processing
+                        new_query = f"Crea una lezione su {concepts_str}"
+                        st.session_state['agent_upsell_query'] = new_query
+                        st.session_state['agent_upsell_type'] = 'lesson'
+                        # Clear previous result to show loading
+                        del st.session_state['agent_result']
+                        st.rerun()
+                
+                with upsell_col2:
+                    if st.button(
+                        "🎯 Crea un'attività pratica",
+                        use_container_width=True,
+                        key="upsell_activity_btn",
+                        help=f"Genera un'attività didattica su: {concepts_str}"
+                    ):
+                        new_query = f"Progetta un'attività pratica su {concepts_str}"
+                        st.session_state['agent_upsell_query'] = new_query
+                        st.session_state['agent_upsell_type'] = 'activity'
+                        del st.session_state['agent_result']
+                        st.rerun()
+            # ═══════════════════════════════════════════════════════════════════════
+            
+            # Download button
+            st.divider()
+            col1, col2 = st.columns(2)
+            with col1:
+                timestamp = time.strftime("%Y%m%d_%H%M%S")
+                # Adapt filename based on intent
+                file_prefix = "lesson_plan" if _is_lesson_intent(query_intent) else query_intent
+                st.download_button(
+                    label="📥 Scarica (Markdown)",
+                    data=result.lesson_plan,
+                    file_name=f"{file_prefix}_{timestamp}.md",
+                    mime="text/markdown",
+                    use_container_width=True
+                )
+            with col2:
+                # Clear result button
+                if st.button("🗑️ Nuova Richiesta", use_container_width=True):
+                    del st.session_state['agent_result']
+                    st.rerun()
+        else:
+            st.warning("Nessun piano di lezione generato.")
+            if result.error:
+                st.error(f"Errore: {result.error}")
+    
+    with tab2:
+        st.markdown("### 📊 Metriche di Qualità")
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("📦 Nodi Utilizzati", result.nodes_used)
+        with col2:
+            st.metric("💡 Raccomandazioni", result.recommendations_used)
+        with col3:
+            approved_emoji = "✅" if result.approved else "❌"
+            st.metric("Stato", f"{approved_emoji} {'Approvato' if result.approved else 'Non Approvato'}")
+        
+        # Scores breakdown
+        if result.scores:
+            st.markdown("#### Punteggi Critic Agent")
+            scores_df = pd.DataFrame([
+                {"Criterio": k.title(), "Punteggio": f"{v}/5"} 
+                for k, v in result.scores.items()
+            ])
+            st.dataframe(scores_df, use_container_width=True, hide_index=True)
+        
+        # Critique summary
+        if result.critique_summary:
+            st.markdown("#### 💬 Feedback del Critic Agent")
+            st.info(result.critique_summary)
+    
+    with tab3:
+        st.markdown("### 🔍 Dettagli Pipeline")
+        
+        st.markdown(f"**Query originale:** {query}")
+        st.markdown(f"**Successo:** {'✅ Sì' if result.success else '❌ No'}")
+        st.markdown(f"**Revisioni effettuate:** {result.revision_count}")
+        
+        if result.error:
+            st.error(f"**Errore:** {result.error}")
+        
+        # Show full result as JSON (collapsible)
+        with st.expander("🔧 Dati grezzi (JSON)", expanded=False):
+            st.json(result.to_dict())
+
+
 def main():
     """Main Streamlit app"""
     
@@ -550,6 +897,18 @@ def main():
     
     # Sidebar
     with st.sidebar:
+        # === MODE SELECTOR (NEW) ===
+        st.header("🎯 Modalità")
+        app_mode = st.radio(
+            "Seleziona modalità:",
+            ["GraphRAG", "Agent (Lesson Planner)"],
+            index=0,  # Default: GraphRAG
+            help="**GraphRAG**: Ricerca nel Knowledge Graph con contesto e raccomandazioni.\n\n**Agent**: Generazione automatica di piani di lezione completi.",
+            key="app_mode_selector"
+        )
+        
+        st.divider()
+        
         st.header("📚 Informazioni")
         st.markdown("""
         ### 🔍 Come funziona
@@ -578,6 +937,34 @@ def main():
         - **LangChain** (Orchestration)
         - **Streamlit** (Interface)
         """)
+        
+        # Embedding Mode indicator
+        st.divider()
+        st.markdown("### 🔬 Ricerca Semantica")
+        
+        # Get current embedding mode from config
+        try:
+            from config import config as app_config
+            embedding_mode = getattr(app_config.embedding, 'mode', 'node2vec')
+            node2vec_weight = getattr(app_config.embedding, 'node2vec_weight', 0.4)
+            semantic_weight = 1 - node2vec_weight
+        except:
+            embedding_mode = "node2vec"
+            node2vec_weight = 1.0
+            semantic_weight = 0.0
+        
+        if embedding_mode == "hybrid_semantic":
+            st.success("🔀 **Modalità Ibrida**")
+            st.markdown(f"""
+            - **Node2Vec**: struttura del grafo ({node2vec_weight*100:.0f}%)
+            - **OpenAI Embeddings**: significato testuale ({semantic_weight*100:.0f}%)
+            """)
+        else:
+            st.info("📊 **Modalità Node2Vec**")
+            st.markdown("""
+            - Ricerca basata sulla struttura del grafo
+            - Trova concetti simili per connessioni
+            """)
         
         st.divider()
         
@@ -665,6 +1052,21 @@ def main():
                 )
         else:
             st.info("Nessuna metrica disponibile. Esegui una query per iniziare il tracking.")
+    
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # MAIN AREA - MODE-DEPENDENT CONTENT
+    # ═══════════════════════════════════════════════════════════════════════════════
+    
+    if app_mode == "Agent (Lesson Planner)":
+        # ╔════════════════════════════════════════════════════════════════════════╗
+        # ║  AGENT MODE - LESSON PLAN GENERATOR                                     ║
+        # ╚════════════════════════════════════════════════════════════════════════╝
+        render_agent_mode()
+        return  # Exit main() early - Agent mode has its own complete UI
+    
+    # ╔════════════════════════════════════════════════════════════════════════════╗
+    # ║  GRAPHRAG MODE - ALL EXISTING CODE BELOW (100% UNCHANGED)                   ║
+    # ╚════════════════════════════════════════════════════════════════════════════╝
     
     # Domain selector (moved before initialization for domain-specific loading)
     st.header("💬 Fai una Domanda")
@@ -958,6 +1360,23 @@ def main():
         with tab4:
             st.markdown("### 📈 Comparison: Hybrid vs Graph-Only")
             
+            # Show current embedding mode
+            try:
+                from config import config as app_config
+                embedding_mode = getattr(app_config.embedding, 'mode', 'node2vec')
+                node2vec_weight = getattr(app_config.embedding, 'node2vec_weight', 0.4)
+                semantic_weight = 1 - node2vec_weight
+            except:
+                embedding_mode = "node2vec"
+                node2vec_weight = 1.0
+                semantic_weight = 0.0
+            
+            # Mode indicator badge
+            if embedding_mode == "hybrid_semantic":
+                st.success(f"🔀 **Hybrid Mode** (α={node2vec_weight:.0%} Node2Vec, β={semantic_weight:.0%} OpenAI)")
+            else:
+                st.info("📊 **Node2Vec Mode** (struttura grafo)")
+            
             retrieval_result = result.get('retrieval_result')
             if retrieval_result:
                 metadata = retrieval_result.metadata
@@ -978,9 +1397,9 @@ def main():
                 
                 with col2:
                     st.metric(
-                        "Semantic Nodes (Node2Vec)",
+                        "Semantic Nodes",
                         metadata.get('semantic_count', 0),
-                        help="Additional nodes from semantic search"
+                        help="Additional nodes from semantic/vector search (scored by both Node2Vec and OpenAI in hybrid mode)"
                     )
                     st.metric(
                         "Relationships",
@@ -988,12 +1407,20 @@ def main():
                         help="Total relationships retrieved"
                     )
                 
-                st.markdown("""
-                **💡 Hybrid Retrieval Benefits:**
-                - 🎯 **Precision**: Direct graph relationships (exact matches)
-                - 🔍 **Breadth**: Node2Vec semantic similarity (related concepts)
-                - 🚀 **Coverage**: Neighbor expansion (contextual information)
-                """)
+                if embedding_mode == "hybrid_semantic":
+                    st.markdown(f"""
+                    **💡 Hybrid Retrieval ({node2vec_weight:.0%}/{semantic_weight:.0%}):**
+                    - 🎯 **Graph Structure** ({node2vec_weight:.0%}): Node2Vec cattura relazioni nel grafo
+                    - 🔍 **Text Semantics** ({semantic_weight:.0%}): OpenAI cattura significato testuale
+                    - 🚀 **Combined Score**: `α × Node2Vec + β × OpenAI`
+                    """)
+                else:
+                    st.markdown("""
+                    **💡 Node2Vec Retrieval:**
+                    - 🎯 **Precision**: Direct graph relationships (exact matches)
+                    - 🔍 **Breadth**: Node2Vec semantic similarity (related concepts)
+                    - 🚀 **Coverage**: Neighbor expansion (contextual information)
+                    """)
             else:
                 st.warning("No comparison data available")
 

@@ -89,6 +89,13 @@ htmlcov/
 .gradio/
 flagged/
 
+# Agent generated outputs (lesson plans, activities)
+lesson_plan_*.md
+activity_*.md
+
+# Embeddings cache (auto-regenerated)
+models/embeddings_cache/
+
 # Neo4j data (if running locally)
 neo4j_data/
 .neo4j/
@@ -142,6 +149,7 @@ check_*.py
 # Migration scripts (local utilities, not for repo)
 export_neo4j_data.py
 import_neo4j_data.py
+check_new_labels.py
 MIGRATION_TO_FEM_GUIDE.md
 *_export.json
 

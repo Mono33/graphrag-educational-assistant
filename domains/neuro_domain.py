@@ -38,85 +38,286 @@ class NeuroDomainConfig(BaseDomainConfig):
     # ============================================================
     
     def get_node2vec_weights(self) -> Dict[str, float]:
-        """Neuro Node2Vec label weights - based on neuro_audit_report.json"""
+        """Neuro Node2Vec label weights - HYBRID approach (Dec 2025)
+        
+        Formula: 1.0 + log10(nodes)*0.3 + log10(connectivity+1)*0.2
+        Boost: +0.2 for conceptually important labels (marked with ★)
+        
+        Verified against actual graph data via check_new_labels.py
+        """
         return {
-            # TOP 10 MOST FREQUENT LABELS
-            'Attention': 2.2,                    # 22 nodes, hub node
-            'CriticalThinking': 2.0,             # 15 nodes
-            'ExtrinsicMotivation': 1.9,          # 14 nodes
-            'ExecutiveFunctions': 2.1,           # 12 nodes, high connectivity
-            'IntrinsicMotivation': 2.0,          # 11 nodes
-            'LearningOutcomes': 1.8,             # 10 nodes
-            'TeachingPractices': 1.8,            # 10 nodes
-            'LearningDevelopment': 1.7,          # 9 nodes
-            'NegativeStressDistress': 1.7,       # 9 nodes, high out-degree
-            'Motivation': 1.6,                   # 8 nodes
+            # =====================================================
+            # TOP LABELS (high node count + connectivity)
+            # =====================================================
+            'Attention': 1.95,               # 23 nodes, 57 rels → 1.76 + ★boost
+            'CriticalThinking': 1.85,        # 16 nodes, 26 rels → 1.65 + ★boost
+            'ExtrinsicMotivation': 1.7,      # 14 nodes, 40 rels → 1.67
+            'ExecutiveFunctions': 1.85,      # 12 nodes, 45 rels → 1.66 + ★boost
+            'IntrinsicMotivation': 1.8,      # 11 nodes, 34 rels → 1.62 + ★boost
+            'LearningOutcomes': 1.55,        # 11 nodes, 12 rels → 1.54
+            'TeachingPractices': 1.8,        # 14 nodes, 22 rels → 1.62 + ★boost
+            'LearningDevelopment': 1.7,      # 9 nodes, 20 rels → 1.55 + ★boost
+            'NegativeStressDistress': 1.6,   # 9 nodes, 33 rels → 1.59
+            'Motivation': 1.6,               # 9 nodes, 31 rels → 1.59
             
-            # HUB NODES (high connectivity)
-            'CognitiveFlexibility': 2.0,
-            'KnowledgeConstructionAttention': 1.9,
-            'PrefrontalCortexActivation': 1.9,
-            'OptimalAttentionalNetworkActivation': 1.8,
+            # =====================================================
+            # HUB NODES (conceptually important, few nodes but high connectivity)
+            # =====================================================
+            'CognitiveFlexibility': 1.45,    # 1 node, 15 rels → 1.24 + ★boost
+            'KnowledgeConstructionAttention': 1.45,  # 1 node, 14 rels → 1.24 + ★boost
+            'PrefrontalCortexActivation': 1.45,      # 1 node, 13 rels → 1.23 + ★boost
+            'OptimalAttentionalNetworkActivation': 1.4,  # 1 node, 9 rels → 1.20 + ★boost
             
-            # AUTHORITY NODES (learning targets)
-            'Creativity': 1.8,
-            'Memory': 1.7,
-            'MemoryEncoding': 1.6,
-            'MemorySystems': 1.6,
+            # =====================================================
+            # MEMORY & LEARNING
+            # =====================================================
+            'Creativity': 1.6,               # 7 nodes, 40 rels → 1.58
+            'Memory': 1.5,                   # 6 nodes, 17 rels → 1.48
+            'MemoryEncoding': 1.2,           # 1 node, 8 rels → 1.19
+            'MemorySystems': 1.2,            # 1 node, 9 rels → 1.20
+            'WorkingMemory': 1.65,           # 6 nodes, 11 rels → 1.45 + ★boost
+            'LongTermMemory': 1.3,           # 2 nodes, 10 rels → 1.30
+            'Consolidation': 1.1,            # 1 node, 2 rels → 1.10
             
-            # CRITICAL COGNITIVE PROCESSES
-            'WorkingMemory': 1.7,
-            'Metacognition': 1.6,
-            'SelfRegulation': 1.5,
-            'CognitiveControl': 1.6,
-            'CognitiveProcesses': 1.6,
+            # =====================================================
+            # COGNITIVE PROCESSES
+            # =====================================================
+            'Metacognition': 1.75,           # 12 nodes, 12 rels → 1.55 + ★boost
+            'SelfRegulation': 1.35,          # 4 nodes, 5 rels → 1.34
+            'CognitiveControl': 1.45,        # 7 nodes, 8 rels → 1.44
+            'CognitiveProcesses': 1.45,      # 4 nodes, 17 rels → 1.43
+            'HigherOrderThinking': 1.35,     # 3 nodes, 10 rels → 1.35
+            'LowerOrderThinking': 1.3,       # 3 nodes, 5 rels → 1.30
+            'ProblemSolving': 1.3,           # 3 nodes, 3 rels → 1.26
+            'ReflectiveThinking': 1.1,       # 1 node, 2 rels → 1.10
             
+            # =====================================================
             # AFFECTIVE & MOTIVATIONAL
-            'EmotionalRegulation': 1.6,
-            'EmotionalWellBeing': 1.4,
-            'PositiveEmotions': 1.6,
-            'NegativeEmotions': 1.5,
-            'AffectiveProcesses': 1.5,
+            # =====================================================
+            'EmotionalRegulation': 1.55,     # 8 nodes, 18 rels → 1.53
+            'EmotionalWellBeing': 1.4,       # 6 nodes, 6 rels → 1.40
+            'PositiveEmotions': 1.55,        # 7 nodes, 25 rels → 1.54
+            'NegativeEmotions': 1.5,         # 7 nodes, 20 rels → 1.52
+            'AffectiveProcesses': 1.4,       # 3 nodes, 13 rels → 1.37
+            'AffectiveMotivationalModulation': 1.2,  # CORRECT label name
+            'AffectiveMotivationalProcesses': 1.2,   # Additional label found
             
+            # =====================================================
             # MINDSET & GROWTH
-            'GrowthMindset': 1.7,
-            'FixedMindset': 1.5,
-            'Mindset': 1.6,
+            # =====================================================
+            'GrowthMindset': 1.65,           # 5 nodes, 15 rels → 1.45 + ★boost
+            'FixedMindset': 1.4,             # 4 nodes, 10 rels → 1.39
+            'Mindset': 1.4,                  # 2 nodes, 29 rels → 1.39
             
+            # =====================================================
             # STRESS & COPING
-            'PositiveStressEustress': 1.6,
-            'StressResponse': 1.5,
-            'LongTermGrowth': 1.5,
-            'LongTermDecline': 1.4,
-            'AdaptiveCoping': 1.4,
-            'MaladaptiveCoping': 1.4,
+            # =====================================================
+            'PositiveStressEustress': 1.5,   # 7 nodes, 17 rels → 1.50
+            'StressResponse': 1.3,           # 3 nodes, 3 rels → 1.26
+            'LongTermGrowth': 1.3,           # 2 nodes, 8 rels → 1.28
+            'LongTermDecline': 1.25,         # 2 nodes, 6 rels → 1.26
+            'AdaptiveCoping': 1.1,           # 1 node, 1 rel → 1.06
+            'MaladaptiveCoping': 1.3,        # 3 nodes, 5 rels → 1.30
+            'Resilience': 1.1,               # 1 node, 1 rel → 1.06
+            'Vulnerability': 1.3,            # 3 nodes, 4 rels → 1.28
             
+            # =====================================================
             # SOCIAL & COMMUNICATION
-            'SocialCognition': 1.5,
-            'SocialLearning': 1.4,
-            'Communication': 1.4,
+            # =====================================================
+            'SocialCognition': 1.5,          # 7 nodes, 17 rels → 1.50
+            'SocialLearning': 1.45,          # 6 nodes, 9 rels → 1.43
+            'Communication': 1.5,            # 7 nodes, 11 rels → 1.47
             
+            # =====================================================
             # EDUCATIONAL OUTCOMES
-            'LearningEngagement': 1.5,
-            'LearningPerformance': 1.6,
-            'EducationalSupport': 1.5,
+            # =====================================================
+            'LearningEngagement': 1.3,       # 3 nodes, 3 rels → 1.26
+            'LearningPerformance': 1.55,     # 9 nodes, 19 rels → 1.55
+            'EducationalSupport': 1.5,       # 7 nodes, 17 rels → 1.50
+            'LearningProgress': 1.2,         # CORRECT label name (was LearningProcess)
             
-            # ADDITIONAL IMPORTANT
-            'HigherOrderThinking': 1.5,
-            'LowerOrderThinking': 1.3,
-            'ProblemSolving': 1.4,
-            'LongTermMemory': 1.5,
-            'PersonalGrowth': 1.4,
-            'Strengths': 1.4,
-            'CognitiveStrengths': 1.4,
-            'ReflectiveThinking': 1.3,
-            'Consolidation': 1.3,
-            'MotivationalModulation': 1.3,
-            'BrainAdaptability': 1.4,
-            'Vulnerability': 1.3,
-            'Resilience': 1.5,
-            'CognitiveBias': 1.3
+            # =====================================================
+            # ADDITIONAL LABELS
+            # =====================================================
+            'PersonalGrowth': 1.4,           # 4 nodes, 8 rels → 1.37
+            'Strengths': 1.45,               # 6 nodes, 10 rels → 1.44
+            'CognitiveStrengths': 1.35,      # 4 nodes, 6 rels → 1.35
+            'BrainAdaptability': 1.1,        # 1 node, 2 rels → 1.10
+            'CognitiveBias': 1.1,            # 1 node, 2 rels → 1.10
+            
+            # =====================================================
+            # NEW LABELS (Dec 2025) - Q2/Q3/Q5 queries
+            # =====================================================
+            
+            # Learning Strategies (Q3: Spaced learning, interleaving)
+            'Learningstrategies': 1.55,      # 10 nodes, 14 rels → 1.54
+            'LearningStrategies': 1.1,       # 1 node, 1 rel → 1.06 (case variant)
+            'DistributedPracticeEffect': 1.1,  # 1 node, 1 rel → 1.06
+            'LongTermLearning': 1.2,         # 2 nodes, 2 rels → 1.19
+            
+            # Assessment & Evaluation (Q5: Multiple-choice tests)
+            'Assessment': 1.5,               # 10 nodes, 10 rels → 1.51
+            'Evaluation': 1.1,               # 1 node, 2 rels → 1.10
+            'KnowledgeOfCognition': 1.1,     # 1 node, 1 rel → 1.06
+            
+            # Brain Lateralization / Neuromyths (Q2)
+            'HemisphericSpecialization': 1.1,  # 1 node, 2 rels → 1.10
+            'Educationalmyths': 1.15,        # 1 node, 4 rels → 1.14
+            'CognitiveNeuroscience': 1.2,    # 2 nodes, 2 rels → 1.19
+            'NeurodevelopmentalLinks': 1.2,  # 2 nodes, 2 rels → 1.19
+            
+            # Neuroplasticity & Brain Function
+            'Neuroplasticity': 1.2,          # 2 nodes, 2 rels → 1.19
+            'Brainfunction': 1.2,            # 2 nodes, 2 rels → 1.19
+            
+            # Comorbidities & Special Needs
+            'Comorbidities': 1.1,            # 1 node, 2 rels → 1.10
+            'LearningStyles': 1.1            # 1 node, 1 rel → 1.06
         }
+    
+    # ============================================================
+    # VALID METHODOLOGY LABELS (for context_builder.py filtering)
+    # ============================================================
+    
+    def get_valid_methodology_labels(self) -> List[str]:
+        """Labels that should be accepted as valid methodologies/concepts.
+        
+        Used by context_builder.py to filter nodes for recommendations.
+        
+        IMPORTANT: When adding new data with new labels, add them here!
+        This is the single source of truth for valid neuro domain labels.
+        
+        Returns:
+            List of label strings that are valid for neuro domain
+        """
+        return [
+            # =====================================================
+            # CORE COGNITIVE PROCESSES (most frequent in graph)
+            # =====================================================
+            'Attention', 'CriticalThinking', 'ExtrinsicMotivation', 'ExecutiveFunctions',
+            'IntrinsicMotivation', 'LearningOutcomes', 'TeachingPractices', 'LearningDevelopment',
+            'NegativeStressDistress', 'Motivation',
+            
+            # =====================================================
+            # HUB NODES (high connectivity)
+            # =====================================================
+            'CognitiveFlexibility', 'KnowledgeConstructionAttention', 'PrefrontalCortexActivation',
+            'OptimalAttentionalNetworkActivation',
+            
+            # =====================================================
+            # AUTHORITY NODES (key outcomes)
+            # =====================================================
+            'Creativity', 'Memory', 'MemoryEncoding', 'MemorySystems',
+            
+            # =====================================================
+            # CRITICAL COGNITIVE PROCESSES
+            # =====================================================
+            'WorkingMemory', 'Metacognition', 'SelfRegulation', 'CognitiveControl', 'CognitiveProcesses',
+            
+            # =====================================================
+            # AFFECTIVE & MOTIVATIONAL
+            # =====================================================
+            'EmotionalRegulation', 'EmotionalWellBeing', 'PositiveEmotions', 'NegativeEmotions',
+            'AffectiveProcesses', 'Emotions',
+            
+            # =====================================================
+            # MINDSET & GROWTH
+            # =====================================================
+            'GrowthMindset', 'FixedMindset', 'Mindset',
+            
+            # =====================================================
+            # STRESS & COPING
+            # =====================================================
+            'PositiveStressEustress', 'StressResponse',
+            'LongTermGrowth', 'LongTermDecline',
+            'AdaptiveCoping', 'MaladaptiveCoping',
+            
+            # =====================================================
+            # SOCIAL & COMMUNICATION
+            # =====================================================
+            'SocialCognition', 'SocialLearning', 'Communication',
+            
+            # =====================================================
+            # EDUCATIONAL OUTCOMES
+            # =====================================================
+            'LearningEngagement', 'LearningPerformance', 'EducationalSupport',
+            
+            # =====================================================
+            # HIGHER-ORDER THINKING
+            # =====================================================
+            'HigherOrderThinking', 'LowerOrderThinking', 'ProblemSolving',
+            'ReflectiveThinking',
+            
+            # =====================================================
+            # MEMORY & CONSOLIDATION
+            # =====================================================
+            'LongTermMemory', 'Consolidation',
+            
+            # =====================================================
+            # PERSONAL GROWTH & STRENGTHS
+            # =====================================================
+            'PersonalGrowth', 'Strengths', 'CognitiveStrengths',
+            'AffectiveMotivationalModulation', 'AffectiveMotivationalProcesses',  # Correct label names
+            
+            # =====================================================
+            # NEUROPLASTICITY & BRAIN
+            # =====================================================
+            'BrainAdaptability', 'Neuroplasticity', 'Brainfunction',  # Note: lowercase 'f'
+            
+            # =====================================================
+            # VULNERABILITY & RESILIENCE
+            # =====================================================
+            'Vulnerability', 'Resilience', 'CognitiveBias',
+            
+            # =====================================================
+            # LEARNING STRATEGIES (NEW - Dec 2025)
+            # Added for spaced learning, interleaving, retrieval practice
+            # =====================================================
+            'LearningStrategies', 'Learningstrategies',  # Both case variants
+            'DistributedPracticeEffect',  # Spaced Repetition, etc.
+            'LearningProgress',  # Correct label name (not LearningProcess)
+            
+            # =====================================================
+            # ASSESSMENT & EVALUATION (NEW - Dec 2025)
+            # Added for test construction, formative assessment
+            # =====================================================
+            'Assessment', 'Evaluation',
+            
+            # =====================================================
+            # NEUROSCIENCE & BRAIN FUNCTION (NEW - Dec 2025)
+            # Added for brain lateralization, neuromyths
+            # Note: Only labels that EXIST in the graph (verified Dec 2025)
+            # =====================================================
+            'CognitiveNeuroscience',  # 2 nodes
+            'HemisphericSpecialization',  # 1 node
+            'Educationalmyths',  # 1 node (lowercase 'm' - this is the actual label in DB)
+            'NeurodevelopmentalLinks',  # 2 nodes
+            
+            # =====================================================
+            # LONG-TERM LEARNING (NEW - Dec 2025)
+            # =====================================================
+            'LongTermLearning',
+            
+            # =====================================================
+            # METACOGNITIVE KNOWLEDGE (NEW - Dec 2025)
+            # =====================================================
+            'KnowledgeOfCognition',
+            
+            # =====================================================
+            # COMORBIDITIES & SPECIAL NEEDS
+            # =====================================================
+            'Comorbidities', 'LearningStyles',
+            
+            # =====================================================
+            # CASE VARIANTS (for data inconsistencies)
+            # =====================================================
+            'Teachingpractices',  # lowercase variant of TeachingPractices
+            
+            # =====================================================
+            # GENERIC FALLBACKS
+            # =====================================================
+            'Concept'  # Fallback for inferred labels
+        ]
     
     # ============================================================
     # RETRIEVAL BOOSTS (from graph_retriever.py)
@@ -321,6 +522,24 @@ Cypher: MATCH (w:WorkingMemory {{domain: "{domain}"}}) RETURN w, labels(w) as no
 
 Question: "Come migliorare la motivazione intrinseca?"
 Cypher: MATCH (i:IntrinsicMotivation {{domain: "{domain}"}}) RETURN i, labels(i) as node_labels LIMIT 10
+
+Question: "Is brain lateralization the same as the left-brain/right-brain myth?"
+Cypher: MATCH (h:HemisphericSpecialization {{domain: "{domain}"}}) RETURN "Brain Lateralization" as type, h AS concept, labels(h) as node_labels UNION MATCH (m:EducationalMyths {{domain: "{domain}"}}) RETURN "Educational Myth" as type, m AS concept, labels(m) as node_labels LIMIT 20
+
+Question: "What are effective assessment strategies?"
+Cypher: MATCH (a:Assessment {{domain: "{domain}"}}) RETURN a, labels(a) as node_labels LIMIT 10
+
+Question: "How to construct effective multiple-choice tests?"
+Cypher: MATCH (a:Assessment {{domain: "{domain}"}}) RETURN a, labels(a) as node_labels LIMIT 10
+
+Question: "What is the difference between evaluation and assessment?"
+Cypher: MATCH (e:Evaluation {{domain: "{domain}"}}) RETURN "Evaluation" as type, e AS concept, labels(e) as node_labels UNION MATCH (a:Assessment {{domain: "{domain}"}}) RETURN "Assessment" as type, a AS concept, labels(a) as node_labels LIMIT 20
+
+Question: "What are spaced learning and interleaving?"
+Cypher: MATCH (d:DistributedPracticeEffect {{domain: "{domain}"}}) RETURN d, labels(d) as node_labels LIMIT 10
+
+Question: "What is the difference between hemispheric specialization and brain myths?"
+Cypher: MATCH (h:HemisphericSpecialization {{domain: "{domain}"}}) RETURN "Hemispheric Specialization" as type, h AS concept, labels(h) as node_labels UNION MATCH (m:CognitiveBias {{domain: "{domain}"}}) RETURN "Cognitive Bias" as type, m AS concept, labels(m) as node_labels LIMIT 20
 """
         # Replace {domain} placeholder with actual domain value
         return examples.replace("{domain}", domain).strip()
@@ -368,22 +587,9 @@ QUERY PATTERNS (NEURO):
                 query = re.sub(rf',\s+{old_var}\s*,', ', target,', query)
                 query = re.sub(rf',\s+{old_var}\s+', ', target ', query)
         
-        # 1) Fix UNION queries with mismatched columns
+        # 1) Fix UNION queries with mismatched columns (CRITICAL FIX for Q2)
         if 'UNION' in query:
-            # Standardize column names across UNION parts
-            parts = query.split('UNION')
-            if len(parts) > 1:
-                # Find first RETURN to use as template
-                first_return_match = re.search(r'RETURN\s+(.+?)(?:LIMIT|$)', parts[0])
-                if first_return_match:
-                    template_cols = [col.strip() for col in first_return_match.group(1).split(',')]
-                    
-                    # Ensure all parts return same columns
-                    standardized_parts = [parts[0]]
-                    for part in parts[1:]:
-                        # Keep the part structure but ensure matching columns
-                        standardized_parts.append(part)
-                    query = ' UNION '.join(standardized_parts)
+            query = self._repair_union_columns(query)
         
         # 2) Fix PascalCase for common Neuro labels
         neuro_labels = {
@@ -404,6 +610,137 @@ QUERY PATTERNS (NEURO):
         
         for lowercase, pascalcase in neuro_labels.items():
             query = re.sub(rf'\b{lowercase}\b', pascalcase, query, flags=re.IGNORECASE)
+        
+        # 3) Fix Assessment-related queries that use wrong patterns
+        # LLM sometimes generates: MATCH (t:TeachingPractices {name: "Evaluation of Performance"})
+        # Should be: MATCH (a:Assessment ...) or MATCH (e:Evaluation ...)
+        query = self._repair_assessment_queries(query)
+        
+        return query
+    
+    def _repair_union_columns(self, query: str) -> str:
+        """Fix UNION queries with mismatched column names.
+        
+        Problem: LLM generates UNION queries like:
+            MATCH (h:Label1) RETURN h, labels(h) as node_labels
+            UNION
+            MATCH (w:Label2) RETURN w, labels(w) as node_labels
+        
+        Neo4j requires IDENTICAL column names, but 'h' != 'w'.
+        
+        Solution: Standardize all RETURN statements to use 'concept' alias:
+            RETURN h AS concept, labels(h) as node_labels
+            UNION
+            RETURN w AS concept, labels(w) as node_labels
+        
+        Returns:
+            Fixed query with consistent column names
+        """
+        parts = query.split('UNION')
+        if len(parts) < 2:
+            return query
+        
+        fixed_parts = []
+        
+        for i, part in enumerate(parts):
+            part = part.strip()
+            
+            # Extract the variable name from MATCH (var:Label ...)
+            match_pattern = re.search(r'MATCH\s+\((\w+):', part)
+            if not match_pattern:
+                fixed_parts.append(part)
+                continue
+            
+            var_name = match_pattern.group(1)
+            
+            # Pattern A: Simple definition query
+            # RETURN var, labels(var) as node_labels
+            simple_pattern = rf'RETURN\s+{var_name}\s*,\s*labels\({var_name}\)\s+as\s+node_labels'
+            if re.search(simple_pattern, part, re.IGNORECASE):
+                fixed_part = re.sub(
+                    simple_pattern,
+                    f'RETURN {var_name} AS concept, labels({var_name}) as node_labels',
+                    part,
+                    flags=re.IGNORECASE
+                )
+                fixed_parts.append(fixed_part)
+                continue
+            
+            # Pattern B: Definition with type column
+            # RETURN "Type" as type, var, labels(var) as node_labels
+            type_pattern = rf'RETURN\s+"[^"]+"\s+as\s+type\s*,\s*{var_name}\s*,\s*labels\({var_name}\)\s+as\s+node_labels'
+            if re.search(type_pattern, part, re.IGNORECASE):
+                fixed_part = re.sub(
+                    rf'RETURN\s+("[^"]+")\s+as\s+type\s*,\s*{var_name}\s*,\s*labels\({var_name}\)\s+as\s+node_labels',
+                    rf'RETURN \1 as type, {var_name} AS concept, labels({var_name}) as node_labels',
+                    part,
+                    flags=re.IGNORECASE
+                )
+                fixed_parts.append(fixed_part)
+                continue
+            
+            # Pattern C: Relationship query
+            # RETURN var1, type(r), var2, labels(var1) as source_labels, labels(var2) as target_labels
+            rel_pattern = rf'RETURN\s+{var_name}\s*,\s*type\((\w+)\)\s*,\s*(\w+)\s*,'
+            if re.search(rel_pattern, part, re.IGNORECASE):
+                # Standardize relationship queries
+                fixed_part = re.sub(
+                    rf'RETURN\s+{var_name}\s*,\s*type\((\w+)\)\s*,\s*(\w+)\s*,\s*labels\({var_name}\)\s+as\s+source_labels\s*,\s*labels\(\2\)\s+as\s+target_labels',
+                    rf'RETURN {var_name} AS source, type(\1) AS rel_type, \2 AS target, labels({var_name}) as source_labels, labels(\2) as target_labels',
+                    part,
+                    flags=re.IGNORECASE
+                )
+                fixed_parts.append(fixed_part)
+                continue
+            
+            # No pattern matched, keep as-is
+            fixed_parts.append(part)
+        
+        result = ' UNION '.join(fixed_parts)
+        
+        # Log if we actually changed something
+        if result != query:
+            import logging
+            logging.getLogger(__name__).info(f"[UNION Fix] Standardized column names in {len(parts)}-way UNION query")
+        
+        return result
+    
+    def _repair_assessment_queries(self, query: str) -> str:
+        """Fix Assessment-related queries that use wrong patterns.
+        
+        Problem: LLM generates queries like:
+            MATCH (t:TeachingPractices {name: "Evaluation of Performance"})
+        
+        But 'Evaluation of Performance' doesn't exist - should use Assessment label.
+        
+        Returns:
+            Fixed query using correct Assessment/Evaluation labels
+        """
+        # Pattern: Searching for specific assessment-related node names in TeachingPractices
+        assessment_terms = [
+            'Evaluation of Performance',
+            'Multiple Choice',
+            'Test Design',
+            'Assessment Design',
+            'Formative Assessment',
+            'Summative Assessment',
+            'Quiz Design',
+            'Exam Design'
+        ]
+        
+        for term in assessment_terms:
+            # If LLM searches for these terms in wrong labels, fix it
+            wrong_pattern = rf'\((\w+):TeachingPractices\s*\{{[^}}]*name:\s*"{term}"[^}}]*\}}\)'
+            if re.search(wrong_pattern, query, re.IGNORECASE):
+                # Replace with Assessment label search
+                query = re.sub(
+                    wrong_pattern,
+                    r'(\1:Assessment {domain: "neuro"})',
+                    query,
+                    flags=re.IGNORECASE
+                )
+                import logging
+                logging.getLogger(__name__).info(f"[Assessment Fix] Replaced TeachingPractices search with Assessment label")
         
         return query
     

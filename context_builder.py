@@ -349,61 +349,80 @@ class MethodologyRanker:
         return recommendations
     
     def _is_methodology(self, node: Dict) -> bool:
-        """Check if node represents a pedagogical methodology or neuroscience concept"""
+        """Check if node represents a pedagogical methodology or neuroscience concept.
+        
+        Now loads valid labels from domain config (Dec 2025 refactor).
+        Falls back to hardcoded list if domain config not available.
+        """
         labels = node.get('labels', [])
+        valid_labels = self._get_valid_labels_for_domain()
+        return any(label in valid_labels for label in labels)
+    
+    def _get_valid_labels_for_domain(self) -> List[str]:
+        """Load valid methodology labels from domain config.
+        
+        Primary: Load from domain config (e.g., neuro_domain.py)
+        Fallback: Use hardcoded list (original behavior)
+        
+        Returns:
+            List of valid label strings for the current domain
+        """
+        # Try to load from domain config
+        # NOTE: Use self.kb.domain (MethodologyRanker has self.kb, not self.domain)
+        domain = self.kb.domain
+        try:
+            from domains import get_domain_config
+            domain_config = get_domain_config(domain)
+            if domain_config and hasattr(domain_config, 'get_valid_methodology_labels'):
+                labels = domain_config.get_valid_methodology_labels()
+                if labels:
+                    logger.debug(f"Loaded {len(labels)} valid labels from {domain} domain config")
+                    return labels
+        except Exception as e:
+            logger.warning(f"Could not load domain config labels: {e}, using fallback")
+        
+        # FALLBACK: Original hardcoded lists (backward compatibility)
+        logger.debug(f"Using fallback labels for domain: {domain}")
+        return self._get_fallback_labels()
+    
+    def _get_fallback_labels(self) -> List[str]:
+        """Fallback hardcoded labels (original behavior, for backward compatibility)"""
+        # NOTE: Use self.kb.domain (MethodologyRanker has self.kb, not self.domain)
+        domain = self.kb.domain
+        
         # UDL methodologies
         udl_labels = ['PedagogicalMethodology', 'TeachingApproach', 'LearningStrategy']
-        # Neuro concepts (SYNCED with graph_retriever.py domain_boosts - Nov 2025)
-        # Based on neuro_audit_report.json: 478 nodes, 195 unique labels
+        
+        # Neuro concepts (original list from Nov 2025)
         neuro_labels = [
-            # Core cognitive processes (most frequent)
             'Attention', 'CriticalThinking', 'ExtrinsicMotivation', 'ExecutiveFunctions',
             'IntrinsicMotivation', 'LearningOutcomes', 'TeachingPractices', 'LearningDevelopment',
             'NegativeStressDistress', 'Motivation',
-            
-            # Hub nodes (high connectivity)
             'CognitiveFlexibility', 'KnowledgeConstructionAttention', 'PrefrontalCortexActivation',
             'OptimalAttentionalNetworkActivation',
-            
-            # Authority nodes (key outcomes)
             'Creativity', 'Memory', 'MemoryEncoding', 'MemorySystems',
-            
-            # Critical cognitive
             'WorkingMemory', 'Metacognition', 'SelfRegulation', 'CognitiveControl', 'CognitiveProcesses',
-            
-            # Affective & motivational
             'EmotionalRegulation', 'EmotionalWellBeing', 'PositiveEmotions', 'NegativeEmotions',
             'AffectiveProcesses',
-            
-            # Mindset & growth
             'GrowthMindset', 'FixedMindset', 'Mindset',
-            
-            # Stress & coping
-            'PositiveStressEustress', 'NegativeStressDistress', 'StressResponse',  # StressResponse = physiological stress
-            'LongTermGrowth', 'LongTermDecline',
+            'PositiveStressEustress', 'StressResponse', 'LongTermGrowth', 'LongTermDecline',
             'AdaptiveCoping', 'MaladaptiveCoping',
-            
-            # Social & communication
             'SocialCognition', 'SocialLearning', 'Communication',
-            
-            # Educational outcomes
             'LearningEngagement', 'LearningPerformance', 'EducationalSupport',
-            
-            # Additional important
             'HigherOrderThinking', 'LowerOrderThinking', 'ProblemSolving',
             'LongTermMemory', 'PersonalGrowth', 'Strengths', 'CognitiveStrengths',
             'ReflectiveThinking', 'Consolidation', 'MotivationalModulation',
-            
-            # Additional labels found during testing (Nov 2025)
-            'BrainAdaptability',  # e.g., Neuroplasticity
-            'Vulnerability',      # e.g., Learned Helplessness, Disengagement, Perfectionism
-            'Resilience',         # exists as both category and label
-            'CognitiveBias',      # e.g., Overconfidence Bias
-            
-            # Generic fallback
-            'LearningProcess', 'Emotions', 'Concept'  # Concept = fallback for inferred labels
+            'BrainAdaptability', 'Vulnerability', 'Resilience', 'CognitiveBias',
+            'LearningProcess', 'Emotions', 'Concept'
         ]
-        return any(label in udl_labels + neuro_labels for label in labels)
+        
+        if domain == 'neuro':
+            return neuro_labels
+        elif domain == 'udl':
+            return udl_labels
+        else:
+            # Unknown domain: return all labels
+            return udl_labels + neuro_labels
     
     def _create_recommendation(self, node: Dict, query_metadata: Dict) -> Optional[MethodologyRecommendation]:
         """Create a methodology recommendation from a node"""

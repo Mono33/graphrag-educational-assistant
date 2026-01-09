@@ -995,6 +995,41 @@ Cypher: MATCH (i:IntrinsicMotivation) RETURN i, labels(i) as node_labels LIMIT 1
                                 second_match
                             )
                             query = f"{parts[0].strip()} UNION {second_match}"
+                    
+                    # Pattern D: UNION with "type" column + mismatched node variables (Q2 fix)
+                    # RETURN "Type" as type, h, labels(h) as node_labels UNION ... RETURN "Type" as type, w, labels(w) as node_labels
+                    # Problem: 'h' != 'w' - Neo4j requires identical column names
+                    # Fix: Add AS concept to the node variable
+                    else:
+                        type_var_pattern = r'RETURN\s+"[^"]+"\s+as\s+type\s*,\s*(\w+)\s*,\s*labels\(\1\)\s+as\s+node_labels'
+                        all_type_var = all(re.search(type_var_pattern, part.strip(), re.IGNORECASE) for part in parts)
+                        
+                        if all_type_var:
+                            fixed_parts = []
+                            var_names = []
+                            
+                            for part in parts:
+                                part = part.strip()
+                                match = re.search(type_var_pattern, part, re.IGNORECASE)
+                                if match:
+                                    var = match.group(1)
+                                    var_names.append(var)
+                                    # Replace: RETURN "Type" as type, var, labels(var) as node_labels
+                                    # → RETURN "Type" as type, var AS concept, labels(var) as node_labels
+                                    fixed_part = re.sub(
+                                        rf'RETURN\s+("[^"]+")\s+as\s+type\s*,\s*{var}\s*,\s*labels\({var}\)\s+as\s+node_labels',
+                                        rf'RETURN \1 as type, {var} AS concept, labels({var}) as node_labels',
+                                        part,
+                                        flags=re.IGNORECASE
+                                    )
+                                    fixed_parts.append(fixed_part)
+                                else:
+                                    fixed_parts.append(part)
+                            
+                            if len(set(var_names)) > 1:  # Only log if variables differ
+                                logger.info(f"[Q2 Fix] Standardizing {len(parts)}-way UNION with type column: {', '.join(var_names)} → 'concept'")
+                            
+                            query = ' UNION '.join(fixed_parts)
         
         # 1) Convert Cartesian product queries (comparison queries) to UNION
         # Pattern: MATCH (a:Label1), (b:Label2) RETURN ... 
@@ -1008,6 +1043,11 @@ Cypher: MATCH (i:IntrinsicMotivation) RETURN i, labels(i) as node_labels LIMIT 1
                 ('PositiveEmotions', 'NegativeEmotions', 'Positive Emotions', 'Negative Emotions'),
                 ('HigherOrderThinking', 'LowerOrderThinking', 'Higher Order', 'Lower Order'),
                 ('AdaptiveCoping', 'MaladaptiveCoping', 'Adaptive', 'Maladaptive'),
+                # ✅ NEW (Dec 2025): Brain lateralization / neuromyths for Q2
+                ('HemisphericSpecialization', 'EducationalMyths', 'Brain Lateralization', 'Neuromyth'),
+                ('HemisphericSpecialization', 'CognitiveBias', 'Hemispheric Specialization', 'Cognitive Bias'),
+                # ✅ NEW (Dec 2025): Assessment comparison for Q5
+                ('Assessment', 'Evaluation', 'Assessment', 'Evaluation'),
             ]
             
             for label1, label2, type1, type2 in comparison_pairs:
@@ -1046,6 +1086,12 @@ Cypher: MATCH (i:IntrinsicMotivation) RETURN i, labels(i) as node_labels LIMIT 1
             r'\bCritical\sThinking\b': 'CriticalThinking',
             # ✅ FIX: Mindset disambiguation
             r':Mindset\b(?!\w)': ':GrowthMindset',  # Default to GrowthMindset (more common in educational context)
+            
+            # ✅ NEW (Dec 2025): Assessment-related fixes for Q5
+            # LLM sometimes searches for assessment terms in wrong labels
+            r':TeachingPractices\s*\{[^}]*name:\s*"Evaluation[^"]*"': ':Assessment {domain: "neuro"',
+            r':TeachingPractices\s*\{[^}]*name:\s*"[Mm]ultiple[- ][Cc]hoice': ':Assessment {domain: "neuro"',
+            r':TeachingPractices\s*\{[^}]*name:\s*"[Tt]est[^"]*"': ':Assessment {domain: "neuro"',
         }
         
         for pattern, replacement in label_mappings.items():

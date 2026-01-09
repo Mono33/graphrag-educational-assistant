@@ -7,6 +7,7 @@ AI-powered educational assistant that combines Knowledge Graphs (Neo4j) with Ret
 ![Streamlit](https://img.shields.io/badge/streamlit-1.28+-red.svg)
 ![OpenAI](https://img.shields.io/badge/openai-GPT--4o-orange.svg)
 ![Node2Vec](https://img.shields.io/badge/Node2Vec-Enabled-brightgreen.svg)
+![Hybrid](https://img.shields.io/badge/Hybrid_Embeddings-Node2Vec+OpenAI-blueviolet.svg)
 
 ---
 
@@ -170,19 +171,55 @@ See `data_ingestion_neo4j.py` for the ingestion script.
 
 ---
 
-## 📊 Node2Vec Models
+## 📊 Embedding Modes
 
-The system uses Node2Vec for semantic search. Pre-trained models are in `models/`:
-- `educational_node2vec_embeddings.npz`: Node embeddings (109 nodes)
-- `educational_node2vec_config.json`: Model configuration
-- `educational_node2vec.pkl`: Trained model
+The system supports two embedding modes for semantic search:
+
+### 1. Node2Vec Mode (Default)
+Uses graph structure embeddings for semantic search. Best for finding structurally related concepts.
+
+```env
+# In .env file (or omit for default)
+EMBEDDING_MODE=node2vec
+```
+
+### 2. Hybrid Semantic Mode (Node2Vec + OpenAI)
+Combines graph structure (Node2Vec) with text semantics (OpenAI embeddings). Best for natural language queries.
+
+```env
+# In .env file
+EMBEDDING_MODE=hybrid_semantic
+EMBEDDING_NODE2VEC_WEIGHT=0.4  # 40% Node2Vec, 60% OpenAI
+OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+```
+
+**First-time setup for hybrid mode:**
+```bash
+# Pre-compute OpenAI embeddings (one-time, ~$0.01)
+python graph_retriever.py --precompute neuro
+python graph_retriever.py --precompute udl
+```
+
+### Comparison
+
+| Mode | Pros | Cons |
+|------|------|------|
+| `node2vec` | Fast, no API calls, captures domain structure | May miss semantic variations |
+| `hybrid_semantic` | Better text understanding, multilingual | Requires OpenAI API, slightly slower |
+
+### Pre-trained Models
+
+Models are stored in `models/`:
+- `{domain}_node2vec_embeddings.npz`: Node2Vec embeddings
+- `models/embeddings_cache/{domain}_openai_embeddings.json`: OpenAI embeddings cache
 
 ### Retrain Node2Vec:
 ```bash
-python train_node2vec.py
+python train_node2vec.py neuro
+python train_node2vec.py udl
 ```
 
-**Model Parameters:**
+**Node2Vec Parameters:**
 - Dimensions: 128
 - Walk Length: 80
 - Num Walks: 200

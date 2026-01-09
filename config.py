@@ -36,6 +36,43 @@ class Text2CypherConfig:
     enable_query_execution: bool = True
     log_level: str = "INFO"
 
+@dataclass
+class EmbeddingConfig:
+    """Embedding mode configuration for hybrid retrieval
+    
+    Modes:
+        - "node2vec": Graph structure only (default, backward compatible)
+        - "hybrid_semantic": Node2Vec + OpenAI text embeddings
+        - "openai_only": OpenAI embeddings only (no graph structure)
+    
+    Weight α (NODE2VEC_WEIGHT):
+        - Controls balance between structure and semantics
+        - α = 1.0: 100% Node2Vec (pure structure)
+        - α = 0.0: 100% OpenAI semantic
+        - α = 0.4: Recommended for educational queries (slight semantic bias)
+    
+    Why α = 0.4 (40% Node2Vec, 60% Semantic)?
+        - Educational queries are often semantic ("what is X?", "difference between A and B")
+        - Italian queries benefit from multilingual semantic embeddings
+        - Graph structure still matters for finding connected concepts
+        - Research shows 40/60 split optimal for Q&A over knowledge graphs
+    """
+    mode: str = "node2vec"  # "node2vec" | "hybrid_semantic" | "openai_only"
+    
+    # OpenAI embedding model
+    openai_embedding_model: str = "text-embedding-3-small"
+    
+    # Hybrid weights (α for Node2Vec, 1-α for semantic)
+    # α = 0.4 gives 40% weight to graph structure, 60% to semantic meaning
+    node2vec_weight: float = 0.4  # α
+    
+    # Semantic similarity threshold (minimum score to consider)
+    semantic_threshold: float = 0.3
+    
+    # Cache settings
+    cache_embeddings: bool = True
+    embeddings_cache_dir: str = "models/embeddings_cache"
+
 class Config:
     """Main configuration class"""
     
@@ -43,6 +80,7 @@ class Config:
         self.neo4j = Neo4jConfig()
         self.openai = OpenAIConfig()
         self.text2cypher = Text2CypherConfig()
+        self.embedding = EmbeddingConfig()
         self._load_from_env()
     
     def _load_from_env(self):
@@ -71,6 +109,27 @@ class Config:
             self.text2cypher.enable_query_execution = os.getenv("TEXT2CYPHER_ENABLE_EXECUTION").lower() == "true"
         
         self.text2cypher.log_level = os.getenv("LOG_LEVEL", self.text2cypher.log_level)
+        
+        # Embedding configuration
+        self.embedding.mode = os.getenv("EMBEDDING_MODE", self.embedding.mode)
+        self.embedding.openai_embedding_model = os.getenv(
+            "OPENAI_EMBEDDING_MODEL", 
+            self.embedding.openai_embedding_model
+        )
+        
+        if os.getenv("EMBEDDING_NODE2VEC_WEIGHT"):
+            self.embedding.node2vec_weight = float(os.getenv("EMBEDDING_NODE2VEC_WEIGHT"))
+        
+        if os.getenv("EMBEDDING_SEMANTIC_THRESHOLD"):
+            self.embedding.semantic_threshold = float(os.getenv("EMBEDDING_SEMANTIC_THRESHOLD"))
+        
+        if os.getenv("EMBEDDING_CACHE_EMBEDDINGS"):
+            self.embedding.cache_embeddings = os.getenv("EMBEDDING_CACHE_EMBEDDINGS").lower() == "true"
+        
+        self.embedding.embeddings_cache_dir = os.getenv(
+            "EMBEDDINGS_CACHE_DIR", 
+            self.embedding.embeddings_cache_dir
+        )
     
     def validate(self) -> tuple[bool, list[str]]:
         """Validate configuration and return any errors"""

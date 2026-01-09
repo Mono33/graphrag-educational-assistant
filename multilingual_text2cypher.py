@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 multilingual_text2cypher.py - Production multilingual text2cypher for Italian teachers
-Enhanced with comprehensive educational terminology including UDL, BES, DSA concepts
+Enhanced with comprehensive educational terminology including UDL, BES, DSA concepts.
 """
 
 import re

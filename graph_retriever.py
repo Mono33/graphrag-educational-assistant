@@ -2,6 +2,18 @@
 """
 graph_retriever.py - Hybrid Graph Retriever for Educational Knowledge Graph
 Combines graph traversal precision with semantic search breadth for comprehensive context retrieval
+
+Embedding Modes (Dec 2025):
+- "node2vec": Graph structure only (default, backward compatible)
+- "hybrid_semantic": Node2Vec + OpenAI text embeddings (recommended for semantic queries)
+- "openai_only": OpenAI embeddings only
+
+The hybrid_semantic mode combines:
+- Node2Vec: Captures graph structure (neighbors, paths, clusters)
+- OpenAI text-embedding-3-small: Captures semantic meaning (multilingual, synonyms)
+
+Formula: final_score = α * node2vec_score + (1-α) * semantic_score
+Default α = 0.4 (40% structure, 60% semantics) - optimized for educational Q&A
 """
 
 import asyncio
@@ -9,6 +21,7 @@ import logging
 import re
 import os
 import pickle
+import json
 import numpy as np
 from typing import List, Dict, Optional, Tuple, Any
 from dataclasses import dataclass, asdict
@@ -21,7 +34,273 @@ from sklearn.metrics.pairwise import cosine_similarity
 # Import domain configuration system
 from domains import get_domain_config
 
+# Import config for embedding settings
+from config import config as app_config
+
 logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# SEMANTIC EMBEDDER (OpenAI text-embedding-3-small)
+# ============================================================================
+
+class SemanticEmbedder:
+    """OpenAI-based semantic embedder for hybrid retrieval.
+    
+    Provides text embeddings using OpenAI's text-embedding-3-small model.
+    Supports caching to avoid redundant API calls.
+    
+    Usage:
+        embedder = SemanticEmbedder(domain="neuro")
+        query_embedding = embedder.embed_query("What is intrinsic motivation?")
+        similarity = embedder.compute_similarity(query_embedding, node_embedding)
+    """
+    
+    def __init__(self, domain: str = "all", cache_dir: str = None):
+        """Initialize semantic embedder.
+        
+        Args:
+            domain: Domain for cache isolation ("neuro", "udl", "all")
+            cache_dir: Directory for embedding cache (default: models/embeddings_cache)
+        """
+        self.domain = domain
+        self.cache_dir = cache_dir or app_config.embedding.embeddings_cache_dir
+        self.model = app_config.embedding.openai_embedding_model
+        
+        # OpenAI client (lazy loaded)
+        self._openai_client = None
+        
+        # Node embeddings cache (loaded from file or built on-demand)
+        self.node_embeddings: Dict[str, np.ndarray] = {}
+        self.embeddings_loaded = False
+        
+        # Ensure cache directory exists
+        os.makedirs(self.cache_dir, exist_ok=True)
+        
+        # Try to load cached embeddings
+        self._load_cached_embeddings()
+    
+    @property
+    def openai_client(self):
+        """Lazy-load OpenAI client"""
+        if self._openai_client is None:
+            try:
+                from openai import OpenAI
+                self._openai_client = OpenAI(api_key=app_config.openai.api_key)
+                logger.info(f"[SemanticEmbedder] OpenAI client initialized (model: {self.model})")
+            except Exception as e:
+                logger.error(f"[SemanticEmbedder] Failed to initialize OpenAI client: {e}")
+                raise
+        return self._openai_client
+    
+    def _get_cache_path(self) -> str:
+        """Get path to cached embeddings file"""
+        return os.path.join(self.cache_dir, f"{self.domain}_openai_embeddings.json")
+    
+    def _load_cached_embeddings(self) -> bool:
+        """Load cached node embeddings from file"""
+        cache_path = self._get_cache_path()
+        
+        if os.path.exists(cache_path):
+            try:
+                with open(cache_path, 'r') as f:
+                    data = json.load(f)
+                
+                # Convert lists back to numpy arrays
+                self.node_embeddings = {
+                    name: np.array(emb) for name, emb in data.items()
+                }
+                self.embeddings_loaded = True
+                logger.info(f"[SemanticEmbedder] Loaded {len(self.node_embeddings)} cached embeddings for {self.domain}")
+                return True
+            except Exception as e:
+                logger.warning(f"[SemanticEmbedder] Failed to load cache: {e}")
+        
+        return False
+    
+    def _save_cached_embeddings(self):
+        """Save node embeddings to cache file"""
+        if not self.node_embeddings:
+            return
+        
+        cache_path = self._get_cache_path()
+        try:
+            # Convert numpy arrays to lists for JSON serialization
+            data = {
+                name: emb.tolist() for name, emb in self.node_embeddings.items()
+            }
+            
+            with open(cache_path, 'w') as f:
+                json.dump(data, f)
+            
+            logger.info(f"[SemanticEmbedder] Saved {len(self.node_embeddings)} embeddings to cache")
+        except Exception as e:
+            logger.warning(f"[SemanticEmbedder] Failed to save cache: {e}")
+    
+    def embed_text(self, text: str) -> Optional[np.ndarray]:
+        """Embed a single text string using OpenAI.
+        
+        Args:
+            text: Text to embed
+            
+        Returns:
+            Numpy array of embedding, or None if failed
+        """
+        try:
+            response = self.openai_client.embeddings.create(
+                model=self.model,
+                input=text
+            )
+            embedding = np.array(response.data[0].embedding)
+            return embedding
+        except Exception as e:
+            logger.error(f"[SemanticEmbedder] Failed to embed text: {e}")
+            return None
+    
+    def embed_texts(self, texts: List[str]) -> Dict[str, np.ndarray]:
+        """Embed multiple texts in batch (more efficient).
+        
+        Args:
+            texts: List of texts to embed
+            
+        Returns:
+            Dictionary mapping text -> embedding
+        """
+        if not texts:
+            return {}
+        
+        try:
+            # Batch embed (max 2048 per request for OpenAI)
+            batch_size = 100
+            all_embeddings = {}
+            
+            for i in range(0, len(texts), batch_size):
+                batch = texts[i:i + batch_size]
+                response = self.openai_client.embeddings.create(
+                    model=self.model,
+                    input=batch
+                )
+                
+                for j, data in enumerate(response.data):
+                    text = batch[j]
+                    all_embeddings[text] = np.array(data.embedding)
+            
+            return all_embeddings
+        except Exception as e:
+            logger.error(f"[SemanticEmbedder] Batch embedding failed: {e}")
+            return {}
+    
+    def embed_query(self, query: str) -> Optional[np.ndarray]:
+        """Embed a query (alias for embed_text with logging)"""
+        logger.debug(f"[SemanticEmbedder] Embedding query: {query[:50]}...")
+        return self.embed_text(query)
+    
+    def get_node_embedding(self, node_name: str, node_description: str = "") -> Optional[np.ndarray]:
+        """Get embedding for a node (from cache or generate).
+        
+        Args:
+            node_name: Node name
+            node_description: Optional description for richer embedding
+            
+        Returns:
+            Embedding vector
+        """
+        # Check cache first
+        if node_name in self.node_embeddings:
+            return self.node_embeddings[node_name]
+        
+        # Generate embedding
+        text = node_name
+        if node_description:
+            text = f"{node_name}: {node_description}"
+        
+        embedding = self.embed_text(text)
+        
+        if embedding is not None:
+            self.node_embeddings[node_name] = embedding
+            # Save to cache periodically
+            if len(self.node_embeddings) % 50 == 0:
+                self._save_cached_embeddings()
+        
+        return embedding
+    
+    def compute_similarity(self, embedding1: np.ndarray, embedding2: np.ndarray) -> float:
+        """Compute cosine similarity between two embeddings.
+        
+        Args:
+            embedding1: First embedding vector
+            embedding2: Second embedding vector
+            
+        Returns:
+            Similarity score (0.0 to 1.0)
+        """
+        if embedding1 is None or embedding2 is None:
+            return 0.0
+        
+        # Reshape for sklearn cosine_similarity
+        e1 = embedding1.reshape(1, -1)
+        e2 = embedding2.reshape(1, -1)
+        
+        similarity = cosine_similarity(e1, e2)[0][0]
+        return float(max(0.0, similarity))  # Clamp to positive
+    
+    def precompute_node_embeddings(self, neo4j_driver: Driver, domain: str = None):
+        """Pre-compute embeddings for all nodes in the graph.
+        
+        Call this once to build the embedding cache.
+        
+        Args:
+            neo4j_driver: Neo4j driver for fetching nodes
+            domain: Optional domain filter
+        """
+        domain = domain or self.domain
+        logger.info(f"[SemanticEmbedder] Pre-computing embeddings for domain: {domain}")
+        
+        try:
+            with neo4j_driver.session() as session:
+                # Fetch all nodes with name and description
+                if domain and domain != "all":
+                    query = """
+                    MATCH (n {domain: $domain})
+                    RETURN n.name AS name, n.description AS description
+                    """
+                    result = session.run(query, domain=domain)
+                else:
+                    query = """
+                    MATCH (n)
+                    WHERE n.name IS NOT NULL
+                    RETURN n.name AS name, n.description AS description
+                    """
+                    result = session.run(query)
+                
+                nodes = []
+                for record in result:
+                    name = record["name"]
+                    desc = record["description"] or ""
+                    if name:
+                        nodes.append((name, desc))
+                
+                logger.info(f"[SemanticEmbedder] Found {len(nodes)} nodes to embed")
+                
+                # Prepare texts for batch embedding
+                texts = [f"{name}: {desc}" if desc else name for name, desc in nodes]
+                
+                # Batch embed
+                embeddings = self.embed_texts(texts)
+                
+                # Map back to node names
+                for (name, desc), text in zip(nodes, texts):
+                    if text in embeddings:
+                        self.node_embeddings[name] = embeddings[text]
+                
+                # Save cache
+                self._save_cached_embeddings()
+                self.embeddings_loaded = True
+                
+                logger.info(f"[SemanticEmbedder] Pre-computed {len(self.node_embeddings)} node embeddings")
+                
+        except Exception as e:
+            logger.error(f"[SemanticEmbedder] Pre-computation failed: {e}")
 
 @dataclass
 class RetrievedContext:
@@ -32,7 +311,15 @@ class RetrievedContext:
     metadata: Dict[str, Any]  # {graph_count, semantic_count, timings, limits_applied}
 
 class HybridGraphRetriever:
-    """Hybrid retriever combining graph traversal with semantic search"""
+    """Hybrid retriever combining graph traversal with semantic search
+    
+    Supports three embedding modes:
+    - "node2vec": Graph structure only (default, backward compatible)
+    - "hybrid_semantic": Node2Vec + OpenAI text embeddings
+    - "openai_only": OpenAI embeddings only
+    
+    The embedding mode is controlled by EMBEDDING_MODE in config/env.
+    """
     
     def __init__(self, neo4j_driver: Driver, use_vectors: bool = False, domain: str = "all", config: Optional[Dict] = None):
         self.neo4j_driver = neo4j_driver
@@ -46,6 +333,16 @@ class HybridGraphRetriever:
         self.expand_neighbors = self.config.get('expand_neighbors', True)
         self.neighbor_depth = self.config.get('neighbor_depth', 1)
         
+        # Embedding mode configuration
+        self.embedding_mode = app_config.embedding.mode
+        self.node2vec_weight = app_config.embedding.node2vec_weight  # α
+        self.semantic_weight = 1.0 - self.node2vec_weight  # 1-α
+        self.semantic_threshold = app_config.embedding.semantic_threshold
+        
+        logger.info(f"[HybridGraphRetriever] Embedding mode: {self.embedding_mode}")
+        if self.embedding_mode == "hybrid_semantic":
+            logger.info(f"[HybridGraphRetriever] Weights: α={self.node2vec_weight:.2f} (Node2Vec), β={self.semantic_weight:.2f} (Semantic)")
+        
         # Node2Vec integration
         self.node2vec_model = None
         self.node_embeddings = None
@@ -53,9 +350,16 @@ class HybridGraphRetriever:
         self.reverse_index = None
         self.node2vec_loaded = False
         
-        # Load Node2Vec model if vectors are enabled
-        if self.use_vectors:
+        # Semantic embedder (for hybrid_semantic and openai_only modes)
+        self.semantic_embedder: Optional[SemanticEmbedder] = None
+        
+        # Load Node2Vec model if vectors are enabled (and mode needs it)
+        if self.use_vectors and self.embedding_mode in ["node2vec", "hybrid_semantic"]:
             self._load_node2vec_model(domain=domain)
+        
+        # Initialize semantic embedder for hybrid/openai modes
+        if self.use_vectors and self.embedding_mode in ["hybrid_semantic", "openai_only"]:
+            self._init_semantic_embedder(domain=domain)
         
         # Educational domain boosts - now loaded dynamically from domain configs
         # This combines boosts from all domains for "all" queries, or uses domain-specific boosts
@@ -279,6 +583,30 @@ class HybridGraphRetriever:
             logger.error(f"Failed to load Node2Vec model: {e}")
             self.node2vec_loaded = False
             return False
+    
+    def _init_semantic_embedder(self, domain: str = "all"):
+        """Initialize OpenAI semantic embedder for hybrid mode.
+        
+        Args:
+            domain: Domain for embedding cache
+        """
+        try:
+            self.semantic_embedder = SemanticEmbedder(domain=domain)
+            
+            # Check if we have cached embeddings
+            if not self.semantic_embedder.embeddings_loaded:
+                logger.info(f"[SemanticEmbedder] No cached embeddings found for {domain}")
+                logger.info(f"[SemanticEmbedder] Run 'python -m graph_retriever --precompute {domain}' to pre-compute")
+            else:
+                logger.info(f"[SemanticEmbedder] Loaded {len(self.semantic_embedder.node_embeddings)} cached embeddings")
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize semantic embedder: {e}")
+            self.semantic_embedder = None
+            # Fallback to node2vec only
+            if self.embedding_mode == "hybrid_semantic":
+                logger.warning("[SemanticEmbedder] Falling back to node2vec mode")
+                self.embedding_mode = "node2vec"
     
     async def retrieve(self, query: str, cypher_result: Dict) -> RetrievedContext:
         """Main retrieval method combining graph and semantic search"""
@@ -922,27 +1250,44 @@ class HybridGraphRetriever:
         - Comparison queries: Lower threshold (need both sides)
         - Definition queries: Higher threshold (focused results)
         
+        🆕 HYBRID MODE OPTIMIZATION:
+        In hybrid_semantic mode, OpenAI embeddings already provide semantic filtering,
+        so we use a lower base threshold (0.50) to avoid double-filtering.
+        
         Args:
             query: Natural language query
             domain: Domain filter ('udl', 'neuro', 'all')
             initial_labels: Labels from initial query results
             
         Returns:
-            Adaptive threshold (e.g., 0.70-0.85)
+            Adaptive threshold (e.g., 0.50-0.85 depending on mode)
         """
-        # Base threshold by domain
-        # Get domain-specific similarity threshold using domain config
-        domain_config = get_domain_config(domain)
-        if domain_config:
-            base_threshold = domain_config.get_similarity_threshold()
-        elif domain == "neuro":
-            # Backward compatibility
-            base_threshold = 0.70  # Neuro concepts are more interconnected
-        elif domain == "udl":
-            # Backward compatibility
-            base_threshold = 0.80  # UDL is more structured
+        # 🆕 Check embedding mode - use lower threshold for hybrid mode
+        is_hybrid_mode = getattr(self, 'embedding_mode', 'node2vec') == 'hybrid_semantic'
+        
+        if is_hybrid_mode:
+            # Hybrid mode: OpenAI embeddings already do semantic filtering
+            # Use lower threshold to avoid over-filtering
+            base_threshold = 0.50
+            min_threshold = 0.45
+            max_threshold = 0.70
+            logger.debug(f"[P1+] Hybrid mode detected, using lower base threshold (0.50)")
         else:
-            base_threshold = 0.75  # Default
+            # Node2Vec only mode: Need stricter P1 filter for semantic relevance
+            # Get domain-specific similarity threshold using domain config
+            domain_config = get_domain_config(domain)
+            if domain_config:
+                base_threshold = domain_config.get_similarity_threshold()
+            elif domain == "neuro":
+                # Backward compatibility
+                base_threshold = 0.70  # Neuro concepts are more interconnected
+            elif domain == "udl":
+                # Backward compatibility
+                base_threshold = 0.80  # UDL is more structured
+            else:
+                base_threshold = 0.75  # Default
+            min_threshold = 0.60
+            max_threshold = 0.85
         
         # Detect query intent
         intent = self._detect_query_intent(query)
@@ -975,11 +1320,12 @@ class HybridGraphRetriever:
         
         final_threshold = base_threshold + adjustment
         
-        # Ensure threshold stays in reasonable range [0.60, 0.85]
-        final_threshold = max(0.60, min(0.85, final_threshold))
+        # Ensure threshold stays in reasonable range (mode-dependent)
+        final_threshold = max(min_threshold, min(max_threshold, final_threshold))
         
+        mode_label = "hybrid" if is_hybrid_mode else "node2vec"
         logger.info(f"[P1+] Adaptive threshold: {final_threshold:.2f} "
-                   f"(base={base_threshold:.2f}, adjustment={adjustment:.2f})")
+                   f"(base={base_threshold:.2f}, adjustment={adjustment:.2f}, mode={mode_label})")
         
         return final_threshold
     
@@ -1091,6 +1437,10 @@ class HybridGraphRetriever:
         # 🆕 PHASE 1: Get adaptive threshold based on query intent
         adaptive_threshold = self._get_adaptive_threshold(query, self.domain, list(initial_labels))
         
+        # 🆕 HYBRID MODE: Use lower tier thresholds
+        is_hybrid_mode = getattr(self, 'embedding_mode', 'node2vec') == 'hybrid_semantic'
+        medium_tier_floor = 0.40 if is_hybrid_mode else 0.65  # Lower for hybrid
+        
         # Filter semantic nodes with PHASE 1 enhancements
         filtered = []
         rejected = []
@@ -1134,9 +1484,9 @@ class HybridGraphRetriever:
                 )
                 continue
             
-            # Tier 2: MEDIUM confidence (0.65 to adaptive_threshold)
+            # Tier 2: MEDIUM confidence (medium_tier_floor to adaptive_threshold)
             # Require additional signal (label match OR similar label OR broad category)
-            if 0.65 <= semantic_score <= adaptive_threshold:
+            if medium_tier_floor <= semantic_score <= adaptive_threshold:
                 if has_shared_label:
                     filtered.append(node)
                     logger.debug(
@@ -1163,9 +1513,9 @@ class HybridGraphRetriever:
                     )
                 continue
             
-            # Tier 3: LOW confidence (<0.65)
+            # Tier 3: LOW confidence (below medium_tier_floor)
             # Only keep if strong label match or broad category
-            if semantic_score < 0.65:
+            if semantic_score < medium_tier_floor:
                 if has_shared_label or has_similar_label:
                     filtered.append(node)
                     logger.debug(
@@ -1199,7 +1549,31 @@ class HybridGraphRetriever:
         return filtered
     
     def _find_similar_concepts(self, concept: str, top_k: int = 10) -> List[Tuple[str, float]]:
-        """Find most similar concepts using Node2Vec embeddings"""
+        """Find most similar concepts using embeddings.
+        
+        Supports three modes:
+        - node2vec: Graph structure similarity only
+        - hybrid_semantic: Combines Node2Vec (α) + OpenAI semantic (1-α)
+        - openai_only: OpenAI semantic similarity only
+        
+        Args:
+            concept: Concept name to find similar nodes for
+            top_k: Number of results to return
+            
+        Returns:
+            List of (node_name, similarity_score) tuples
+        """
+        # Route based on embedding mode
+        if self.embedding_mode == "openai_only":
+            return self._find_similar_concepts_semantic(concept, top_k)
+        elif self.embedding_mode == "hybrid_semantic":
+            return self._find_similar_concepts_hybrid(concept, top_k)
+        else:
+            # Default: node2vec only (backward compatible)
+            return self._find_similar_concepts_node2vec(concept, top_k)
+    
+    def _find_similar_concepts_node2vec(self, concept: str, top_k: int = 10) -> List[Tuple[str, float]]:
+        """Find similar concepts using Node2Vec embeddings only (original method)."""
         if not self.node2vec_loaded or self.node_embeddings is None:
             return []
         
@@ -1218,7 +1592,7 @@ class HybridGraphRetriever:
                 results = []
                 for idx in similar_indices:
                     similar_name = self.reverse_index[idx]
-                    similarity_score = similarities[idx]
+                    similarity_score = float(similarities[idx])
                     results.append((similar_name, similarity_score))
                 
                 return results
@@ -1229,6 +1603,123 @@ class HybridGraphRetriever:
         except Exception as e:
             logger.error(f"Error finding similar concepts for '{concept}': {e}")
             return []
+    
+    def _find_similar_concepts_semantic(self, concept: str, top_k: int = 10) -> List[Tuple[str, float]]:
+        """Find similar concepts using OpenAI semantic embeddings only."""
+        if self.semantic_embedder is None:
+            logger.warning("[Semantic] Semantic embedder not initialized, falling back to node2vec")
+            return self._find_similar_concepts_node2vec(concept, top_k)
+        
+        try:
+            # Get query embedding for the concept
+            query_embedding = self.semantic_embedder.embed_query(concept)
+            if query_embedding is None:
+                logger.warning(f"[Semantic] Failed to embed concept: {concept}")
+                return self._find_similar_concepts_node2vec(concept, top_k)
+            
+            # Calculate similarities against all cached node embeddings
+            similarities = []
+            for node_name, node_embedding in self.semantic_embedder.node_embeddings.items():
+                if node_name.lower() == concept.lower():
+                    continue  # Skip exact match
+                
+                sim = self.semantic_embedder.compute_similarity(query_embedding, node_embedding)
+                if sim >= self.semantic_threshold:
+                    similarities.append((node_name, sim))
+            
+            # Sort by similarity (descending)
+            similarities.sort(key=lambda x: x[1], reverse=True)
+            
+            return similarities[:top_k]
+            
+        except Exception as e:
+            logger.error(f"[Semantic] Error in semantic search for '{concept}': {e}")
+            return self._find_similar_concepts_node2vec(concept, top_k)
+    
+    def _find_similar_concepts_hybrid(self, concept: str, top_k: int = 10) -> List[Tuple[str, float]]:
+        """Find similar concepts using hybrid scoring: α*Node2Vec + (1-α)*Semantic.
+        
+        This combines:
+        - Node2Vec: Captures graph structure (neighbors, paths, clusters)
+        - OpenAI Semantic: Captures text meaning (multilingual, synonyms)
+        
+        Formula: final_score = α * node2vec_score + β * semantic_score
+        where α = node2vec_weight (default 0.4), β = 1-α (default 0.6)
+        """
+        α = self.node2vec_weight
+        β = self.semantic_weight
+        
+        logger.debug(f"[Hybrid] Finding similar to '{concept}' with α={α:.2f}, β={β:.2f}")
+        
+        # Get Node2Vec similarities
+        node2vec_scores: Dict[str, float] = {}
+        if self.node2vec_loaded and self.node_embeddings is not None:
+            try:
+                if concept in self.node_index:
+                    concept_idx = self.node_index[concept]
+                    concept_embedding = self.node_embeddings[concept_idx].reshape(1, -1)
+                    similarities = cosine_similarity(concept_embedding, self.node_embeddings)[0]
+                    
+                    for idx, score in enumerate(similarities):
+                        node_name = self.reverse_index[idx]
+                        if node_name.lower() != concept.lower():
+                            node2vec_scores[node_name] = float(score)
+                else:
+                    # Fuzzy match for node2vec
+                    fuzzy_results = self._fuzzy_concept_search(concept, top_k * 3)
+                    for name, score in fuzzy_results:
+                        node2vec_scores[name] = score
+                        
+            except Exception as e:
+                logger.warning(f"[Hybrid] Node2Vec search failed: {e}")
+        
+        # Get Semantic similarities
+        semantic_scores: Dict[str, float] = {}
+        if self.semantic_embedder is not None:
+            try:
+                query_embedding = self.semantic_embedder.embed_query(concept)
+                if query_embedding is not None:
+                    for node_name, node_embedding in self.semantic_embedder.node_embeddings.items():
+                        if node_name.lower() == concept.lower():
+                            continue
+                        sim = self.semantic_embedder.compute_similarity(query_embedding, node_embedding)
+                        if sim >= self.semantic_threshold:
+                            semantic_scores[node_name] = sim
+            except Exception as e:
+                logger.warning(f"[Hybrid] Semantic search failed: {e}")
+        
+        # Combine scores: all unique node names
+        all_nodes = set(node2vec_scores.keys()) | set(semantic_scores.keys())
+        
+        if not all_nodes:
+            logger.warning(f"[Hybrid] No similar concepts found for '{concept}'")
+            return []
+        
+        # Calculate hybrid scores
+        hybrid_results = []
+        for node_name in all_nodes:
+            n2v_score = node2vec_scores.get(node_name, 0.0)
+            sem_score = semantic_scores.get(node_name, 0.0)
+            
+            # Hybrid formula: α * node2vec + β * semantic
+            hybrid_score = α * n2v_score + β * sem_score
+            
+            # Only include if at least one score is significant
+            if n2v_score >= 0.3 or sem_score >= self.semantic_threshold:
+                hybrid_results.append((node_name, hybrid_score, n2v_score, sem_score))
+        
+        # Sort by hybrid score (descending)
+        hybrid_results.sort(key=lambda x: x[1], reverse=True)
+        
+        # Log top results for debugging
+        if hybrid_results:
+            top_3 = hybrid_results[:3]
+            logger.debug(f"[Hybrid] Top 3 for '{concept}': " + 
+                        ", ".join([f"{n}(h={h:.2f},n={nv:.2f},s={s:.2f})" 
+                                   for n, h, nv, s in top_3]))
+        
+        # Return (name, hybrid_score) tuples
+        return [(name, score) for name, score, _, _ in hybrid_results[:top_k]]
     
     def _fuzzy_concept_search(self, concept: str, top_k: int = 10) -> List[Tuple[str, float]]:
         """Fuzzy search for concepts when exact match not found"""
@@ -1610,6 +2101,94 @@ async def test_hybrid_retriever():
     finally:
         processor.close()
 
+def precompute_embeddings(domain: str = "neuro"):
+    """Pre-compute OpenAI embeddings for all nodes in a domain.
+    
+    This should be run once to build the embedding cache before using hybrid_semantic mode.
+    Cost estimate: ~$0.01 for 544 nodes (text-embedding-3-small is $0.02/1M tokens)
+    
+    Args:
+        domain: Domain to pre-compute embeddings for ("neuro", "udl", "all")
+    """
+    from config import config as app_config
+    
+    print(f"🔄 Pre-computing OpenAI embeddings for domain: {domain}")
+    print(f"📦 Model: {app_config.embedding.openai_embedding_model}")
+    print(f"💾 Cache dir: {app_config.embedding.embeddings_cache_dir}")
+    
+    # Initialize Neo4j driver
+    from neo4j import GraphDatabase
+    driver = GraphDatabase.driver(
+        app_config.neo4j.uri,
+        auth=(app_config.neo4j.user, app_config.neo4j.password)
+    )
+    
+    try:
+        # Test connection
+        with driver.session() as session:
+            result = session.run("MATCH (n) RETURN count(n) as count")
+            count = result.single()["count"]
+            print(f"✅ Connected to Neo4j - {count} total nodes")
+        
+        # Initialize embedder and pre-compute
+        embedder = SemanticEmbedder(domain=domain)
+        embedder.precompute_node_embeddings(driver, domain=domain)
+        
+        print(f"\n✅ Pre-computed {len(embedder.node_embeddings)} embeddings")
+        print(f"💾 Saved to: {embedder._get_cache_path()}")
+        
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        raise
+    finally:
+        driver.close()
+
+
 if __name__ == "__main__":
-    # Run the test
-    asyncio.run(test_hybrid_retriever())
+    import sys
+    
+    if len(sys.argv) > 1:
+        command = sys.argv[1]
+        
+        if command == "--precompute":
+            # Pre-compute embeddings: python graph_retriever.py --precompute neuro
+            domain = sys.argv[2] if len(sys.argv) > 2 else "neuro"
+            precompute_embeddings(domain)
+        
+        elif command == "--test":
+            # Run tests: python graph_retriever.py --test
+            asyncio.run(test_hybrid_retriever())
+        
+        elif command == "--help":
+            print("""
+graph_retriever.py - Hybrid Graph Retriever for Educational Knowledge Graph
+
+Usage:
+    python graph_retriever.py --precompute [domain]
+        Pre-compute OpenAI embeddings for hybrid_semantic mode
+        domain: "neuro" (default), "udl", or "all"
+    
+    python graph_retriever.py --test
+        Run test queries with hybrid retrieval
+    
+Environment Variables:
+    EMBEDDING_MODE: "node2vec" (default), "hybrid_semantic", or "openai_only"
+    EMBEDDING_NODE2VEC_WEIGHT: Weight for Node2Vec (default: 0.4)
+    OPENAI_EMBEDDING_MODEL: OpenAI model (default: text-embedding-3-small)
+
+Example:
+    # Step 1: Pre-compute embeddings (once)
+    python graph_retriever.py --precompute neuro
+    
+    # Step 2: Set hybrid mode in .env
+    EMBEDDING_MODE=hybrid_semantic
+    
+    # Step 3: Run Streamlit app
+    streamlit run streamlit_app.py
+            """)
+        else:
+            print(f"Unknown command: {command}")
+            print("Use --help for usage information")
+    else:
+        # Default: run test
+        asyncio.run(test_hybrid_retriever())
