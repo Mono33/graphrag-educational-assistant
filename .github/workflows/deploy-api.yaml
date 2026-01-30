@@ -1,0 +1,45 @@
+name: "deploy-graphrag-aixlearning-api"
+on:
+  push:
+    branches:
+      - production
+    paths:
+      - 'graphrag-aixlearning/**/*'
+  workflow_dispatch:
+jobs:
+  deploy-graphrag-api:
+    runs-on: ubuntu-latest
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@v4
+
+      -
+        name: Set Production image version
+        id: set_image_version_production
+        if: ${{ github.ref_name == 'production' }}
+        run: echo "image-version=latest" >> $GITHUB_ENV
+
+      -
+        name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      -
+        name: Login to private registry
+        uses: docker/login-action@v3
+        with:
+          registry: rg.fr-par.scw.cloud/wonderful-education
+          username: nologin
+          password: ${{ secrets.SCW_SECRET_KEY }}
+
+      -
+        name: Build and push api
+        uses: docker/build-push-action@v5
+        with:
+          push: true
+          tags: rg.fr-par.scw.cloud/wonderful-education/graphrag-aixlearning:${{ env.image-version }}
+          context: .
+          target: api
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: GIT_SHA=${{ github.sha }}
