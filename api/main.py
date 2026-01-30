@@ -20,6 +20,7 @@ Endpoints:
 
 import logging
 import sys
+import time
 from pathlib import Path
 from contextlib import asynccontextmanager
 
@@ -53,10 +54,11 @@ async def lifespan(app: FastAPI):
     try:
         from config import config
         from neo4j import GraphDatabase
-        
+
         driver = GraphDatabase.driver(
             config.neo4j.uri,
-            auth=(config.neo4j.user, config.neo4j.password)
+            auth=(config.neo4j.user, config.neo4j.password),
+            encrypted=config.neo4j.encrypted
         )
         driver.verify_connectivity()
         driver.close()
@@ -172,7 +174,6 @@ async def health_check():
     try:
         from config import config
         from neo4j import GraphDatabase
-        
         driver = GraphDatabase.driver(
             config.neo4j.uri,
             auth=(config.neo4j.user, config.neo4j.password)
