@@ -1,0 +1,12 @@
+services:
+  api:
+    env_file:
+      - .env
+    build:
+      context: .
+      target: api
+    container_name: ${API_CONTAINER_NAME}
+    image: rg.fr-par.scw.cloud/wonderful-education/graphrag-aixlearning:latest
+    restart: unless-stopped
+    ports:
+      - "8000:80"
