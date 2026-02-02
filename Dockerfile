@@ -36,4 +36,4 @@ COPY . .
 # Enable venv
 ENV PATH="/opt/venv/bin:$PATH"
 ENV CODE_VERSION=${GIT_SHA}
-CMD uvicorn api.main:app --host 0.0.0.0 --port 80
+CMD uvicorn api.main:app --host 0.0.0.0 --port 80 $API_CMD_ARGS
