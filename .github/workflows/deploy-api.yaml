@@ -3,8 +3,6 @@ on:
   push:
     branches:
       - production
-    paths:
-      - 'graphrag-aixlearning/**/*'
   workflow_dispatch:
 jobs:
   deploy-graphrag-api:
