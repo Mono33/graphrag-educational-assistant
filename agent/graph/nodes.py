@@ -71,7 +71,12 @@ async def plan_node(state: AgentState) -> Dict[str, Any]:
             language=state.get("language", "it")
         )
         
-        logger.info(f"[Node: Plan] Detected intent: {plan.query_intent} (confidence: {plan.intent_confidence})")
+        # Enhanced logging with scope status
+        scope_emoji = {"in_scope": "✅", "partial_scope": "⚠️", "out_of_scope": "❌"}.get(plan.scope_status, "❓")
+        logger.info(
+            f"[Node: Plan] Detected intent: {plan.query_intent} (confidence: {plan.intent_confidence}), "
+            f"scope: {scope_emoji} {plan.scope_status} ({plan.scope_confidence:.0%})"
+        )
         
         return {
             "plan": {
@@ -83,13 +88,23 @@ async def plan_node(state: AgentState) -> Dict[str, Any]:
                 "target_grade": plan.target_grade,
                 "special_needs": plan.special_needs,
                 "time_constraints": plan.time_constraints,
-                "reasoning": plan.reasoning
+                "reasoning": plan.reasoning,
+                # NEW Phase A: Scope detection fields
+                "scope_status": plan.scope_status,
+                "scope_confidence": plan.scope_confidence,
+                "subject_concepts": plan.subject_concepts,
+                "pedagogy_concepts": plan.pedagogy_concepts
             },
             "query_intent": plan.query_intent,
             "lesson_type": plan.lesson_type,
             "target_grade": plan.target_grade,
             "key_concepts": plan.key_concepts,
             "search_queries": plan.search_queries,
+            # NEW Phase A: Scope detection
+            "scope_status": plan.scope_status,
+            "scope_confidence": plan.scope_confidence,
+            "subject_concepts": plan.subject_concepts,
+            "pedagogy_concepts": plan.pedagogy_concepts,
             "current_step": "plan_complete"
         }
         
@@ -133,10 +148,19 @@ async def retrieve_node(state: AgentState) -> Dict[str, Any]:
             target_grade=plan_data.get("target_grade"),
             special_needs=plan_data.get("special_needs"),
             time_constraints=plan_data.get("time_constraints"),
-            intent_confidence=plan_data.get("intent_confidence", "MEDIUM")
+            intent_confidence=plan_data.get("intent_confidence", "MEDIUM"),
+            # NEW Phase A: Scope detection fields
+            scope_status=plan_data.get("scope_status", "in_scope"),
+            scope_confidence=plan_data.get("scope_confidence", 1.0),
+            subject_concepts=plan_data.get("subject_concepts"),
+            pedagogy_concepts=plan_data.get("pedagogy_concepts")
         )
         
         result = await retriever.retrieve(plan)
+        
+        # Log hybrid retrieval if applicable
+        if result.is_hybrid:
+            logger.info(f"[Node: Retrieve] ⚠️ HYBRID mode: KG pedagogy + external resources")
         
         return {
             "graphrag_results": [
@@ -147,6 +171,10 @@ async def retrieve_node(state: AgentState) -> Dict[str, Any]:
             "retrieved_relationships": result.relationships,
             "recommendations": result.recommendations,
             "retrieval_confidence": result.confidence,
+            # NEW Phase 1: Curated media from sidecar JSON
+            "curated_media": result.curated_media if result.curated_media else None,
+            # NEW Phase A: External resources for out-of-scope queries
+            "external_resources": result.external_resources if result.external_resources else None,
             "current_step": "retrieve_complete"
         }
         
@@ -208,7 +236,12 @@ async def write_node(state: AgentState) -> Dict[str, Any]:
                 target_grade=plan_data.get("target_grade"),
                 special_needs=plan_data.get("special_needs"),
                 time_constraints=plan_data.get("time_constraints"),
-                intent_confidence=plan_data.get("intent_confidence", "MEDIUM")
+                intent_confidence=plan_data.get("intent_confidence", "MEDIUM"),
+                # NEW Phase A: Scope detection fields
+                scope_status=plan_data.get("scope_status", "in_scope"),
+                scope_confidence=plan_data.get("scope_confidence", 1.0),
+                subject_concepts=plan_data.get("subject_concepts"),
+                pedagogy_concepts=plan_data.get("pedagogy_concepts")
             )
             
             retrieval_result = RetrievalResult(
@@ -222,7 +255,13 @@ async def write_node(state: AgentState) -> Dict[str, Any]:
                 teacher_query=state["teacher_query"],
                 plan=plan,
                 retrieval_result=retrieval_result,
-                language=state.get("language", "it")
+                language=state.get("language", "it"),
+                # NEW Phase 2: Pass curated media if available
+                curated_media=state.get("curated_media"),
+                # NEW Phase A: Pass external resources for hybrid mode
+                external_resources=state.get("external_resources"),
+                # NEW Phase B: Pass domain for extensions
+                domain=state.get("domain", "neuro")
             )
         
         return {

@@ -1,9 +1,9 @@
-## CONTESTO DAL KNOWLEDGE GRAPH NEUROSCIENTIFICO
+## CONTESTO DAL KNOWLEDGE GRAPH {{ domain_title | default("EDUCATIVO") }}
 
 **Contesto Educativo:** {{ educational_context_type }}
 **Profilo Studente:** {{ student_profile }}
 
-### Metodologie Raccomandate
+### Metodologie Raccomandate dal Knowledge Graph
 
 {% for method in primary_methodologies %}
 {{ loop.index }}. **{{ method.name }}** ({{ method.category }})
@@ -13,13 +13,13 @@
    {% if method.classroom_applications %}
    - Applicazioni in classe:
      {% for app in method.classroom_applications %}
-     • {{ app }}
+     - {{ app }}
      {% endfor %}
    {% endif %}
    {% if method.special_considerations %}
    - Considerazioni speciali:
      {% for consideration in method.special_considerations %}
-     • {{ consideration }}
+     - {{ consideration }}
      {% endfor %}
    {% endif %}
 
@@ -46,7 +46,7 @@
 ### Livello di Confidenza: {{ confidence_level|upper }}
 
 {% if confidence_level in ['low', 'very_low'] %}
-⚠️ **Nota**: Il livello di confidenza è basso. Si consiglia di consultare uno specialista per raccomandazioni personalizzate.
+**Nota**: Il livello di confidenza è basso. Si consiglia di consultare uno specialista per raccomandazioni personalizzate.
 {% endif %}
 
 {% if fallback_strategies %}
@@ -56,4 +56,3 @@
 - {{ strategy }}
 {% endfor %}
 {% endif %}
-

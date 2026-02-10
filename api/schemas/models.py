@@ -140,6 +140,39 @@ class ContextData(BaseModel):
     )
 
 
+class DomainPromptContext(BaseModel):
+    """
+    Domain-specific prompt context for production integration
+    
+    Provides the DEV team with everything needed to align their
+    production prompt with GraphRAG domain expertise.
+    
+    This is designed to be scalable: each domain (neuro, udl, etc.)
+    provides its own system_prompt and response_template through the
+    domain config system.
+    """
+    domain: str = Field(
+        ..., 
+        description="Domain identifier (e.g., 'neuro', 'udl')"
+    )
+    domain_display_name: str = Field(
+        ..., 
+        description="Human-readable domain name (e.g., 'Neuro (Neuroscience)')"
+    )
+    system_prompt: str = Field(
+        ..., 
+        description="Rich domain system prompt (RUOLO, TAG-CLOUD, PRINCIPI, META-REGOLE)"
+    )
+    response_template: str = Field(
+        ..., 
+        description="Domain-specific response structure (e.g., I Do/We Do/You Do lesson schema)"
+    )
+    kg_context_formatted: str = Field(
+        ..., 
+        description="KG data formatted in domain-specific structure, ready for prompt injection"
+    )
+
+
 class RawNode(BaseModel):
     """Raw node data from knowledge graph"""
     id: Optional[str] = None
@@ -180,7 +213,13 @@ class ContextResponse(BaseModel):
     # Pre-formatted prompt section (optional convenience)
     formatted_prompt_section: Optional[str] = Field(
         None,
-        description="Pre-formatted text ready to inject into prompts"
+        description="Pre-formatted text ready to inject into prompts (domain-aware)"
+    )
+    
+    # Domain-specific prompt context for production integration (Option B)
+    domain_prompt_context: Optional[DomainPromptContext] = Field(
+        None,
+        description="Domain-specific system prompt, response template, and formatted KG context for production integration"
     )
     
     error: Optional[str] = Field(None, description="Error message if success=False")

@@ -19,6 +19,14 @@ from agent.prompts.critic_prompt import (
 )
 from agent.agents.retriever_agent import RetrievalResult
 
+# Optional domain extensions - fails gracefully if not available
+try:
+    from agent.configs.domain_prompts import get_domain_extension
+    DOMAIN_EXTENSIONS_AVAILABLE = True
+except ImportError:
+    DOMAIN_EXTENSIONS_AVAILABLE = False
+    get_domain_extension = lambda d, a: ""  # Fallback: no extension
+
 logger = logging.getLogger(__name__)
 
 
@@ -116,6 +124,13 @@ class CriticAgent:
         
         # Get intent-specific prompts
         system_prompt, user_template = get_critic_prompts(query_intent)
+        
+        # NEW Phase B: Add domain-specific extensions
+        if DOMAIN_EXTENSIONS_AVAILABLE:
+            domain_ext = get_domain_extension(domain, "critic")
+            if domain_ext:
+                system_prompt += domain_ext
+                logger.info(f"[CriticAgent] Applied domain extension for '{domain}'")
         
         # Format retrieved context
         context_text = retrieval_result.to_context_string()

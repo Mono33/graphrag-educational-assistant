@@ -40,7 +40,7 @@ class EducationalResponseGenerator:
             openai_api_key=openai_api_key,
             model=model,  # Uses model from config (e.g., gpt-4o from .env)
             temperature=temperature,  # 0.7 is optimal for creative educational responses
-            max_tokens=1500  # Sufficient for detailed teacher responses
+            max_tokens=2500  # Sufficient for detailed structured teacher responses
         )
         
         # Load prompt templates and create chain using LCEL
@@ -52,50 +52,39 @@ class EducationalResponseGenerator:
         """Create comprehensive prompt template for educational response generation"""
         
         if self.language == "italian":
-            # Domain-specific system prompt using domain config
-            # ============================================================================
-            # 🧹 CLEANUP TODO: The elif/else blocks below can be SAFELY REMOVED
-            # after confirming the domain config refactoring works correctly.
-            # 
-            # WHAT TO REMOVE:
-            #   - elif self.domain == "neuro" block → Now in domains/neuro_domain.py → get_system_prompt()
-            #   - else (udl) block → Now in domains/udl_domain.py → get_system_prompt()
-            #
-            # KEEP:
-            #   - elif self.domain == "all" block → Still needed for cross-domain queries
-            #
-            # ESTIMATED LINES SAVED: ~10 lines
-            # DATE MARKED: Nov 2025
-            # ============================================================================
+            # ============================================================
+            # SYSTEM PROMPT: Domain-specific role, expertise, principles
+            # Loaded from domain config (neuro_domain.py, udl_domain.py)
+            # ============================================================
             domain_config = get_domain_config(self.domain)
             if domain_config:
                 system_prompt = domain_config.get_system_prompt()
-            elif self.domain == "neuro":
-                # 🧹 BACKUP - Can be removed after refactoring is stable.
-                # This logic now exists in: domains/neuro_domain.py → get_system_prompt()
-                system_prompt = """Sei un esperto di neuroscienze dell'apprendimento italiano, specializzato nell'applicazione pratica delle scoperte neuroscientifiche all'educazione.
-
-Il tuo compito è fornire raccomandazioni chiare, pratiche e scientificamente solide per insegnanti italiani, basate su principi neuroscientifici."""
+                response_template = domain_config.get_response_template()
             elif self.domain == "all":
-                # KEEP: Still needed for cross-domain queries
+                # Cross-domain queries: generic educational expert
                 system_prompt = """Sei un esperto consulente educativo italiano con competenze in pedagogia, metodologie didattiche inclusive e neuroscienze dell'apprendimento.
 
 Il tuo compito è fornire raccomandazioni chiare, pratiche e scientificamente solide per insegnanti italiani."""
-            else:  # default udl
-                # 🧹 BACKUP - Can be removed after refactoring is stable.
-                # This logic now exists in: domains/udl_domain.py → get_system_prompt()
+                response_template = None  # Will use default below
+            else:
+                # Safety fallback (should not happen with registered domains)
                 system_prompt = """Sei un esperto consulente pedagogico italiano specializzato in metodologie didattiche inclusive e differenziate.
 
 Il tuo compito è fornire raccomandazioni chiare, pratiche e pedagogicamente solide per insegnanti italiani."""
+                response_template = None
             
-            user_message = """
-
+            # ============================================================
+            # USER MESSAGE: KG Context (shared) + Domain Response Template
+            # ============================================================
+            
+            # Part 1: Knowledge Graph context (same for ALL domains)
+            kg_context = """
 CONTESTO DELLA DOMANDA:
 Domanda originale: {original_query}
 Profilo studente: {student_profile}
 Contesto educativo: {educational_context_type}
 
-METODOLOGIE RACCOMANDATE:
+METODOLOGIE RACCOMANDATE DAL KNOWLEDGE GRAPH:
 {primary_methodologies}
 
 METODOLOGIE DI SUPPORTO:
@@ -111,9 +100,12 @@ LIVELLO DI CONFIDENZA:
 {confidence_level}
 
 STRATEGIE DI FALLBACK (se applicabili):
-{fallback_strategies}
-
-ISTRUZIONI PER LA RISPOSTA:
+{fallback_strategies}"""
+            
+            # Part 2: Domain-specific response instructions
+            if response_template is None:
+                # Default generic instructions (for "all" domain or fallback)
+                response_template = """ISTRUZIONI PER LA RISPOSTA:
 
 1. **Inizia con un'introduzione empatica** che riconosca la domanda dell'insegnante
 2. **Presenta le metodologie principali** (massimo 3) in modo chiaro e strutturato:
@@ -133,9 +125,12 @@ IMPORTANTE:
 - Sii concreto e pratico, non teorico
 - Fornisci azioni immediate che l'insegnante può prendere
 - Adatta il linguaggio al contesto scolastico italiano (primaria, secondaria, etc.)
-- Se la confidenza è BASSA o VERY_LOW, enfatizza la necessità di supporto specialistico
-
-Genera la tua risposta pedagogica:"""
+- Se la confidenza è BASSA o VERY_LOW, enfatizza la necessità di supporto specialistico"""
+            
+            # Combine: KG context + domain-specific instructions
+            user_message = kg_context + "\n\n" + response_template + "\n\nGenera la tua risposta pedagogica:"
+            
+            logger.info(f"[LLM Chain] Domain: {self.domain} | System prompt: {len(system_prompt)} chars | Response template: {len(response_template)} chars")
             
             return ChatPromptTemplate.from_messages([
                 ("system", system_prompt),

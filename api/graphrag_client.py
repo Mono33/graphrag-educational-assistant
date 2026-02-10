@@ -17,7 +17,7 @@ Usage:
 """
 
 import requests
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 
 # Configure this based on deployment
@@ -108,7 +108,7 @@ def format_for_prompt(context: Dict[str, Any], language: str = "it") -> str:
     Returns:
         Formatted string ready to inject into prompt
     """
-    # Use pre-formatted section if available
+    # Use pre-formatted section if available (now domain-aware)
     if context.get("formatted_prompt_section"):
         return context["formatted_prompt_section"]
     
@@ -159,6 +159,38 @@ def format_for_prompt(context: Dict[str, Any], language: str = "it") -> str:
         return "\n".join(lines)
 
 
+def get_domain_prompt_context(context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """
+    Get domain-specific prompt context from API response (Option B).
+    
+    This provides the full domain expertise for production integration:
+    - system_prompt: Rich domain role + principles + meta-rules
+    - response_template: Domain-specific output structure (e.g., I Do/We Do/You Do)
+    - kg_context_formatted: KG data formatted for the domain
+    
+    Args:
+        context: Response from get_graphrag_context()
+    
+    Returns:
+        Dict with domain_prompt_context fields, or None if not available
+    
+    Example:
+        response = get_graphrag_context("Come gestire ADHD?", domain="neuro")
+        domain_ctx = get_domain_prompt_context(response)
+        
+        if domain_ctx:
+            # Use the rich system prompt
+            system_prompt = domain_ctx["system_prompt"]
+            
+            # Get the lesson schema template
+            response_template = domain_ctx["response_template"]
+            
+            # Get KG data formatted for this domain
+            kg_block = domain_ctx["kg_context_formatted"]
+    """
+    return context.get("domain_prompt_context")
+
+
 # ============================================================================
 # EXAMPLE INTEGRATION FOR DEV TEAM
 # ============================================================================
@@ -167,33 +199,61 @@ def example_integration():
     """
     Example showing how DEV team can integrate this into their prompt_assemblers.py
     
-    They would add something like:
+    Three integration options:
     
+    Option 1 - Simple (one block):
     ```python
-    # In prompt_assemblers.py
     from graphrag_client import get_graphrag_context, format_for_prompt
     
-    def create_graphrag_prompt(user_query: str) -> str:
-        '''Get knowledge graph context for a query'''
-        context = get_graphrag_context(user_query, domain="neuro")
-        
+    def create_graphrag_prompt(user_query: str, domain: str = "neuro") -> str:
+        context = get_graphrag_context(user_query, domain=domain)
         if context.get("success", False):
             return format_for_prompt(context)
-        else:
-            return ""  # Graceful fallback
+        return ""
+    ```
     
-    # Then in their main assembler:
-    def get_assistant_prompt_assembler(tool, lesson_plan, user_prompt, ...):
-        prompt = ""
+    Option 2 - Granular (inject at specific points):
+    ```python
+    from graphrag_client import get_graphrag_context
+    
+    def assemble_prompt(user_query: str, base_prompt: str) -> str:
+        response = get_graphrag_context(user_query, domain="neuro")
+        if response["success"]:
+            ctx = response["context"]
+            # Build text from raw methodologies
+            methods = "\\n".join(
+                f"- {m['name']}: {m['implementation_guidance']}"
+                for m in ctx["primary_methodologies"]
+            )
+            # Inject at [usa le info dal GraphRag] points
+            prompt = base_prompt.replace(
+                "[usa le info dal GraphRag]",
+                f"\\n{methods}"
+            )
+            return prompt
+        return base_prompt
+    ```
+    
+    Option 3 - Full alignment (use domain_prompt_context):
+    ```python
+    from graphrag_client import get_graphrag_context, get_domain_prompt_context
+    
+    def assemble_prompt_full(user_query: str, base_prompt: str) -> str:
+        response = get_graphrag_context(user_query, domain="neuro")
+        domain_ctx = get_domain_prompt_context(response)
         
-        # ... existing code ...
-        
-        # Add GraphRAG context
-        graphrag_section = create_graphrag_prompt(user_prompt)
-        if graphrag_section:
-            prompt += "\\n\\n" + graphrag_section
-        
-        return prompt
+        if domain_ctx:
+            # Rich system prompt with RUOLO, TAG-CLOUD, PRINCIPI
+            system_prompt = domain_ctx["system_prompt"]
+            
+            # Lesson schema (I Do / We Do / You Do)
+            response_template = domain_ctx["response_template"]
+            
+            # KG data already formatted for the domain
+            kg_block = domain_ctx["kg_context_formatted"]
+            
+            return f"{base_prompt}\\n\\n{kg_block}"
+        return base_prompt
     ```
     """
     print("=" * 60)
@@ -216,9 +276,21 @@ def example_integration():
         print(f"   - Processing time: {context.get('metrics', {}).get('processing_time_ms', 0)}ms")
         
         print("\n" + "=" * 60)
-        print("📄 FORMATTED PROMPT SECTION:")
+        print("📄 FORMATTED PROMPT SECTION (domain-aware):")
         print("=" * 60)
         print(format_for_prompt(context))
+        
+        # Show domain prompt context (Option B)
+        domain_ctx = get_domain_prompt_context(context)
+        if domain_ctx:
+            print("\n" + "=" * 60)
+            print("🏗️ DOMAIN PROMPT CONTEXT (Option B):")
+            print("=" * 60)
+            print(f"   Domain: {domain_ctx.get('domain')}")
+            print(f"   Display Name: {domain_ctx.get('domain_display_name')}")
+            print(f"   System Prompt: {len(domain_ctx.get('system_prompt', ''))} chars")
+            print(f"   Response Template: {len(domain_ctx.get('response_template', ''))} chars")
+            print(f"   KG Context: {len(domain_ctx.get('kg_context_formatted', ''))} chars")
     else:
         print(f"❌ Error: {context.get('error', 'Unknown error')}")
 

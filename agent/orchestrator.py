@@ -32,6 +32,12 @@ class LessonPlanResult:
     # Phase 3: Added for upsell buttons
     query_intent: Optional[str] = "lesson_creation"
     key_concepts: Optional[List[str]] = None
+    # Phase 3 (Media): Curated media from sidecar JSON
+    curated_media: Optional[Dict[str, Any]] = None
+    # Phase A: Scope detection for hybrid mode
+    scope_status: Optional[str] = "in_scope"  # in_scope, partial_scope, out_of_scope
+    scope_confidence: Optional[float] = 1.0
+    external_resources: Optional[Dict[str, Any]] = None  # Wikipedia, papers, OER
     
     def to_dict(self) -> dict:
         return {
@@ -45,8 +51,27 @@ class LessonPlanResult:
             "critique_summary": self.critique_summary,
             "error": self.error,
             "query_intent": self.query_intent,
-            "key_concepts": self.key_concepts
+            "key_concepts": self.key_concepts,
+            "curated_media": self.curated_media,
+            "scope_status": self.scope_status,
+            "scope_confidence": self.scope_confidence,
+            "external_resources": self.external_resources
         }
+    
+    @property
+    def has_media(self) -> bool:
+        """Check if curated media is available"""
+        return bool(self.curated_media and any(self.curated_media.values()))
+    
+    @property
+    def is_hybrid(self) -> bool:
+        """Check if this is a hybrid result (external + KG sources)"""
+        return self.scope_status in ("partial_scope", "out_of_scope")
+    
+    @property
+    def has_external_resources(self) -> bool:
+        """Check if external resources were used"""
+        return bool(self.external_resources and any(self.external_resources.values()))
 
 
 class AgentOrchestrator:
@@ -163,7 +188,13 @@ class AgentOrchestrator:
                 error=result.get("error"),
                 # Phase 3: Pass query_intent and key_concepts for upsell buttons
                 query_intent=result.get("query_intent", "lesson_creation"),
-                key_concepts=result.get("key_concepts", [])
+                key_concepts=result.get("key_concepts", []),
+                # Phase 3 (Media): Pass curated media for enhancement buttons
+                curated_media=result.get("curated_media"),
+                # Phase A: Scope detection for hybrid mode
+                scope_status=result.get("scope_status", "in_scope"),
+                scope_confidence=result.get("scope_confidence", 1.0),
+                external_resources=result.get("external_resources")
             )
             
         except Exception as e:

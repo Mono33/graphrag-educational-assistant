@@ -15,6 +15,7 @@ from api.schemas import (
     ContextResponse,
     QueryInfo,
     ContextData,
+    DomainPromptContext,
     MethodologyInfo,
     RawNode,
     MetricsInfo,
@@ -24,6 +25,9 @@ from api.schemas import (
 # Import GraphRAG components - use the enhanced wrapper that handles everything
 from graph_retriever import EnhancedMultilingualText2Cypher
 from context_builder import ConfidenceLevel as CBConfidenceLevel
+
+# Import domain configuration system for scalable domain-aware formatting
+from domains import get_domain_config
 
 logger = logging.getLogger(__name__)
 
@@ -74,48 +78,89 @@ def _format_methodologies(methodologies: list, max_count: int = 5) -> list[Metho
     return result
 
 
-def _format_prompt_section(context: ContextData, language: str = "it") -> str:
-    """
-    Generate a pre-formatted prompt section that DEV team can directly inject
+def _get_domain_title(domain: str, language: str = "it") -> str:
+    """Get domain-aware title for the KG context section.
     
-    This is a convenience feature - DEV team can use this directly or build their own
+    Scalable: add new domains here when they are registered.
     """
-    if language == "it":
+    domain_titles = {
+        "it": {
+            "neuro": "NEUROSCIENTIFICO",
+            "udl": "UDL (UNIVERSAL DESIGN FOR LEARNING)",
+            "all": "EDUCATIVO MULTI-DOMINIO"
+        },
+        "en": {
+            "neuro": "NEUROSCIENCE",
+            "udl": "UDL (UNIVERSAL DESIGN FOR LEARNING)",
+            "all": "MULTI-DOMAIN EDUCATIONAL"
+        }
+    }
+    # Normalize language code (handle both "it"/"italian" and "en"/"english")
+    lang_key = "it" if language in ("it", "italian") else "en"
+    lang_titles = domain_titles.get(lang_key, domain_titles["it"])
+    return lang_titles.get(domain, domain.upper())
+
+
+def _format_prompt_section(context: ContextData, language: str = "it", domain: str = "neuro") -> str:
+    """
+    Generate a domain-aware pre-formatted prompt section for direct injection.
+    
+    DEV team can use this directly in their prompts or build their own
+    from the structured `context` data.
+    
+    Scalable: uses domain config for domain-specific formatting.
+    """
+    domain_title = _get_domain_title(domain, language)
+    
+    if language in ("it", "italian"):
         lines = [
-            "## CONTESTO DAL KNOWLEDGE GRAPH NEUROSCIENTIFICO",
+            f"## CONTESTO DAL KNOWLEDGE GRAPH {domain_title}",
             "",
             f"**Contesto Educativo:** {context.educational_context_type}",
             f"**Profilo Studente:** {context.student_profile}",
             "",
-            "**Metodologie Raccomandate:**"
+            "### Metodologie Raccomandate dal Knowledge Graph"
         ]
         
         for i, method in enumerate(context.primary_methodologies, 1):
-            lines.append(f"{i}. **{method.name}** ({method.category})")
+            lines.append(f"\n{i}. **{method.name}** ({method.category})")
             lines.append(f"   - Rilevanza: {method.relevance_score:.2f}")
+            lines.append(f"   - Confidenza: {method.confidence.value}")
             lines.append(f"   - Implementazione: {method.implementation_guidance}")
             if method.classroom_applications:
-                lines.append(f"   - Applicazioni: {', '.join(method.classroom_applications)}")
+                lines.append(f"   - Applicazioni in classe:")
+                for app in method.classroom_applications:
+                    lines.append(f"     - {app}")
+            if method.special_considerations:
+                lines.append(f"   - Considerazioni speciali:")
+                for consideration in method.special_considerations:
+                    lines.append(f"     - {consideration}")
         
         if context.supporting_methodologies:
             lines.append("")
-            lines.append("**Metodologie di Supporto:**")
-            for method in context.supporting_methodologies[:2]:
-                lines.append(f"- {method.name} ({method.category})")
+            lines.append("### Metodologie di Supporto")
+            for method in context.supporting_methodologies:
+                lines.append(f"- **{method.name}** ({method.category}) - Rilevanza: {method.relevance_score:.2f}")
         
         lines.append("")
-        lines.append(f"**Evidenza:** {context.evidence_summary}")
-        lines.append("")
-        lines.append("**Priorità di Implementazione:**")
-        for priority in context.implementation_priority:
-            lines.append(f"- {priority}")
+        lines.append("### Evidenza e Basi Teoriche")
+        lines.append(context.evidence_summary)
         
         lines.append("")
-        lines.append(f"**Livello di Confidenza:** {context.confidence_level.value.upper()}")
+        lines.append("### Priorità di Implementazione")
+        for i, priority in enumerate(context.implementation_priority, 1):
+            lines.append(f"{i}. {priority}")
+        
+        lines.append("")
+        lines.append(f"### Livello di Confidenza: {context.confidence_level.value.upper()}")
+        
+        if context.confidence_level.value in ['low', 'very_low']:
+            lines.append("")
+            lines.append("**Nota**: Il livello di confidenza è basso. Si consiglia di consultare uno specialista per raccomandazioni personalizzate.")
         
         if context.fallback_strategies:
             lines.append("")
-            lines.append("**Strategie Alternative:**")
+            lines.append("### Strategie Alternative")
             for strategy in context.fallback_strategies:
                 lines.append(f"- {strategy}")
         
@@ -123,24 +168,71 @@ def _format_prompt_section(context: ContextData, language: str = "it") -> str:
     
     else:  # English
         lines = [
-            "## CONTEXT FROM NEUROSCIENCE KNOWLEDGE GRAPH",
+            f"## CONTEXT FROM {domain_title} KNOWLEDGE GRAPH",
             "",
             f"**Educational Context:** {context.educational_context_type}",
             f"**Student Profile:** {context.student_profile}",
             "",
-            "**Recommended Methodologies:**"
+            "### Recommended Methodologies from Knowledge Graph"
         ]
         
         for i, method in enumerate(context.primary_methodologies, 1):
-            lines.append(f"{i}. **{method.name}** ({method.category})")
+            lines.append(f"\n{i}. **{method.name}** ({method.category})")
             lines.append(f"   - Relevance: {method.relevance_score:.2f}")
+            lines.append(f"   - Confidence: {method.confidence.value}")
             lines.append(f"   - Implementation: {method.implementation_guidance}")
+            if method.classroom_applications:
+                lines.append(f"   - Applications:")
+                for app in method.classroom_applications:
+                    lines.append(f"     - {app}")
         
         lines.append("")
-        lines.append(f"**Evidence:** {context.evidence_summary}")
-        lines.append(f"**Confidence Level:** {context.confidence_level.value.upper()}")
+        lines.append("### Evidence and Theoretical Basis")
+        lines.append(context.evidence_summary)
+        
+        lines.append("")
+        lines.append(f"### Confidence Level: {context.confidence_level.value.upper()}")
         
         return "\n".join(lines)
+
+
+def _build_domain_prompt_context(
+    context: ContextData,
+    domain: str,
+    language: str = "it"
+) -> DomainPromptContext:
+    """
+    Build domain-specific prompt context for production integration (Option B).
+    
+    Returns the domain's system prompt, response template, and KG data
+    formatted in a domain-specific structure.
+    
+    Scalable: automatically uses whichever domain config is registered.
+    When a new domain is added (e.g., UDL, Math), it just needs to implement
+    get_system_prompt() and get_response_template() in its domain config.
+    """
+    domain_config = get_domain_config(domain)
+    
+    if domain_config:
+        system_prompt = domain_config.get_system_prompt()
+        response_template = domain_config.get_response_template()
+        display_name = domain_config.display_name
+    else:
+        # Fallback for "all" domain or unregistered domains
+        system_prompt = "Sei un esperto consulente educativo italiano."
+        response_template = "Genera una risposta pedagogica strutturata e pratica."
+        display_name = domain.upper()
+    
+    # Build KG context formatted for this domain
+    kg_context_formatted = _format_prompt_section(context, language, domain)
+    
+    return DomainPromptContext(
+        domain=domain,
+        domain_display_name=display_name,
+        system_prompt=system_prompt,
+        response_template=response_template,
+        kg_context_formatted=kg_context_formatted
+    )
 
 
 @router.post("", response_model=ContextResponse)
@@ -274,6 +366,11 @@ async def get_context(request: ContextRequest) -> ContextResponse:
                 for node in nodes[:20]  # Limit to 20 nodes
             ]
         
+        # Build domain-aware prompt context (Option B for production integration)
+        domain_prompt_ctx = _build_domain_prompt_context(
+            context_data, domain, detected_language
+        )
+        
         # Build response
         response = ContextResponse(
             success=True,
@@ -290,7 +387,8 @@ async def get_context(request: ContextRequest) -> ContextResponse:
                 total_relationships=total_relationships_count,
                 processing_time_ms=processing_time
             ),
-            formatted_prompt_section=_format_prompt_section(context_data, detected_language)
+            formatted_prompt_section=_format_prompt_section(context_data, detected_language, domain),
+            domain_prompt_context=domain_prompt_ctx
         )
         
         logger.info(f"Context generated successfully in {processing_time}ms")

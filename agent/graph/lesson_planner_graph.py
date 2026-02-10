@@ -154,7 +154,13 @@ class LessonPlannerPipeline:
                 "error": final_state.get("error"),
                 # Phase 3: Add query_intent and key_concepts for upsell buttons
                 "query_intent": final_state.get("query_intent", "lesson_creation"),
-                "key_concepts": final_state.get("key_concepts", [])
+                "key_concepts": final_state.get("key_concepts", []),
+                # Phase 3 (Media): Pass curated media for enhancement buttons
+                "curated_media": final_state.get("curated_media"),
+                # Phase A: Scope detection for hybrid mode
+                "scope_status": final_state.get("scope_status", "in_scope"),
+                "scope_confidence": final_state.get("scope_confidence", 1.0),
+                "external_resources": final_state.get("external_resources")
             }
             
             logger.info(

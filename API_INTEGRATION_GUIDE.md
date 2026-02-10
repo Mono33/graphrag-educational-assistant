@@ -105,7 +105,7 @@ Open browser: http://localhost:8000/docs
 | `include_raw_nodes` | boolean | No | `false` | Include raw graph node data |
 | `max_methodologies` | integer | No | `5` | Max methodologies to return (1-10) |
 
-#### Response
+#### Response (v1.1.0)
 
 ```json
 {
@@ -114,7 +114,7 @@ Open browser: http://localhost:8000/docs
     "original_query": "Come posso introdurre strategie metacognitive nella mia classe?",
     "translated_query": "Neuroscience query: How can I introduce metacognitive strategies in my classroom?",
     "detected_language": "it",
-    "cypher_query": "MATCH (t:TeachingPractices {domain: \"neuro\"})-[r]-(m:Metacognition {domain: \"neuro\"}) RETURN t, type(r), m, labels(t) as source_labels, labels(m) as target_labels LIMIT 10"
+    "cypher_query": "MATCH (t:TeachingPractices {domain: \"neuro\"})-[r]-(m:Metacognition {domain: \"neuro\"}) RETURN t, type(r), m LIMIT 10"
   },
   "context": {
     "educational_context_type": "neuroscience",
@@ -131,7 +131,7 @@ Open browser: http://localhost:8000/docs
         "confidence": "very_high"
       }
     ],
-    "supporting_methodologies": [...],
+    "supporting_methodologies": ["..."],
     "evidence_summary": "Recommendations based on general pedagogical principles and domain expertise.",
     "implementation_priority": ["Start with Sustained Engagement (high confidence)", "Pilot with a subset of students first"],
     "confidence_level": "high",
@@ -144,29 +144,48 @@ Open browser: http://localhost:8000/docs
     "processing_time_ms": 28000
   },
   "formatted_prompt_section": "## CONTESTO DAL KNOWLEDGE GRAPH NEUROSCIENTIFICO\n\n**Contesto Educativo:** neuroscience\n...",
+  "domain_prompt_context": {
+    "domain": "neuro",
+    "domain_display_name": "Neuro (Neuroscience)",
+    "system_prompt": "# RUOLO\nSei un'Esperta di Neurodidattica e progettazione didattica evidence-based...",
+    "response_template": "Schema Lezione: Warm-up → I Do → We Do → You Do → Consolidamento...",
+    "kg_context_formatted": "## CONTESTO DAL KNOWLEDGE GRAPH NEUROSCIENTIFICO\n..."
+  },
   "error": null
 }
 ```
+
+#### New in v1.1.0: `domain_prompt_context`
+
+| Field | Description |
+|-------|-------------|
+| `domain` | Domain identifier (e.g., `"neuro"`, `"udl"`) |
+| `domain_display_name` | Human-readable name (e.g., `"Neuro (Neuroscience)"`) |
+| `system_prompt` | Rich domain system prompt (RUOLO, TAG-CLOUD, PRINCIPI, META-REGOLE) |
+| `response_template` | Domain-specific output structure (e.g., I Do/We Do/You Do lesson schema) |
+| `kg_context_formatted` | KG data formatted in domain-specific structure |
 
 ---
 
 ## Integration Options
 
-### Option 1: Use `formatted_prompt_section` Directly (Simplest)
+### Option 1: Simple — Use `formatted_prompt_section` (One Block)
 
-The response includes a pre-formatted text section ready for prompt injection.
+The response includes a domain-aware pre-formatted text section ready for prompt injection as a single block.
 
 ```python
 import requests
 
-def get_graphrag_context(user_prompt: str) -> str:
+API_URL = "http://localhost:8000/api/v1/context"
+
+def get_graphrag_context(user_prompt: str, domain: str = "neuro") -> str:
     """Get educational context from GraphRAG API"""
     try:
         response = requests.post(
-            "http://localhost:8000/api/v1/context",
+            API_URL,
             json={
                 "query": user_prompt,
-                "domain": "neuro",
+                "domain": domain,
                 "language": "it"
             },
             timeout=30
@@ -178,61 +197,67 @@ def get_graphrag_context(user_prompt: str) -> str:
     return ""
 
 # Usage in your prompt assembler:
-prompt = your_existing_prompt
-prompt += "\n\n" + get_graphrag_context(user_query)
-prompt += format_user_prompt(user_query)
+graphrag_block = get_graphrag_context(user_query)
+final_prompt = base_prompt + "\n\n" + graphrag_block
 ```
 
-### Option 2: Use Structured Data (Full Control)
+### Option 2: Granular — Inject at `[usa le info dal GraphRag]` Points
 
-Access individual fields to build your own formatted context.
+Use the structured `context` data to inject KG content at specific points in the production prompt.
 
 ```python
-response = requests.post(API_URL, json={"query": user_query, ...})
+response = requests.post(API_URL, json={"query": user_query, "domain": "neuro"})
 data = response.json()
 
-# Access structured data
-methodologies = data["context"]["primary_methodologies"]
-evidence = data["context"]["evidence_summary"]
-confidence = data["context"]["confidence_level"]
-priorities = data["context"]["implementation_priority"]
-
-# Build your own format
-for method in methodologies:
-    print(f"- {method['name']}: {method['implementation_guidance']}")
-```
-
-### Option 3: Context-Aware Integration (Best Results)
-
-Enrich the query with student profile information you already have.
-
-```python
-def get_graphrag_context(user_prompt: str, student_disabilities: list = None) -> str:
-    """Get educational context with student profile enrichment"""
-    query = user_prompt
+if data["success"]:
+    ctx = data["context"]
     
-    # Enrich query with student context
-    if student_disabilities:
-        needs = ", ".join(student_disabilities)
-        query = f"{user_prompt} (studenti con: {needs})"
-    
-    response = requests.post(
-        "http://localhost:8000/api/v1/context",
-        json={"query": query, "domain": "neuro", "language": "it"},
-        timeout=30
+    # Build methodology text from raw data
+    methods_text = "\n".join(
+        f"- {m['name']}: {m['implementation_guidance']}"
+        for m in ctx["primary_methodologies"]
     )
     
-    if response.ok:
-        return response.json().get("formatted_prompt_section", "")
-    return ""
-
-# Usage:
-context = get_graphrag_context(
-    "Come spiegare le frazioni?",
-    student_disabilities=["ADHD", "Dislessia"]
-)
-# Returns methodologies tailored for ADHD + Dyslexia students
+    # Inject at specific points in the production Neuro prompt
+    prompt = base_prompt.replace(
+        "Modello I Do – We Do – You Do [usa le info dal GraphRag]",
+        f"Modello I Do – We Do – You Do\n{methods_text}"
+    )
+    
+    # Add evidence at another injection point
+    prompt = prompt.replace(
+        "Motivazione intrinseca ed estrinseca [usa le info dal GraphRag]",
+        f"Motivazione intrinseca ed estrinseca\n{ctx['evidence_summary']}"
+    )
 ```
+
+### Option 3: Full Alignment — Use `domain_prompt_context` (v1.1.0)
+
+Access the complete domain expertise: system prompt, lesson schema, and pre-formatted KG context.
+
+```python
+response = requests.post(API_URL, json={"query": user_query, "domain": "neuro"})
+data = response.json()
+
+if data["success"]:
+    domain_ctx = data["domain_prompt_context"]
+    
+    # Rich system prompt (RUOLO, TAG-CLOUD, PRINCIPI, META-REGOLE)
+    system_prompt = domain_ctx["system_prompt"]
+    
+    # Lesson schema template (I Do / We Do / You Do)
+    response_template = domain_ctx["response_template"]
+    
+    # KG data already formatted for this domain
+    kg_block = domain_ctx["kg_context_formatted"]
+    
+    # Compose final prompt
+    final_prompt = f"{base_prompt}\n\n{kg_block}"
+```
+
+### Note on Session Variables
+
+Environment variables like **number of students**, **class level**, **special needs**, **available tech**, and **lesson duration** are session-specific and should continue to be passed directly by your LLM assistant. The GraphRAG API provides complementary **domain knowledge** (neuroscience concepts, pedagogical strategies, evidence). The LLM combines both to generate contextually adapted responses.
 
 ---
 
@@ -350,7 +375,7 @@ Response:
 {
   "status": "healthy",
   "neo4j_connected": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "domain_configs_loaded": ["neuro", "udl"]
 }
 ```
@@ -394,5 +419,5 @@ For questions or issues:
 
 ---
 
-*Last updated: December 2024*
+*Last updated: January 2026 (v1.1.0 — domain-aware prompts, domain_prompt_context)*
 

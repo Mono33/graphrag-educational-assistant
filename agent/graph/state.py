@@ -29,6 +29,14 @@ class QueryIntent(Enum):
     LIST = "list"                             # "List the types of..." questions
 
 
+class ScopeStatus(Enum):
+    """Scope status for query topics relative to Knowledge Graph"""
+    IN_SCOPE = "in_scope"              # Topic found in KG (e.g., metacognition, attention)
+    PARTIAL_SCOPE = "partial_scope"    # Pedagogy in KG, but subject topic outside
+    OUT_OF_SCOPE = "out_of_scope"      # Topic completely outside KG domain
+    UNKNOWN = "unknown"                # Could not determine scope
+
+
 class AgentState(TypedDict, total=False):
     """
     Shared state passed between all agents in the pipeline.
@@ -55,6 +63,12 @@ class AgentState(TypedDict, total=False):
     key_concepts: Optional[List[str]]  # Key concepts to search for
     search_queries: Optional[List[str]]  # Queries to run on GraphRAG
     
+    # NEW: Scope Detection (Phase A - Out-of-domain handling)
+    scope_status: Optional[str]     # "in_scope", "partial_scope", "out_of_scope"
+    scope_confidence: Optional[float]  # 0.0-1.0 confidence in scope detection
+    subject_concepts: Optional[List[str]]  # Subject-specific concepts (may be out of scope)
+    pedagogy_concepts: Optional[List[str]]  # Pedagogical concepts (always from KG)
+    
     # ========================================
     # RETRIEVER OUTPUT
     # ========================================
@@ -63,6 +77,11 @@ class AgentState(TypedDict, total=False):
     retrieved_relationships: Optional[List[Dict[str, Any]]]  # All relationships
     recommendations: Optional[List[Dict[str, Any]]]   # Educational recommendations
     retrieval_confidence: Optional[str]  # Confidence from GraphRAG
+    # NEW Phase 1: Curated media from sidecar JSON (optional, backward compatible)
+    curated_media: Optional[Dict[str, Any]]  # Videos, resources, citations
+    
+    # NEW Phase A: External resources for out-of-scope queries
+    external_resources: Optional[Dict[str, Any]]  # Wikipedia, OER, Semantic Scholar results
     
     # ========================================
     # WRITER OUTPUT
@@ -128,6 +147,11 @@ def create_initial_state(
         target_grade=None,
         key_concepts=None,
         search_queries=None,
+        # NEW Phase A: Scope detection
+        scope_status=None,
+        scope_confidence=None,
+        subject_concepts=None,
+        pedagogy_concepts=None,
         
         # Retriever (empty)
         graphrag_results=None,
@@ -135,6 +159,8 @@ def create_initial_state(
         retrieved_relationships=None,
         recommendations=None,
         retrieval_confidence=None,
+        curated_media=None,  # NEW Phase 1
+        external_resources=None,  # NEW Phase A
         
         # Writer (empty)
         lesson_plan_draft=None,

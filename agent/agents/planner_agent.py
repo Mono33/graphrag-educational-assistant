@@ -30,10 +30,26 @@ class RetrievalPlan:
     intent_confidence: str = "MEDIUM"
     reasoning: Optional[str] = None
     
+    # NEW Phase A: Scope detection fields
+    scope_status: str = "in_scope"  # in_scope, partial_scope, out_of_scope
+    scope_confidence: float = 1.0   # 0.0-1.0 confidence in scope detection
+    subject_concepts: Optional[List[str]] = None  # Subject-specific (may need external APIs)
+    pedagogy_concepts: Optional[List[str]] = None  # Teaching strategies from KG
+    
     @property
     def is_lesson_intent(self) -> bool:
         """Check if this is a lesson/activity creation intent"""
         return self.query_intent in ("lesson_creation", "activity_design")
+    
+    @property
+    def needs_external_apis(self) -> bool:
+        """Check if this plan requires external API calls for subject content"""
+        return self.scope_status in ("partial_scope", "out_of_scope")
+    
+    @property
+    def is_in_scope(self) -> bool:
+        """Check if query is fully within Knowledge Graph scope"""
+        return self.scope_status == "in_scope"
 
 
 class PlannerAgent:
@@ -109,6 +125,12 @@ class PlannerAgent:
             # Extract query intent (with fallback for backward compatibility)
             query_intent = plan_data.get("query_intent", "lesson_creation")
             
+            # NEW Phase A: Extract scope detection fields
+            scope_status = plan_data.get("scope_status", "in_scope")
+            scope_confidence = plan_data.get("scope_confidence", 1.0)
+            subject_concepts = plan_data.get("subject_concepts")
+            pedagogy_concepts = plan_data.get("pedagogy_concepts")
+            
             plan = RetrievalPlan(
                 query_intent=query_intent,
                 key_concepts=plan_data.get("key_concepts", []),
@@ -118,15 +140,25 @@ class PlannerAgent:
                 special_needs=plan_data.get("special_needs"),
                 time_constraints=plan_data.get("time_constraints"),
                 intent_confidence=plan_data.get("intent_confidence", "MEDIUM"),
-                reasoning=plan_data.get("reasoning")
+                reasoning=plan_data.get("reasoning"),
+                # NEW Phase A: Scope detection
+                scope_status=scope_status,
+                scope_confidence=scope_confidence,
+                subject_concepts=subject_concepts,
+                pedagogy_concepts=pedagogy_concepts
             )
             
+            # Enhanced logging with scope status
+            scope_emoji = {"in_scope": "✅", "partial_scope": "⚠️", "out_of_scope": "❌"}.get(scope_status, "❓")
             logger.info(
                 f"[PlannerAgent] Created plan: intent={plan.query_intent}, "
-                f"confidence={plan.intent_confidence}, "
+                f"scope={scope_emoji} {scope_status} ({scope_confidence:.0%}), "
                 f"{len(plan.search_queries)} queries, "
                 f"concepts: {plan.key_concepts[:3]}..."
             )
+            
+            if plan.needs_external_apis:
+                logger.info(f"[PlannerAgent] 🌐 External APIs needed for: {subject_concepts}")
             
             return plan
             

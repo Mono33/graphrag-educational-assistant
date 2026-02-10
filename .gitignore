@@ -138,6 +138,19 @@ neuro_audit_report.json
 query_metrics.csv
 *_metrics_*.csv
 
+# Generated images (DALL-E outputs, auto-regenerated)
+generated_images/
+
+# Test data files
+kg_neuro_media_mapping_test.json
+
+# One-off test scripts
+test_phase1_media.py
+test_phase2_writer.py
+test_phase3_media_ui.py
+test_resource_lookup.py
+test_resource_lookup_simple.py
+
 # Verification scripts (temporary utilities)
 verify_ingestion.py
 verify_alignment.py

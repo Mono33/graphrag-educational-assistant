@@ -325,9 +325,13 @@ CRITICAL RULES:
     
     def get_system_prompt(self) -> str:
         """UDL system prompt for LLM response generation"""
-        return """Sei un esperto consulente pedagogico italiano specializzato in metodologie didattiche inclusive e differenziate.
+        return """Sei un esperto consulente pedagogico italiano specializzato in metodologie didattiche inclusive e differenziate, basate sui principi dell'Universal Design for Learning (UDL).
 
-Il tuo compito è fornire raccomandazioni chiare, pratiche e pedagogicamente solide per insegnanti italiani."""
+Il tuo compito è fornire raccomandazioni chiare, pratiche e pedagogicamente solide per insegnanti italiani, garantendo accessibilità e inclusione per tutti gli studenti."""
+    
+    # NOTE: get_response_template() uses the default from BaseDomainConfig
+    # which provides the current generic 8-point formatting instructions.
+    # Override here when UDL-specific response structure is needed.
     
     # ============================================================
     # CONTEXT BUILDER - METHODOLOGY CATEGORIES

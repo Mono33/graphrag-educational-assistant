@@ -1041,8 +1041,12 @@ def _display_agent_results():
     key_concepts = getattr(result, 'key_concepts', []) or []
     content_type_label = _get_content_type_label(query_intent)
     
+    # NEW Phase A: Get scope status for hybrid mode indicator
+    scope_status = getattr(result, 'scope_status', 'in_scope') or 'in_scope'
+    is_hybrid = getattr(result, 'is_hybrid', False)
+    
     # Results header with status - adapt title based on intent
-    col1, col2, col3 = st.columns([2, 1, 1])
+    col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
     with col1:
         if _is_lesson_intent(query_intent):
             st.markdown("## 📄 Piano di Lezione Generato")
@@ -1055,6 +1059,22 @@ def _display_agent_results():
             st.warning("⚠️ Non approvato")
     with col3:
         st.metric("Revisioni", result.revision_count)
+    with col4:
+        # NEW Phase A: Scope status indicator
+        if scope_status == "in_scope":
+            st.success("✅ In-Scope")
+        elif scope_status == "partial_scope":
+            st.warning("⚠️ Ibrido")
+        elif scope_status == "out_of_scope":
+            st.info("🌐 Esterno")
+    
+    # NEW Phase A: Hybrid mode disclaimer
+    if is_hybrid:
+        st.info(
+            "🌐 **Modalità Ibrida**: Il contenuto disciplinare proviene da fonti esterne "
+            "(Wikipedia, pubblicazioni accademiche). Le strategie pedagogiche sono basate "
+            "sul Knowledge Graph FEM."
+        )
     
     # Tabs for different views
     tab1, tab2, tab3 = st.tabs(["📝 Piano di Lezione", "📊 Metriche", "🔍 Dettagli"])
@@ -1104,6 +1124,566 @@ def _display_agent_results():
                         st.session_state['agent_upsell_type'] = 'activity'
                         del st.session_state['agent_result']
                         st.rerun()
+            # ═══════════════════════════════════════════════════════════════════════
+            
+            # ═══════════════════════════════════════════════════════════════════════
+            # PHASE 3 (MEDIA): MEDIA ENHANCEMENT BUTTONS
+            # ═══════════════════════════════════════════════════════════════════════
+            curated_media = getattr(result, 'curated_media', None)
+            has_media = curated_media and any(curated_media.values())
+            
+            if has_media:
+                st.divider()
+                st.markdown("### 🎨 Arricchisci con Media")
+                st.caption("Esplora contenuti multimediali per questa risposta:")
+                
+                media_col1, media_col2, media_col3, media_col4 = st.columns(4)
+                
+                with media_col1:
+                    videos = curated_media.get('videos', [])
+                    video_count = len(videos)
+                    if st.button(
+                        f"🎥 Video ({video_count})",
+                        use_container_width=True,
+                        key="media_video_btn",
+                        help="Mostra video educativi suggeriti",
+                        disabled=video_count == 0
+                    ):
+                        st.session_state['show_media_videos'] = True
+                        st.session_state['show_media_resources'] = False
+                        st.session_state['show_media_citations'] = False
+                        st.session_state['show_media_textbooks'] = False
+                
+                with media_col2:
+                    resources = curated_media.get('resources', [])
+                    resource_count = len(resources)
+                    if st.button(
+                        f"🔗 Risorse ({resource_count})",
+                        use_container_width=True,
+                        key="media_resources_btn",
+                        help="Mostra risorse educative (Wikipedia, etc.)",
+                        disabled=resource_count == 0
+                    ):
+                        st.session_state['show_media_videos'] = False
+                        st.session_state['show_media_resources'] = True
+                        st.session_state['show_media_citations'] = False
+                        st.session_state['show_media_textbooks'] = False
+                
+                with media_col3:
+                    citations = curated_media.get('citations', [])
+                    citation_count = len(citations)
+                    if st.button(
+                        f"📖 Papers ({citation_count})",
+                        use_container_width=True,
+                        key="media_citations_btn",
+                        help="Mostra riferimenti scientifici",
+                        disabled=citation_count == 0
+                    ):
+                        st.session_state['show_media_videos'] = False
+                        st.session_state['show_media_resources'] = False
+                        st.session_state['show_media_citations'] = True
+                        st.session_state['show_media_textbooks'] = False
+                
+                with media_col4:
+                    textbooks = curated_media.get('open_textbooks', [])
+                    textbook_count = len(textbooks)
+                    if st.button(
+                        f"📚 Libri OER ({textbook_count})",
+                        use_container_width=True,
+                        key="media_textbooks_btn",
+                        help="Mostra libri di testo aperti (OpenStax, DOAB, etc.)",
+                        disabled=textbook_count == 0
+                    ):
+                        st.session_state['show_media_videos'] = False
+                        st.session_state['show_media_resources'] = False
+                        st.session_state['show_media_citations'] = False
+                        st.session_state['show_media_textbooks'] = True
+                
+                # Display selected media content
+                if st.session_state.get('show_media_videos') and videos:
+                    st.markdown("#### 🎥 Video Educativi Trovati")
+                    for i, v in enumerate(videos, 1):
+                        title = v.get('title', 'Video')
+                        url = v.get('url')
+                        duration = v.get('duration_hint', '')
+                        search_query = v.get('search_query', '')
+                        
+                        if url:
+                            st.markdown(f"**{i}. [{title}]({url})** {f'({duration})' if duration else ''}")
+                            st.caption(f"   🔗 {url}")
+                        else:
+                            st.markdown(f"**{i}. {title}** {f'({duration})' if duration else ''}")
+                            st.caption(f"   🔍 Cerca su YouTube: \"{search_query}\"")
+                
+                if st.session_state.get('show_media_resources') and resources:
+                    st.markdown("#### 🔗 Risorse Educative")
+                    for i, r in enumerate(resources, 1):
+                        title = r.get('title', 'Resource')
+                        url = r.get('url') or r.get('suggested_url')
+                        res_type = r.get('type', 'educational').title()
+                        
+                        if url:
+                            st.markdown(f"**{i}. [{title}]({url})** ({res_type})")
+                        else:
+                            st.markdown(f"**{i}. {title}** ({res_type})")
+                
+                if st.session_state.get('show_media_citations') and citations:
+                    st.markdown("#### 📖 Riferimenti Scientifici")
+                    for i, c in enumerate(citations, 1):
+                        authors = c.get('authors', [])
+                        authors_str = ', '.join(authors[:2])
+                        if len(authors) > 2:
+                            authors_str += ' et al.'
+                        year = c.get('year', '')
+                        title = c.get('title', '')
+                        journal = c.get('journal', '')
+                        doi = c.get('doi')
+                        
+                        citation_text = f"**{i}. {authors_str}**"
+                        if year:
+                            citation_text += f" ({year})"
+                        citation_text += f". *{title}*"
+                        if journal:
+                            citation_text += f". {journal}"
+                        
+                        st.markdown(citation_text)
+                        if doi:
+                            st.caption(f"   DOI: [{doi}](https://doi.org/{doi})")
+                
+                if st.session_state.get('show_media_textbooks') and textbooks:
+                    st.markdown("#### 📚 Libri di Testo Aperti (OER)")
+                    st.caption("Risorse educative aperte - copyright-safe (CC BY)")
+                    for i, t in enumerate(textbooks, 1):
+                        title = t.get('title', 'Textbook')
+                        source = t.get('source', 'Unknown')
+                        chapter = t.get('chapter', '')
+                        url = t.get('url')
+                        license_type = t.get('license', 'CC BY 4.0')
+                        relevance = t.get('relevance', '')
+                        
+                        if url:
+                            st.markdown(f"**{i}. [{title}]({url})**")
+                        else:
+                            st.markdown(f"**{i}. {title}**")
+                        
+                        info_parts = [f"📕 Fonte: {source}"]
+                        if chapter:
+                            info_parts.append(f"📑 {chapter}")
+                        info_parts.append(f"📜 {license_type}")
+                        st.caption("   " + " | ".join(info_parts))
+                        
+                        if relevance:
+                            st.caption(f"   💡 {relevance}")
+            # ═══════════════════════════════════════════════════════════════════════
+            
+            # ═══════════════════════════════════════════════════════════════════════
+            # PHASE 0b: EXPERT-VETTED RESOURCES (Copyright-Safe)
+            # Resources curated by domain experts from kg_neuro_resources.json
+            # ═══════════════════════════════════════════════════════════════════════
+            if key_concepts:
+                st.divider()
+                with st.expander("📚 Risorse Consigliate dagli Esperti", expanded=False):
+                    st.caption("Risorse educative verificate da esperti di dominio (tutte copyright-safe):")
+                    
+                    try:
+                        from agent.media.resource_lookup import ResourceLookup
+                        
+                        # Get domain from session state
+                        expert_domain = st.session_state.get('agent_result_domain', 'neuro')
+                        
+                        # Initialize lookup
+                        lookup = ResourceLookup(domain=expert_domain)
+                        
+                        if lookup.loaded:
+                            # Find resources for key concepts
+                            resources = lookup.find_resources_for_concepts(
+                                key_concepts[:5], 
+                                max_per_concept=2
+                            )
+                            
+                            if resources.has_resources():
+                                # Show concept context
+                                st.info(f"🎯 Concetti: {', '.join(key_concepts[:3])}")
+                                
+                                # Group resources by type for cleaner display
+                                textbooks = resources.filter_by_type("textbook")
+                                simulations = resources.filter_by_type("interactive_simulation")
+                                websites = resources.filter_by_type("website")
+                                courses = resources.filter_by_type("course")
+                                papers = resources.filter_by_type("academic_paper")
+                                videos = resources.filter_by_type("video_channel")
+                                
+                                # Display textbooks
+                                if textbooks:
+                                    st.markdown("#### 📖 Libri di Testo Aperti")
+                                    for r in textbooks:
+                                        st.markdown(f"**[{r.title}]({r.url})**")
+                                        st.caption(f"   🏛️ {r.source_org} | 📜 {r.license} ✅")
+                                        if r.description:
+                                            st.caption(f"   {r.description[:100]}...")
+                                
+                                # Display interactive simulations
+                                if simulations:
+                                    st.markdown("#### 🎮 Simulazioni Interattive")
+                                    for r in simulations:
+                                        st.markdown(f"**[{r.title}]({r.url})**")
+                                        st.caption(f"   🏛️ {r.source_org} | 📜 {r.license} ✅")
+                                
+                                # Display websites
+                                if websites:
+                                    st.markdown("#### 🌐 Siti Web Educativi")
+                                    for r in websites[:4]:  # Limit to 4
+                                        st.markdown(f"**[{r.title}]({r.url})**")
+                                        st.caption(f"   🏛️ {r.source_org} | 📜 {r.license} ✅")
+                                
+                                # Display courses
+                                if courses:
+                                    st.markdown("#### 🎓 Corsi Online")
+                                    for r in courses:
+                                        st.markdown(f"**[{r.title}]({r.url})**")
+                                        st.caption(f"   🏛️ {r.source_org} | 📜 {r.license} ✅")
+                                
+                                # Display academic papers
+                                if papers:
+                                    st.markdown("#### 📄 Articoli Accademici (Open Access)")
+                                    for r in papers:
+                                        st.markdown(f"**[{r.title}]({r.url})**")
+                                        st.caption(f"   🏛️ {r.source_org} | 📜 {r.license} ✅")
+                                
+                                # Display video channels
+                                if videos:
+                                    st.markdown("#### 🎥 Canali Video")
+                                    for r in videos:
+                                        st.markdown(f"**[{r.title}]({r.url})**")
+                                        st.caption(f"   🏛️ {r.source_org} | ⚠️ Solo link (copyright)")
+                                
+                                # Footer with stats
+                                st.divider()
+                                stats = lookup.get_stats()
+                                st.caption(
+                                    f"📊 Totale risorse disponibili: {stats['total_resources']} | "
+                                    f"Tutte verificate copyright-safe ✅"
+                                )
+                            else:
+                                st.info("Nessuna risorsa esperta trovata per questi concetti.")
+                        else:
+                            st.warning("Database risorse esperti non disponibile.")
+                    
+                    except ImportError as e:
+                        st.warning(f"Modulo risorse non disponibile: {e}")
+                    except Exception as e:
+                        st.error(f"Errore nel caricamento risorse: {e}")
+            # ═══════════════════════════════════════════════════════════════════════
+            
+            # ═══════════════════════════════════════════════════════════════════════
+            # PHASE 4: LIVE EXTERNAL API SEARCH
+            # ═══════════════════════════════════════════════════════════════════════
+            if key_concepts:
+                st.divider()
+                with st.expander("🔍 Ricerca Live (API Esterne)", expanded=False):
+                    st.caption("Cerca contenuti in tempo reale da fonti esterne:")
+                    
+                    # Search topic selector
+                    search_topic = st.selectbox(
+                        "Seleziona argomento da cercare:",
+                        options=key_concepts[:5],
+                        key="live_search_topic"
+                    )
+                    
+                    live_col1, live_col2, live_col3 = st.columns(3)
+                    
+                    with live_col1:
+                        if st.button(
+                            "🎥 Cerca su YouTube",
+                            use_container_width=True,
+                            key="live_youtube_btn",
+                            help="Cerca video educativi in tempo reale"
+                        ):
+                            st.session_state['live_search_type'] = 'youtube'
+                            st.session_state['live_search_query'] = search_topic
+                    
+                    with live_col2:
+                        if st.button(
+                            "📖 Wikipedia",
+                            use_container_width=True,
+                            key="live_wikipedia_btn",
+                            help="Cerca articolo Wikipedia"
+                        ):
+                            st.session_state['live_search_type'] = 'wikipedia'
+                            st.session_state['live_search_query'] = search_topic
+                    
+                    with live_col3:
+                        if st.button(
+                            "📚 Papers Recenti",
+                            use_container_width=True,
+                            key="live_papers_btn",
+                            help="Cerca articoli scientifici recenti (2020+)"
+                        ):
+                            st.session_state['live_search_type'] = 'papers'
+                            st.session_state['live_search_query'] = search_topic
+                    
+                    # Display live search results
+                    if st.session_state.get('live_search_type') and st.session_state.get('live_search_query'):
+                        search_type = st.session_state['live_search_type']
+                        search_query = st.session_state['live_search_query']
+                        
+                        with st.spinner(f"Cercando '{search_query}'..."):
+                            try:
+                                from agent.media.external_apis import ExternalMediaAPI
+                                api = ExternalMediaAPI()
+                                
+                                if search_type == 'youtube':
+                                    st.markdown(f"#### 🎥 Video YouTube per '{search_query}'")
+                                    videos = asyncio.run(api.search_youtube(search_query, max_results=5))
+                                    
+                                    if videos:
+                                        for i, v in enumerate(videos, 1):
+                                            st.markdown(f"**{i}. [{v.title}]({v.url})**")
+                                            if v.channel:
+                                                st.caption(f"   📺 {v.channel}")
+                                    else:
+                                        st.info("Nessun video trovato.")
+                                
+                                elif search_type == 'wikipedia':
+                                    # Get output language from session state
+                                    wiki_lang = st.session_state.get('agent_language', 'it')
+                                    lang_name = "Italiano" if wiki_lang == "it" else "English"
+                                    st.markdown(f"#### 📖 Wikipedia ({lang_name}): '{search_query}'")
+                                    wiki = asyncio.run(api.get_wikipedia_summary(search_query, language=wiki_lang))
+                                    
+                                    if wiki:
+                                        st.markdown(f"**[{wiki.title}]({wiki.url})**")
+                                        st.markdown(wiki.summary)
+                                        if wiki.thumbnail_url:
+                                            st.image(wiki.thumbnail_url, width=200)
+                                    else:
+                                        st.info(f"Articolo non trovato su Wikipedia {lang_name}.")
+                                
+                                elif search_type == 'papers':
+                                    st.markdown(f"#### 📚 Papers Recenti per '{search_query}'")
+                                    papers = asyncio.run(api.search_semantic_scholar(
+                                        search_query, max_results=5, year_from=2020
+                                    ))
+                                    
+                                    if papers:
+                                        for i, p in enumerate(papers, 1):
+                                            authors_str = ", ".join(p.authors[:2])
+                                            if len(p.authors) > 2:
+                                                authors_str += " et al."
+                                            
+                                            st.markdown(f"**{i}. [{p.title}]({p.url})**")
+                                            st.caption(f"   👤 {authors_str} ({p.year}) | 📊 {p.citation_count} citations")
+                                            if p.is_open_access:
+                                                st.caption(f"   ✅ Open Access | [PDF]({p.pdf_url})")
+                                            if p.doi:
+                                                st.caption(f"   DOI: {p.doi}")
+                                    else:
+                                        st.info("Nessun paper trovato.")
+                                
+                                asyncio.run(api.close())
+                                
+                            except Exception as e:
+                                st.error(f"Errore nella ricerca: {e}")
+                        
+                        # Clear search state after displaying
+                        if st.button("🔄 Nuova ricerca", key="clear_live_search"):
+                            st.session_state['live_search_type'] = None
+                            st.session_state['live_search_query'] = None
+                            st.rerun()
+            # ═══════════════════════════════════════════════════════════════════════
+            
+            # ═══════════════════════════════════════════════════════════════════════
+            # PHASE 5: AI DIAGRAM GENERATION (Multi-Generator)
+            # Mermaid.js (FREE), DALL-E 3 ($0.04), Canva (Coming Soon)
+            # ═══════════════════════════════════════════════════════════════════════
+            if key_concepts:
+                st.divider()
+                with st.expander("🎨 Genera Diagramma AI", expanded=False):
+                    st.caption("Genera diagrammi educativi con diversi generatori")
+                    
+                    # Generator selector with descriptions
+                    generator_options = {
+                        "🆓 Mermaid.js (Gratuito, testo preciso)": "mermaid",
+                        "🎨 DALL-E 3 (Visivo, $0.04/immagine)": "dalle",
+                        "📐 Canva (Pro templates - Coming Soon)": "canva"
+                    }
+                    
+                    selected_generator_label = st.radio(
+                        "📋 Scegli il generatore:",
+                        options=list(generator_options.keys()),
+                        index=0,  # Default to Mermaid (free)
+                        key="diagram_generator_selector",
+                        horizontal=True
+                    )
+                    
+                    selected_generator = generator_options[selected_generator_label]
+                    
+                    # Show info based on generator
+                    if selected_generator == "mermaid":
+                        st.info("✅ **Mermaid.js**: Gratuito, testo accurato, SVG scalabile, codice modificabile")
+                    elif selected_generator == "dalle":
+                        st.warning("⚠️ **DALL-E 3**: Costo ~$0.04 per immagine, visivamente attraente ma testo può essere impreciso")
+                    elif selected_generator == "canva":
+                        st.info("🚧 **Canva**: Integrazione in arrivo. Usa Mermaid.js o DALL-E nel frattempo.")
+                    
+                    # Concept selector
+                    gen_concept = st.selectbox(
+                        "📊 Seleziona concetto:",
+                        options=key_concepts[:5],
+                        key="diagram_concept"
+                    )
+                    
+                    # Diagram type selector (same for all generators, mapped internally)
+                    diagram_types = {
+                        "Mappa Concettuale": "mindmap",
+                        "Diagramma di Flusso": "flowchart",
+                        "Gerarchia": "hierarchy",
+                        "Timeline": "timeline",
+                        "Confronto": "comparison",
+                        "Processo": "process"
+                    }
+                    
+                    selected_type_label = st.selectbox(
+                        "📐 Tipo di diagramma:",
+                        options=list(diagram_types.keys()),
+                        key="diagram_type_selector"
+                    )
+                    selected_type = diagram_types[selected_type_label]
+                    
+                    # Optional description (for DALL-E)
+                    if selected_generator == "dalle":
+                        custom_description = st.text_area(
+                            "Descrizione aggiuntiva (opzionale):",
+                            value="",
+                            key="diagram_description",
+                            help="Aggiungi dettagli specifici per il diagramma DALL-E"
+                        )
+                    else:
+                        custom_description = ""
+                    
+                    # Generate button (disabled for Canva)
+                    button_disabled = selected_generator == "canva"
+                    button_label = "🎨 Genera Diagramma" if not button_disabled else "🚧 Coming Soon"
+                    
+                    if st.button(
+                        button_label,
+                        use_container_width=True,
+                        key="diagram_generate_btn",
+                        type="primary",
+                        disabled=button_disabled
+                    ):
+                        # Determine spinner message
+                        if selected_generator == "mermaid":
+                            spinner_msg = f"Generando diagramma Mermaid per '{gen_concept}'..."
+                        else:
+                            spinner_msg = f"Generando diagramma DALL-E per '{gen_concept}'... (10-20 secondi)"
+                        
+                        with st.spinner(spinner_msg):
+                            try:
+                                if selected_generator == "mermaid":
+                                    # Use Mermaid generator (FREE)
+                                    from agent.media.mermaid_generator import MermaidGenerator
+                                    
+                                    generator = MermaidGenerator()
+                                    mermaid_result = asyncio.run(generator.generate(
+                                        concept=gen_concept,
+                                        diagram_type=selected_type,
+                                        related_concepts=key_concepts[:3],
+                                        validate=False
+                                    ))
+                                    asyncio.run(generator.close())
+                                    
+                                    if mermaid_result.success:
+                                        st.session_state['generated_diagram'] = {
+                                            'type': 'mermaid',
+                                            'concept': gen_concept,
+                                            'diagram_type': selected_type_label,
+                                            'svg_url': mermaid_result.svg_url,
+                                            'png_url': mermaid_result.png_url,
+                                            'mermaid_code': mermaid_result.mermaid_code,
+                                            'cost': 0.0
+                                        }
+                                        st.success("✅ Diagramma Mermaid generato (GRATUITO)!")
+                                    else:
+                                        st.error(f"❌ Errore: {mermaid_result.error_message}")
+                                
+                                elif selected_generator == "dalle":
+                                    # Use DALL-E generator
+                                    from agent.media.image_generator import ImageGenerator, DiagramType
+                                    
+                                    # Map to DALL-E diagram types
+                                    dalle_type_mapping = {
+                                        "mindmap": "concept_map",
+                                        "flowchart": "flowchart",
+                                        "hierarchy": "hierarchy",
+                                        "timeline": "infographic",
+                                        "comparison": "comparison",
+                                        "process": "process"
+                                    }
+                                    dalle_type_str = dalle_type_mapping.get(selected_type, "concept_map")
+                                    
+                                    generator = ImageGenerator()
+                                    diagram_type = DiagramType(dalle_type_str)
+                                    
+                                    description = custom_description or f"Educational concept about {gen_concept}"
+                                    
+                                    result_img = asyncio.run(generator.generate_educational_diagram(
+                                        concept=gen_concept,
+                                        description=description,
+                                        diagram_type=diagram_type
+                                    ))
+                                    
+                                    if result_img:
+                                        st.session_state['generated_diagram'] = {
+                                            'type': 'dalle',
+                                            'concept': gen_concept,
+                                            'diagram_type': selected_type_label,
+                                            'image_url': result_img.url,
+                                            'cost': result_img.cost_estimate,
+                                            'generated_at': result_img.generated_at
+                                        }
+                                        st.success(f"✅ Diagramma DALL-E generato (${result_img.cost_estimate:.2f})!")
+                                    else:
+                                        st.error("❌ Generazione DALL-E fallita. Riprova.")
+                                        
+                            except Exception as e:
+                                st.error(f"Errore: {e}")
+                    
+                    # Display generated diagram
+                    if st.session_state.get('generated_diagram'):
+                        gen_diag = st.session_state['generated_diagram']
+                        st.markdown(f"#### 🖼️ Diagramma: {gen_diag['concept']}")
+                        
+                        if gen_diag['type'] == 'mermaid':
+                            # Display Mermaid SVG
+                            st.image(gen_diag['svg_url'], caption=f"{gen_diag['diagram_type']} (Mermaid.js)")
+                            st.caption(f"💰 Costo: GRATUITO | 📊 Formato: SVG")
+                            
+                            # Show Mermaid code (copyable) - using checkbox instead of nested expander
+                            show_code = st.checkbox("📝 Mostra codice Mermaid", key="show_mermaid_code")
+                            if show_code:
+                                st.code(gen_diag['mermaid_code'], language="text")
+                                st.caption("💡 Copia questo codice per modificarlo su [mermaid.live](https://mermaid.live)")
+                            
+                            # Download links
+                            col_svg, col_png = st.columns(2)
+                            with col_svg:
+                                st.markdown(f"[📥 Scarica SVG]({gen_diag['svg_url']})")
+                            with col_png:
+                                st.markdown(f"[📥 Scarica PNG]({gen_diag['png_url']})")
+                        
+                        elif gen_diag['type'] == 'dalle':
+                            # Display DALL-E image
+                            st.image(gen_diag['image_url'], caption=f"{gen_diag['diagram_type']} (DALL-E 3)")
+                            st.caption(f"💰 Costo: ${gen_diag['cost']:.2f} | 📅 {gen_diag.get('generated_at', '')[:10]}")
+                            
+                            # Download link
+                            st.markdown(f"[📥 Scarica Immagine]({gen_diag['image_url']})")
+                        
+                        # Clear button
+                        if st.button("🗑️ Cancella diagramma", key="clear_diagram"):
+                            st.session_state['generated_diagram'] = None
+                            st.rerun()
             # ═══════════════════════════════════════════════════════════════════════
             
             # ═══════════════════════════════════════════════════════════════════════

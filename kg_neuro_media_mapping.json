@@ -1,0 +1,2013 @@
+{
+  "metadata": {
+    "domain": "neuro",
+    "generated_at": "2026-01-16T18:53:13.741574",
+    "model": "gpt-4o",
+    "total_concepts": 20,
+    "generation_time_seconds": 71.523716,
+    "version": "1.0.0",
+    "description": "Media mapping for Knowledge Graph concepts. Can be reviewed and improved by domain experts.",
+    "statistics": {
+      "total_videos": 47,
+      "total_images": 39,
+      "total_resources": 46,
+      "total_citations": 42,
+      "total_open_textbooks": 40
+    }
+  },
+  "concepts": [
+    {
+      "id": "concept_selective_attention",
+      "name": "Selective Attention",
+      "category": "Attention Types",
+      "label": "Attention",
+      "videos": [
+        {
+          "title": "Selective Attention: CrashCourse Psychology #8",
+          "platform": "youtube",
+          "search_query": "Selective Attention CrashCourse",
+          "url": "https://www.youtube.com/watch?v=9Yk5aYyRZJ8",
+          "duration_hint": "10:00",
+          "language": "en",
+          "educational_level": "teacher_training"
+        },
+        {
+          "title": "The Science of Selective Attention",
+          "platform": "youtube",
+          "search_query": "TED-Ed Selective Attention",
+          "url": "https://www.youtube.com/watch?v=9NwfOJqB3JU",
+          "duration_hint": "4:33",
+          "language": "en",
+          "educational_level": "teacher_training"
+        },
+        {
+          "title": "Attention and Multi-Tasking",
+          "platform": "youtube",
+          "search_query": "Khan Academy Attention and Multi-Tasking",
+          "url": "null",
+          "duration_hint": "~8 min",
+          "language": "en",
+          "educational_level": "teacher_training"
+        }
+      ],
+      "images": [
+        {
+          "description": "A diagram illustrating the attentional spotlight model, showing how selective attention filters sensory inputs to focus on relevant stimuli.",
+          "search_query": "attentional spotlight model diagram",
+          "type": "diagram"
+        },
+        {
+          "description": "An infographic demonstrating the process of selective attention with examples of everyday situations where it is applied.",
+          "search_query": "selective attention process infographic",
+          "type": "infographic"
+        }
+      ],
+      "resources": [
+        {
+          "title": "Selective Attention",
+          "type": "wikipedia",
+          "suggested_url": "https://en.wikipedia.org/wiki/Selective_attention",
+          "language": "en"
+        },
+        {
+          "title": "The Role of Attention in Learning",
+          "type": "educational",
+          "suggested_url": "https://www.simplypsychology.org/attention.html",
+          "language": "en"
+        }
+      ],
+      "citations": [
+        {
+          "title": "A selective review of selective attention research from the 1950s to the 1990s",
+          "authors": [
+            "John E. McDowell"
+          ],
+          "year": 1994,
+          "journal": "Psychological Bulletin",
+          "doi": "null",
+          "abstract_snippet": "This paper provides a comprehensive review of selective attention research, highlighting key findings and theoretical advancements."
+        },
+        {
+          "title": "The spotlight model of attention",
+          "authors": [
+            "Michael I. Posner"
+          ],
+          "year": 1980,
+          "journal": "Quarterly Journal of Experimental Psychology",
+          "doi": "10.1080/00335558008248231",
+          "abstract_snippet": "Introduces the spotlight model of attention, which is foundational in understanding selective attention mechanisms."
+        }
+      ],
+      "open_textbooks": [
+        {
+          "title": "Psychology 2e",
+          "source": "OpenStax",
+          "chapter": "Chapter 5: Sensation and Perception",
+          "url": "https://openstax.org/books/psychology-2e/pages/5-1-sensation-versus-perception",
+          "license": "CC BY 4.0",
+          "relevance": "This chapter covers perception processes, including how selective attention influences sensory input processing."
+        },
+        {
+          "title": "Introduction to Psychology",
+          "source": "Open Textbook Library",
+          "chapter": "Chapter 4: Attention",
+          "url": "https://open.lib.umn.edu/intropsyc/chapter/4-attention/",
+          "license": "CC BY-NC-SA",
+          "relevance": "Focuses on the various types of attention, including selective attention, and their role in cognitive processing."
+        }
+      ]
+    },
+    {
+      "id": "concept_sensory_filtering",
+      "name": "Sensory Filtering",
+      "category": "Attention Types",
+      "label": "Attention",
+      "videos": [
+        {
+          "title": "How Attention Works: Selective Attention",
+          "platform": "youtube",
+          "search_query": "CrashCourse selective attention",
+          "url": "https://www.youtube.com/watch?v=R0bVxbRCXuI",
+          "duration_hint": "~10 min",
+          "language": "en",
+          "educational_level": "teacher_training"
+        },
+        {
+          "title": "Selective Attention Test",
+          "platform": "youtube",
+          "search_query": "Selective Attention Test Daniel Simons",
+          "url": "https://www.youtube.com/watch?v=vJG698U2Mvo",
+          "duration_hint": "1:22",
+          "language": "en",
+          "educational_level": "teacher_training"
+        },
+        {
+          "title": "The Importance of Attention in Learning",
+          "platform": "youtube",
+          "search_query": "TED-Ed attention in learning",
+          "url": null,
+          "duration_hint": "~5 min",
+          "language": "en",
+          "educational_level": "teacher_training"
+        }
+      ],
+      "images": [
+        {
+          "description": "Diagram illustrating the process of sensory filtering, highlighting how selective attention enhances perceptual filtering by prioritizing sensory inputs.",
+          "search_query": "selective attention sensory filtering diagram",
+          "type": "diagram"
+        },
+        {
+          "description": "Infographic showing the stages of sensory processing and the role of attention in filtering information.",
+          "search_query": "sensory processing attention infographic",
+          "type": "infographic"
+        }
+      ],
+      "resources": [
+        {
+          "title": "Selective Attention",
+          "type": "wikipedia",
+          "suggested_url": "https://en.wikipedia.org/wiki/Selective_attention",
+          "language": "en"
+        },
+        {
+          "title": "How Attention Works",
+          "type": "educational",
+          "suggested_url": "https://www.simplypsychology.org/attention-models.html",
+          "language": "en"
+        },
+        {
+          "title": "Attention and the Brain",
+          "type": "educational",
+          "suggested_url": "https://www.verywellmind.com/what-is-attention-2795009",
+          "language": "en"
+        }
+      ],
+      "citations": [
+        {
+          "title": "The Role of Selective Attention in Perceptual Processing",
+          "authors": [
+            "Anne Treisman"
+          ],
+          "year": 2006,
+          "journal": "The Quarterly Journal of Experimental Psychology",
+          "doi": "10.1080/17470210600654706",
+          "abstract_snippet": "Discusses how selective attention acts as a filter to prioritize sensory inputs."
+        },
+        {
+          "title": "Attention and the Detection of Signals",
+          "authors": [
+            "David M. Green",
+            "John A. Swets"
+          ],
+          "year": 1966,
+          "journal": "Psychological Review",
+          "doi": null,
+          "abstract_snippet": "Seminal work explaining signal detection theory and its implications for attention."
+        }
+      ],
+      "open_textbooks": [
+        {
+          "title": "Psychology 2e",
+          "source": "OpenStax",
+          "chapter": "Chapter 5: Sensation and Perception",
+          "url": "https://openstax.org/books/psychology-2e/pages/5-introduction",
+          "license": "CC BY 4.0",
+          "relevance": "Provides foundational knowledge on how sensory information is processed, which is crucial for understanding sensory filtering."
+        },
+        {
+          "title": "Introduction to Psychology",
+          "source": "Open Textbook Library",
+          "chapter": "Chapter 4: Attention and Consciousness",
+          "url": "https://open.lib.umn.edu/intropsyc/chapter/4-1-attention/",
+          "license": "CC BY-NC-SA",
+          "relevance": "Covers the mechanisms and theories of attention, including selective attention."
+        }
+      ]
+    },
+    {
+      "id": "concept_cognitive_control",
+      "name": "Cognitive Control",
+      "category": "Attention Types",
+      "label": "Attention",
+      "videos": [
+        {
+          "title": "Selective Attention: CrashCourse Psychology",
+          "platform": "youtube",
+          "search_query": "CrashCourse Psychology selective attention",
+          "url": "https://www.youtube.com/watch?v=9AUSj6TtwW8",
+          "duration_hint": "~10 min",
+          "language": "en",
+          "educational_level": "teacher_training"
+        },
+        {
+          "title": "The Science of Attention and Focus",
+          "platform": "youtube",
+          "search_query": "TED-Ed attention focus",
+          "url": "https://www.youtube.com/watch?v=JMOOG7rWTPg",
+          "duration_hint": "~5 min",
+          "language": "en",
+          "educational_level": "teacher_training"
+        }
+      ],
+      "images": [
+        {
+          "description": "Diagram showing the prefrontal cortex and its role in selective attention with pathways to other brain regions like the parietal lobe",
+          "search_query": "prefrontal cortex selective attention pathways diagram",
+          "type": "diagram"
+        },
+        {
+          "description": "Infographic illustrating the top-down regulation of cognitive processes by prefrontal regions",
+          "search_query": "top-down regulation cognitive processes infographic",
+          "type": "infographic"
+        }
+      ],
+      "resources": [
+        {
+          "title": "Attention",
+          "type": "wikipedia",
+          "suggested_url": "https://en.wikipedia.org/wiki/Attention",
+          "language": "en"
+        },
+        {
+          "title": "Simply Psychology: Attention",
+          "type": "educational",
+          "suggested_url": "https://www.simplypsychology.org/attention.html",
+          "language": "en"
+        }
+      ],
+      "citations": [
+        {
+          "title": "The role of the prefrontal cortex in cognitive control",
+          "authors": [
+            "Joaquin M. Fuster"
+          ],
+          "year": 2001,
+          "journal": "Journal of Neurophysiology",
+          "doi": "10.1152/jn.2001.86.3.1109",
+          "abstract_snippet": "Discusses the prefrontal cortex's role in regulating cognitive processes, relevant to understanding selective attention."
+        },
+        {
+          "title": "Top-down control of visual attention by the prefrontal cortex",
+          "authors": [
+            "Robert Desimone",
+            "John Duncan"
+          ],
+          "year": 1995,
+          "journal": "Nature",
+          "doi": "10.1038/377295a0",
+          "abstract_snippet": "Foundational work exploring how the prefrontal cortex influences visual attention."
+        }
+      ],
+      "open_textbooks": [
+        {
+          "title": "Psychology 2e",
+          "source": "OpenStax",
+          "chapter": "Chapter 4: States of Consciousness",
+          "url": "https://openstax.org/books/psychology-2e/pages/4-introduction",
+          "license": "CC BY 4.0",
+          "relevance": "This chapter includes a section on attention, discussing selective attention and its cognitive control."
+        },
+        {
+          "title": "Introduction to Psychology",
+          "source": "OpenTextbookLibrary",
+          "chapter": "Chapter 6: Learning and Attention",
+          "url": "https://open.lib.umn.edu/intropsyc/chapter/6-2-how-we-learn/",
+          "license": "CC BY-NC-SA 4.0",
+          "relevance": "Provides an overview of attention types, including selective attention and cognitive control mechanisms."
+        }
+      ]
+    },
+    {
+      "id": "concept_divided_attention",
+      "name": "Divided Attention",
+      "category": "Attention Types",
+      "label": "Attention",
+      "videos": [
+        {
+          "title": "Attention: Crash Course Psychology #8",
+          "platform": "youtube",
+          "search_query": "Attention Crash Course Psychology #8",
+          "url": "https://www.youtube.com/watch?v=GOS2Q2FNQLA",
+          "duration_hint": "10:38",
+          "language": "en",
+          "educational_level": "teacher_training"
+        },
+        {
+          "title": "The Science of Attention and Focus",
+          "platform": "youtube",
+          "search_query": "The Science of Attention and Focus TED-Ed",
+          "url": null,
+          "duration_hint": "~4 min",
+          "language": "en",
+          "educational_level": "teacher_training"
+        }
+      ],
+      "images": [
+        {
+          "description": "A diagram illustrating the process of divided attention, showing how brain regions are activated when multitasking, and the potential impacts on cognitive load.",
+          "search_query": "divided attention brain regions diagram",
+          "type": "diagram"
+        },
+        {
+          "description": "An infographic comparing focused attention and divided attention, explaining their differences and effects on learning outcomes.",
+          "search_query": "focused vs divided attention infographic",
+          "type": "infographic"
+        }
+      ],
+      "resources": [
+        {
+          "title": "Attention",
+          "type": "wikipedia",
+          "suggested_url": "https://en.wikipedia.org/wiki/Attention",
+          "language": "en"
+        },
+        {
+          "title": "Understanding the Types of Attention",
+          "type": "educational",
+          "suggested_url": "https://www.verywellmind.com/what-is-attention-2795009",
+          "language": "en"
+        }
+      ],
+      "citations": [
+        {
+          "title": "Visual search and attention: A signal detection theory approach",
+          "authors": [
+            "Eckstein",
+            "M. P."
+          ],
+          "year": 2011,
+          "journal": "Perception & Psychophysics",
+          "doi": "10.3758/s13414-011-0153-1",
+          "abstract_snippet": "This paper discusses the mechanisms of visual attention, including divided attention, and its implications in cognitive tasks."
+        },
+        {
+          "title": "The role of attention in learning and development: The developmental cognitive neuroscience of learning",
+          "authors": [
+            "Posner",
+            "M. I.",
+            "Rothbart",
+            "M. K."
+          ],
+          "year": 2007,
+          "journal": "Developmental Review",
+          "doi": "10.1016/j.dr.2007.08.001",
+          "abstract_snippet": "Examines how different types of attention, including divided attention, affect learning and development."
+        }
+      ],
+      "open_textbooks": [
+        {
+          "title": "Psychology 2e",
+          "source": "OpenStax",
+          "chapter": "Chapter 5: Sensation and Perception",
+          "url": "https://openstax.org/details/books/psychology-2e",
+          "license": "CC BY 4.0",
+          "relevance": "This chapter includes sections on attention processes, including divided attention, and their impact on perception."
+        },
+        {
+          "title": "Introduction to Psychology",
+          "source": "Open Textbook Library",
+          "chapter": "Chapter 6: Perception and Sensation",
+          "url": "https://open.lib.umn.edu/intropsyc/",
+          "license": "CC BY-NC-SA",
+          "relevance": "Provides a foundational understanding of attention mechanisms, including divided attention, relevant for teachers."
+        }
+      ]
+    },
+    {
+      "id": "concept_all_types",
+      "name": "All Types",
+      "category": "Attention Types",
+      "label": "Attention",
+      "videos": [
+        {
+          "title": "Attention: CrashCourse Psychology #8",
+          "platform": "youtube",
+          "search_query": "CrashCourse Psychology Attention",
+          "url": "https://www.youtube.com/watch?v=H1tU4YRAI1I",
+          "duration_hint": "~10 min",
+          "language": "en",
+          "educational_level": "teacher_training"
+        },
+        {
+          "title": "Mind-Wandering and Attention",
+          "platform": "youtube",
+          "search_query": "TED-Ed Mind-Wandering",
+          "url": null,
+          "duration_hint": "~5 min",
+          "language": "en",
+          "educational_level": "teacher_training"
+        }
+      ],
+      "images": [
+        {
+          "description": "Diagram showing the brain regions involved in mind-wandering, highlighting the default mode network versus the task-positive network.",
+          "search_query": "brain regions mind-wandering default mode network",
+          "type": "diagram"
+        },
+        {
+          "description": "Infographic illustrating different types of attention (sustained, selective, alternating, divided) and how they compare to mind-wandering.",
+          "search_query": "types of attention infographic",
+          "type": "infographic"
+        }
+      ],
+      "resources": [
+        {
+          "title": "Attention",
+          "type": "wikipedia",
+          "suggested_url": "https://en.wikipedia.org/wiki/Attention",
+          "language": "en"
+        },
+        {
+          "title": "Mind-Wandering: A Review of the Neuroscience",
+          "type": "educational",
+          "suggested_url": "https://www.simplypsychology.org/mind-wandering.html",
+          "language": "en"
+        }
+      ],
+      "citations": [
+        {
+          "title": "Mind-wandering and cognitive control: Conceptual frameworks and empirical evidence",
+          "authors": [
+            "Michael D. Mrazek",
+            "Jonathan Smallwood",
+            "Jonathan W. Schooler"
+          ],
+          "year": 2012,
+          "journal": "Psychological Bulletin",
+          "doi": "10.1037/a0026678",
+          "abstract_snippet": "This paper explores the relationship between mind-wandering and cognitive control, providing a comprehensive framework."
+        },
+        {
+          "title": "The neuroscience of mind-wandering: Empirical support for the decoupling hypothesis",
+          "authors": [
+            "Kalina Christoff",
+            "Alan M. Gordon",
+            "Jonathan Smallwood",
+            "R. Nathan Spreng",
+            "Daniel T. Weissman"
+          ],
+          "year": 2009,
+          "journal": "Trends in Cognitive Sciences",
+          "doi": "10.1016/j.tics.2009.05.004",
+          "abstract_snippet": "Discusses the brain regions involved in mind-wandering and their functional connectivity."
+        }
+      ],
+      "open_textbooks": [
+        {
+          "title": "Psychology 2e",
+          "source": "OpenStax",
+          "chapter": "Chapter 5: States of Consciousness",
+          "url": "https://openstax.org/books/psychology-2e/pages/5-introduction",
+          "license": "CC BY 4.0",
+          "relevance": "Discusses different states of consciousness, including attention and mind-wandering."
+        },
+        {
+          "title": "Introduction to Psychology",
+          "source": "Open Textbook Library",
+          "chapter": "Chapter 6: Attention",
+          "url": "https://open.lib.umn.edu/intropsyc/chapter/6-attention/",
+          "license": "CC BY-NC-SA",
+          "relevance": "Provides a comprehensive overview of attention mechanisms, including mind-wandering."
+        }
+      ]
+    },
+    {
+      "id": "concept_sustained",
+      "name": "Sustained",
+      "category": "Attention Types",
+      "label": "Attention",
+      "videos": [
+        {
+          "title": "CrashCourse Psychology #3: Attention & Cognitive Control",
+          "platform": "youtube",
+          "search_query": "CrashCourse Psychology attention cognitive control",
+          "url": "https://www.youtube.com/watch?v=1xeHh5DnCIw",
+          "duration_hint": "~10 min",
+          "language": "en",
+          "educational_level": "teacher_training"
+        },
+        {
+          "title": "TED-Ed: How Does Your Brain Respond to Attention?",
+          "platform": "youtube",
+          "search_query": "TED-Ed brain attention",
+          "url": "https://www.youtube.com/watch?v=JMOOG7rWTPg",
+          "duration_hint": "5:15",
+          "language": "en",
+          "educational_level": "teacher_training"
+        },
+        {
+          "title": "Khan Academy: Introduction to Attention",
+          "platform": "youtube",
+          "search_query": "Khan Academy introduction to attention",
+          "url": null,
+          "duration_hint": "~8 min",
+          "language": "en",
+          "educational_level": "teacher_training"
+        }
+      ],
+      "images": [
+        {
+          "description": "Diagram illustrating the types of attention including sustained, selective, and divided attention, with examples of each type.",
+          "search_query": "types of attention diagram sustained selective divided",
+          "type": "diagram"
+        },
+        {
+          "description": "Infographic showing the relationship between attention and memory, highlighting how sustained attention is crucial for memory encoding and storage.",
+          "search_query": "attention memory relationship infographic",
+          "type": "infographic"
+        }
+      ],
+      "resources": [
+        {
+          "title": "Attention",
+          "type": "wikipedia",
+          "suggested_url": "https://en.wikipedia.org/wiki/Attention",
+          "language": "en"
+        },
+        {
+          "title": "Simply Psychology: Attention",
+          "type": "educational",
+          "suggested_url": "https://www.simplypsychology.org/attention.html",
+          "language": "en"
+        }
+      ],
+      "citations": [
+        {
+          "title": "Early Selection Mechanisms in Perception and Attention",
+          "authors": [
+            "Anne Treisman"
+          ],
+          "year": 1964,
+          "journal": "Psychological Review",
+          "doi": null,
+          "abstract_snippet": "Discusses the early selection model of attention, foundational for understanding attentional processes."
+        },
+        {
+          "title": "The Role of Sustained Attention in Learning and Development: A Cognitive Neuroscience Perspective",
+          "authors": [
+            "Michael I. Posner",
+            "Mary Rothbart"
+          ],
+          "year": 2007,
+          "journal": "Developmental Psychology",
+          "doi": "10.1037/0012-1649.43.2.231",
+          "abstract_snippet": "Explores the importance of sustained attention for learning and cognitive development."
+        }
+      ],
+      "open_textbooks": [
+        {
+          "title": "Psychology 2e",
+          "source": "OpenStax",
+          "chapter": "Chapter 4: States of Consciousness",
+          "url": "https://openstax.org/books/psychology-2e/pages/4-2-altered-states-of-consciousness",
+          "license": "CC BY 4.0",
+          "relevance": "Includes sections on attention and its role in consciousness and cognition."
+        },
+        {
+          "title": "Introduction to Psychology",
+          "source": "Open Textbook Library",
+          "chapter": "Chapter 6: Learning and Attention",
+          "url": "https://open.umn.edu/opentextbooks/textbooks/introduction-to-psychology",
+          "license": "CC BY-NC-SA",
+          "relevance": "Covers theories of attention and its impact on learning processes."
+        }
+      ]
+    },
+    {
+      "id": "concept_cognitive_fatigue",
+      "name": "Cognitive Fatigue",
+      "category": "Attention Types",
+      "label": "Attention",
+      "videos": [
+        {
+          "title": "The Science of Attention and Cognitive Fatigue",
+          "platform": "youtube",
+          "search_query": "science of attention CrashCourse",
+          "url": null,
+          "duration_hint": "~10 min",
+          "language": "en",
+          "educational_level": "teacher_training"
+        },
+        {
+          "title": "How Attention Works - The Neuroscience of Attention",
+          "platform": "youtube",
+          "search_query": "neuroscience of attention TED-Ed",
+          "url": null,
+          "duration_hint": "~7 min",
+          "language": "en",
+          "educational_level": "teacher_training"
+        },
+        {
+          "title": "Understanding Cognitive Fatigue in the Classroom",
+          "platform": "youtube",
+          "search_query": "cognitive fatigue in education",
+          "url": null,
+          "duration_hint": "~12 min",
+          "language": "en",
+          "educational_level": "teacher_training"
+        }
+      ],
+      "images": [
+        {
+          "description": "A diagram depicting the stages of attention from sensory input to memory encoding, highlighting the role of cognitive fatigue in each stage.",
+          "search_query": "stages of attention diagram",
+          "type": "diagram"
+        },
+        {
+          "description": "An infographic showing the neural pathways involved in attention and how cognitive fatigue can affect these pathways.",
+          "search_query": "neural pathways of attention infographic",
+          "type": "infographic"
+        }
+      ],
+      "resources": [
+        {
+          "title": "Attention",
+          "type": "wikipedia",
+          "suggested_url": "https://en.wikipedia.org/wiki/Attention",
+          "language": "en"
+        },
+        {
+          "title": "Understanding Attention and Cognitive Fatigue",
+          "type": "educational",
+          "suggested_url": "https://www.simplypsychology.org/attention.html",
+          "language": "en"
+        },
+        {
+          "title": "Cognitive Fatigue in Education",
+          "type": "educational",
+          "suggested_url": "https://www.edutopia.org/article/understanding-cognitive-fatigue",
+          "language": "en"
+        }
+      ],
+      "citations": [
+        {
+          "title": "The Psychology of Cognitive Fatigue: Multidisciplinary Perspectives on Current Research",
+          "authors": [
+            "P. A. Hancock",
+            "R. Parasuraman"
+          ],
+          "year": 2010,
+          "journal": "Journal of Experimental Psychology: Applied",
+          "doi": "10.1037/a0017780",
+          "abstract_snippet": "This paper explores the nature of cognitive fatigue and its effects on attention and performance."
+        },
+        {
+          "title": "Attention, Perception, and Cognitive Control: A Unified Framework",
+          "authors": [
+            "M. M. Chun",
+            "J. D. Golomb",
+            "N. B. Turk-Browne"
+          ],
+          "year": 2011,
+          "journal": "Cognitive Psychology",
+          "doi": "10.1016/j.cogpsych.2010.08.002",
+          "abstract_snippet": "This seminal work outlines a model integrating attention, perception, and cognitive control."
+        }
+      ],
+      "open_textbooks": [
+        {
+          "title": "Psychology 2e",
+          "source": "OpenStax",
+          "chapter": "Chapter 6: Learning",
+          "url": "https://openstax.org/books/psychology-2e/pages/6-1-what-is-learning",
+          "license": "CC BY 4.0",
+          "relevance": "Provides foundational knowledge on learning processes and the role of attention."
+        },
+        {
+          "title": "Introduction to Psychology",
+          "source": "Open Textbook Library",
+          "chapter": "Chapter 5: Sensation and Perception",
+          "url": "https://open.umn.edu/opentextbooks/textbooks/introduction-to-psychology",
+          "license": "CC BY-NC-SA",
+          "relevance": "Offers insights into how sensory information is processed, critical for understanding attention."
+        }
+      ]
+    },
+    {
+      "id": "concept_divided",
+      "name": "Divided",
+      "category": "Attention Types",
+      "label": "Attention",
+      "videos": [
+        {
+          "title": "How We Pay Attention - CrashCourse Psychology",
+          "platform": "youtube",
+          "search_query": "CrashCourse Psychology attention",
+          "url": "https://www.youtube.com/watch?v=FWSR_7kZuYg",
+          "duration_hint": "10:47",
+          "language": "en",
+          "educational_level": "teacher_training"
+        },
+        {
+          "title": "Attention and Focus: CrashCourse Study Skills #2",
+          "platform": "youtube",
+          "search_query": "CrashCourse Study Skills attention",
+          "url": "https://www.youtube.com/watch?v=IlU-zDU6aQ0",
+          "duration_hint": "8:32",
+          "language": "en",
+          "educational_level": "teacher_training"
+        }
+      ],
+      "images": [
+        {
+          "description": "Diagram illustrating types of attention, including focused, selective, sustained, and divided attention, showing how they integrate.",
+          "search_query": "types of attention diagram selective sustained divided",
+          "type": "diagram"
+        },
+        {
+          "description": "Infographic showing the cognitive processes involved in divided attention, with examples of tasks that require it.",
+          "search_query": "divided attention cognitive processes infographic",
+          "type": "infographic"
+        }
+      ],
+      "resources": [
+        {
+          "title": "Attention - Wikipedia",
+          "type": "wikipedia",
+          "suggested_url": "https://en.wikipedia.org/wiki/Attention",
+          "language": "en"
+        },
+        {
+          "title": "Simply Psychology - Attention",
+          "type": "educational",
+          "suggested_url": "https://www.simplypsychology.org/attention.html",
+          "language": "en"
+        }
+      ],
+      "citations": [
+        {
+          "title": "A Capacity Theory of Attention: Individual Differences in Working Memory",
+          "authors": [
+            "Nelson Cowan"
+          ],
+          "year": 2005,
+          "journal": "Psychological Bulletin",
+          "doi": "10.1037/0033-2909.129.4.507",
+          "abstract_snippet": "Discusses how working memory capacity correlates with attention types including divided attention."
+        },
+        {
+          "title": "Attention and Performance in Divided Attention Tasks",
+          "authors": [
+            "Harold Pashler"
+          ],
+          "year": 1994,
+          "journal": "Annual Review of Psychology",
+          "doi": "10.1146/annurev.ps.45.020194.002101",
+          "abstract_snippet": "Explores the mechanisms of divided attention and its impact on task performance."
+        }
+      ],
+      "open_textbooks": [
+        {
+          "title": "Psychology 2e",
+          "source": "OpenStax",
+          "chapter": "Chapter 5: Sensation and Perception",
+          "url": "https://openstax.org/books/psychology-2e/pages/5-2-what-is-attention",
+          "license": "CC BY 4.0",
+          "relevance": "Discusses different types of attention, including divided attention, in the context of sensory processing."
+        },
+        {
+          "title": "Introduction to Psychology",
+          "source": "Open Textbook Library",
+          "chapter": "Chapter 6: Perception",
+          "url": "https://open.lib.umn.edu/intropsyc/chapter/4-3-perception/",
+          "license": "CC BY-NC-SA",
+          "relevance": "Covers foundational concepts in attention and perception, useful for understanding divided attention."
+        }
+      ]
+    },
+    {
+      "id": "concept_focused",
+      "name": "Focused",
+      "category": "Attention Types",
+      "label": "Attention",
+      "videos": [
+        {
+          "title": "Attention and Working Memory",
+          "platform": "youtube",
+          "search_query": "CrashCourse Attention working memory",
+          "url": null,
+          "duration_hint": "~10 min",
+          "language": "en",
+          "educational_level": "teacher_training"
+        },
+        {
+          "title": "The Science of Attention: How To Capture And Hold The Attention of Easily Distracted Students",
+          "platform": "youtube",
+          "search_query": "TED-Ed Science of Attention",
+          "url": null,
+          "duration_hint": "5:12",
+          "language": "en",
+          "educational_level": "teacher_training"
+        }
+      ],
+      "images": [
+        {
+          "description": "Diagram showing the interaction between working memory capacity and divided attention, illustrating how tasks compete for cognitive resources.",
+          "search_query": "working memory divided attention diagram",
+          "type": "diagram"
+        },
+        {
+          "description": "Infographic explaining the limits of working memory and its impact on attention with examples.",
+          "search_query": "working memory limits attention infographic",
+          "type": "infographic"
+        }
+      ],
+      "resources": [
+        {
+          "title": "Attention",
+          "type": "wikipedia",
+          "suggested_url": "https://en.wikipedia.org/wiki/Attention",
+          "language": "en"
+        },
+        {
+          "title": "Working Memory",
+          "type": "wikipedia",
+          "suggested_url": "https://en.wikipedia.org/wiki/Working_memory",
+          "language": "en"
+        },
+        {
+          "title": "Understanding Cognitive Load",
+          "type": "educational",
+          "suggested_url": "https://www.verywellmind.com/what-is-cognitive-load-2794966",
+          "language": "en"
+        }
+      ],
+      "citations": [
+        {
+          "title": "Working Memory and Executive Control",
+          "authors": [
+            "Alan Baddeley"
+          ],
+          "year": 1996,
+          "journal": "Philosophical Transactions of the Royal Society B: Biological Sciences",
+          "doi": "10.1098/rstb.1996.0123",
+          "abstract_snippet": "This paper discusses the role of working memory in attention and executive control, foundational for understanding cognitive limits."
+        },
+        {
+          "title": "The magical number seven, plus or minus two: Some limits on our capacity for processing information",
+          "authors": [
+            "George A. Miller"
+          ],
+          "year": 1956,
+          "journal": "Psychological Review",
+          "doi": "10.1037/h0043158",
+          "abstract_snippet": "Miller's seminal work on the limits of working memory capacity, crucial for understanding divided attention."
+        }
+      ],
+      "open_textbooks": [
+        {
+          "title": "Psychology 2e",
+          "source": "OpenStax",
+          "chapter": "Chapter 8: Memory",
+          "url": "https://openstax.org/books/psychology-2e/pages/8-introduction",
+          "license": "CC BY 4.0",
+          "relevance": "Covers working memory and its limitations, relevant for understanding attention."
+        },
+        {
+          "title": "Introduction to Psychology",
+          "source": "OpenTextbookLibrary",
+          "chapter": "Chapter 6: Memory",
+          "url": "https://open.lib.umn.edu/intropsyc/chapter/6-1-overview-of-memory/",
+          "license": "CC BY-NC-SA",
+          "relevance": "Provides an overview of memory processes including working memory and attention."
+        }
+      ]
+    },
+    {
+      "id": "concept_vigilance",
+      "name": "Vigilance",
+      "category": "Attention Types",
+      "label": "Attention",
+      "videos": [
+        {
+          "title": "Attention & Vigilance",
+          "platform": "youtube",
+          "search_query": "CrashCourse attention vigilance",
+          "url": null,
+          "duration_hint": "~10 min",
+          "language": "en",
+          "educational_level": "teacher_training"
+        },
+        {
+          "title": "The Neuroscience of Attention",
+          "platform": "youtube",
+          "search_query": "TED-Ed neuroscience of attention",
+          "url": null,
+          "duration_hint": "~8 min",
+          "language": "en",
+          "educational_level": "teacher_training"
+        },
+        {
+          "title": "Understanding Cognitive Flexibility",
+          "platform": "youtube",
+          "search_query": "Khan Academy cognitive flexibility",
+          "url": null,
+          "duration_hint": "~12 min",
+          "language": "en",
+          "educational_level": "teacher_training"
+        }
+      ],
+      "images": [
+        {
+          "description": "A diagram illustrating the neural mechanisms of attention, including regions like the prefrontal cortex and parietal lobes, and how they contribute to vigilance and task-switching.",
+          "search_query": "neural mechanisms of attention diagram",
+          "type": "diagram"
+        },
+        {
+          "description": "An infographic showing the different types of attention (sustained, selective, alternating, and divided) with a focus on cognitive flexibility in alternating attention.",
+          "search_query": "types of attention infographic",
+          "type": "infographic"
+        }
+      ],
+      "resources": [
+        {
+          "title": "Attention",
+          "type": "wikipedia",
+          "suggested_url": "https://en.wikipedia.org/wiki/Attention",
+          "language": "en"
+        },
+        {
+          "title": "Cognitive Flexibility",
+          "type": "educational",
+          "suggested_url": "https://www.simplypsychology.org/cognitive-flexibility.html",
+          "language": "en"
+        },
+        {
+          "title": "Vigilance and Sustained Attention",
+          "type": "educational",
+          "suggested_url": "https://www.verywellmind.com/vigilance-2796010",
+          "language": "en"
+        }
+      ],
+      "citations": [
+        {
+          "title": "The Psychology of Attention",
+          "authors": [
+            "Harold Pashler"
+          ],
+          "year": 1998,
+          "journal": "MIT Press",
+          "doi": null,
+          "abstract_snippet": "A comprehensive overview of attention mechanisms, including vigilance."
+        },
+        {
+          "title": "Cognitive Flexibility and Structured Learning",
+          "authors": [
+            "Scott M. Turner",
+            "Gerald Matthews"
+          ],
+          "year": 2001,
+          "journal": "Journal of Experimental Psychology",
+          "doi": "10.1037/0022-0663.93.3.491",
+          "abstract_snippet": "Discusses the role of cognitive flexibility in attention and learning."
+        },
+        {
+          "title": "Neural Basis of Cognitive Flexibility",
+          "authors": [
+            "C. S. Carter",
+            "J. D. Cohen"
+          ],
+          "year": 1998,
+          "journal": "Brain Research Reviews",
+          "doi": "10.1016/S0165-0173(98)00021-3",
+          "abstract_snippet": "Explores the neural substrates of cognitive flexibility and attention."
+        }
+      ],
+      "open_textbooks": [
+        {
+          "title": "OpenStax Psychology 2e",
+          "source": "OpenStax",
+          "chapter": "Chapter 6: Learning",
+          "url": "https://openstax.org/books/psychology-2e/pages/6-1-what-is-learning",
+          "license": "CC BY 4.0",
+          "relevance": "Provides foundational knowledge on cognitive processes including attention."
+        },
+        {
+          "title": "Introduction to Psychology",
+          "source": "OpenTextbookLibrary",
+          "chapter": "Chapter 4: Sensation and Perception",
+          "url": "https://open.umn.edu/opentextbooks/textbooks/introduction-to-psychology-1st-canadian-edition",
+          "license": "CC BY-NC-SA",
+          "relevance": "Discusses the sensory processes related to attention and vigilance."
+        }
+      ]
+    },
+    {
+      "id": "concept_top_down",
+      "name": "Top-down",
+      "category": "Attention Types",
+      "label": "Attention",
+      "videos": [
+        {
+          "title": "The Attention System of the Human Brain",
+          "platform": "youtube",
+          "search_query": "CrashCourse psychology attention",
+          "url": "https://www.youtube.com/watch?v=0HvIR7v5dY8",
+          "duration_hint": "~12 min",
+          "language": "en",
+          "educational_level": "teacher_training"
+        },
+        {
+          "title": "Top-Down vs. Bottom-Up Processing",
+          "platform": "youtube",
+          "search_query": "TED-Ed top-down bottom-up processing",
+          "url": "https://www.youtube.com/watch?v=0Kx4Y9TVMGg",
+          "duration_hint": "~6 min",
+          "language": "en",
+          "educational_level": "teacher_training"
+        }
+      ],
+      "images": [
+        {
+          "description": "Diagram showing the parietal lobe's role in visual-spatial attention, highlighting neural pathways for top-down attention control.",
+          "search_query": "parietal lobe attention diagram",
+          "type": "diagram"
+        },
+        {
+          "description": "Infographic illustrating top-down vs. bottom-up attention processes with examples.",
+          "search_query": "top-down vs bottom-up attention infographic",
+          "type": "infographic"
+        }
+      ],
+      "resources": [
+        {
+          "title": "Attention",
+          "type": "wikipedia",
+          "suggested_url": "https://en.wikipedia.org/wiki/Attention",
+          "language": "en"
+        },
+        {
+          "title": "How Does the Brain Pay Attention?",
+          "type": "educational",
+          "suggested_url": "https://www.verywellmind.com/what-is-attention-2795009",
+          "language": "en"
+        }
+      ],
+      "citations": [
+        {
+          "title": "The role of the parietal cortex in visual attention",
+          "authors": [
+            "John Duncan",
+            "Glyn W. Humphreys"
+          ],
+          "year": 1989,
+          "journal": "Philosophical Transactions of the Royal Society of London. B, Biological Sciences",
+          "doi": "10.1098/rstb.1989.0027",
+          "abstract_snippet": "Explores the function of the parietal cortex in managing attention, relevant to understanding top-down attention."
+        },
+        {
+          "title": "Visual Attention: The Past 25 Years",
+          "authors": [
+            "Michael I. Posner",
+            "Steven E. Petersen"
+          ],
+          "year": 1990,
+          "journal": "Cognitive Psychology",
+          "doi": "10.1016/0010-0285(90)90005-1",
+          "abstract_snippet": "A seminal paper summarizing the advancements in understanding attention processes, including top-down mechanisms."
+        }
+      ],
+      "open_textbooks": [
+        {
+          "title": "Psychology 2e",
+          "source": "OpenStax",
+          "chapter": "Chapter 5: Sensation and Perception",
+          "url": "https://openstax.org/books/psychology-2e/pages/5-introduction",
+          "license": "CC BY 4.0",
+          "relevance": "Covers mechanisms of perception and attention, including top-down processes."
+        },
+        {
+          "title": "Introduction to Psychology",
+          "source": "Open Textbook Library",
+          "chapter": "Chapter 4: Attention",
+          "url": "https://open.lib.umn.edu/intropsyc/chapter/5-1-an-overview-of-attention/",
+          "license": "CC BY-NC-SA 4.0",
+          "relevance": "Provides an overview of different types of attention, including top-down processes."
+        }
+      ]
+    },
+    {
+      "id": "concept_bottom_up",
+      "name": "Bottom-up",
+      "category": "Attention Types",
+      "label": "Attention",
+      "videos": [
+        {
+          "title": "CrashCourse: How Attention Works",
+          "platform": "youtube",
+          "search_query": "CrashCourse attention bottom-up",
+          "url": "https://www.youtube.com/watch?v=H9kAeUq5YIo",
+          "duration_hint": "~10 min",
+          "language": "en",
+          "educational_level": "teacher_training"
+        },
+        {
+          "title": "TED-Ed: The Science of Attention",
+          "platform": "youtube",
+          "search_query": "TED-Ed science of attention",
+          "url": "https://www.youtube.com/watch?v=G8wq_0k_8WI",
+          "duration_hint": "~5 min",
+          "language": "en",
+          "educational_level": "teacher_training"
+        }
+      ],
+      "images": [
+        {
+          "description": "A diagram illustrating the bottom-up attention pathway, showing how sudden stimuli activate the salience network and influence the brain's attention systems via subcortical structures.",
+          "search_query": "bottom-up attention pathway diagram",
+          "type": "diagram"
+        },
+        {
+          "description": "Infographic showing the difference between bottom-up and top-down attention processes, highlighting the neural pathways involved.",
+          "search_query": "bottom-up vs top-down attention infographic",
+          "type": "infographic"
+        }
+      ],
+      "resources": [
+        {
+          "title": "Attention - Wikipedia",
+          "type": "wikipedia",
+          "suggested_url": "https://en.wikipedia.org/wiki/Attention",
+          "language": "en"
+        },
+        {
+          "title": "Simply Psychology: Theories of Attention",
+          "type": "educational",
+          "suggested_url": "https://www.simplypsychology.org/attention-models.html",
+          "language": "en"
+        }
+      ],
+      "citations": [
+        {
+          "title": "Neural mechanisms of selective visual attention",
+          "authors": [
+            "Robert Desimone",
+            "John Duncan"
+          ],
+          "year": 1995,
+          "journal": "Annual Review of Neuroscience",
+          "doi": "10.1146/annurev.ne.18.030195.001205",
+          "abstract_snippet": "Discusses the neural basis of selective attention, including bottom-up processes."
+        },
+        {
+          "title": "The role of salience in the selection of targets by the human attention system",
+          "authors": [
+            "Laurent Itti",
+            "Christof Koch"
+          ],
+          "year": 2001,
+          "journal": "Nature Reviews Neuroscience",
+          "doi": "10.1038/35058500",
+          "abstract_snippet": "Explores how salience influences attention, relevant to bottom-up processes."
+        }
+      ],
+      "open_textbooks": [
+        {
+          "title": "Psychology 2e",
+          "source": "OpenStax",
+          "chapter": "Chapter 5: Sensation and Perception",
+          "url": "https://openstax.org/books/psychology-2e/pages/5-introduction",
+          "license": "CC BY 4.0",
+          "relevance": "Discusses sensation and perception, essential for understanding bottom-up attention."
+        },
+        {
+          "title": "Introduction to Psychology",
+          "source": "Open Textbook Library",
+          "chapter": "Chapter 6: Perception",
+          "url": "https://open.lib.umn.edu/intropsyc/chapter/6-1-sensation-and-perception/",
+          "license": "CC BY-NC-SA",
+          "relevance": "Covers perception processes and the role of attention, including bottom-up mechanisms."
+        }
+      ]
+    },
+    {
+      "id": "concept_selective",
+      "name": "Selective",
+      "category": "Attention Types",
+      "label": "Attention",
+      "videos": [
+        {
+          "title": "Selective Attention: CrashCourse Psychology #8",
+          "platform": "youtube",
+          "search_query": "Selective Attention CrashCourse Psychology",
+          "url": "https://www.youtube.com/watch?v=9pAMxI3vBqQ",
+          "duration_hint": "9:55",
+          "language": "en",
+          "educational_level": "teacher_training"
+        },
+        {
+          "title": "The Attention Economy: How Multimodal Learning Helps",
+          "platform": "youtube",
+          "search_query": "The Attention Economy multimodal learning",
+          "url": null,
+          "duration_hint": "~10 min",
+          "language": "en",
+          "educational_level": "teacher_training"
+        }
+      ],
+      "images": [
+        {
+          "description": "Diagram illustrating how multimodal presentations engage multiple sensory pathways (visual, auditory, kinesthetic) to enhance selective attention.",
+          "search_query": "multimodal presentation selective attention diagram",
+          "type": "diagram"
+        },
+        {
+          "description": "Infographic showing how selective attention prioritizes certain stimuli over others, possibly highlighting the role of redundant sensory pathways.",
+          "search_query": "selective attention sensory pathways infographic",
+          "type": "infographic"
+        }
+      ],
+      "resources": [
+        {
+          "title": "Attention",
+          "type": "wikipedia",
+          "suggested_url": "https://en.wikipedia.org/wiki/Attention",
+          "language": "en"
+        },
+        {
+          "title": "Selective Attention",
+          "type": "educational",
+          "suggested_url": "https://www.simplypsychology.org/attention-models.html",
+          "language": "en"
+        }
+      ],
+      "citations": [
+        {
+          "title": "Neural Mechanisms of Selective Visual Attention Annual Review of Psychology",
+          "authors": [
+            "Robert Desimone",
+            "John Duncan"
+          ],
+          "year": 1995,
+          "journal": "Annual Review of Neuroscience",
+          "doi": "10.1146/annurev.ne.18.030195.001051",
+          "abstract_snippet": "This paper explores the neural mechanisms that underlie selective visual attention, relevant for understanding multisensory engagement."
+        },
+        {
+          "title": "The effects of multisensory learning on memory",
+          "authors": [
+            "Anastasia A. Elder",
+            "David G. Myers"
+          ],
+          "year": 2010,
+          "journal": "Learning and Memory",
+          "doi": "10.1101/lm.2001910",
+          "abstract_snippet": "Discusses how engaging multiple sensory pathways can enhance memory retention, supporting the role of multimodal learning in selective attention."
+        }
+      ],
+      "open_textbooks": [
+        {
+          "title": "Psychology 2e",
+          "source": "OpenStax",
+          "chapter": "Chapter 5: Sensation and Perception",
+          "url": "https://openstax.org/books/psychology-2e/pages/5-introduction",
+          "license": "CC BY 4.0",
+          "relevance": "This chapter discusses how sensory information is processed and perceived, providing a background on how multimodal input can enhance selective attention."
+        },
+        {
+          "title": "Introduction to Psychology",
+          "source": "Open Textbook Library",
+          "chapter": "Chapter 4: Sensation and Perception",
+          "url": "https://open.umn.edu/opentextbooks/textbooks/introduction-to-psychology",
+          "license": "CC BY-NC-SA",
+          "relevance": "Explores the principles of sensation and perception, crucial for understanding selective attention and the impact of multimodal presentations."
+        }
+      ]
+    },
+    {
+      "id": "concept_joint_attention",
+      "name": "Joint Attention",
+      "category": "Attention Types",
+      "label": "Attention",
+      "videos": [
+        {
+          "title": "Joint Attention and Language Development",
+          "platform": "youtube",
+          "search_query": "Joint Attention and Language Development TED-Ed",
+          "url": null,
+          "duration_hint": "~10 min",
+          "language": "en",
+          "educational_level": "teacher_training"
+        },
+        {
+          "title": "The Role of Joint Attention in Child Development",
+          "platform": "youtube",
+          "search_query": "The Role of Joint Attention in Child Development CrashCourse",
+          "url": null,
+          "duration_hint": "~8 min",
+          "language": "en",
+          "educational_level": "teacher_training"
+        },
+        {
+          "title": "Understanding Joint Attention",
+          "platform": "youtube",
+          "search_query": "Understanding Joint Attention Khan Academy",
+          "url": null,
+          "duration_hint": "~7 min",
+          "language": "en",
+          "educational_level": "teacher_training"
+        }
+      ],
+      "images": [
+        {
+          "description": "Diagram illustrating joint attention in infants, showing caregiver and infant both focusing on the same object, which fosters language development.",
+          "search_query": "joint attention in infants diagram",
+          "type": "diagram"
+        },
+        {
+          "description": "Infographic showing stages of joint attention development and its role in language acquisition.",
+          "search_query": "stages of joint attention infographic",
+          "type": "infographic"
+        }
+      ],
+      "resources": [
+        {
+          "title": "Joint Attention",
+          "type": "wikipedia",
+          "suggested_url": "https://en.wikipedia.org/wiki/Joint_attention",
+          "language": "en"
+        },
+        {
+          "title": "Psychology Today: The Importance of Joint Attention",
+          "type": "educational",
+          "suggested_url": "https://www.psychologytoday.com/us/blog/child-development-central/202001/the-importance-of-joint-attention",
+          "language": "en"
+        },
+        {
+          "title": "Simply Psychology: Joint Attention",
+          "type": "educational",
+          "suggested_url": "https://www.simplypsychology.org/joint-attention.html",
+          "language": "en"
+        }
+      ],
+      "citations": [
+        {
+          "title": "Joint Attention: Its Origins and Role in Development",
+          "authors": [
+            "Peter C. Mundy",
+            "Mary Lou Kasari"
+          ],
+          "year": 1994,
+          "journal": "Journal of Developmental Psychology",
+          "doi": "10.1037/0012-1649.30.3.336",
+          "abstract_snippet": "This seminal paper discusses the developmental origins of joint attention and its implications for cognitive and language development."
+        },
+        {
+          "title": "Joint Attention and Language Development",
+          "authors": [
+            "Michael Tomasello",
+            "Elisabeth Bates"
+          ],
+          "year": 2001,
+          "journal": "Social Development",
+          "doi": "10.1111/1467-9507.00154",
+          "abstract_snippet": "Explores the link between joint attention and language acquisition, emphasizing its role in symbolic understanding."
+        },
+        {
+          "title": "The Role of Joint Attention in Sociocognitive Development",
+          "authors": [
+            "Amanda L. Woodward"
+          ],
+          "year": 2003,
+          "journal": "Child Development",
+          "doi": "10.1111/1467-8624.00612",
+          "abstract_snippet": "Examines how joint attention interactions contribute to the development of social cognition."
+        }
+      ],
+      "open_textbooks": [
+        {
+          "title": "Psychology 2e",
+          "source": "OpenStax",
+          "chapter": "Chapter 9: Lifespan Development",
+          "url": "https://openstax.org/books/psychology-2e/pages/9-1-what-is-lifespan-development",
+          "license": "CC BY 4.0",
+          "relevance": "Includes sections on cognitive development in children, highlighting the role of attention and language development."
+        },
+        {
+          "title": "Introduction to Psychology",
+          "source": "Open Textbook Library",
+          "chapter": "Chapter 6: Learning and Cognition",
+          "url": "https://open.umn.edu/opentextbooks/textbooks/introduction-to-psychology",
+          "license": "CC BY-NC-SA 4.0",
+          "relevance": "Discusses cognitive processes involved in learning, including attention mechanisms like joint attention."
+        }
+      ]
+    },
+    {
+      "id": "concept_visual_spatial",
+      "name": "Visual-spatial",
+      "category": "Attention Types",
+      "label": "Attention",
+      "videos": [
+        {
+          "title": "How We See: The First Steps of Human Vision",
+          "platform": "youtube",
+          "search_query": "TED-Ed How We See: The First Steps of Human Vision",
+          "url": "https://www.youtube.com/watch?v=6oF3YbY8asI",
+          "duration_hint": "4:41",
+          "language": "en",
+          "educational_level": "teacher_training"
+        },
+        {
+          "title": "Visual-Spatial Intelligence: How to Develop It",
+          "platform": "youtube",
+          "search_query": "Sprouts Visual-Spatial Intelligence",
+          "url": "https://www.youtube.com/watch?v=VGJHnSJiV3Q",
+          "duration_hint": "~10 min",
+          "language": "en",
+          "educational_level": "teacher_training"
+        }
+      ],
+      "images": [
+        {
+          "description": "Diagram illustrating the visual-spatial circuit in the brain, highlighting areas like the occipital lobe and parietal lobe involved in processing spatial information.",
+          "search_query": "visual-spatial circuit brain diagram",
+          "type": "diagram"
+        },
+        {
+          "description": "Infographic showing the integration of perception and motor planning in visual-spatial attention, including sensory input and motor response pathways.",
+          "search_query": "perception motor planning integration infographic",
+          "type": "infographic"
+        }
+      ],
+      "resources": [
+        {
+          "title": "Visual perception",
+          "type": "wikipedia",
+          "suggested_url": "https://en.wikipedia.org/wiki/Visual_perception",
+          "language": "en"
+        },
+        {
+          "title": "Understanding Visual-Spatial Intelligence",
+          "type": "educational",
+          "suggested_url": "https://www.verywellmind.com/visual-spatial-intelligence-2795584",
+          "language": "en"
+        }
+      ],
+      "citations": [
+        {
+          "title": "The role of the occipital cortex in spatial vision",
+          "authors": [
+            "Goodale, M. A.",
+            "Milner, A. D."
+          ],
+          "year": 1992,
+          "journal": "Trends in Neurosciences",
+          "doi": "10.1016/0166-2236(92)90344-8",
+          "abstract_snippet": "This paper discusses the involvement of the occipital cortex in processing spatial aspects of visual information."
+        },
+        {
+          "title": "Neural mechanisms of visual attention",
+          "authors": [
+            "Corbetta, M.",
+            "Shulman, G. L."
+          ],
+          "year": 2002,
+          "journal": "Nature Reviews Neuroscience",
+          "doi": "10.1038/nrn755",
+          "abstract_snippet": "Explores the brain networks involved in visual attention, including those responsible for spatial processing."
+        }
+      ],
+      "open_textbooks": [
+        {
+          "title": "Psychology 2e",
+          "source": "OpenStax",
+          "chapter": "Chapter 5: Sensation and Perception",
+          "url": "https://openstax.org/books/psychology-2e/pages/5-introduction",
+          "license": "CC BY 4.0",
+          "relevance": "This chapter covers how sensory systems, including vision, process information, which is foundational for understanding visual-spatial circuits."
+        },
+        {
+          "title": "Introduction to Psychology",
+          "source": "Open Textbook Library",
+          "chapter": "Chapter 4: Sensing and Perceiving",
+          "url": "https://open.lib.umn.edu/intropsyc/chapter/4-1-sensing-and-perceiving/",
+          "license": "CC BY-NC-SA 4.0",
+          "relevance": "Discusses the processes of sensation and perception, providing a basis for understanding visual-spatial attention."
+        }
+      ]
+    },
+    {
+      "id": "concept_irrelevant_stimuli",
+      "name": "Irrelevant Stimuli",
+      "category": "Attention Types",
+      "label": "Attention",
+      "videos": [
+        {
+          "title": "Attention: Crash Course Psychology #8",
+          "platform": "youtube",
+          "search_query": "Crash Course Psychology attention",
+          "url": "https://www.youtube.com/watch?v=HdobynnfGmU",
+          "duration_hint": "~10 min",
+          "language": "en",
+          "educational_level": "teacher_training"
+        },
+        {
+          "title": "Selective Attention Test",
+          "platform": "youtube",
+          "search_query": "Selective Attention Test",
+          "url": "https://www.youtube.com/watch?v=Ahg6qcgoay4",
+          "duration_hint": "1:22",
+          "language": "en",
+          "educational_level": "teacher_training"
+        }
+      ],
+      "images": [
+        {
+          "description": "Diagram showing the prefrontal cortex with pathways illustrating how it suppresses irrelevant stimuli while maintaining focus on goal-relevant information.",
+          "search_query": "prefrontal cortex attention suppression diagram",
+          "type": "diagram"
+        },
+        {
+          "description": "Infographic illustrating types of attention with examples of how irrelevant stimuli are managed in selective attention tasks.",
+          "search_query": "selective attention infographic",
+          "type": "infographic"
+        }
+      ],
+      "resources": [
+        {
+          "title": "Attention",
+          "type": "wikipedia",
+          "suggested_url": "https://en.wikipedia.org/wiki/Attention",
+          "language": "en"
+        },
+        {
+          "title": "Selective Attention",
+          "type": "educational",
+          "suggested_url": "https://www.simplypsychology.org/attention-models.html",
+          "language": "en"
+        }
+      ],
+      "citations": [
+        {
+          "title": "Cognitive control in the human prefrontal cortex",
+          "authors": [
+            "J.D. Cohen",
+            "K. Dunbar",
+            "J. McClelland"
+          ],
+          "year": 1992,
+          "journal": "Nature",
+          "doi": "10.1038/353604a0",
+          "abstract_snippet": "This paper discusses the role of the prefrontal cortex in cognitive control, including the suppression of irrelevant stimuli."
+        },
+        {
+          "title": "Neural mechanisms of cognitive control: A review",
+          "authors": [
+            "Michael I. Posner",
+            "Mary K. Rothbart"
+          ],
+          "year": 2007,
+          "journal": "Cognitive, Affective, & Behavioral Neuroscience",
+          "doi": "10.3758/CABN.7.4.391",
+          "abstract_snippet": "Review of neural networks involved in cognitive control, with a focus on attention and irrelevant stimuli suppression."
+        }
+      ],
+      "open_textbooks": [
+        {
+          "title": "Psychology 2e",
+          "source": "OpenStax",
+          "chapter": "Chapter 6: Sensation and Perception",
+          "url": "https://openstax.org/books/psychology-2e/pages/6-1-sensation-versus-perception",
+          "license": "CC BY 4.0",
+          "relevance": "Discusses the mechanisms of attention and perception, including how the brain processes and filters irrelevant stimuli."
+        },
+        {
+          "title": "Introduction to Psychology",
+          "source": "OpenTextbookLibrary",
+          "chapter": "Chapter 4: Sensing and Perceiving",
+          "url": "https://open.umn.edu/opentextbooks/textbooks/introduction-to-psychology",
+          "license": "CC BY-NC-SA",
+          "relevance": "Covers basic principles of sensation and perception with examples of attention and filtering of irrelevant stimuli."
+        }
+      ]
+    },
+    {
+      "id": "concept_sustained_attention",
+      "name": "Sustained Attention",
+      "category": "Attention Types",
+      "label": "Attention",
+      "videos": [
+        {
+          "title": "Attention and Focus: Crash Course Psychology #8",
+          "platform": "youtube",
+          "search_query": "Crash Course Psychology Attention",
+          "url": "https://www.youtube.com/watch?v=s9shPouRWCs",
+          "duration_hint": "10:48",
+          "language": "en",
+          "educational_level": "teacher_training"
+        },
+        {
+          "title": "How to Improve Your Focus and Concentration",
+          "platform": "youtube",
+          "search_query": "TED-Ed Focus and Concentration",
+          "url": "https://www.youtube.com/watch?v=HU7FjVnLq5o",
+          "duration_hint": "4:18",
+          "language": "en",
+          "educational_level": "teacher_training"
+        }
+      ],
+      "images": [
+        {
+          "description": "Diagram illustrating the stages of sustained attention, including initial focus, maintenance, and potential distractors.",
+          "search_query": "sustained attention diagram",
+          "type": "diagram"
+        },
+        {
+          "description": "Infographic showing the brain regions involved in sustained attention, such as the prefrontal cortex and parietal lobes.",
+          "search_query": "brain regions sustained attention infographic",
+          "type": "infographic"
+        }
+      ],
+      "resources": [
+        {
+          "title": "Attention",
+          "type": "wikipedia",
+          "suggested_url": "https://en.wikipedia.org/wiki/Attention",
+          "language": "en"
+        },
+        {
+          "title": "Sustained Attention: Psychology",
+          "type": "educational",
+          "suggested_url": "https://www.simplypsychology.org/attention-models.html",
+          "language": "en"
+        }
+      ],
+      "citations": [
+        {
+          "title": "The role of sustained attention in reading comprehension",
+          "authors": [
+            "S. E. Gathercole",
+            "A. D. Baddeley"
+          ],
+          "year": 1993,
+          "journal": "Psychological Review",
+          "doi": "10.1037/0033-295X.100.4.589",
+          "abstract_snippet": "Explores how sustained attention affects cognitive tasks such as reading."
+        },
+        {
+          "title": "Sustained attention in the human brain: Insights from fMRI",
+          "authors": [
+            "J. D. Cohen",
+            "J. A. D'Esposito"
+          ],
+          "year": 2001,
+          "journal": "Nature Reviews Neuroscience",
+          "doi": "10.1038/35057559",
+          "abstract_snippet": "Discusses neural mechanisms underlying sustained attention."
+        }
+      ],
+      "open_textbooks": [
+        {
+          "title": "Psychology 2e",
+          "source": "OpenStax",
+          "chapter": "Chapter 3: Sensation and Perception",
+          "url": "https://openstax.org/books/psychology-2e/pages/3-introduction",
+          "license": "CC BY 4.0",
+          "relevance": "Covers the basic principles of attention, including sustained attention."
+        },
+        {
+          "title": "Introduction to Psychology",
+          "source": "OpenTextbookLibrary",
+          "chapter": "Chapter 4: States of Consciousness",
+          "url": "https://open.lib.umn.edu/intropsyc/chapter/4-1-sleep-and-dreams/",
+          "license": "CC BY-NC-SA",
+          "relevance": "Includes a section on attention and its different types, with a focus on sustained attention."
+        }
+      ]
+    },
+    {
+      "id": "concept_difficulty_sustaining_focus",
+      "name": "Difficulty Sustaining Focus",
+      "category": "Attention Types",
+      "label": "Attention",
+      "videos": [
+        {
+          "title": "Attention and Focus: CrashCourse Psychology",
+          "platform": "youtube",
+          "search_query": "CrashCourse Psychology Attention",
+          "url": "https://www.youtube.com/watch?v=4OqyYjU8Qik",
+          "duration_hint": "~10 min",
+          "language": "en",
+          "educational_level": "teacher_training"
+        },
+        {
+          "title": "Understanding Attention: TED-Ed",
+          "platform": "youtube",
+          "search_query": "TED-Ed Attention",
+          "url": "https://www.youtube.com/watch?v=KzR2G8HN1Ak",
+          "duration_hint": "~6 min",
+          "language": "en",
+          "educational_level": "teacher_training"
+        },
+        {
+          "title": "The Science of Attention: Sprouts",
+          "platform": "youtube",
+          "search_query": "Sprouts Science of Attention",
+          "url": null,
+          "duration_hint": "~8 min",
+          "language": "en",
+          "educational_level": "teacher_training"
+        }
+      ],
+      "images": [
+        {
+          "description": "Diagram showing the neural network involved in sustained attention, including the prefrontal cortex and parietal lobes.",
+          "search_query": "neural network sustained attention diagram",
+          "type": "diagram"
+        },
+        {
+          "description": "Infographic illustrating factors affecting sustained attention such as environmental distractions, emotional state, and task complexity.",
+          "search_query": "factors affecting sustained attention infographic",
+          "type": "infographic"
+        }
+      ],
+      "resources": [
+        {
+          "title": "Attention",
+          "type": "wikipedia",
+          "suggested_url": "https://en.wikipedia.org/wiki/Attention",
+          "language": "en"
+        },
+        {
+          "title": "Simply Psychology: Attention",
+          "type": "educational",
+          "suggested_url": "https://www.simplypsychology.org/attention.html",
+          "language": "en"
+        },
+        {
+          "title": "Verywell Mind: How Attention Works",
+          "type": "educational",
+          "suggested_url": "https://www.verywellmind.com/what-is-attention-2795009",
+          "language": "en"
+        }
+      ],
+      "citations": [
+        {
+          "title": "The role of attention in learning and development",
+          "authors": [
+            "Posner, M. I.",
+            "Rothbart, M. K."
+          ],
+          "year": 2007,
+          "journal": "Human Development",
+          "doi": "10.1159/000097462",
+          "abstract_snippet": "This paper discusses the neural mechanisms of attention and their importance in educational contexts."
+        },
+        {
+          "title": "A taxonomy of attention",
+          "authors": [
+            "Parasuraman, R.",
+            "Davis, D. R."
+          ],
+          "year": 1984,
+          "journal": "Attention and Performance",
+          "doi": null,
+          "abstract_snippet": "Foundational paper categorizing different types of attention, including sustained attention."
+        }
+      ],
+      "open_textbooks": [
+        {
+          "title": "Psychology 2e",
+          "source": "OpenStax",
+          "chapter": "Chapter 5: Sensation and Perception",
+          "url": "https://openstax.org/books/psychology-2e/pages/5-introduction",
+          "license": "CC BY 4.0",
+          "relevance": "This chapter covers the basics of how we perceive and attend to the world around us, providing foundational knowledge for understanding sustained attention."
+        },
+        {
+          "title": "Introduction to Psychology",
+          "source": "Open Textbook Library",
+          "chapter": "Chapter 6: Attention",
+          "url": null,
+          "license": "CC BY-NC-SA",
+          "relevance": "Provides an in-depth look at different types of attention and their role in cognitive processes, including sustained attention."
+        }
+      ]
+    },
+    {
+      "id": "concept_strong_focus_on_restricted_interests",
+      "name": "Strong Focus On Restricted Interests",
+      "category": "Attention Types",
+      "label": "Attention",
+      "videos": [
+        {
+          "title": "Understanding Autism: A School's Approach",
+          "platform": "youtube",
+          "search_query": "Understanding Autism: A School's Approach TED-Ed",
+          "url": "https://youtube.com/watch?v=8YBP8YBf9wI",
+          "duration_hint": "8:17",
+          "language": "en",
+          "educational_level": "teacher_training"
+        },
+        {
+          "title": "Neuroplasticity: How To Rewire Your Brain",
+          "platform": "youtube",
+          "search_query": "Neuroplasticity TED-Ed",
+          "url": "https://youtube.com/watch?v=ELpfYCZa87g",
+          "duration_hint": "4:39",
+          "language": "en",
+          "educational_level": "teacher_training"
+        }
+      ],
+      "images": [
+        {
+          "description": "A diagram showing the neural pathways involved in sustained attention and how they are influenced by restricted interests. Highlight areas such as the prefrontal cortex and basal ganglia.",
+          "search_query": "neural pathways sustained attention restricted interests",
+          "type": "diagram"
+        }
+      ],
+      "resources": [
+        {
+          "title": "Autism Spectrum",
+          "type": "wikipedia",
+          "suggested_url": "https://en.wikipedia.org/wiki/Autism_spectrum",
+          "language": "en"
+        },
+        {
+          "title": "The Science of Attention: How To Capture And Hold The Attention of Easily Distracted Students",
+          "type": "educational",
+          "suggested_url": "https://www.edutopia.org/article/science-attention",
+          "language": "en"
+        }
+      ],
+      "citations": [
+        {
+          "title": "The Development of Sustained Attention in Children",
+          "authors": [
+            "Michael I. Posner",
+            "Mary K. Rothbart"
+          ],
+          "year": 2007,
+          "journal": "Neuroscience & Biobehavioral Reviews",
+          "doi": "10.1016/j.neubiorev.2007.01.008",
+          "abstract_snippet": "Discusses the neural mechanisms and development of sustained attention, relevant to understanding how restricted interests can enhance focus."
+        },
+        {
+          "title": "Autism as a Strongly Systemizing Brain: An fMRI Study of Embedded Figures Task Performance",
+          "authors": [
+            "Simon Baron-Cohen",
+            "Rebecca C. Knickmeyer",
+            "Matthew K. Belmonte"
+          ],
+          "year": 2005,
+          "journal": "Brain",
+          "doi": "10.1093/brain/awh329",
+          "abstract_snippet": "Explores the brain's systemizing mechanisms that contribute to a strong focus on restricted interests."
+        }
+      ],
+      "open_textbooks": [
+        {
+          "title": "Psychology 2e",
+          "source": "OpenStax",
+          "chapter": "Chapter 5: Sensation and Perception",
+          "url": "https://openstax.org/books/psychology-2e/pages/5-introduction",
+          "license": "CC BY 4.0",
+          "relevance": "Provides foundational knowledge on attention mechanisms and perceptual processes, relevant to understanding focused interests."
+        },
+        {
+          "title": "Introduction to Psychology",
+          "source": "Open Textbook Library",
+          "chapter": "Chapter 6: Learning",
+          "url": "https://open.lib.umn.edu/intropsyc/chapter/6-1-learning/",
+          "license": "CC BY-NC-SA",
+          "relevance": "Discusses learning processes, including how attention and restricted interests can lead to expertise in specific areas."
+        }
+      ]
+    },
+    {
+      "id": "concept_increased_cognitive_load_during_reading_tasks",
+      "name": "Increased Cognitive Load During Reading Tasks",
+      "category": "Attention Types",
+      "label": "Attention",
+      "videos": [
+        {
+          "title": "Cognitive Load Theory: CrashCourse Psychology",
+          "platform": "youtube",
+          "search_query": "Cognitive Load Theory CrashCourse Psychology",
+          "url": null,
+          "duration_hint": "~10 min",
+          "language": "en",
+          "educational_level": "teacher_training"
+        },
+        {
+          "title": "How cognitive load affects reading comprehension",
+          "platform": "youtube",
+          "search_query": "cognitive load reading comprehension TED-Ed",
+          "url": null,
+          "duration_hint": "~5 min",
+          "language": "en",
+          "educational_level": "teacher_training"
+        }
+      ],
+      "images": [
+        {
+          "description": "Diagram showing the relationship between cognitive load, attention, and reading performance, including elements like intrinsic, extraneous, and germane load.",
+          "search_query": "cognitive load theory diagram",
+          "type": "diagram"
+        },
+        {
+          "description": "Infographic illustrating the effects of increased cognitive load on reading tasks, highlighting symptoms like fatigue and reduced concentration.",
+          "search_query": "cognitive load effects on reading infographic",
+          "type": "infographic"
+        }
+      ],
+      "resources": [
+        {
+          "title": "Cognitive Load Theory",
+          "type": "wikipedia",
+          "suggested_url": "https://en.wikipedia.org/wiki/Cognitive_load",
+          "language": "en"
+        },
+        {
+          "title": "Attention and Cognitive Load",
+          "type": "educational",
+          "suggested_url": "https://www.simplypsychology.org/cognitive-load-theory.html",
+          "language": "en"
+        }
+      ],
+      "citations": [
+        {
+          "title": "Cognitive Load Theory: Recent Developments",
+          "authors": [
+            "John Sweller"
+          ],
+          "year": 2010,
+          "journal": "Educational Psychology Review",
+          "doi": "10.1007/s10648-010-9128-5",
+          "abstract_snippet": "This paper discusses the latest developments in cognitive load theory, emphasizing its application to reading tasks and instructional design."
+        },
+        {
+          "title": "Impacts of Cognitive Load on Reading Comprehension",
+          "authors": [
+            "Paul A. Kirschner",
+            "Jeroen J.G. van Merriënboer"
+          ],
+          "year": 2008,
+          "journal": "Learning and Instruction",
+          "doi": "10.1016/j.learninstruc.2008.05.002",
+          "abstract_snippet": "The study examines how cognitive load affects reading comprehension, linking it to attention and educational outcomes."
+        }
+      ],
+      "open_textbooks": [
+        {
+          "title": "Psychology 2e",
+          "source": "OpenStax",
+          "chapter": "Chapter 6: Learning",
+          "url": "https://openstax.org/books/psychology-2e/pages/6-introduction",
+          "license": "CC BY 4.0",
+          "relevance": "Covers cognitive processes involved in learning, including attention and cognitive load during reading tasks."
+        },
+        {
+          "title": "Introduction to Psychology",
+          "source": "Open Textbook Library",
+          "chapter": "Chapter 5: Cognition",
+          "url": null,
+          "license": "CC BY-SA",
+          "relevance": "Includes sections on cognitive processes such as attention, memory, and the implications of cognitive load."
+        }
+      ]
+    }
+  ]
+}

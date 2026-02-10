@@ -204,17 +204,57 @@ class BaseDomainConfig(ABC):
     def get_system_prompt(self) -> str:
         """
         Return domain-specific system prompt for LLM response generation.
-        Defines the LLM's role and expertise for this domain.
+        Defines the LLM's role, expertise, pedagogical framework, and principles.
+        
+        This is the "identity" of the LLM for this domain — it tells the model
+        WHO it is, WHAT it knows, and HOW it should think.
         
         Returns:
             str: System prompt in Italian
             
         Example:
-            '''Sei un esperto di neuroscienze dell'apprendimento italiano,
-            specializzato nell'applicazione pratica delle scoperte neuroscientifiche
-            all'educazione.'''
+            '''Sei un'Esperta di Neurodidattica e progettazione didattica evidence-based.
+            Integra neuroscienze cognitive, psicologia dell'apprendimento...'''
         """
         pass
+    
+    def get_response_template(self) -> str:
+        """
+        Return domain-specific response formatting instructions.
+        Defines HOW the output should be structured for this domain.
+        
+        This method provides the domain-specific part of the user message
+        that tells the LLM how to format and structure its response.
+        Each domain can define its own output structure (e.g., lesson schema,
+        UDL framework, etc.) while sharing the same KG context format.
+        
+        Override this in domain subclasses. The default provides generic
+        formatting instructions suitable for any educational domain.
+        
+        Returns:
+            str: Response formatting instructions in Italian
+        """
+        return """ISTRUZIONI PER LA RISPOSTA:
+
+1. **Inizia con un'introduzione empatica** che riconosca la domanda dell'insegnante
+2. **Presenta le metodologie principali** (massimo 3) in modo chiaro e strutturato:
+   - Nome della metodologia
+   - Perché è efficace per questo contesto specifico
+   - Come implementarla in classe (passi concreti)
+   - Adattamenti per bisogni speciali (se applicabile)
+3. **Fornisci esempi pratici** per ogni metodologia
+4. **Includi le basi teoriche** spiegando da dove provengono queste raccomandazioni
+5. **Suggerisci un ordine di implementazione** con priorità chiare
+6. **Aggiungi note sulla fiducia**: se la confidenza è bassa, suggerisci di consultare specialisti
+7. **Usa un tono professionale ma accessibile**, evita il gergo eccessivo
+8. **Formatta con elenchi puntati e sezioni chiare** per facilitare la lettura
+
+IMPORTANTE:
+- Rispondi SEMPRE in italiano
+- Sii concreto e pratico, non teorico
+- Fornisci azioni immediate che l'insegnante può prendere
+- Adatta il linguaggio al contesto scolastico italiano (primaria, secondaria, etc.)
+- Se la confidenza è BASSA o VERY_LOW, enfatizza la necessità di supporto specialistico"""
     
     # ============================================================
     # CONTEXT BUILDER CONFIGURATION (context_builder.py)
