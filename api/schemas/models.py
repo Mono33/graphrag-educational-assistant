@@ -58,10 +58,10 @@ class ContextRequest(BaseModel):
         description="Include raw node data from graph"
     )
     max_methodologies: int = Field(
-        default=5,
+        default=10,
         ge=1,
-        le=10,
-        description="Maximum number of methodologies to return"
+        le=20,
+        description="Maximum number of methodologies to return (split ~50/50 primary/supporting)"
     )
 
     class Config:
@@ -71,7 +71,7 @@ class ContextRequest(BaseModel):
                 "domain": "neuro",
                 "language": "it",
                 "include_raw_nodes": False,
-                "max_methodologies": 5
+                "max_methodologies": 10
             }
         }
 
@@ -187,6 +187,13 @@ class MetricsInfo(BaseModel):
     """Metrics about the retrieval"""
     total_nodes: int = Field(..., description="Total nodes retrieved")
     total_relationships: int = Field(..., description="Total relationships found")
+    kg_data_available: bool = Field(
+        default=True,
+        description="Whether the Knowledge Graph contained relevant data for this query. "
+                    "When false, kg_context_formatted contains guidance for the LLM to use "
+                    "system_prompt principles instead. DEV team can optionally use this flag "
+                    "to skip GraphRAG calls on follow-up messages."
+    )
     context_relevance: Optional[float] = Field(None, description="Context relevance score")
     processing_time_ms: Optional[int] = Field(None, description="Processing time in milliseconds")
 

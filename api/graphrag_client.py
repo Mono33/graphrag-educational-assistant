@@ -29,7 +29,7 @@ def get_graphrag_context(
     domain: str = "neuro",
     language: str = "it",
     include_raw_nodes: bool = False,
-    max_methodologies: int = 5,
+    max_methodologies: int = 10,
     api_url: Optional[str] = None
 ) -> Dict[str, Any]:
     """

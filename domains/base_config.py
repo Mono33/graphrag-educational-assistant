@@ -313,6 +313,19 @@ IMPORTANTE:
         """
         pass
     
+    def get_label_category_map(self) -> Dict[str, str]:
+        """
+        Return mapping from Neo4j node labels to human-readable category names.
+        Used by context_builder to classify nodes properly instead of
+        labeling everything as 'Educational Methodology'.
+        
+        Override in domain subclasses with domain-specific mappings.
+        
+        Returns:
+            dict: Neo4j label -> display category (e.g., {'Attention': 'Cognitive Process'})
+        """
+        return {}
+    
     # ============================================================
     # HELPER METHODS (optional overrides)
     # ============================================================

@@ -195,6 +195,48 @@ class SemanticEmbedder:
         logger.debug(f"[SemanticEmbedder] Embedding query: {query[:50]}...")
         return self.embed_text(query)
     
+    def get_or_embed(self, text: str) -> Optional[np.ndarray]:
+        """Get embedding from cache or generate via API (cache-first).
+        
+        Checks node_embeddings cache first to avoid redundant API calls
+        for known node names. Falls back to API for unknown texts.
+        """
+        if text in self.node_embeddings:
+            logger.debug(f"[SemanticEmbedder] Cache hit for: {text[:50]}")
+            return self.node_embeddings[text]
+        
+        logger.debug(f"[SemanticEmbedder] Cache miss, calling API for: {text[:50]}")
+        embedding = self.embed_text(text)
+        if embedding is not None:
+            self.node_embeddings[text] = embedding
+        return embedding
+    
+    def batch_embed_uncached(self, texts: List[str]) -> Dict[str, np.ndarray]:
+        """Batch embed only texts not already in cache (single API call).
+        
+        Returns dict of text→embedding for all requested texts (cached + new).
+        """
+        if not texts:
+            return {}
+        
+        uncached = [t for t in texts if t and t not in self.node_embeddings]
+        cached_count = len(texts) - len(uncached)
+        
+        if uncached:
+            logger.info(
+                f"[SemanticEmbedder] Batch embedding {len(uncached)} uncached texts "
+                f"({cached_count} cache hits)"
+            )
+            new_embeddings = self.embed_texts(uncached)
+            for text, emb in new_embeddings.items():
+                self.node_embeddings[text] = emb
+        else:
+            logger.info(
+                f"[SemanticEmbedder] All {len(texts)} texts found in cache — 0 API calls"
+            )
+        
+        return {t: self.node_embeddings[t] for t in texts if t in self.node_embeddings}
+    
     def get_node_embedding(self, node_name: str, node_description: str = "") -> Optional[np.ndarray]:
         """Get embedding for a node (from cache or generate).
         
@@ -613,10 +655,11 @@ class HybridGraphRetriever:
         start_time = time.time()
         
         try:
-            # Phase 1: Graph traversal (precision)
+            # Phase 1: Graph traversal (precision) — includes neighbor expansion
             graph_start = time.time()
             graph_nodes = await self._graph_traversal(cypher_result, query)
             graph_time = time.time() - graph_start
+            logger.info(f"[Perf] Graph traversal + expansion: {graph_time:.2f}s ({len(graph_nodes)} nodes)")
             
             # Phase 2: Semantic search (breadth, optional)
             semantic_nodes = []
@@ -625,6 +668,7 @@ class HybridGraphRetriever:
                 semantic_start = time.time()
                 semantic_nodes = await self._semantic_search(query, graph_nodes)
                 semantic_time = time.time() - semantic_start
+                logger.info(f"[Perf] Semantic search: {semantic_time:.2f}s ({len(semantic_nodes)} nodes)")
             
             # Phase 3: Fusion and ranking
             fusion_start = time.time()
@@ -637,6 +681,13 @@ class HybridGraphRetriever:
             context_time = time.time() - context_start
             
             total_time = time.time() - start_time
+            
+            logger.info(
+                f"[Perf] Total retrieval: {total_time:.2f}s "
+                f"(graph={graph_time:.2f}s, semantic={semantic_time:.2f}s, "
+                f"fusion={fusion_time:.2f}s) — "
+                f"{len(ranked_nodes)} nodes, {len(triples)} triples"
+            )
             
             metadata = {
                 'graph_count': len(graph_nodes),
@@ -978,24 +1029,34 @@ class HybridGraphRetriever:
             return []
     
     async def _get_vector_neighbors(self, node: Dict, seen_node_ids: set) -> List[Dict]:
-        """Get vector-based neighbors using Node2Vec similarity"""
+        """Get vector-based neighbors using Node2Vec similarity.
+        
+        Uses batch Neo4j lookup instead of sequential per-node queries.
+        """
         try:
             node_name = node.get('name', '')
             if not node_name or not self.node2vec_loaded or self.node_embeddings is None:
                 return []
             
-            # Find similar concepts using Node2Vec
+            # Find similar concepts using embeddings (cache-first, no API calls for cached nodes)
             similar_concepts = self._find_similar_concepts(node_name, top_k=8)
+            
+            # Collect names to fetch, excluding already-seen nodes
+            names_to_fetch = [
+                name for name, _ in similar_concepts
+                if name not in seen_node_ids
+            ]
+            
+            # Batch fetch from Neo4j (1 query instead of N sequential queries)
+            all_details = await self._batch_get_node_details(names_to_fetch)
             
             vector_neighbors = []
             for similar_name, similarity_score in similar_concepts:
                 if similar_name in seen_node_ids:
                     continue
                 
-                # Get node details from Neo4j
-                node_details = await self._get_node_details(similar_name)
+                node_details = all_details.get(similar_name)
                 if node_details:
-                    # Only include educationally relevant nodes
                     labels = node_details.get('labels', [])
                     if any(label in self.expansion_labels for label in labels):
                         node_details['vector_similarity'] = similarity_score
@@ -1073,6 +1134,7 @@ class HybridGraphRetriever:
         
         Now includes relevance filtering to remove semantically similar but contextually 
         irrelevant nodes (e.g., 'Attention' for 'motivation' queries).
+        Uses batch Neo4j lookup for efficiency.
         
         Args:
             query: Natural language query
@@ -1086,7 +1148,8 @@ class HybridGraphRetriever:
             # Extract key concepts from query
             query_concepts = self._extract_query_concepts(query)
             
-            semantic_nodes = []
+            # Phase 1: Collect all similar concepts across all query concepts
+            all_similar: List[Tuple[str, str, float]] = []
             seen_concepts = set()
             
             for concept in query_concepts:
@@ -1094,26 +1157,35 @@ class HybridGraphRetriever:
                     continue
                 seen_concepts.add(concept)
                 
-                # Find similar concepts using Node2Vec
                 similar_concepts = self._find_similar_concepts(concept, top_k=15)
                 
                 for similar_name, similarity_score in similar_concepts:
-                    if similar_name in existing_names:
-                        continue
-                    
-                    # Get node details from Neo4j
-                    node_details = await self._get_node_details(similar_name)
-                    if node_details:
-                        node_details['semantic_score'] = similarity_score
-                        node_details['query_concept'] = concept
-                        node_details['hop_distance'] = 2  # Semantic search = 2 hops
-                        node_details['retrieval_stage'] = 'semantic_search'
-                        semantic_nodes.append(self._normalize_node(node_details))
+                    if similar_name not in existing_names:
+                        all_similar.append((concept, similar_name, similarity_score))
+            
+            if not all_similar:
+                return []
+            
+            # Phase 2: Batch fetch all node details in 1 Neo4j query
+            unique_names = list({name for _, name, _ in all_similar})
+            all_details = await self._batch_get_node_details(unique_names)
+            
+            # Phase 3: Build semantic nodes from fetched details
+            semantic_nodes = []
+            for concept, similar_name, similarity_score in all_similar:
+                node_details = all_details.get(similar_name)
+                if node_details:
+                    node_copy = dict(node_details)
+                    node_copy['semantic_score'] = similarity_score
+                    node_copy['query_concept'] = concept
+                    node_copy['hop_distance'] = 2
+                    node_copy['retrieval_stage'] = 'semantic_search'
+                    semantic_nodes.append(self._normalize_node(node_copy))
             
             # Sort by semantic score
             semantic_nodes.sort(key=lambda x: x.get('semantic_score', 0), reverse=True)
             
-            # 🎯 P1 FIX: Filter irrelevant nodes by label relevance
+            # P1 FIX: Filter irrelevant nodes by label relevance
             filtered_nodes = self._filter_semantic_nodes_by_relevance(
                 semantic_nodes, 
                 initial_nodes or [],
@@ -1122,7 +1194,7 @@ class HybridGraphRetriever:
             
             logger.info(f"[P1 Filter] Node2Vec candidates: {len(semantic_nodes)} → Filtered: {len(filtered_nodes)}")
             
-            return filtered_nodes[:20]  # Limit to top 20
+            return filtered_nodes[:20]
             
         except Exception as e:
             logger.error(f"Node2Vec semantic search failed: {e}")
@@ -1611,8 +1683,8 @@ class HybridGraphRetriever:
             return self._find_similar_concepts_node2vec(concept, top_k)
         
         try:
-            # Get query embedding for the concept
-            query_embedding = self.semantic_embedder.embed_query(concept)
+            # Get query embedding (cache-first to avoid redundant API calls)
+            query_embedding = self.semantic_embedder.get_or_embed(concept)
             if query_embedding is None:
                 logger.warning(f"[Semantic] Failed to embed concept: {concept}")
                 return self._find_similar_concepts_node2vec(concept, top_k)
@@ -1673,11 +1745,11 @@ class HybridGraphRetriever:
             except Exception as e:
                 logger.warning(f"[Hybrid] Node2Vec search failed: {e}")
         
-        # Get Semantic similarities
+        # Get Semantic similarities (cache-first to avoid redundant API calls)
         semantic_scores: Dict[str, float] = {}
         if self.semantic_embedder is not None:
             try:
-                query_embedding = self.semantic_embedder.embed_query(concept)
+                query_embedding = self.semantic_embedder.get_or_embed(concept)
                 if query_embedding is not None:
                     for node_name, node_embedding in self.semantic_embedder.node_embeddings.items():
                         if node_name.lower() == concept.lower():
@@ -1788,6 +1860,37 @@ class HybridGraphRetriever:
         except Exception as e:
             logger.error(f"Error getting node details for '{node_name}': {e}")
             return None
+    
+    async def _batch_get_node_details(self, node_names: List[str]) -> Dict[str, Dict]:
+        """Batch fetch node details from Neo4j (1 query instead of N sequential queries)."""
+        if not node_names:
+            return {}
+        
+        try:
+            with self.neo4j_driver.session() as session:
+                query = """
+                MATCH (n)
+                WHERE n.name IN $names
+                RETURN n, labels(n) as labels
+                """
+                result = session.run(query, names=node_names)
+                
+                details: Dict[str, Dict] = {}
+                for record in result:
+                    node = dict(record['n'])
+                    node['labels'] = record['labels']
+                    name = node.get('name', '')
+                    if name and name not in details:
+                        details[name] = node
+                
+                logger.debug(
+                    f"[Batch Neo4j] Fetched {len(details)}/{len(node_names)} nodes in 1 query"
+                )
+                return details
+                
+        except Exception as e:
+            logger.error(f"Batch node details failed: {e}")
+            return {}
     
     def _fuse_results(self, graph_nodes: List[Dict], semantic_nodes: List[Dict]) -> Tuple[List[Dict], List[Tuple[str, str, str]]]:
         """Fuse and rank results from multiple sources (graph, structural, vector, semantic)"""
@@ -1925,12 +2028,13 @@ class EnhancedMultilingualText2Cypher:
             config=config
         )
     
-    async def process_query_with_retrieval(self, query: str, domain: str = None) -> Dict:
+    async def process_query_with_retrieval(self, query: str, domain: str = None, **kwargs) -> Dict:
         """Process query with full hybrid retrieval pipeline
         
         Args:
             query: Natural language query
             domain: Domain filter ('udl', 'neuro', 'all', or None). If None, uses the domain set during initialization.
+            **kwargs: Additional options (e.g., max_methodologies=10)
         """
         # Use provided domain or fall back to initialization domain
         if domain is None:
@@ -1977,9 +2081,10 @@ class EnhancedMultilingualText2Cypher:
                 retrieval_dict,
                 query,
                 {
-                    'educational_context': educational_context,  # ✅ Dynamic based on domain
-                    'original_query': query  # ✅ PHASE 2 FIX: Needed for intent detection
-                }
+                    'educational_context': educational_context,
+                    'original_query': query
+                },
+                max_methodologies=kwargs.get('max_methodologies', 10)
             )
             
             # Convert to dict for display/serialization

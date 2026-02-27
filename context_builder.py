@@ -308,15 +308,25 @@ class MethodologyRanker:
     
     def rank_methodologies(self, nodes: List[Dict], query_metadata: Dict) -> List[MethodologyRecommendation]:
         """
-        Rank methodologies with dynamic balancing for comparison queries.
+        Rank methodologies with dynamic balancing for multi-label queries.
         
-        PHASE 2 ENHANCEMENT: Scalable, no hardcoding, works for ANY labels.
+        Pipeline: deduplicate → filter → balance (if multi-label) → interleave → recommend.
+        
+        Balancing is triggered when:
+        - Query contains comparison keywords (e.g., "differenza", "vs"), OR
+        - Nodes span 2+ distinct primary label groups (e.g., Attention + Metacognition)
+        
+        Interleaving ensures the primary/supporting split in build_context()
+        contains balanced representation from all label groups.
         """
-        # Step 1: Filter valid methodologies
-        valid_nodes = []
         logger.info(f"[DEBUG] Ranking {len(nodes)} nodes for recommendations")
         
-        for i, node in enumerate(nodes):
+        # Step 0: Deduplicate nodes by name (same concept from multiple retrieval sources)
+        deduped_nodes = self._deduplicate_nodes(nodes)
+        
+        # Step 1: Filter valid methodologies
+        valid_nodes = []
+        for i, node in enumerate(deduped_nodes):
             logger.info(f"[DEBUG] Node {i+1}: name='{node.get('name', 'N/A')}', labels={node.get('labels', [])}, keys={list(node.keys())}")
             
             if self._is_methodology(node):
@@ -325,14 +335,25 @@ class MethodologyRanker:
             else:
                 logger.info(f"[DEBUG] Node {i+1} REJECTED - not a valid methodology")
         
-        # Step 2: Apply dynamic balancing if needed (PHASE 2 - Scalable solution)
+        # Step 2: Detect if balancing is needed (comparison OR multi-label distribution)
         query_intent = self._detect_query_intent(query_metadata.get('original_query', ''))
         
-        if query_intent['is_comparison']:
-            logger.info(f"[Smart Ranking] Comparison query detected, applying dynamic balancing...")
+        primary_label_counts: Dict[str, int] = {}
+        for node in valid_nodes:
+            labels = node.get('labels', [])
+            if isinstance(labels, str):
+                labels = [labels]
+            pl = labels[0] if labels else 'Unknown'
+            primary_label_counts[pl] = primary_label_counts.get(pl, 0) + 1
+        
+        needs_balancing = query_intent['is_comparison'] or len(primary_label_counts) >= 2
+        
+        if needs_balancing:
+            reason = "comparison keywords" if query_intent['is_comparison'] else "multi-label distribution"
+            logger.info(f"[Smart Ranking] Balancing triggered ({reason}): {primary_label_counts}")
             balanced_nodes = self._apply_dynamic_balancing(valid_nodes, target_size=15)
+            balanced_nodes = self._interleave_nodes_by_label(balanced_nodes)
         else:
-            # Standard ranking (no balancing needed)
             balanced_nodes = valid_nodes
         
         # Step 3: Create recommendations
@@ -342,118 +363,122 @@ class MethodologyRanker:
             if recommendation:
                 recommendations.append(recommendation)
         
-        # Sort by relevance score (descending)
-        recommendations.sort(key=lambda x: x.relevance_score, reverse=True)
+        if needs_balancing:
+            logger.info(f"[Smart Ranking] Preserving interleaved order for balanced primary/supporting split")
+        else:
+            recommendations.sort(key=lambda x: x.relevance_score, reverse=True)
         
         logger.info(f"[DEBUG] Final recommendations: {len(recommendations)}")
         return recommendations
     
-    def _is_methodology(self, node: Dict) -> bool:
-        """Check if node represents a pedagogical methodology or neuroscience concept.
+    def _deduplicate_nodes(self, nodes: List[Dict]) -> List[Dict]:
+        """Merge duplicate nodes (same name) from multiple retrieval sources.
         
-        Now loads valid labels from domain config (Dec 2025 refactor).
-        Falls back to hardcoded list if domain config not available.
+        The retriever returns the same concept from graph traversal, semantic search,
+        and Node2Vec — each as a separate dict. This merges them, keeping the entry
+        with the highest rank_score and enriching it with data from others.
+        
+        Dynamic: works for any node names, any domain, any retrieval source.
+        """
+        if not nodes:
+            return []
+        
+        seen: Dict[str, Dict] = {}
+        
+        for node in nodes:
+            name = node.get('name', '')
+            if not name:
+                continue
+            
+            if name not in seen:
+                seen[name] = node
+            else:
+                existing = seen[name]
+                if node.get('rank_score', 0) > existing.get('rank_score', 0):
+                    # New node wins — enrich it with metadata from the loser
+                    for key in ('description', 'rel_type', 'source', 'vector_similarity'):
+                        if not node.get(key) and existing.get(key):
+                            node[key] = existing[key]
+                    seen[name] = node
+                else:
+                    # Existing wins — enrich it with metadata from the loser
+                    for key in ('description', 'rel_type', 'source', 'vector_similarity'):
+                        if not existing.get(key) and node.get(key):
+                            existing[key] = node[key]
+        
+        deduped = list(seen.values())
+        removed = len(nodes) - len(deduped)
+        if removed > 0:
+            logger.info(f"[Dedup] Merged {len(nodes)} → {len(deduped)} nodes ({removed} duplicates removed)")
+        
+        return deduped
+    
+    def _is_methodology(self, node: Dict) -> bool:
+        """Check if node should be included in recommendations.
+        
+        Phase 1B (Option C): Accept all nodes that survived the retriever's
+        P1+ adaptive threshold filter. The retrieval pipeline already validates
+        relevance via semantic similarity, graph distance, and Node2Vec scores.
+        
+        Only rejects nodes with known system/infrastructure labels that are
+        never educational content (tiny blacklist instead of large whitelist).
+        This is fully dynamic — any new label from future data ingestion is
+        automatically accepted without manual maintenance.
         """
         labels = node.get('labels', [])
-        valid_labels = self._get_valid_labels_for_domain()
-        return any(label in valid_labels for label in labels)
-    
-    def _get_valid_labels_for_domain(self) -> List[str]:
-        """Load valid methodology labels from domain config.
+        if not labels:
+            return bool(node.get('name'))
         
-        Primary: Load from domain config (e.g., neuro_domain.py)
-        Fallback: Use hardcoded list (original behavior)
-        
-        Returns:
-            List of valid label strings for the current domain
-        """
-        # Try to load from domain config
-        # NOTE: Use self.kb.domain (MethodologyRanker has self.kb, not self.domain)
-        domain = self.kb.domain
-        try:
-            from domains import get_domain_config
-            domain_config = get_domain_config(domain)
-            if domain_config and hasattr(domain_config, 'get_valid_methodology_labels'):
-                labels = domain_config.get_valid_methodology_labels()
-                if labels:
-                    logger.debug(f"Loaded {len(labels)} valid labels from {domain} domain config")
-                    return labels
-        except Exception as e:
-            logger.warning(f"Could not load domain config labels: {e}, using fallback")
-        
-        # FALLBACK: Original hardcoded lists (backward compatibility)
-        logger.debug(f"Using fallback labels for domain: {domain}")
-        return self._get_fallback_labels()
-    
-    def _get_fallback_labels(self) -> List[str]:
-        """Fallback hardcoded labels (original behavior, for backward compatibility)"""
-        # NOTE: Use self.kb.domain (MethodologyRanker has self.kb, not self.domain)
-        domain = self.kb.domain
-        
-        # UDL methodologies
-        udl_labels = ['PedagogicalMethodology', 'TeachingApproach', 'LearningStrategy']
-        
-        # Neuro concepts (original list from Nov 2025)
-        neuro_labels = [
-            'Attention', 'CriticalThinking', 'ExtrinsicMotivation', 'ExecutiveFunctions',
-            'IntrinsicMotivation', 'LearningOutcomes', 'TeachingPractices', 'LearningDevelopment',
-            'NegativeStressDistress', 'Motivation',
-            'CognitiveFlexibility', 'KnowledgeConstructionAttention', 'PrefrontalCortexActivation',
-            'OptimalAttentionalNetworkActivation',
-            'Creativity', 'Memory', 'MemoryEncoding', 'MemorySystems',
-            'WorkingMemory', 'Metacognition', 'SelfRegulation', 'CognitiveControl', 'CognitiveProcesses',
-            'EmotionalRegulation', 'EmotionalWellBeing', 'PositiveEmotions', 'NegativeEmotions',
-            'AffectiveProcesses',
-            'GrowthMindset', 'FixedMindset', 'Mindset',
-            'PositiveStressEustress', 'StressResponse', 'LongTermGrowth', 'LongTermDecline',
-            'AdaptiveCoping', 'MaladaptiveCoping',
-            'SocialCognition', 'SocialLearning', 'Communication',
-            'LearningEngagement', 'LearningPerformance', 'EducationalSupport',
-            'HigherOrderThinking', 'LowerOrderThinking', 'ProblemSolving',
-            'LongTermMemory', 'PersonalGrowth', 'Strengths', 'CognitiveStrengths',
-            'ReflectiveThinking', 'Consolidation', 'MotivationalModulation',
-            'BrainAdaptability', 'Vulnerability', 'Resilience', 'CognitiveBias',
-            'LearningProcess', 'Emotions', 'Concept'
-        ]
-        
-        if domain == 'neuro':
-            return neuro_labels
-        elif domain == 'udl':
-            return udl_labels
-        else:
-            # Unknown domain: return all labels
-            return udl_labels + neuro_labels
+        system_labels = {'_GraphConfig', 'Node', 'Entity', '__Entity__'}
+        return not all(label in system_labels for label in labels)
     
     def _create_recommendation(self, node: Dict, query_metadata: Dict) -> Optional[MethodologyRecommendation]:
-        """Create a methodology recommendation from a node"""
+        """Create a methodology recommendation from a node.
+        
+        Priority chain for each field:
+        1. Hardcoded kb_info (methodology_categories dict) — most curated
+        2. Node's own KG properties (description, category) — real graph data
+        3. Generic fallback template — last resort
+        """
         name = node.get('name', '')
         if not name:
             return None
         
-        # Get knowledge base info
         kb_info = self.kb.methodology_categories.get(name, {})
         
-        # Calculate relevance score
         relevance_score = self._calculate_relevance_score(node, query_metadata)
-        
-        # Determine evidence type
         evidence_type = self._determine_evidence_type(node)
         
-        # Get implementation guidance
-        implementation = kb_info.get('implementation', f'Apply {name} methodology with appropriate adaptations')
+        # --- Implementation guidance: kb_info > node description > generic ---
+        node_description = node.get('description', '')
+        if isinstance(node_description, float):
+            node_description = ''
+        implementation = kb_info.get(
+            'implementation',
+            node_description or f'Apply {name} with appropriate adaptations'
+        )
         
-        # Get classroom applications
-        applications = kb_info.get('applications', [f'Implement {name} in classroom context'])
+        # --- Classroom applications: kb_info only (LLM handles specifics) ---
+        applications = kb_info.get('applications', None)
+        if not applications:
+            applications = [f'Consultare il contesto specifico della classe per applicazioni pratiche di {name}']
         
-        # Get special considerations
-        special_considerations = kb_info.get('special_needs_adaptations', ['Adapt based on individual student needs'])
+        # --- Special considerations: kb_info > generic ---
+        special_considerations = kb_info.get(
+            'special_needs_adaptations',
+            ['Adapt based on individual student needs']
+        )
         
-        # Determine confidence
+        # --- Category: kb_info > domain label map > generic ---
+        category = kb_info.get('category', None)
+        if not category:
+            category = self._resolve_category_from_labels(node)
+        
         confidence = self._calculate_confidence(relevance_score, evidence_type, kb_info)
         
         return MethodologyRecommendation(
             name=name,
-            category=kb_info.get('category', 'Educational Methodology'),
+            category=category,
             relevance_score=relevance_score,
             evidence_type=evidence_type,
             implementation_guidance=implementation,
@@ -461,6 +486,33 @@ class MethodologyRanker:
             special_considerations=special_considerations,
             confidence=confidence
         )
+    
+    def _resolve_category_from_labels(self, node: Dict) -> str:
+        """Resolve a human-readable category from node labels using domain config.
+        
+        Falls back to first label name or generic 'Educational Methodology'.
+        """
+        labels = node.get('labels', [])
+        if isinstance(labels, str):
+            labels = [labels]
+        
+        # Try domain config label→category map
+        domain = self.kb.domain
+        try:
+            domain_config = get_domain_config(domain)
+            if domain_config:
+                label_map = domain_config.get_label_category_map()
+                if label_map:
+                    for label in labels:
+                        if label in label_map:
+                            return label_map[label]
+        except Exception:
+            pass
+        
+        # Fallback: use the first label as-is (still better than generic)
+        if labels:
+            return labels[0]
+        return 'Educational Methodology'
     
     def _calculate_relevance_score(self, node: Dict, query_metadata: Dict) -> float:
         """Calculate relevance score for a methodology"""
@@ -529,24 +581,36 @@ class MethodologyRanker:
         """
         Detect if query is a comparison query (e.g., "A vs B", "difference between A and B").
         
-        Scalable: Works for ANY comparison, not hardcoded for specific labels.
+        Uses word boundary matching to avoid false positives from substrings
+        (e.g., "tra" inside "mostrano", "strategia").
         
         Returns:
             {'is_comparison': bool, 'comparison_keywords': list}
         """
         query_lower = query.lower()
         
-        # Comparison keywords (multilingual)
-        comparison_keywords = [
-            # English
-            'difference', 'differences', 'vs', 'versus', 'compare', 'comparison',
-            'contrast', 'compared to', 'different from', 'differ', 'distinguish',
-            # Italian
+        # Strong comparison signals (multi-word or unambiguous)
+        strong_keywords = [
+            'difference', 'differences', 'versus', 'compare', 'comparison',
+            'contrast', 'compared to', 'different from', 'distinguish',
             'differenza', 'differenze', 'confronto', 'confrontare', 'rispetto a',
-            'diverso', 'diversa', 'distinguere', 'distingue', 'tra'
+            'distinguere', 'distingue',
         ]
         
-        found_keywords = [kw for kw in comparison_keywords if kw in query_lower]
+        # Short/ambiguous keywords requiring word boundary matching
+        boundary_keywords = [
+            'vs', 'differ', 'diverso', 'diversa', 'tra',
+        ]
+        
+        found_keywords = []
+        
+        for kw in strong_keywords:
+            if kw in query_lower:
+                found_keywords.append(kw)
+        
+        for kw in boundary_keywords:
+            if re.search(rf'\b{re.escape(kw)}\b', query_lower):
+                found_keywords.append(kw)
         
         is_comparison = len(found_keywords) > 0
         
@@ -754,6 +818,58 @@ class MethodologyRanker:
         )
         
         return balanced_results
+    
+    def _interleave_nodes_by_label(self, nodes: List[Dict]) -> List[Dict]:
+        """
+        Round-robin interleave nodes from different primary label groups.
+        
+        Ensures the downstream primary/supporting split (in build_context)
+        contains balanced representation from all label groups, not just
+        the highest-scored one.
+        
+        Within each group, nodes are ordered by rank_score (best first).
+        
+        Example with 7 ExtrinsicMotivation + 6 IntrinsicMotivation:
+          Before (score sort): [Ext, Ext, Ext, Ext, Ext, Int, Int, Int, ...]
+          After  (interleave): [Ext, Int, Ext, Int, Ext, Int, Ext, Int, ...]
+        
+        This way, slicing [:5] for primary gives [Ext, Int, Ext, Int, Ext]
+        instead of [Ext, Ext, Ext, Ext, Ext].
+        """
+        if not nodes:
+            return []
+        
+        groups: Dict[str, List[Dict]] = {}
+        for node in nodes:
+            labels = node.get('labels', [])
+            if isinstance(labels, str):
+                labels = [labels]
+            primary_label = labels[0] if labels else 'Unknown'
+            if primary_label not in groups:
+                groups[primary_label] = []
+            groups[primary_label].append(node)
+        
+        if len(groups) <= 1:
+            return nodes
+        
+        for key in groups:
+            groups[key].sort(key=lambda n: n.get('rank_score', 0), reverse=True)
+        
+        result: List[Dict] = []
+        group_lists = list(groups.values())
+        max_len = max(len(g) for g in group_lists)
+        
+        for i in range(max_len):
+            for group in group_lists:
+                if i < len(group):
+                    result.append(group[i])
+        
+        logger.info(
+            f"[Smart Ranking] Interleaved {len(nodes)} nodes across "
+            f"{len(groups)} label groups: {list(groups.keys())}"
+        )
+        
+        return result
 
 class EvidenceSynthesizer:
     """Synthesizes evidence from graph relationships and semantic similarities"""
@@ -833,9 +949,15 @@ class EducationalContextBuilder:
         self, 
         retrieval_result: Dict, 
         original_query: str, 
-        query_metadata: Dict
+        query_metadata: Dict,
+        max_methodologies: int = 10
     ) -> EducationalContext:
-        """Build comprehensive educational context from retrieval results"""
+        """Build comprehensive educational context from retrieval results.
+        
+        Args:
+            max_methodologies: Total methodologies to surface (split ~50/50 primary/supporting).
+                              Default 10 = 5 primary + 5 supporting.
+        """
         
         try:
             logger.info(f"Building context for query: {original_query[:50]}...")
@@ -851,9 +973,11 @@ class EducationalContextBuilder:
             # Rank methodologies
             all_recommendations = self.methodology_ranker.rank_methodologies(nodes, query_metadata)
             
-            # Split into primary and supporting
-            primary_methodologies = all_recommendations[:3]  # Top 3
-            supporting_methodologies = all_recommendations[3:6]  # Next 3
+            # Dynamic split: ~50/50 primary/supporting based on max_methodologies
+            max_primary = max(3, (max_methodologies + 1) // 2)  # At least 3, ceil half
+            max_supporting = max(2, max_methodologies - max_primary)  # Remainder
+            primary_methodologies = all_recommendations[:max_primary]
+            supporting_methodologies = all_recommendations[max_primary:max_primary + max_supporting]
             
             # Synthesize evidence
             evidence_summary = self.evidence_synthesizer.synthesize_evidence(triples, nodes)

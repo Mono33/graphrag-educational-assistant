@@ -108,9 +108,12 @@ def _format_prompt_section(context: ContextData, language: str = "it", domain: s
     DEV team can use this directly in their prompts or build their own
     from the structured `context` data.
     
-    Scalable: uses domain config for domain-specific formatting.
+    When no KG data is found (0 methodologies), generates a transparent
+    fallback message that instructs the LLM to use system_prompt principles
+    instead of faking data. This is dynamic and works for any out-of-scope topic.
     """
     domain_title = _get_domain_title(domain, language)
+    has_data = bool(context.primary_methodologies)
     
     if language in ("it", "italian"):
         lines = [
@@ -118,9 +121,36 @@ def _format_prompt_section(context: ContextData, language: str = "it", domain: s
             "",
             f"**Contesto Educativo:** {context.educational_context_type}",
             f"**Profilo Studente:** {context.student_profile}",
+        ]
+        
+        if not has_data:
+            lines.extend([
+                "",
+                "### Nota sul Knowledge Graph",
+                "",
+                "Per questa richiesta specifica, il Knowledge Graph non contiene dati "
+                "direttamente correlati al contenuto disciplinare richiesto.",
+                "Tuttavia, i principi neuroscientifici e le strategie didattiche presenti "
+                "nel system prompt sono pienamente applicabili per rispondere a questa domanda.",
+                "",
+                "### Come procedere:",
+                "- Utilizza i **PRINCIPI NEUROSCIENTIFICI** (sezioni A-F del system prompt) "
+                "per ottimizzare la risposta",
+                "- Applica il **modello I Do – We Do – You Do** alla struttura della lezione (se pertinente)",
+                "- Integra strategie **attentive, metacognitive e motivazionali** nel contenuto "
+                "disciplinare specifico",
+                "- Il contenuto disciplinare specifico va basato sulle tue conoscenze generali",
+                "",
+                "### Livello di Confidenza: BASATO_SU_PRINCIPI_GENERALI",
+                "I principi neurodidattici sono affidabili; il contenuto disciplinare "
+                "specifico non è verificato dal Knowledge Graph.",
+            ])
+            return "\n".join(lines)
+        
+        lines.extend([
             "",
             "### Metodologie Raccomandate dal Knowledge Graph"
-        ]
+        ])
         
         for i, method in enumerate(context.primary_methodologies, 1):
             lines.append(f"\n{i}. **{method.name}** ({method.category})")
@@ -172,9 +202,36 @@ def _format_prompt_section(context: ContextData, language: str = "it", domain: s
             "",
             f"**Educational Context:** {context.educational_context_type}",
             f"**Student Profile:** {context.student_profile}",
+        ]
+        
+        if not has_data:
+            lines.extend([
+                "",
+                "### Knowledge Graph Note",
+                "",
+                "For this specific request, the Knowledge Graph does not contain data "
+                "directly related to the requested subject content.",
+                "However, the neuroscience principles and teaching strategies in the "
+                "system prompt are fully applicable to answer this question.",
+                "",
+                "### How to proceed:",
+                "- Use the **NEUROSCIENCE PRINCIPLES** (sections A-F from system prompt) "
+                "to optimize the response",
+                "- Apply the **I Do – We Do – You Do model** to the lesson structure (if relevant)",
+                "- Integrate **attention, metacognitive, and motivational strategies** into "
+                "the specific subject content",
+                "- The specific subject content should be based on your general knowledge",
+                "",
+                "### Confidence Level: BASED_ON_GENERAL_PRINCIPLES",
+                "The neurodidactic principles are reliable; the specific subject content "
+                "is not verified by the Knowledge Graph.",
+            ])
+            return "\n".join(lines)
+        
+        lines.extend([
             "",
             "### Recommended Methodologies from Knowledge Graph"
-        ]
+        ])
         
         for i, method in enumerate(context.primary_methodologies, 1):
             lines.append(f"\n{i}. **{method.name}** ({method.category})")
@@ -266,7 +323,8 @@ async def get_context(request: ContextRequest) -> ContextResponse:
         # Process the query through the full pipeline
         result = await processor.process_query_with_retrieval(
             query=request.query,
-            domain=domain
+            domain=domain,
+            max_methodologies=request.max_methodologies
         )
         
         # Extract data from result (correct structure from process_query_with_retrieval)
@@ -328,6 +386,7 @@ async def get_context(request: ContextRequest) -> ContextResponse:
                 metrics=MetricsInfo(
                     total_nodes=total_nodes_count,
                     total_relationships=total_relationships_count,
+                    kg_data_available=False,
                     processing_time_ms=processing_time
                 ),
                 error="Could not build educational context"
@@ -371,6 +430,12 @@ async def get_context(request: ContextRequest) -> ContextResponse:
             context_data, domain, detected_language
         )
         
+        # Determine if KG had relevant data (0 methodologies = out of scope)
+        kg_data_available = bool(context_data.primary_methodologies)
+        
+        if not kg_data_available:
+            logger.info("[API] No KG data found for this query — transparent fallback applied")
+        
         # Build response
         response = ContextResponse(
             success=True,
@@ -385,6 +450,7 @@ async def get_context(request: ContextRequest) -> ContextResponse:
             metrics=MetricsInfo(
                 total_nodes=total_nodes_count,
                 total_relationships=total_relationships_count,
+                kg_data_available=kg_data_available,
                 processing_time_ms=processing_time
             ),
             formatted_prompt_section=_format_prompt_section(context_data, detected_language, domain),
@@ -419,6 +485,7 @@ async def get_context(request: ContextRequest) -> ContextResponse:
             metrics=MetricsInfo(
                 total_nodes=0,
                 total_relationships=0,
+                kg_data_available=False,
                 processing_time_ms=processing_time
             ),
             error=str(e)

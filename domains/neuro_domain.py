@@ -309,6 +309,30 @@ class NeuroDomainConfig(BaseDomainConfig):
             'Comorbidities', 'LearningStyles',
             
             # =====================================================
+            # EDUCATIONAL & CLINICAL INTERVENTIONS (Jan 2026)
+            # Critical for ADHD/attention deficit queries
+            # =====================================================
+            'EducationalClinicalInterventions',
+            'MetacognitiveControl',
+            
+            # =====================================================
+            # ATTENTIONAL & BIOLOGICAL FACTORS (Jan 2026)
+            # Relevant for attention, stress, and neurodevelopment
+            # =====================================================
+            'BottomUpSalience',
+            'CognitiveFiltering',
+            'AffectiveBiologicalConstraints',
+            'AttentionalState',
+            'PsychoBiologicalFactor',
+            'LongTermMemoryConsolidation',
+            'MotorControl',
+            
+            # =====================================================
+            # MOTIVATIONAL MODULATION (Jan 2026)
+            # =====================================================
+            'MotivationalModulation',
+            
+            # =====================================================
             # CASE VARIANTS (for data inconsistencies)
             # =====================================================
             'Teachingpractices',  # lowercase variant of TeachingPractices
@@ -318,6 +342,140 @@ class NeuroDomainConfig(BaseDomainConfig):
             # =====================================================
             'Concept'  # Fallback for inferred labels
         ]
+    
+    # ============================================================
+    # LABEL → CATEGORY MAPPING (for context_builder.py, Jan 2026)
+    # ============================================================
+    
+    def get_label_category_map(self) -> Dict[str, str]:
+        """Map Neo4j node labels to human-readable Italian category names.
+        
+        Used by context_builder to classify nodes properly instead of
+        labeling everything as 'Educational Methodology'.
+        """
+        return {
+            # Teaching & Learning Strategies
+            'TeachingPractices': 'Strategia Didattica',
+            'Teachingpractices': 'Strategia Didattica',
+            'LearningStrategies': 'Strategia di Apprendimento',
+            'Learningstrategies': 'Strategia di Apprendimento',
+            'EducationalSupport': 'Supporto Educativo',
+            'EducationalClinicalInterventions': 'Intervento Educativo',
+            
+            # Cognitive Processes
+            'Attention': 'Processo Cognitivo – Attenzione',
+            'CriticalThinking': 'Processo Cognitivo – Pensiero Critico',
+            'CognitiveProcesses': 'Processo Cognitivo',
+            'CognitiveFlexibility': 'Processo Cognitivo – Flessibilità',
+            'CognitiveControl': 'Controllo Cognitivo',
+            'CognitiveFiltering': 'Filtraggio Cognitivo',
+            'HigherOrderThinking': 'Pensiero di Ordine Superiore',
+            'LowerOrderThinking': 'Pensiero di Ordine Inferiore',
+            'ProblemSolving': 'Problem Solving',
+            'ReflectiveThinking': 'Pensiero Riflessivo',
+            'Creativity': 'Creatività',
+            
+            # Executive Functions
+            'ExecutiveFunctions': 'Funzione Esecutiva',
+            'PrefrontalCortexActivation': 'Funzione Esecutiva',
+            
+            # Memory
+            'Memory': 'Memoria',
+            'MemoryEncoding': 'Codifica della Memoria',
+            'MemorySystems': 'Sistemi di Memoria',
+            'WorkingMemory': 'Memoria di Lavoro',
+            'LongTermMemory': 'Memoria a Lungo Termine',
+            'Consolidation': 'Consolidamento',
+            'LongTermMemoryConsolidation': 'Consolidamento Memoria',
+            
+            # Metacognition
+            'Metacognition': 'Metacognizione',
+            'MetacognitiveControl': 'Controllo Metacognitivo',
+            'KnowledgeOfCognition': 'Conoscenza della Cognizione',
+            'SelfRegulation': 'Autoregolazione',
+            
+            # Motivation
+            'Motivation': 'Motivazione',
+            'IntrinsicMotivation': 'Motivazione Intrinseca',
+            'ExtrinsicMotivation': 'Motivazione Estrinseca',
+            'MotivationalModulation': 'Modulazione Motivazionale',
+            
+            # Emotions & Affect
+            'Emotions': 'Processo Emotivo',
+            'EmotionalRegulation': 'Regolazione Emotiva',
+            'EmotionalWellBeing': 'Benessere Emotivo',
+            'PositiveEmotions': 'Emozioni Positive',
+            'NegativeEmotions': 'Emozioni Negative',
+            'AffectiveProcesses': 'Processo Affettivo',
+            'AffectiveMotivationalModulation': 'Modulazione Affettivo-Motivazionale',
+            'AffectiveMotivationalProcesses': 'Processi Affettivo-Motivazionali',
+            
+            # Stress
+            'PositiveStressEustress': 'Eustress (Stress Positivo)',
+            'NegativeStressDistress': 'Distress (Stress Negativo)',
+            'StressResponse': 'Risposta allo Stress',
+            'AdaptiveCoping': 'Coping Adattivo',
+            'MaladaptiveCoping': 'Coping Maladattivo',
+            'AffectiveBiologicalConstraints': 'Vincolo Biologico-Affettivo',
+            
+            # Mindset
+            'GrowthMindset': 'Mentalità di Crescita',
+            'FixedMindset': 'Mentalità Fissa',
+            'Mindset': 'Mentalità',
+            
+            # Attention sub-types
+            'BottomUpSalience': 'Salienza Bottom-Up',
+            'AttentionalState': 'Stato Attentivo',
+            'KnowledgeConstructionAttention': 'Attenzione e Costruzione della Conoscenza',
+            'OptimalAttentionalNetworkActivation': 'Rete Attentiva Ottimale',
+            
+            # Motor & Biological
+            'MotorControl': 'Controllo Motorio',
+            'PsychoBiologicalFactor': 'Fattore Psicobiologico',
+            
+            # Social & Communication
+            'SocialCognition': 'Cognizione Sociale',
+            'SocialLearning': 'Apprendimento Sociale',
+            'Communication': 'Comunicazione',
+            
+            # Learning Outcomes
+            'LearningEngagement': 'Coinvolgimento nell\'Apprendimento',
+            'LearningPerformance': 'Prestazione di Apprendimento',
+            'LearningOutcomes': 'Esiti di Apprendimento',
+            'LearningDevelopment': 'Sviluppo dell\'Apprendimento',
+            'LongTermLearning': 'Apprendimento a Lungo Termine',
+            'LearningProgress': 'Progresso di Apprendimento',
+            
+            # Brain & Neuroscience
+            'BrainAdaptability': 'Neuroplasticità',
+            'Neuroplasticity': 'Neuroplasticità',
+            'Brainfunction': 'Funzione Cerebrale',
+            'CognitiveNeuroscience': 'Neuroscienza Cognitiva',
+            'HemisphericSpecialization': 'Specializzazione Emisferica',
+            'NeurodevelopmentalLinks': 'Collegamento Neurosviluppo',
+            
+            # Personal Growth
+            'PersonalGrowth': 'Crescita Personale',
+            'Strengths': 'Punti di Forza',
+            'CognitiveStrengths': 'Punti di Forza Cognitivi',
+            'LongTermGrowth': 'Crescita a Lungo Termine',
+            'LongTermDecline': 'Declino a Lungo Termine',
+            'Vulnerability': 'Vulnerabilità',
+            'Resilience': 'Resilienza',
+            'CognitiveBias': 'Bias Cognitivo',
+            
+            # Assessment
+            'Assessment': 'Valutazione',
+            'Evaluation': 'Valutazione',
+            
+            # Special Needs
+            'Comorbidities': 'Comorbilità',
+            'LearningStyles': 'Stili di Apprendimento',
+            'Educationalmyths': 'Neuromiti',
+            
+            # Fallback
+            'Concept': 'Concetto Educativo',
+        }
     
     # ============================================================
     # RETRIEVAL BOOSTS (from graph_retriever.py)
