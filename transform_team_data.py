@@ -92,11 +92,19 @@ def sanitize_label(label: str) -> str:
     # Remove non-alphanumeric chars (except spaces)
     label = re.sub(r'[^\w\s]', '', label)
     
-    # Split by spaces and capitalize each word (PascalCase)
-    words = label.split()
+    # Split by spaces, drop purely numeric tokens, and capitalize (PascalCase)
+    words = [w for w in label.split() if not re.match(r'^\d+$', w)]
     pascal_case = ''.join(word.capitalize() for word in words)
     
-    return pascal_case
+    # Normalize CamelCase boundaries: "Teachingpractices" → "TeachingPractices"
+    # Splits on existing uppercase boundaries and re-capitalizes each part
+    parts = re.findall(r'[A-Z][a-z]*|[a-z]+|\d+', pascal_case)
+    pascal_case = ''.join(part.capitalize() for part in parts)
+    
+    # Neo4j labels cannot start with a digit; strip any remaining leading digits
+    pascal_case = re.sub(r'^\d+', '', pascal_case)
+    
+    return pascal_case or 'GeneralConcept'
 
 
 def generate_node_id(name: str) -> str:

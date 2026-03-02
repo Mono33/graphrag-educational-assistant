@@ -1150,6 +1150,71 @@ Cypher: MATCH (i:IntrinsicMotivation) RETURN i, labels(i) as node_labels LIMIT 1
         query = re.sub(r'CONTAINS toLower\("([^"]+)"\s+AND\s+', r'CONTAINS toLower("\1") AND ', query)
         query = re.sub(r'toLower\("([^"]+)"\s+RETURN', r'toLower("\1") RETURN', query)
         
+        # Distribute trailing LIMIT across UNION sub-queries for balanced results.
+        # When an LLM generates "MATCH (a:A) RETURN a UNION MATCH (b:B) RETURN b LIMIT 20",
+        # the LIMIT only constrains the last branch, leaving the first branch unbounded.
+        # This creates severe imbalance for multi-concept queries (e.g. 23 Attention + 0 Metacognition).
+        # Fix: split the LIMIT evenly so each branch gets LIMIT (total // num_branches).
+        if re.search(r'\bUNION\b', query, re.IGNORECASE):
+            branch_parts = re.split(r'(\bUNION(?:\s+ALL)?\b)', query, flags=re.IGNORECASE)
+            branches = [branch_parts[i] for i in range(0, len(branch_parts), 2)]
+            separators = [branch_parts[i] for i in range(1, len(branch_parts), 2)]
+            num_branches = len(branches)
+
+            if num_branches >= 2:
+                last_branch = branches[-1].strip()
+                trailing_limit = re.search(r'\bLIMIT\s+(\d+)\s*$', last_branch, re.IGNORECASE)
+                other_have_limit = any(
+                    re.search(r'\bLIMIT\s+\d+\b', b, re.IGNORECASE) for b in branches[:-1]
+                )
+
+                if trailing_limit and not other_have_limit:
+                    total_limit = int(trailing_limit.group(1))
+                    per_branch = max(1, total_limit // num_branches)
+
+                    branches[-1] = last_branch[:trailing_limit.start()].strip() + f' LIMIT {per_branch}'
+                    for i in range(num_branches - 1):
+                        b = branches[i].strip()
+                        if not re.search(r'\bLIMIT\s+\d+\b', b, re.IGNORECASE):
+                            branches[i] = b + f' LIMIT {per_branch}'
+
+                    query = branches[0]
+                    for i, sep in enumerate(separators):
+                        query += f' {sep} {branches[i + 1]}'
+                    logger.info(
+                        f"[UNION Balance] Distributed LIMIT {total_limit} -> "
+                        f"{per_branch} per branch ({num_branches} branches)"
+                    )
+
+        # Fix duplicate column aliases (Neo4j rejects duplicate names in RETURN)
+        # e.g. "labels(t) as node_labels, labels(a) as node_labels" → rename second
+        # For UNION queries: dedup within each sub-query independently,
+        # because cross-sub-query duplicates are REQUIRED by Neo4j.
+        union_sep = re.compile(r'(\bUNION(?:\s+ALL)?\b)', re.IGNORECASE)
+        segments = union_sep.split(query)
+
+        fixed_segments = []
+        for seg in segments:
+            if union_sep.match(seg.strip()):
+                fixed_segments.append(seg)
+            else:
+                seen = set()
+                def _dedup_alias(match, _seen=seen):
+                    full = match.group(0)
+                    alias = match.group(1)
+                    if alias in _seen:
+                        new_alias = alias + '_2'
+                        while new_alias in _seen:
+                            new_alias += '_2'
+                        _seen.add(new_alias)
+                        return full[:full.rfind(alias)] + new_alias
+                    _seen.add(alias)
+                    return full
+                fixed_segments.append(
+                    re.sub(r'\bas\s+(\w+)\b', _dedup_alias, seg, flags=re.IGNORECASE)
+                )
+        query = ''.join(fixed_segments)
+        
         # Final hygiene: collapse duplicate spaces
         query = re.sub(r'\s+', ' ', query).strip()
         query = re.sub(r'WHERE\s+(AND|OR)\s+', 'WHERE ', query, flags=re.IGNORECASE)

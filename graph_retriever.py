@@ -74,6 +74,10 @@ class SemanticEmbedder:
         self.node_embeddings: Dict[str, np.ndarray] = {}
         self.embeddings_loaded = False
         
+        # Pre-built matrix for vectorized similarity (built lazily)
+        self._embedding_matrix: Optional[np.ndarray] = None
+        self._embedding_names: List[str] = []
+        
         # Ensure cache directory exists
         os.makedirs(self.cache_dir, exist_ok=True)
         
@@ -285,6 +289,49 @@ class SemanticEmbedder:
         
         similarity = cosine_similarity(e1, e2)[0][0]
         return float(max(0.0, similarity))  # Clamp to positive
+    
+    def compute_all_similarities(self, query_embedding: np.ndarray, threshold: float = 0.0) -> List[Tuple[str, float]]:
+        """Vectorized similarity against ALL cached node embeddings in one call.
+        
+        Replaces the per-node loop with a single matrix operation.
+        ~100x faster than calling compute_similarity() in a loop.
+        
+        Args:
+            query_embedding: Query embedding vector
+            threshold: Minimum similarity to include (default 0.0 = all)
+            
+        Returns:
+            List of (node_name, similarity) tuples, sorted descending
+        """
+        if query_embedding is None or not self.node_embeddings:
+            return []
+        
+        if not hasattr(self, '_embedding_matrix') or self._embedding_matrix is None:
+            self._build_embedding_matrix()
+        
+        query = query_embedding.reshape(1, -1)
+        similarities = cosine_similarity(query, self._embedding_matrix)[0]
+        
+        results = []
+        for idx, sim in enumerate(similarities):
+            if sim >= threshold:
+                results.append((self._embedding_names[idx], float(max(0.0, sim))))
+        
+        results.sort(key=lambda x: x[1], reverse=True)
+        return results
+    
+    def _build_embedding_matrix(self):
+        """Pre-build the stacked matrix and name index for vectorized lookups."""
+        if not self.node_embeddings:
+            self._embedding_matrix = None
+            self._embedding_names = []
+            return
+        
+        self._embedding_names = list(self.node_embeddings.keys())
+        self._embedding_matrix = np.stack([
+            self.node_embeddings[name] for name in self._embedding_names
+        ])
+        logger.info(f"[SemanticEmbedder] Built embedding matrix: {self._embedding_matrix.shape}")
     
     def precompute_node_embeddings(self, neo4j_driver: Driver, domain: str = None):
         """Pre-compute embeddings for all nodes in the graph.
@@ -1689,18 +1736,14 @@ class HybridGraphRetriever:
                 logger.warning(f"[Semantic] Failed to embed concept: {concept}")
                 return self._find_similar_concepts_node2vec(concept, top_k)
             
-            # Calculate similarities against all cached node embeddings
-            similarities = []
-            for node_name, node_embedding in self.semantic_embedder.node_embeddings.items():
-                if node_name.lower() == concept.lower():
-                    continue  # Skip exact match
-                
-                sim = self.semantic_embedder.compute_similarity(query_embedding, node_embedding)
-                if sim >= self.semantic_threshold:
-                    similarities.append((node_name, sim))
-            
-            # Sort by similarity (descending)
-            similarities.sort(key=lambda x: x[1], reverse=True)
+            # Vectorized similarity against all cached node embeddings
+            all_sims = self.semantic_embedder.compute_all_similarities(
+                query_embedding, threshold=self.semantic_threshold
+            )
+            similarities = [
+                (name, sim) for name, sim in all_sims
+                if name.lower() != concept.lower()
+            ]
             
             return similarities[:top_k]
             
@@ -1745,17 +1788,17 @@ class HybridGraphRetriever:
             except Exception as e:
                 logger.warning(f"[Hybrid] Node2Vec search failed: {e}")
         
-        # Get Semantic similarities (cache-first to avoid redundant API calls)
+        # Get Semantic similarities (vectorized — single matrix operation)
         semantic_scores: Dict[str, float] = {}
         if self.semantic_embedder is not None:
             try:
                 query_embedding = self.semantic_embedder.get_or_embed(concept)
                 if query_embedding is not None:
-                    for node_name, node_embedding in self.semantic_embedder.node_embeddings.items():
-                        if node_name.lower() == concept.lower():
-                            continue
-                        sim = self.semantic_embedder.compute_similarity(query_embedding, node_embedding)
-                        if sim >= self.semantic_threshold:
+                    all_sims = self.semantic_embedder.compute_all_similarities(
+                        query_embedding, threshold=self.semantic_threshold
+                    )
+                    for node_name, sim in all_sims:
+                        if node_name.lower() != concept.lower():
                             semantic_scores[node_name] = sim
             except Exception as e:
                 logger.warning(f"[Hybrid] Semantic search failed: {e}")

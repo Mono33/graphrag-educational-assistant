@@ -306,12 +306,16 @@ class MultilingualText2Cypher:
             # Basic indicators
             "come", "cosa", "quali", "che", "per", "con", "gli", "delle", "nella", 
             "posso", "sono", "può", "hanno", "studenti", "bambini", "lezione",
+            # Common Italian words (covers Q1-style queries)
+            "tutte", "tutti", "su", "informazioni", "dammi", "dimmi",
+            "ogni", "questo", "questa", "tipologie", "crea",
             # Educational indicators
             "obiettivi", "classe", "metodologie", "strategie", "valutazione",
             "apprendimento", "insegnare", "adattare", "facilitare", "supportare",
-            # Neuroscience indicators (NEW!)
+            # Neuroscience indicators
             "mentalità", "crescita", "differenza", "significa", "stress", 
-            "positivo", "negativo", "motivazione", "intrinseca", "estrinseca"
+            "positivo", "negativo", "motivazione", "intrinseca", "estrinseca",
+            "attenzione", "metacognizione", "cognizione", "memoria"
         ]
         
         query_lower = query.lower()

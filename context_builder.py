@@ -346,7 +346,7 @@ class MethodologyRanker:
             pl = labels[0] if labels else 'Unknown'
             primary_label_counts[pl] = primary_label_counts.get(pl, 0) + 1
         
-        needs_balancing = query_intent['is_comparison'] or len(primary_label_counts) >= 2
+        needs_balancing = query_intent['is_comparison'] or 2 <= len(primary_label_counts) <= 4
         
         if needs_balancing:
             reason = "comparison keywords" if query_intent['is_comparison'] else "multi-label distribution"
