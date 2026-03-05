@@ -54,11 +54,14 @@ async def lifespan(app: FastAPI):
     try:
         from config import config
         from neo4j import GraphDatabase
-
+        driver_kwargs = {
+            "auth": (config.neo4j.user, config.neo4j.password),
+        }
+        if not config.neo4j.encrypted:
+            driver_kwargs["encrypted"] = config.neo4j.encrypted
         driver = GraphDatabase.driver(
             config.neo4j.uri,
-            auth=(config.neo4j.user, config.neo4j.password),
-            encrypted=config.neo4j.encrypted
+            **driver_kwargs
         )
         driver.verify_connectivity()
         driver.close()
