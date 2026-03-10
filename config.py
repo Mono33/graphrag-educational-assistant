@@ -44,18 +44,18 @@ class Text2CypherConfig:
 @dataclass
 class EmbeddingConfig:
     """Embedding mode configuration for hybrid retrieval
-    
+
     Modes:
         - "node2vec": Graph structure only (default, backward compatible)
         - "hybrid_semantic": Node2Vec + OpenAI text embeddings
         - "openai_only": OpenAI embeddings only (no graph structure)
-    
+
     Weight α (NODE2VEC_WEIGHT):
         - Controls balance between structure and semantics
         - α = 1.0: 100% Node2Vec (pure structure)
         - α = 0.0: 100% OpenAI semantic
         - α = 0.4: Recommended for educational queries (slight semantic bias)
-    
+
     Why α = 0.4 (40% Node2Vec, 60% Semantic)?
         - Educational queries are often semantic ("what is X?", "difference between A and B")
         - Italian queries benefit from multilingual semantic embeddings
@@ -96,7 +96,10 @@ class Config:
         self.neo4j.user = os.getenv("NEO4J_USER", self.neo4j.user)
         self.neo4j.password = os.getenv("NEO4J_PASSWORD", self.neo4j.password)
         self.neo4j.database = os.getenv("NEO4J_DATABASE", self.neo4j.database)
-        self.neo4j.encrypted = os.getenv("NEO4J_ENCRYPTED", self.neo4j.encrypted) == "1"
+        # Handle encrypted flag from env (1/0 or true/false)
+        env_encrypted = os.getenv("NEO4J_ENCRYPTED", "1")
+        self.neo4j.encrypted = env_encrypted == "1"
+
         # OpenAI configuration
         self.openai.api_key = os.getenv("OPENAI_API_KEY", self.openai.api_key)
         self.openai.model = os.getenv("OPENAI_MODEL", self.openai.model)
