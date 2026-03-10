@@ -462,6 +462,11 @@ async def get_context(request: ContextRequest) -> ContextResponse:
         
     except Exception as e:
         logger.error(f"Error processing context request: {e}", exc_info=True)
+        try:
+            import sentry_sdk
+            sentry_sdk.capture_exception(e)
+        except ImportError:
+            pass
         processing_time = int((time.time() - start_time) * 1000)
         
         return ContextResponse(

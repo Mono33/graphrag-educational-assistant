@@ -34,3 +34,6 @@ reportlab>=4.0.0
 # Agentic Layer (Multi-Agent Pipeline)
 langgraph==0.5.4
 
+# Error Monitoring (GlitchTip — Sentry-compatible)
+sentry-sdk[fastapi]>=2.0.0
+

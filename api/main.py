@@ -19,6 +19,7 @@ Endpoints:
 """
 
 import logging
+import os
 import sys
 import time
 from pathlib import Path
@@ -41,6 +42,21 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# GlitchTip / Sentry error monitoring
+import sentry_sdk
+
+_sentry_dsn = os.getenv("SENTRY_DSN", "")
+if _sentry_dsn:
+    sentry_sdk.init(
+        dsn=_sentry_dsn,
+        traces_sample_rate=0.2,
+        release=__version__,
+        environment=os.getenv("ENVIRONMENT", "production"),
+    )
+    logger.info("✅ GlitchTip error monitoring enabled")
+else:
+    logger.info("ℹ️ GlitchTip disabled (no SENTRY_DSN configured)")
+
 
 # Lifespan context manager for startup/shutdown
 @asynccontextmanager
@@ -57,8 +73,7 @@ async def lifespan(app: FastAPI):
 
         driver = GraphDatabase.driver(
             config.neo4j.uri,
-            auth=(config.neo4j.user, config.neo4j.password),
-            encrypted=config.neo4j.encrypted
+            auth=(config.neo4j.user, config.neo4j.password)
         )
         driver.verify_connectivity()
         driver.close()
