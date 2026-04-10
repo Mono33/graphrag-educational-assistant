@@ -67,238 +67,65 @@ class PedagogicalKnowledgeBase:
         """
         self.domain = domain
         
-        # ============================================================================
-        # 🧹 CLEANUP TODO: The following dictionaries can be SAFELY REMOVED
-        # after confirming the domain config refactoring works correctly.
-        # 
-        # WHAT TO REMOVE:
-        #   - self.udl_methodology_categories → Now in domains/udl_domain.py → get_methodology_categories()
-        #   - self.neuro_methodology_categories → Now in domains/neuro_domain.py → get_methodology_categories()
-        #   - self.udl_special_needs_mapping → Now in domains/udl_domain.py → get_special_needs_mapping()
-        #   - self.neuro_special_needs_mapping → Now in domains/neuro_domain.py → get_special_needs_mapping()
-        #
-        # NOTE: Currently the code at lines ~219-261 still uses these directly.
-        # Before removing, update the domain selection logic to use domain configs.
-        #
-        # ESTIMATED LINES SAVED: ~180 lines
-        # DATE MARKED: Nov 2025
-        # ============================================================================
         
-        # 🧹 BACKUP - Can be removed after refactoring is stable.
-        # This logic now exists in: domains/udl_domain.py → get_methodology_categories()
-        # UDL-specific methodology categories
-        self.udl_methodology_categories = {
-            'Cooperative Learning': {
-                'category': 'Collaborative Pedagogy',
-                'best_for': ['social_interaction', 'peer_learning', 'inclusion'],
-                'implementation': 'Organize students in diverse groups of 3-5 members',
-                'applications': [
-                    'Jigsaw method for complex topics',
-                    'Think-Pair-Share for quick engagement',
-                    'Group investigations for project work'
-                ],
-                'special_needs_adaptations': [
-                    'Assign complementary roles based on abilities',
-                    'Provide visual and verbal instructions',
-                    'Use peer tutoring for support'
-                ]
-            },
-            'Flipped Classroom': {
-                'category': 'Blended Learning',
-                'best_for': ['self_paced_learning', 'active_classroom_time', 'differentiation'],
-                'implementation': 'Pre-recorded content at home, active learning in class',
-                'applications': [
-                    'Video lectures for concept introduction',
-                    'Interactive activities during class time',
-                    'Personalized learning paths'
-                ],
-                'special_needs_adaptations': [
-                    'Closed captions for hearing impaired',
-                    'Audio descriptions for visually impaired',
-                    'Flexible pacing for cognitive disabilities'
-                ]
-            },
-            'Project based learning': {
-                'category': 'Constructivist Pedagogy',
-                'best_for': ['real_world_application', 'creativity', 'problem_solving'],
-                'implementation': 'Long-term projects addressing real-world problems',
-                'applications': [
-                    'Community service projects',
-                    'Scientific investigations',
-                    'Creative multimedia presentations'
-                ],
-                'special_needs_adaptations': [
-                    'Break projects into manageable steps',
-                    'Provide multiple means of expression',
-                    'Offer choice in topics and formats'
-                ]
-            },
-            'Station Rotation': {
-                'category': 'Differentiated Instruction',
-                'best_for': ['varied_learning_styles', 'small_group_instruction', 'skill_building'],
-                'implementation': 'Multiple learning stations with different activities',
-                'applications': [
-                    'Skills practice stations',
-                    'Technology integration stations',
-                    'Teacher-led instruction station'
-                ],
-                'special_needs_adaptations': [
-                    'Adaptive technology stations',
-                    'Sensory-friendly environments',
-                    'Modified task complexity'
-                ]
-            }
-        }
-        
-        # 🧹 BACKUP - Can be removed after refactoring is stable.
-        # This logic now exists in: domains/neuro_domain.py → get_methodology_categories()
-        # Neuro-specific methodology/concept categories
-        self.neuro_methodology_categories = {
-            'Working Memory': {
-                'category': 'Cognitive Process',
-                'best_for': ['information_retention', 'task_completion', 'learning_efficiency'],
-                'implementation': 'Minimize cognitive load, chunk information, use rehearsal strategies',
-                'applications': [
-                    'Reduce distractions during instruction',
-                    'Break tasks into smaller steps',
-                    'Use visual aids to support verbal information'
-                ],
-                'special_needs_adaptations': [
-                    'Provide written instructions alongside verbal',
-                    'Allow extra processing time',
-                    'Use multimodal presentation'
-                ]
-            },
-            'Attention': {
-                'category': 'Cognitive Process',
-                'best_for': ['focus', 'concentration', 'task_engagement'],
-                'implementation': 'Manage attentional resources, minimize distractions, vary stimuli',
-                'applications': [
-                    'Use attention-grabbing signals',
-                    'Implement focused work periods',
-                    'Vary teaching methods to maintain engagement'
-                ],
-                'special_needs_adaptations': [
-                    'Provide movement breaks',
-                    'Use fidget tools appropriately',
-                    'Structure environment to reduce distractions'
-                ]
-            },
-            'Executive Functions': {
-                'category': 'Cognitive Control',
-                'best_for': ['planning', 'organization', 'self_regulation'],
-                'implementation': 'Teach explicit strategies, provide scaffolding, model processes',
-                'applications': [
-                    'Use planning templates',
-                    'Teach self-monitoring strategies',
-                    'Implement goal-setting practices'
-                ],
-                'special_needs_adaptations': [
-                    'Provide external organization systems',
-                    'Use checklists and visual schedules',
-                    'Break long-term projects into milestones'
-                ]
-            },
-            'Emotions': {
-                'category': 'Affective Process',
-                'best_for': ['motivation', 'engagement', 'learning_climate'],
-                'implementation': 'Create positive emotional climate, recognize emotions in learning',
-                'applications': [
-                    'Build growth mindset',
-                    'Celebrate progress and effort',
-                    'Create psychologically safe environment'
-                ],
-                'special_needs_adaptations': [
-                    'Teach emotional regulation strategies',
-                    'Provide safe spaces for emotional processing',
-                    'Use mindfulness techniques'
-                ]
-            },
-            'Motivation': {
-                'category': 'Affective Process',
-                'best_for': ['engagement', 'persistence', 'goal_pursuit'],
-                'implementation': 'Foster intrinsic motivation, provide autonomy and choice',
-                'applications': [
-                    'Connect learning to student interests',
-                    'Offer choices in assignments',
-                    'Provide meaningful feedback'
-                ],
-                'special_needs_adaptations': [
-                    'Use individualized reward systems',
-                    'Break goals into achievable steps',
-                    'Highlight personal growth'
-                ]
-            }
-        }
-        
-        # Select methodology categories based on domain using domain config
+        # Load methodology categories from domain config
         domain_config = get_domain_config(domain)
         if domain_config:
             self.methodology_categories = domain_config.get_methodology_categories()
-        elif domain == "neuro":
-            # Backward compatibility
-            self.methodology_categories = self.neuro_methodology_categories
         elif domain == "all":
-            # Merge both domains
-            self.methodology_categories = {**self.udl_methodology_categories, **self.neuro_methodology_categories}
-        else:  # default to UDL
-            self.methodology_categories = self.udl_methodology_categories
-        
-        # 🧹 BACKUP - Can be removed after refactoring is stable.
-        # This logic now exists in: domains/udl_domain.py → get_special_needs_mapping()
-        # UDL-specific special needs mapping
-        self.udl_special_needs_mapping = {
-            'Blind': ['visual_impairment', 'tactile_learning', 'audio_support'],
-            'Deaf': ['hearing_impairment', 'visual_learning', 'sign_language'],
-            'Physical disability': ['mobility_accommodation', 'assistive_technology', 'environmental_modification'],
-            'Cognitive disability': ['cognitive_support', 'simplified_instruction', 'repetition'],
-            'Adhd': ['attention_management', 'movement_breaks', 'structured_environment'],
-            'Attention Deficit': ['focus_strategies', 'clear_instructions', 'minimal_distractions'],
-            'Autism spectrum disorder': ['routine_structure', 'sensory_considerations', 'social_support'],
-            'NoPersonalMotivation': ['engagement_strategies', 'relevance_connection', 'choice_provision']
-        }
-        
-        # 🧹 BACKUP - Can be removed after refactoring is stable.
-        # This logic now exists in: domains/neuro_domain.py → get_special_needs_mapping()
-        # Neuro-specific concept mapping
-        self.neuro_special_needs_mapping = {
-            'Attention': ['focus_support', 'distraction_management', 'engagement_strategies'],
-            'Working Memory': ['cognitive_load_reduction', 'chunking_strategies', 'rehearsal_support'],
-            'Executive Functions': ['planning_support', 'organization_strategies', 'self_regulation_tools'],
-            'Emotions': ['emotional_climate', 'motivation_enhancement', 'stress_management'],
-            'Motivation': ['intrinsic_motivation', 'goal_setting', 'autonomy_support'],
-            'Creativity': ['divergent_thinking', 'idea_generation', 'risk_taking_support'],
-            'Critical Thinking': ['analytical_skills', 'problem_solving', 'metacognition'],
-            'Memory': ['encoding_strategies', 'retrieval_practice', 'consolidation_support']
-        }
-        
-        # Select special needs mapping based on domain using domain config
-        domain_config_needs = get_domain_config(domain)
-        if domain_config_needs:
-            self.special_needs_mapping = domain_config_needs.get_special_needs_mapping()
-        elif domain == "neuro":
-            # Backward compatibility
-            self.special_needs_mapping = self.neuro_special_needs_mapping
+            udl_cfg = get_domain_config("udl")
+            neuro_cfg = get_domain_config("neuro")
+            udl_cats = udl_cfg.get_methodology_categories() if udl_cfg else {}
+            neuro_cats = neuro_cfg.get_methodology_categories() if neuro_cfg else {}
+            self.methodology_categories = {**udl_cats, **neuro_cats}
+        else:
+            logger.warning(f"No domain config for '{domain}', using empty methodology categories")
+            self.methodology_categories = {}
+
+        # Load special needs mapping from domain config
+        if domain_config:
+            self.special_needs_mapping = domain_config.get_special_needs_mapping()
         elif domain == "all":
-            # Merge both domains
-            self.special_needs_mapping = {**self.udl_special_needs_mapping, **self.neuro_special_needs_mapping}
-        else:  # default to UDL
-            self.special_needs_mapping = self.udl_special_needs_mapping
-        
-        self.fallback_strategies = {
-            'no_results': [
-                'Universal Design for Learning (UDL) principles',
-                'Differentiated instruction approaches',
-                'Multi-sensory learning techniques',
-                'Collaborative learning environments'
-            ],
-            'low_confidence': [
-                'Consult special education specialists',
-                'Implement gradual methodology introduction',
-                'Use assessment-based adaptation',
-                'Seek peer teacher collaboration'
-            ]
-        }
+            udl_cfg = get_domain_config("udl")
+            neuro_cfg = get_domain_config("neuro")
+            udl_needs = udl_cfg.get_special_needs_mapping() if udl_cfg else {}
+            neuro_needs = neuro_cfg.get_special_needs_mapping() if neuro_cfg else {}
+            self.special_needs_mapping = {**udl_needs, **neuro_needs}
+        else:
+            logger.warning(f"No domain config for '{domain}', using empty special needs mapping")
+            self.special_needs_mapping = {}
+
+        # Domain-aware fallback strategies
+        if domain == "neuro":
+            self.fallback_strategies = {
+                'no_results': [
+                    'Evidence-based neuroscience principles for education',
+                    'Cognitive load management strategies',
+                    'Attention and metacognitive enhancement techniques',
+                    'Motivational and emotional regulation approaches'
+                ],
+                'low_confidence': [
+                    'Consult neuroscience education specialists',
+                    'Implement evidence-based instructional strategies',
+                    'Use assessment-based cognitive profiling',
+                    'Seek interdisciplinary collaboration'
+                ]
+            }
+        else:
+            self.fallback_strategies = {
+                'no_results': [
+                    'Universal Design for Learning (UDL) principles',
+                    'Differentiated instruction approaches',
+                    'Multi-sensory learning techniques',
+                    'Collaborative learning environments'
+                ],
+                'low_confidence': [
+                    'Consult special education specialists',
+                    'Implement gradual methodology introduction',
+                    'Use assessment-based adaptation',
+                    'Seek peer teacher collaboration'
+                ]
+            }
 
 class MethodologyRanker:
     """Ranks and prioritizes educational methodologies with dynamic balancing"""
@@ -1031,7 +858,13 @@ class EducationalContextBuilder:
         
         # Map Italian terms to educational needs
         query_lower = query.lower()
-        for term, needs in self.knowledge_base.special_needs_mapping.items():
+        for term, needs_data in self.knowledge_base.special_needs_mapping.items():
+            # Handle both dict format (new domain configs) and list format (legacy)
+            if isinstance(needs_data, dict):
+                needs_list = needs_data.get('support_needs', [])
+            else:
+                needs_list = needs_data
+
             if any(need_keyword in query_lower for need_keyword in [
                 'ipovedenti', 'ciechi', 'blind',
                 'sord', 'deaf', 'uditiv',
@@ -1039,19 +872,27 @@ class EducationalContextBuilder:
                 'cognitive', 'cognitiv',
                 'adhd', 'attenzione', 'attention',
                 'autis', 'spettro',
-                'motivazione', 'motivation'
+                'motivazione', 'motivation',
+                'dislessia', 'dyslexia',
+                'discalculia', 'dyscalculia',
+                'gifted', 'plusdotazione',
+                'stranieri', 'foreign'
             ]):
-                if term.lower() in query_lower or any(alt in query_lower for alt in needs):
-                    primary_needs.extend(needs[:1])  # Primary need
-                    secondary_needs.extend(needs[1:])  # Secondary needs
+                if term.lower() in query_lower or any(alt in query_lower for alt in needs_list):
+                    primary_needs.extend(needs_list[:1])
+                    secondary_needs.extend(needs_list[1:])
         
         # Extract from node names
         for node in nodes:
             node_name = node.get('name', '').lower()
-            for term, needs in self.knowledge_base.special_needs_mapping.items():
+            for term, needs_data in self.knowledge_base.special_needs_mapping.items():
+                if isinstance(needs_data, dict):
+                    needs_list = needs_data.get('support_needs', [])
+                else:
+                    needs_list = needs_data
                 if term.lower() in node_name:
-                    if needs[0] not in primary_needs:
-                        primary_needs.append(needs[0])
+                    if needs_list and needs_list[0] not in primary_needs:
+                        primary_needs.append(needs_list[0])
         
         # Determine educational context
         educational_context = metadata.get('educational_context', 'general')
@@ -1200,19 +1041,33 @@ class EducationalContextBuilder:
     
     def _create_fallback_context(self, query: str, metadata: Dict) -> EducationalContext:
         """Create a fallback context when primary building fails"""
-        
-        fallback_methodologies = [
-            MethodologyRecommendation(
-                name="Universal Design for Learning",
-                category="Inclusive Pedagogy",
-                relevance_score=0.6,
-                evidence_type="domain_knowledge",
-                implementation_guidance="Apply UDL principles to make learning accessible to all students",
-                classroom_applications=["Multiple means of representation", "Multiple means of engagement", "Multiple means of expression"],
-                special_considerations=["Flexible content delivery", "Choice in learning activities", "Varied assessment methods"],
-                confidence=ConfidenceLevel.MEDIUM
-            )
-        ]
+
+        if self.domain == "neuro":
+            fallback_methodologies = [
+                MethodologyRecommendation(
+                    name="Evidence-Based Neuroscience Principles",
+                    category="Cognitive Science",
+                    relevance_score=0.6,
+                    evidence_type="domain_knowledge",
+                    implementation_guidance="Apply neuroscience-informed teaching strategies",
+                    classroom_applications=["Cognitive load management", "Attention regulation", "Metacognitive scaffolding"],
+                    special_considerations=["Evidence-based instructional design", "Brain-compatible learning environments"],
+                    confidence=ConfidenceLevel.MEDIUM
+                )
+            ]
+        else:
+            fallback_methodologies = [
+                MethodologyRecommendation(
+                    name="Universal Design for Learning",
+                    category="Inclusive Pedagogy",
+                    relevance_score=0.6,
+                    evidence_type="domain_knowledge",
+                    implementation_guidance="Apply UDL principles to make learning accessible to all students",
+                    classroom_applications=["Multiple means of representation", "Multiple means of engagement", "Multiple means of expression"],
+                    special_considerations=["Flexible content delivery", "Choice in learning activities", "Varied assessment methods"],
+                    confidence=ConfidenceLevel.MEDIUM
+                )
+            ]
         
         return EducationalContext(
             student_profile=StudentProfile(

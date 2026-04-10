@@ -460,12 +460,8 @@ class HybridGraphRetriever:
         }
         
         # Whitelist for neighbor expansion (focus on educational relevance)
+        # UDL labels are loaded dynamically from domain config after set definition
         self.expansion_labels = {
-            # UDL domain labels (UNTOUCHED)
-            'PedagogicalMethodology', 'StudentWithSpecialNeeds', 'StudentCharacteristic',
-            'Context', 'Colour', 'Lighting', 'Furniture', 'Acoustic', 'InteractiveBoard',
-            'EnvironmentalBarrier', 'EnvironmentalSupport', 'LearningEnvironment',
-            
             # Neuro domain labels (UPDATED from neuro_audit_report.json - Nov 2025)
             # Includes all top labels + hub nodes + critical cognitive/affective processes
             
@@ -544,7 +540,17 @@ class HybridGraphRetriever:
             'AppliedCognition', 'InformationLiteracy', 'KnowledgeIntegration',
             'KnowledgeOfCognition', 'SelfRegulatedLearning'
         }
-    
+
+        # Dynamically add UDL labels from domain config (March 2026 — 271 unique labels)
+        try:
+            udl_config = get_domain_config("udl")
+            if udl_config:
+                udl_labels = udl_config.get_valid_methodology_labels()
+                self.expansion_labels.update(udl_labels)
+                logger.info(f"✅ Loaded {len(udl_labels)} UDL labels for neighbor expansion")
+        except Exception as e:
+            logger.warning(f"⚠️  Could not load UDL expansion labels from domain config: {e}")
+
     def _load_domain_boosts(self) -> Dict[str, float]:
         """Load domain boosts from domain configs
         
@@ -875,7 +881,45 @@ class HybridGraphRetriever:
                                 initial_nodes.append(self._normalize_node(node))
                                 logger.info(f"Parsed fallback scalar: {row['name']} as {inferred_label}")
                     
-                    # CASE 4: Simple node objects without explicit labels
+                    # CASE 4: Aliased scalar projections (from domain few-shot examples)
+                    # Pattern: RETURN a.name AS challenge, m.name AS strategy, labels(m) AS strategy_type
+                    # Detects rows with string values (node names) and optional list values (labels)
+                    elif any(isinstance(dict(records[0]).get(k), str) for k in sample_keys):
+                        logger.info(f"[CASE 4] Handling aliased scalar results with keys: {sample_keys}")
+
+                        # Parse RETURN clause to map column aliases → query aliases
+                        return_map = self._parse_return_aliases(corrected_query)
+
+                        for rec in records:
+                            row = dict(rec)
+
+                            # Find label columns (list values from labels() calls)
+                            label_values = []
+                            for k, v in row.items():
+                                if isinstance(v, (list, tuple)):
+                                    label_values = [str(l) for l in v]
+
+                            # Create a node for each string column
+                            for col_name, val in row.items():
+                                if not isinstance(val, str) or not val:
+                                    continue
+
+                                # Use return_map to find the query alias for this column
+                                query_alias = return_map.get(col_name, '')
+                                node_label = alias_labels.get(query_alias, '')
+
+                                node = {
+                                    "id": f"{node_label}:{val}" if node_label else val,
+                                    "name": val,
+                                    "category": "",
+                                    "labels": label_values if label_values else ([node_label] if node_label else []),
+                                    "description": "",
+                                    "rel_type": "",
+                                    "source_node": {}
+                                }
+                                initial_nodes.append(self._normalize_node(node))
+
+                    # CASE 5: Simple node objects without explicit labels
                     else:
                         for rec in records:
                             row = dict(rec)
@@ -910,6 +954,31 @@ class HybridGraphRetriever:
             corrected_query = corrected_query.replace(typo, correct)
         return corrected_query
     
+    def _parse_return_aliases(self, cypher_query: str) -> dict:
+        """Map RETURN column aliases back to query variable aliases.
+
+        For 'RETURN a.name AS challenge, m.name AS strategy, labels(m) AS strategy_type'
+        returns {'challenge': 'a', 'strategy': 'm', 'strategy_type': 'm'}
+        """
+        import re
+        result = {}
+        return_match = re.search(r'RETURN\s+(.*?)(?:\s+LIMIT|\s+ORDER|\s*$)', cypher_query, re.IGNORECASE)
+        if not return_match:
+            return result
+        return_clause = return_match.group(1)
+        for part in return_clause.split(','):
+            part = part.strip()
+            as_match = re.search(r'AS\s+(\w+)\s*$', part, re.IGNORECASE)
+            if not as_match:
+                continue
+            col_alias = as_match.group(1)
+            # Extract query variable: 'a.name' → 'a', 'labels(m)' → 'm', 'type(r)' → 'r'
+            expr = part[:as_match.start()].strip()
+            var_match = re.match(r'(\w+)\.', expr) or re.match(r'\w+\((\w+)\)', expr)
+            if var_match:
+                result[col_alias] = var_match.group(1)
+        return result
+
     def _extract_alias_labels(self, cypher_query: str) -> dict:
         """
         From patterns like (m:PedagogicalMethodology) or (s:StudentWithSpecialNeeds),

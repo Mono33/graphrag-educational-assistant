@@ -25,7 +25,7 @@
     "EnvironmentalBarrier": 1.2,
     "EnvironmentalSupport": 1.2
   },
-  "training_date": "2025-12-19T13:18:15.819852",
-  "num_nodes": 104,
+  "training_date": "2026-03-18T10:33:01.502934",
+  "num_nodes": 763,
   "embedding_dim": 128
 }

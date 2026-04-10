@@ -447,33 +447,36 @@ English:"""
         """
         enhanced_query = italian_query
         
-        # Select appropriate term dictionary based on domain (EXACT from old code lines 419-445)
+        # Select appropriate term dictionary based on domain
+        # Prefer domain config (updated for new graph), fall back to hardcoded dicts
+        domain_config = get_domain_config(domain)
         if domain == "udl":
-            italian_terms = self.udl_terms
+            if domain_config:
+                italian_terms = domain_config.get_italian_terms()
+            else:
+                italian_terms = self.udl_terms
         elif domain == "neuro":
-            # For Neuro domain, ONLY use neuroscience terms
-            # Filter out UDL-triggering pedagogical terms
-            italian_terms = self.neuro_terms.copy()
-            
+            if domain_config:
+                italian_terms = domain_config.get_italian_terms()
+            else:
+                italian_terms = self.neuro_terms.copy()
+
             # Remove terms that trigger UDL patterns in Neuro domain
-            udl_trigger_terms = {
-                "strategie": "",  # Don't translate - keeps query focused on concepts
-                "metodologie": "",  # Don't translate
-                "attività": "",  # Don't translate
-                "verifiche": "",  # Don't translate (avoid Assessment label)
-                "valutazione": "",  # Don't translate
-            }
-            
-            # Keep only neuroscience terms, remove UDL triggers
+            udl_trigger_terms = ["strategie", "metodologie", "attività", "verifiche", "valutazione"]
             for term in udl_trigger_terms:
-                if term in italian_terms:
-                    del italian_terms[term]
-                    
+                italian_terms.pop(term, None)
+
         elif domain == "all" or domain is None:
-            # Merge both dictionaries for cross-domain or unspecified
-            italian_terms = {**self.udl_terms, **self.neuro_terms}
+            udl_cfg = get_domain_config("udl")
+            neuro_cfg = get_domain_config("neuro")
+            udl_terms = udl_cfg.get_italian_terms() if udl_cfg else self.udl_terms
+            neuro_terms = neuro_cfg.get_italian_terms() if neuro_cfg else self.neuro_terms
+            italian_terms = {**udl_terms, **neuro_terms}
         else:
-            italian_terms = self.udl_terms  # Default to UDL
+            if domain_config:
+                italian_terms = domain_config.get_italian_terms()
+            else:
+                italian_terms = self.udl_terms
         
         # STEP 1: Dictionary-based translation (fast, free)
         sorted_terms = sorted(italian_terms.items(), key=lambda x: len(x[0]), reverse=True)

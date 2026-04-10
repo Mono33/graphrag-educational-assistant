@@ -124,27 +124,50 @@ def _format_prompt_section(context: ContextData, language: str = "it", domain: s
         ]
         
         if not has_data:
-            lines.extend([
-                "",
-                "### Nota sul Knowledge Graph",
-                "",
-                "Per questa richiesta specifica, il Knowledge Graph non contiene dati "
-                "direttamente correlati al contenuto disciplinare richiesto.",
-                "Tuttavia, i principi neuroscientifici e le strategie didattiche presenti "
-                "nel system prompt sono pienamente applicabili per rispondere a questa domanda.",
-                "",
-                "### Come procedere:",
-                "- Utilizza i **PRINCIPI NEUROSCIENTIFICI** (sezioni A-F del system prompt) "
-                "per ottimizzare la risposta",
-                "- Applica il **modello I Do – We Do – You Do** alla struttura della lezione (se pertinente)",
-                "- Integra strategie **attentive, metacognitive e motivazionali** nel contenuto "
-                "disciplinare specifico",
-                "- Il contenuto disciplinare specifico va basato sulle tue conoscenze generali",
-                "",
-                "### Livello di Confidenza: BASATO_SU_PRINCIPI_GENERALI",
-                "I principi neurodidattici sono affidabili; il contenuto disciplinare "
-                "specifico non è verificato dal Knowledge Graph.",
-            ])
+            if domain == "udl":
+                lines.extend([
+                    "",
+                    "### Nota sul Knowledge Graph",
+                    "",
+                    "Per questa richiesta specifica, il Knowledge Graph non contiene dati "
+                    "direttamente correlati al contenuto disciplinare richiesto.",
+                    "Tuttavia, i principi UDL e le strategie inclusive presenti "
+                    "nel system prompt sono pienamente applicabili per rispondere a questa domanda.",
+                    "",
+                    "### Come procedere:",
+                    "- Utilizza i **PRINCIPI UDL** (Coinvolgimento, Rappresentazione, Azione ed Espressione) "
+                    "per ottimizzare la risposta",
+                    "- Considera la **variabilità degli apprendenti** e le loro esigenze specifiche",
+                    "- Integra strategie **inclusive, differenziate e accessibili** nel contenuto "
+                    "disciplinare specifico",
+                    "- Il contenuto disciplinare specifico va basato sulle tue conoscenze generali",
+                    "",
+                    "### Livello di Confidenza: BASATO_SU_PRINCIPI_GENERALI",
+                    "I principi UDL sono affidabili; il contenuto disciplinare "
+                    "specifico non è verificato dal Knowledge Graph.",
+                ])
+            else:
+                lines.extend([
+                    "",
+                    "### Nota sul Knowledge Graph",
+                    "",
+                    "Per questa richiesta specifica, il Knowledge Graph non contiene dati "
+                    "direttamente correlati al contenuto disciplinare richiesto.",
+                    "Tuttavia, i principi neuroscientifici e le strategie didattiche presenti "
+                    "nel system prompt sono pienamente applicabili per rispondere a questa domanda.",
+                    "",
+                    "### Come procedere:",
+                    "- Utilizza i **PRINCIPI NEUROSCIENTIFICI** (sezioni A-F del system prompt) "
+                    "per ottimizzare la risposta",
+                    "- Applica il **modello I Do – We Do – You Do** alla struttura della lezione (se pertinente)",
+                    "- Integra strategie **attentive, metacognitive e motivazionali** nel contenuto "
+                    "disciplinare specifico",
+                    "- Il contenuto disciplinare specifico va basato sulle tue conoscenze generali",
+                    "",
+                    "### Livello di Confidenza: BASATO_SU_PRINCIPI_GENERALI",
+                    "I principi neurodidattici sono affidabili; il contenuto disciplinare "
+                    "specifico non è verificato dal Knowledge Graph.",
+                ])
             return "\n".join(lines)
         
         lines.extend([
@@ -205,27 +228,50 @@ def _format_prompt_section(context: ContextData, language: str = "it", domain: s
         ]
         
         if not has_data:
-            lines.extend([
-                "",
-                "### Knowledge Graph Note",
-                "",
-                "For this specific request, the Knowledge Graph does not contain data "
-                "directly related to the requested subject content.",
-                "However, the neuroscience principles and teaching strategies in the "
-                "system prompt are fully applicable to answer this question.",
-                "",
-                "### How to proceed:",
-                "- Use the **NEUROSCIENCE PRINCIPLES** (sections A-F from system prompt) "
-                "to optimize the response",
-                "- Apply the **I Do – We Do – You Do model** to the lesson structure (if relevant)",
-                "- Integrate **attention, metacognitive, and motivational strategies** into "
-                "the specific subject content",
-                "- The specific subject content should be based on your general knowledge",
-                "",
-                "### Confidence Level: BASED_ON_GENERAL_PRINCIPLES",
-                "The neurodidactic principles are reliable; the specific subject content "
-                "is not verified by the Knowledge Graph.",
-            ])
+            if domain == "udl":
+                lines.extend([
+                    "",
+                    "### Knowledge Graph Note",
+                    "",
+                    "For this specific request, the Knowledge Graph does not contain data "
+                    "directly related to the requested subject content.",
+                    "However, the UDL principles and inclusive strategies in the "
+                    "system prompt are fully applicable to answer this question.",
+                    "",
+                    "### How to proceed:",
+                    "- Use the **UDL PRINCIPLES** (Engagement, Representation, Action & Expression) "
+                    "to optimize the response",
+                    "- Consider **learner variability** and their specific needs",
+                    "- Integrate **inclusive, differentiated, and accessible strategies** into "
+                    "the specific subject content",
+                    "- The specific subject content should be based on your general knowledge",
+                    "",
+                    "### Confidence Level: BASED_ON_GENERAL_PRINCIPLES",
+                    "The UDL principles are reliable; the specific subject content "
+                    "is not verified by the Knowledge Graph.",
+                ])
+            else:
+                lines.extend([
+                    "",
+                    "### Knowledge Graph Note",
+                    "",
+                    "For this specific request, the Knowledge Graph does not contain data "
+                    "directly related to the requested subject content.",
+                    "However, the neuroscience principles and teaching strategies in the "
+                    "system prompt are fully applicable to answer this question.",
+                    "",
+                    "### How to proceed:",
+                    "- Use the **NEUROSCIENCE PRINCIPLES** (sections A-F from system prompt) "
+                    "to optimize the response",
+                    "- Apply the **I Do – We Do – You Do model** to the lesson structure (if relevant)",
+                    "- Integrate **attention, metacognitive, and motivational strategies** into "
+                    "the specific subject content",
+                    "- The specific subject content should be based on your general knowledge",
+                    "",
+                    "### Confidence Level: BASED_ON_GENERAL_PRINCIPLES",
+                    "The neurodidactic principles are reliable; the specific subject content "
+                    "is not verified by the Knowledge Graph.",
+                ])
             return "\n".join(lines)
         
         lines.extend([

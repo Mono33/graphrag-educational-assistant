@@ -169,9 +169,7 @@ IMPORTANT RULES:
 6. Use SUGGESTS relationship for positive recommendations
 7. Use NO_SUGGESTS relationship for negative recommendations
 8. Always return meaningful node properties like name and category
-9. CRITICAL: For queries about teaching methods/strategies/approaches for students with special needs, ALWAYS use pattern:
-   (s:StudentWithSpecialNeeds)-[r:SUGGESTS]->(m:PedagogicalMethodology)
-   NOT InclusionStrategy or other node types!
+9. CRITICAL: Use the QUERY PATTERNS provided below for the specific domain. Follow them closely — they reflect the actual graph schema.
 10. CRITICAL OUTPUT FORMAT: Return ONLY valid Cypher code, NO explanations, NO apologies, NO "I'm sorry" messages!
     - ❌ BAD: "I'm sorry, but... Cypher Query: MATCH..."
     - ✅ GOOD: "MATCH (n) RETURN n"
@@ -213,17 +211,20 @@ EXAMPLES:
 """ + examples + """
 """
         
-        # Add domain-specific query patterns (EXACT from old code lines 204-229)
+        # Add domain-specific query patterns (loaded from domain config)
         if domain == "udl":
-            system_message += """
+            domain_config_patterns = get_domain_config(domain)
+            if domain_config_patterns:
+                system_message += domain_config_patterns.get_cypher_patterns()
+            else:
+                system_message += """
 QUERY PATTERNS (UDL):
-- Student needs: MATCH (s:StudentWithSpecialNeeds)-[r:SUGGESTS]->(m:PedagogicalMethodology)
-- Student characteristics: MATCH (s:StudentCharacteristic)-[r:SUGGESTS]->(p:PedagogicalApproach)
-- Learning methods: MATCH (m:PedagogicalMethodology) WHERE toLower(m.name) CONTAINS toLower("keyword")
-- Technology integration: MATCH (i:InteractiveBoard)-[r:SUPPORTS]->(p:PedagogicalApproach)
-- Environmental factors: MATCH (e:LearningEnvironment)-[r:SUPPORTS]->(l:LearningProcess)
-- Inclusion strategies: MATCH (p:PedagogicalStrategy)-[r:PROMOTES]->(i:InclusionStrategy)
-- Learning barriers: MATCH (b:EnvironmentalBarrier)-[r:HINDERS]->(o:LearningOutcome)
+- Learner variability strategies: MATCH (v:Adhd|Dyslexia)-[r:SUGGESTS]->(strategy) WHERE v.domain = "udl"
+- Approaches to avoid: MATCH (v:Dyscalculia)-[r:NO_SUGGESTS]->(approach) WHERE v.domain = "udl"
+- UDL Framework: MATCH (g:Guideline)-[:MENTIONS]->(c:Checkpoint) WHERE g.domain = "udl"
+- Support tools: MATCH (s:PedagogicalSupports)-[:SUPPORTS_BY]->(t) WHERE s.domain = "udl"
+- Barriers: MATCH (b:Barrier)-[:ASSOCIATES_TO]->(target) WHERE b.domain = "udl"
+- Learning challenges: MATCH (lc:LearningChallenge)-[:MITIGATED_BY]->(s) WHERE lc.domain = "udl"
 """
         elif domain == "neuro":
             system_message += """
@@ -807,17 +808,31 @@ Cypher: MATCH (i:IntrinsicMotivation) RETURN i, labels(i) as node_labels LIMIT 1
         if domain != "neuro":
             return False  # Only check contamination in Neuro domain
         
-        # UDL-only labels (verified from audit reports)
-        UDL_ONLY_LABELS = [
-            'PedagogicalMethodology',  # Core UDL teaching methods
-            'StudentWithSpecialNeeds',  # UDL special education
-            'Lighting', 'Colour', 'Furniture', 'Texture', 'Smell',  # Environmental factors (UDL)
-            'Acoustic', 'LearningEnvironment', 'EnvironmentalBarrier',  # Environmental (UDL)
-            'Context', 'StudentCharacteristic',  # UDL-specific context
-            'LearningProcess', 'LearnerResponse',  # UDL learning patterns
-            'InteractiveBoard', 'Infrastructure',  # UDL technology
-            'InclusionStrategy', 'PedagogicalStrategy',  # UDL strategies
-        ]
+        # UDL-only labels (updated for new 763-node UDL graph — March 2026)
+        # Loaded dynamically from domain config if available, else use static list
+        domain_config_detect = get_domain_config("udl")
+        if domain_config_detect:
+            UDL_ONLY_LABELS = domain_config_detect.get_valid_methodology_labels()
+        else:
+            UDL_ONLY_LABELS = [
+                # Learner variability
+                'Adhd', 'AutismSpectrum', 'Dyscalculia', 'Dyslexia', 'Gifted', 'ForeignStudents',
+                'SensoryDisabilities', 'PhysicalDisabilities',
+                # UDL Framework
+                'Checkpoint', 'Guideline', 'Principle',
+                # Tools & Supports
+                'DigitalTool', 'AnalogicalTool', 'PedagogicalSupports', 'LinguisticSupports',
+                # Approaches
+                'EducationalApproach', 'InstructionalStrategy', 'LearningMethodology',
+                # Environment
+                'Context', 'Colour', 'Lighting', 'Furniture', 'Acoustics', 'Smells', 'Textures',
+                # Barriers
+                'Barrier', 'SensoryBarrier', 'LinguisticBarrier', 'CognitiveBarrier',
+                # Outcomes
+                'BehavioralManifestations', 'ObservableLearningOutcomes', 'LearningChallenge',
+                # Assessment
+                'AssessmentDesign', 'TeachingAssessment',
+            ]
         
         contamination_found = False
         for label in UDL_ONLY_LABELS:

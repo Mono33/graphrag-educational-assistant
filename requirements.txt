@@ -36,4 +36,3 @@ langgraph==0.5.4
 
 # Error Monitoring (GlitchTip — Sentry-compatible)
 sentry-sdk[fastapi]>=2.0.0
-
