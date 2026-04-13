@@ -11,6 +11,7 @@ from typing import Optional, Dict, Any, List
 from dataclasses import dataclass
 
 from openai import AsyncOpenAI
+from config import config as app_config, extract_response_content
 
 from agent.prompts.planner_prompt import PLANNER_SYSTEM_PROMPT, PLANNER_USER_TEMPLATE
 
@@ -76,7 +77,7 @@ class PlannerAgent:
     def _get_client(self) -> AsyncOpenAI:
         """Lazy initialization of OpenAI client"""
         if self._client is None:
-            self._client = AsyncOpenAI()
+            self._client = app_config.openai.get_async_client()
         return self._client
     
     async def plan(
@@ -108,18 +109,21 @@ class PlannerAgent:
         )
         
         try:
+            completion_kwargs = app_config.openai.build_completion_kwargs(
+                temperature=0.3,
+                max_tokens=2000,
+                json_mode=True,
+            )
             response = await client.chat.completions.create(
-                model=self.model,
                 messages=[
                     {"role": "system", "content": PLANNER_SYSTEM_PROMPT},
                     {"role": "user", "content": user_prompt}
                 ],
-                response_format={"type": "json_object"},
-                temperature=0.3  # Lower temperature for consistent planning
+                **completion_kwargs
             )
-            
-            # Parse JSON response
-            content = response.choices[0].message.content
+
+            # Parse JSON response (extract_response_content also logs thinking tokens)
+            content = extract_response_content(response, logger)
             plan_data = json.loads(content)
             
             # Extract query intent (with fallback for backward compatibility)

@@ -86,14 +86,13 @@ class SemanticEmbedder:
     
     @property
     def openai_client(self):
-        """Lazy-load OpenAI client"""
+        """Lazy-load OpenRouter-compatible client"""
         if self._openai_client is None:
             try:
-                from openai import OpenAI
-                self._openai_client = OpenAI(api_key=app_config.openai.api_key)
-                logger.info(f"[SemanticEmbedder] OpenAI client initialized (model: {self.model})")
+                self._openai_client = app_config.openai.get_client()
+                logger.info(f"[SemanticEmbedder] Client initialized via {app_config.openai.base_url} (model: {self.model})")
             except Exception as e:
-                logger.error(f"[SemanticEmbedder] Failed to initialize OpenAI client: {e}")
+                logger.error(f"[SemanticEmbedder] Failed to initialize client: {e}")
                 raise
         return self._openai_client
     
@@ -887,36 +886,89 @@ class HybridGraphRetriever:
                     elif any(isinstance(dict(records[0]).get(k), str) for k in sample_keys):
                         logger.info(f"[CASE 4] Handling aliased scalar results with keys: {sample_keys}")
 
-                        # Parse RETURN clause to map column aliases → query aliases
+                        # Parse RETURN clause to map column aliases → query variable
                         return_map = self._parse_return_aliases(corrected_query)
+
+                        # Parse MATCH relationship patterns: (src_var)-[:REL_TYPE]->(tgt_var)
+                        import re as _re
+                        rel_patterns = _re.findall(
+                            r'\((\w+)(?::\w[\w]*(?:\s*\{[^}]*\})?)?\)\s*-\[(?:\w*):(\w+)\]->\s*\((\w+)(?::\w[\w]*(?:\s*\{[^}]*\})?)?\)',
+                            corrected_query, _re.IGNORECASE
+                        )
+                        # rel_patterns: list of (src_var, rel_type, tgt_var)
+                        logger.debug(f"[CASE 4] Relationship patterns found: {rel_patterns}")
+
+                        # Build inverse map: query_var → list of string-value column aliases
+                        var_to_name_cols = defaultdict(list)
+                        for col_alias, query_var in return_map.items():
+                            if col_alias in sample_keys:
+                                var_to_name_cols[query_var].append(col_alias)
+
+                        # Build per-column label map from alias_labels
+                        col_to_label = {
+                            col_alias: alias_labels.get(query_var, '')
+                            for col_alias, query_var in return_map.items()
+                        }
+
+                        # Build per-column labels() column map:
+                        # e.g. 'giftedness_strategy' → 'giftedness_strategy_type'
+                        # (when labels(s1) AS giftedness_strategy_type returns labels for s1)
+                        col_to_list_col = {}
+                        for col_alias, query_var in return_map.items():
+                            if col_alias not in sample_keys:
+                                continue
+                            for other_col, other_var in return_map.items():
+                                if other_var == query_var and other_col != col_alias:
+                                    col_to_list_col[col_alias] = other_col
+                                    break
 
                         for rec in records:
                             row = dict(rec)
 
-                            # Find label columns (list values from labels() calls)
-                            label_values = []
-                            for k, v in row.items():
-                                if isinstance(v, (list, tuple)):
-                                    label_values = [str(l) for l in v]
+                            # Determine which target columns carry rel_type from the MATCH patterns
+                            target_cols_rel = {}  # tgt_col → (rel_type, src_col)
+                            for src_var, rel_type, tgt_var in rel_patterns:
+                                for src_col in var_to_name_cols.get(src_var, []):
+                                    for tgt_col in var_to_name_cols.get(tgt_var, []):
+                                        target_cols_rel[tgt_col] = (rel_type, src_col)
 
-                            # Create a node for each string column
+                            # First pass: build all nodes with correct per-column labels
+                            created_nodes = {}
                             for col_name, val in row.items():
                                 if not isinstance(val, str) or not val:
                                     continue
 
-                                # Use return_map to find the query alias for this column
-                                query_alias = return_map.get(col_name, '')
-                                node_label = alias_labels.get(query_alias, '')
+                                node_label = col_to_label.get(col_name, '')
+
+                                # Use per-column labels() list if available
+                                list_col = col_to_list_col.get(col_name)
+                                list_labels = []
+                                if list_col and isinstance(row.get(list_col), (list, tuple)):
+                                    list_labels = [str(l) for l in row[list_col]]
 
                                 node = {
                                     "id": f"{node_label}:{val}" if node_label else val,
                                     "name": val,
                                     "category": "",
-                                    "labels": label_values if label_values else ([node_label] if node_label else []),
+                                    "labels": list_labels if list_labels else ([node_label] if node_label else []),
                                     "description": "",
                                     "rel_type": "",
                                     "source_node": {}
                                 }
+                                created_nodes[col_name] = node
+
+                            # Second pass: inject rel_type + source_node on target nodes
+                            # so _extract_triples() can pick them up later
+                            for tgt_col, (rel_type, src_col) in target_cols_rel.items():
+                                if tgt_col in created_nodes and src_col in created_nodes:
+                                    src_node = created_nodes[src_col]
+                                    created_nodes[tgt_col]['rel_type'] = rel_type
+                                    created_nodes[tgt_col]['source_node'] = {
+                                        'name': src_node['name'],
+                                        'labels': src_node['labels'],
+                                    }
+
+                            for node in created_nodes.values():
                                 initial_nodes.append(self._normalize_node(node))
 
                     # CASE 5: Simple node objects without explicit labels
@@ -962,7 +1014,8 @@ class HybridGraphRetriever:
         """
         import re
         result = {}
-        return_match = re.search(r'RETURN\s+(.*?)(?:\s+LIMIT|\s+ORDER|\s*$)', cypher_query, re.IGNORECASE)
+        # re.DOTALL so .*? crosses newlines in multi-line RETURN clauses
+        return_match = re.search(r'RETURN\s+(.*?)(?:\s+LIMIT|\s+ORDER|\s*$)', cypher_query, re.IGNORECASE | re.DOTALL)
         if not return_match:
             return result
         return_clause = return_match.group(1)

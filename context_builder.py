@@ -240,22 +240,51 @@ class MethodologyRanker:
         
         return deduped
     
+    # Relationship-type names that leak through as nodes (they are edge labels, not content)
+    _RELATIONSHIP_NAMES = frozenset({'SUGGESTS', 'NO_SUGGESTS', 'MITIGATED_BY', 'RELATED_TO', 'PART_OF'})
+
+    # Negative-example node names — real KG nodes that model what NOT to do.
+    # Sending these to the LLM as "recommendations" produces confusing output.
+    _NEGATIVE_APPROACH_NAMES = frozenset({
+        'Long Frontal Lesson', 'Long frontal reading lessons',
+        'Passive Learning', 'Passive learning',
+    })
+
     def _is_methodology(self, node: Dict) -> bool:
         """Check if node should be included in recommendations.
-        
-        Phase 1B (Option C): Accept all nodes that survived the retriever's
-        P1+ adaptive threshold filter. The retrieval pipeline already validates
-        relevance via semantic similarity, graph distance, and Node2Vec scores.
-        
-        Only rejects nodes with known system/infrastructure labels that are
-        never educational content (tiny blacklist instead of large whitelist).
-        This is fully dynamic — any new label from future data ingestion is
-        automatically accepted without manual maintenance.
+
+        Rejects four classes of noise that survive the P1+ retrieval filter:
+        1. Neo4j system / infrastructure labels (_GraphConfig, Node, Entity)
+        2. Relationship-type names accidentally stored as nodes (SUGGESTS, NO_SUGGESTS)
+        3. Known negative-example nodes (Long Frontal Lesson, Passive Learning)
+        4. Sentence-nodes — full sentences stored as node names (heuristic: ends
+           with '.' and is longer than 60 chars). These are KG description
+           fragments, not actionable methodology names.
+
+        Everything else is accepted — the retrieval pipeline already validated
+        relevance via Node2Vec and semantic similarity.
         """
+        name = node.get('name', '')
+        if not name:
+            return False
+
+        # Rule 2: relationship-type names
+        if name in self._RELATIONSHIP_NAMES:
+            return False
+
+        # Rule 3: negative-example nodes
+        if name in self._NEGATIVE_APPROACH_NAMES:
+            return False
+
+        # Rule 4: sentence-nodes (heuristic)
+        if name.endswith('.') and len(name) > 60:
+            return False
+
         labels = node.get('labels', [])
         if not labels:
-            return bool(node.get('name'))
-        
+            return True
+
+        # Rule 1: system / infrastructure labels
         system_labels = {'_GraphConfig', 'Node', 'Entity', '__Entity__'}
         return not all(label in system_labels for label in labels)
     

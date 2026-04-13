@@ -95,8 +95,7 @@ def get_metrics_calculator(mode: str = "hybrid_auto", domain: str = "all"):
     openai_client = None
     if mode in ['hybrid_auto', 'hybrid', 'research']:
         try:
-            from openai import OpenAI
-            openai_client = OpenAI(api_key=config.openai.api_key)
+            openai_client = config.openai.get_client()
             logger.info(f"OpenAI client initialized for metrics (mode={mode})")
         except Exception as e:
             logger.warning(f"Could not initialize OpenAI client: {e}. Falling back to 'simple' mode.")
@@ -2073,13 +2072,17 @@ def main():
             # Mode: 'hybrid_auto' = smart fallback (Version A + Version B when needed)
             metrics_calculator = get_metrics_calculator(mode="hybrid_auto", domain=selected_domain)
             
+            # Reuse the translation already done by the main pipeline to avoid
+            # a redundant LLM API call inside MetricsCalculator
+            _enhanced_query = cypher_result.get('enhanced_query')  # already translated English query
             query_metrics = metrics_calculator.calculate_all(
-                query=query,  # Pass original query, calculator handles translation
+                query=query,
                 retrieved_nodes=retrieval_result.nodes if retrieval_result else [],
                 llm_response=llm_response.get('response', ''),
                 cypher_query=cypher_result.get('cypher_query', ''),
                 total_relationships=retrieval_result.metadata.get('total_triples', 0) if retrieval_result else 0,
-                domain=selected_domain  # Pass domain for correct Italian→English translation
+                domain=selected_domain,
+                translated_query=_enhanced_query,
             )
             
             # Store metrics in a flat dictionary for DataFrame

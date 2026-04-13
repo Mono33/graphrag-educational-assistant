@@ -36,11 +36,13 @@ class EducationalResponseGenerator:
         """
         self.language = language
         self.domain = domain
+        from config import config as _cfg
+        _compat = _cfg.openai.build_completion_kwargs(temperature=temperature, max_tokens=2500)
         self.llm = ChatOpenAI(
             openai_api_key=openai_api_key,
-            model=model,  # Uses model from config (e.g., gpt-4o from .env)
-            temperature=temperature,  # 0.7 is optimal for creative educational responses
-            max_tokens=2500  # Sufficient for detailed structured teacher responses
+            openai_api_base=_cfg.openai.base_url,
+            model=model,
+            **{k: v for k, v in _compat.items() if k != "model"},
         )
         
         # Load prompt templates and create chain using LCEL

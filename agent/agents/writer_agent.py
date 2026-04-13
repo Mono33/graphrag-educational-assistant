@@ -11,6 +11,7 @@ import logging
 from typing import Optional, Dict, Any, List
 
 from openai import AsyncOpenAI
+from config import config as app_config, extract_response_content
 
 from agent.prompts.writer_prompt import (
     get_writer_prompts,
@@ -62,7 +63,7 @@ class WriterAgent:
     def _get_client(self) -> AsyncOpenAI:
         """Lazy initialization of OpenAI client"""
         if self._client is None:
-            self._client = AsyncOpenAI()
+            self._client = app_config.openai.get_async_client()
         return self._client
     
     async def write(
@@ -187,16 +188,19 @@ class WriterAgent:
                 logger.info(f"[WriterAgent] Applied domain extension for '{domain}'")
         
         try:
+            completion_kwargs = app_config.openai.build_completion_kwargs(
+                temperature=0.7,
+                max_tokens=4000,
+            )
             response = await client.chat.completions.create(
-                model=self.model,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                temperature=0.7  # Balanced creativity and consistency
+                **completion_kwargs
             )
-            
-            content = response.choices[0].message.content
+
+            content = extract_response_content(response, logger)
             
             logger.info(
                 f"[WriterAgent] Generated {intent} content "
@@ -248,16 +252,19 @@ class WriterAgent:
         )
         
         try:
+            completion_kwargs = app_config.openai.build_completion_kwargs(
+                temperature=0.5,
+                max_tokens=4000,
+            )
             response = await client.chat.completions.create(
-                model=self.model,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                temperature=0.5  # Lower for revisions
+                **completion_kwargs
             )
-            
-            revised_content = response.choices[0].message.content
+
+            revised_content = extract_response_content(response, logger)
             
             logger.info(
                 f"[WriterAgent] Revised content "
