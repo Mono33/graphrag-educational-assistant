@@ -18,6 +18,7 @@ Endpoints:
     GET  /redoc              - ReDoc documentation
 """
 
+import asyncio
 import logging
 import os
 import sys
@@ -56,6 +57,31 @@ if _sentry_dsn:
     logger.info("✅ GlitchTip error monitoring enabled")
 else:
     logger.info("ℹ️ GlitchTip disabled (no SENTRY_DSN configured)")
+
+
+def _warm_schema(domain: str) -> None:
+    """Pre-populate Text2CypherConverter schema cache for a domain.
+
+    Runs in a thread-pool executor so it doesn't block the event loop.
+    After this call, the first real request for the domain skips the 60+
+    Neo4j schema-extraction queries and hits the cache directly.
+    """
+    try:
+        from multilingual_text2cypher import MultilingualText2Cypher
+        from text2cypher import Text2CypherConverter
+
+        if domain in Text2CypherConverter._schema_cache:
+            logger.info(f"ℹ️ Schema cache already warm for domain='{domain}' (skip)")
+            return
+
+        t = MultilingualText2Cypher()
+        schema = t.pipeline.converter.schema_extractor.extract_schema(domain=domain)
+        Text2CypherConverter._schema_cache[domain] = schema
+        t.pipeline.converter.schema_info = schema
+        Text2CypherConverter._prompt_cache[domain] = t.pipeline.converter._create_prompt_template(domain=domain)
+        logger.info(f"✅ Schema cache warmed for domain='{domain}'")
+    except Exception as e:
+        logger.warning(f"⚠️ Schema cache warm-up failed for domain='{domain}': {e}")
 
 
 # Lifespan context manager for startup/shutdown
@@ -98,9 +124,19 @@ async def lifespan(app: FastAPI):
         logger.info(f"✅ Domain configs loaded: {loaded}")
     except Exception as e:
         logger.warning(f"⚠️ Domain config check failed: {e}")
-    
+
+    # Warm Text2Cypher schema cache in background threads so the first real
+    # request doesn't pay the 60+ Neo4j schema-extraction queries.
+    try:
+        loop = asyncio.get_event_loop()
+        for _domain in ["udl", "neuro"]:
+            loop.run_in_executor(None, _warm_schema, _domain)
+        logger.info("🔥 Schema cache warm-up started for: udl, neuro")
+    except Exception as e:
+        logger.warning(f"⚠️ Schema cache warm-up scheduling failed: {e}")
+
     logger.info("✅ API ready to serve requests")
-    
+
     yield  # Server is running
     
     # Shutdown

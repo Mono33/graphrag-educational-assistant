@@ -250,16 +250,27 @@ class MethodologyRanker:
         'Passive Learning', 'Passive learning',
     })
 
+    # Challenge/characteristic labels — describe student profiles, not teaching strategies.
+    # A node whose ALL labels fall in this set is a symptom/profile node, not a methodology.
+    # Mixed-label nodes (e.g. ['Adhd', 'CognitiveStrategy']) still pass through.
+    _CHALLENGE_LABELS = frozenset({
+        'Adhd', 'AutismSpectrum', 'Dyscalculia', 'Dyslexia',
+        'Gifted', 'ForeignStudents', 'SensoryDisabilities', 'PhysicalDisabilities',
+    })
+
     def _is_methodology(self, node: Dict) -> bool:
         """Check if node should be included in recommendations.
 
-        Rejects four classes of noise that survive the P1+ retrieval filter:
+        Rejects five classes of noise that survive the P1+ retrieval filter:
         1. Neo4j system / infrastructure labels (_GraphConfig, Node, Entity)
         2. Relationship-type names accidentally stored as nodes (SUGGESTS, NO_SUGGESTS)
         3. Known negative-example nodes (Long Frontal Lesson, Passive Learning)
         4. Sentence-nodes — full sentences stored as node names (heuristic: ends
            with '.' and is longer than 60 chars). These are KG description
            fragments, not actionable methodology names.
+        5. Pure challenge/characteristic nodes (Adhd, Dyslexia, etc.) — these
+           describe student profiles. Their data is preserved in student_profile
+           and triples; they should not appear as methodology recommendations.
 
         Everything else is accepted — the retrieval pipeline already validated
         relevance via Node2Vec and semantic similarity.
@@ -286,7 +297,15 @@ class MethodologyRanker:
 
         # Rule 1: system / infrastructure labels
         system_labels = {'_GraphConfig', 'Node', 'Entity', '__Entity__'}
-        return not all(label in system_labels for label in labels)
+        if all(label in system_labels for label in labels):
+            return False
+
+        # Rule 5: pure challenge/characteristic nodes — all labels are challenge-only.
+        # Node with mixed labels like ['Adhd', 'CognitiveStrategy'] still passes.
+        if all(label in self._CHALLENGE_LABELS for label in labels):
+            return False
+
+        return True
     
     def _create_recommendation(self, node: Dict, query_metadata: Dict) -> Optional[MethodologyRecommendation]:
         """Create a methodology recommendation from a node.
@@ -927,7 +946,8 @@ class EducationalContextBuilder:
         educational_context = metadata.get('educational_context', 'general')
         if any(term in query_lower for term in ['special', 'disabilità', 'difficoltà', 'bisogni']):
             educational_context = 'special_needs'
-        elif any(term in query_lower for term in ['verific', 'valut', 'test', 'esam']):
+        elif any(re.search(r'\b' + re.escape(term), query_lower) for term in
+                 ['verific', 'valut', 'test', 'esam', 'quiz', 'interroga']):
             educational_context = 'assessment'
         
         return StudentProfile(

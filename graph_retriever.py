@@ -65,7 +65,7 @@ class SemanticEmbedder:
         """
         self.domain = domain
         self.cache_dir = cache_dir or app_config.embedding.embeddings_cache_dir
-        self.model = app_config.embedding.openai_embedding_model
+        self.model = app_config.embedding.embedding_model
         
         # OpenAI client (lazy loaded)
         self._openai_client = None
@@ -702,23 +702,34 @@ class HybridGraphRetriever:
                 logger.warning("[SemanticEmbedder] Falling back to node2vec mode")
                 self.embedding_mode = "node2vec"
     
-    async def retrieve(self, query: str, cypher_result: Dict) -> RetrievedContext:
-        """Main retrieval method combining graph and semantic search"""
+    async def retrieve(self, query: str, cypher_result: Dict, semantic_query: str = None) -> RetrievedContext:
+        """Main retrieval method combining graph and semantic search.
+
+        Args:
+            query: Original user query (any language) — used for graph traversal context.
+            cypher_result: Output from Text2Cypher pipeline.
+            semantic_query: English query to use for semantic/vector search.
+                If None, falls back to `query`. Always pass the translated English
+                query here when available — Italian text matches nothing in the
+                English node embedding space.
+        """
         start_time = time.time()
-        
+        _semantic_query = semantic_query or query
+
         try:
             # Phase 1: Graph traversal (precision) — includes neighbor expansion
             graph_start = time.time()
             graph_nodes = await self._graph_traversal(cypher_result, query)
             graph_time = time.time() - graph_start
             logger.info(f"[Perf] Graph traversal + expansion: {graph_time:.2f}s ({len(graph_nodes)} nodes)")
-            
+
             # Phase 2: Semantic search (breadth, optional)
+            # Uses translated English query so embeddings match English node names.
             semantic_nodes = []
             semantic_time = 0
             if self.use_vectors:
                 semantic_start = time.time()
-                semantic_nodes = await self._semantic_search(query, graph_nodes)
+                semantic_nodes = await self._semantic_search(_semantic_query, graph_nodes)
                 semantic_time = time.time() - semantic_start
                 logger.info(f"[Perf] Semantic search: {semantic_time:.2f}s ({len(semantic_nodes)} nodes)")
             
@@ -892,7 +903,7 @@ class HybridGraphRetriever:
                         # Parse MATCH relationship patterns: (src_var)-[:REL_TYPE]->(tgt_var)
                         import re as _re
                         rel_patterns = _re.findall(
-                            r'\((\w+)(?::\w[\w]*(?:\s*\{[^}]*\})?)?\)\s*-\[(?:\w*):(\w+)\]->\s*\((\w+)(?::\w[\w]*(?:\s*\{[^}]*\})?)?\)',
+                            r'\((\w+)(?::\w[\w]*)?(?:\s*\{[^}]*\})?\)\s*-\[(?:\w*):(\w+)\]->\s*\((\w+)(?::\w[\w]*)?(?:\s*\{[^}]*\})?\)',
                             corrected_query, _re.IGNORECASE
                         )
                         # rel_patterns: list of (src_var, rel_type, tgt_var)
@@ -969,7 +980,14 @@ class HybridGraphRetriever:
                                     }
 
                             for node in created_nodes.values():
-                                initial_nodes.append(self._normalize_node(node))
+                                # Only add target nodes (those with rel_type injected by
+                                # the second pass). Source/challenge nodes are not strategy
+                                # recommendations — their data is preserved in
+                                # target.source_node for triple extraction.
+                                # Fallback: if no rel_patterns were found, we have no
+                                # targeting info → add all nodes to avoid empty results.
+                                if not rel_patterns or node.get('rel_type'):
+                                    initial_nodes.append(self._normalize_node(node))
 
                     # CASE 5: Simple node objects without explicit labels
                     else:
@@ -2207,9 +2225,13 @@ class EnhancedMultilingualText2Cypher:
         
         # Step 1: Text2Cypher (now with domain support)
         cypher_result = self.text2cypher.process_query(query, domain=domain, execute=True)
-        
+
         # Step 2: Hybrid Retrieval (new functionality)
-        retrieval_result = await self.graph_retriever.retrieve(query, cypher_result)
+        # Use the translated English query for semantic search when available.
+        # The Italian query produces zero semantic matches against English node names.
+        # enhanced_query is set by multilingual_text2cypher when translation occurred.
+        translated_query = cypher_result.get('enhanced_query') or query
+        retrieval_result = await self.graph_retriever.retrieve(query, cypher_result, semantic_query=translated_query)
         
         # Step 3: Build Educational Context (uses real retrieval, domain-aware)
         try:
@@ -2383,7 +2405,7 @@ def precompute_embeddings(domain: str = "neuro"):
     from config import config as app_config
     
     print(f"🔄 Pre-computing OpenAI embeddings for domain: {domain}")
-    print(f"📦 Model: {app_config.embedding.openai_embedding_model}")
+    print(f"📦 Model: {app_config.embedding.embedding_model}")
     print(f"💾 Cache dir: {app_config.embedding.embeddings_cache_dir}")
     
     # Initialize Neo4j driver

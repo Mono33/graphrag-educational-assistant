@@ -25,7 +25,7 @@ class MultilingualText2Cypher:
             config.neo4j.user,
             config.neo4j.password,
             config.openai.api_key,
-            config.openai.model,
+            config.text2cypher.model,
             config.openai.base_url,
         )
         
@@ -405,6 +405,8 @@ class MultilingualText2Cypher:
                 temperature=0,
                 max_tokens=500,
             )
+            # Override model: use the fast text2cypher model for translation, not the main LLM
+            completion_kwargs["model"] = config.text2cypher.model
             response = client.chat.completions.create(
                 messages=[
                     {

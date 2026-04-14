@@ -111,11 +111,16 @@ class Neo4jSchemaExtractor:
 
 class Text2CypherConverter:
     """Main class for converting natural language to Cypher queries"""
-    
+
+    # Class-level schema + prompt cache, keyed by domain string.
+    # Populated on first request per domain, reused for the process lifetime.
+    # An API restart clears the cache automatically (safe — schema only changes on data ingestion).
+    _schema_cache: Dict[str, SchemaInfo] = {}
+    _prompt_cache: Dict = {}
+
     def __init__(self, neo4j_uri: str, neo4j_user: str, neo4j_password: str, openai_api_key: str, model: str = "openai/gpt-4o", base_url: str = "https://openrouter.ai/api/v1"):
         self.schema_extractor = Neo4jSchemaExtractor(neo4j_uri, neo4j_user, neo4j_password)
-        # Don't extract schema in __init__ anymore - do it per-query with domain filter
-        self.schema_info = None  # Will be set per-query
+        self.schema_info = None  # Set per-query (from cache or fresh extraction)
 
         # Build kwargs compatible with reasoning and standard models
         from config import config as _cfg
@@ -476,12 +481,21 @@ Cypher: MATCH (i:IntrinsicMotivation) RETURN i, labels(i) as node_labels LIMIT 1
             domain: Domain filter ('udl', 'neuro', 'all', or None)
         """
         try:
-            # Extract domain-specific schema
-            self.schema_info = self.schema_extractor.extract_schema(domain=domain)
-            
-            # Create domain-specific prompt template
-            prompt_template = self._create_prompt_template(domain=domain)
-            
+            # Schema + prompt caching: build once per domain, reuse on every subsequent call.
+            # First request per domain takes the usual time; all others skip the 60+ Neo4j queries.
+            cache_key = domain or "all"
+            if cache_key not in Text2CypherConverter._schema_cache:
+                logger.info(f"[Text2Cypher] Schema cache MISS for domain='{cache_key}' — extracting (one-time cost)")
+                Text2CypherConverter._schema_cache[cache_key] = self.schema_extractor.extract_schema(domain=domain)
+                self.schema_info = Text2CypherConverter._schema_cache[cache_key]
+                Text2CypherConverter._prompt_cache[cache_key] = self._create_prompt_template(domain=domain)
+                logger.info(f"[Text2Cypher] Schema cache BUILT for domain='{cache_key}'")
+            else:
+                logger.debug(f"[Text2Cypher] Schema cache HIT for domain='{cache_key}'")
+                self.schema_info = Text2CypherConverter._schema_cache[cache_key]
+
+            prompt_template = Text2CypherConverter._prompt_cache[cache_key]
+
             # Create chain for this query
             chain = prompt_template | self.llm | self.output_parser
             

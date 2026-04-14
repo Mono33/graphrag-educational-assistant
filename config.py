@@ -101,6 +101,7 @@ class Text2CypherConfig:
     enable_query_validation: bool = True
     enable_query_execution: bool = True
     log_level: str = "INFO"
+    model: str = "google/gemini-2.0-flash"  # Fast model for Cypher generation and translation
 
 
 @dataclass
@@ -126,8 +127,8 @@ class EmbeddingConfig:
     """
     mode: str = "node2vec"  # "node2vec" | "hybrid_semantic" | "openai_only"
 
-    # OpenAI embedding model
-    openai_embedding_model: str = "text-embedding-3-small"
+    # Embedding model — OpenRouter format (provider/model)
+    embedding_model: str = "openai/text-embedding-3-small"
 
     # Hybrid weights (α for Node2Vec, 1-α for semantic)
     # α = 0.4 gives 40% weight to graph structure, 60% to semantic meaning
@@ -185,12 +186,17 @@ class Config:
             self.text2cypher.enable_query_execution = os.getenv("TEXT2CYPHER_ENABLE_EXECUTION").lower() == "true"
 
         self.text2cypher.log_level = os.getenv("LOG_LEVEL", self.text2cypher.log_level)
+        self.text2cypher.model = (
+            os.getenv("TEXT2CYPHER_MODEL")
+            or os.getenv("LLM_MODEL", self.text2cypher.model)
+        )
 
         # Embedding configuration
         self.embedding.mode = os.getenv("EMBEDDING_MODE", self.embedding.mode)
-        self.embedding.openai_embedding_model = os.getenv(
-            "OPENAI_EMBEDDING_MODEL",
-            self.embedding.openai_embedding_model
+        # Read EMBEDDING_MODEL first; fall back to old OPENAI_EMBEDDING_MODEL for backward compat
+        self.embedding.embedding_model = (
+            os.getenv("EMBEDDING_MODEL")
+            or os.getenv("OPENAI_EMBEDDING_MODEL", self.embedding.embedding_model)
         )
 
         if os.getenv("EMBEDDING_NODE2VEC_WEIGHT"):
