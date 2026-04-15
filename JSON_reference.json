@@ -1,0 +1,411 @@
+{
+  "success": true,
+  "query_info": {
+    "original_query": "Quali strategie per studenti con ADHD?",
+    "translated_query": "Educational query: What strategies for students with ADHD?",
+    "detected_language": "italian",
+    "cypher_query": "MATCH (a:Adhd {domain: \"udl\"})-[r:SUGGESTS]->(m {domain: \"udl\"}) RETURN a.name AS challenge, m.name AS strategy, labels(m) AS strategy_type LIMIT 15"
+  },
+  "context": {
+    "educational_context_type": "inclusive_education",
+    "student_profile": "Bisogni primari: externalized_executive_support | Bisogni secondari: movement_breaks, initiation_cueing, focus_tasks | Contesto: inclusive_education",
+    "primary_methodologies": [
+      {
+        "name": "Difficulty stopping automatic responses",
+        "category": "Sfida di Apprendimento",
+        "relevance_score": 0.9,
+        "evidence_type": "direct_relationship",
+        "implementation_guidance": "Poor inhibitory control predicts observable behaviors like calling out, acting without thinking, or being unable to disengage from a distracting thought to focus on the task at hand.",
+        "classroom_applications": [
+          "Consultare il contesto specifico della classe per applicazioni pratiche di Difficulty stopping automatic responses"
+        ],
+        "special_considerations": [
+          "Adapt based on individual student needs"
+        ],
+        "confidence": "very_high",
+        "explainability_name": "Strategia collegata nel Knowledge Graph",
+        "explainability_phrase": "Questa strategia è collegata a «Mindfulness» che mitiga «Difficulty stopping automatic responses» nel Knowledge Graph. Confidenza: molto alta.",
+        "explainability": {
+          "retrieval_method": "structural_neighbor",
+          "hop_distance": 1,
+          "graph_path": {
+            "source_node": "Mindfulness",
+            "source_label": "EmotionRegulationStrategies",
+            "relationship": "MITIGATED_BY",
+            "target_node": "Difficulty stopping automatic responses",
+            "target_label": "LearningChallenge"
+          },
+          "scoring_breakdown": {
+            "base_score": 0.5,
+            "semantic_score": null,
+            "vector_similarity": null,
+            "domain_boost": 1.7,
+            "final_rank_score": 1.36
+          },
+          "reasoning": "Found as structural graph neighbor: Mindfulness -[MITIGATED_BY]-> Difficulty stopping automatic responses (1 hop)"
+        }
+      },
+      {
+        "name": "Difficulty managing impulses",
+        "category": "Sfida di Apprendimento",
+        "relevance_score": 0.9,
+        "evidence_type": "direct_relationship",
+        "implementation_guidance": "Poor inhibitory control predicts observable behaviors like calling out, acting without thinking, or being unable to disengage from a distracting thought to focus on the task at hand.",
+        "classroom_applications": [
+          "Consultare il contesto specifico della classe per applicazioni pratiche di Difficulty managing impulses"
+        ],
+        "special_considerations": [
+          "Adapt based on individual student needs"
+        ],
+        "confidence": "very_high",
+        "explainability_name": "Strategia collegata nel Knowledge Graph",
+        "explainability_phrase": "Questa strategia è collegata a «Mindfulness» che mitiga «Difficulty managing impulses» nel Knowledge Graph. Confidenza: molto alta.",
+        "explainability": {
+          "retrieval_method": "structural_neighbor",
+          "hop_distance": 1,
+          "graph_path": {
+            "source_node": "Mindfulness",
+            "source_label": "EmotionRegulationStrategies",
+            "relationship": "MITIGATED_BY",
+            "target_node": "Difficulty managing impulses",
+            "target_label": "LearningChallenge"
+          },
+          "scoring_breakdown": {
+            "base_score": 0.5,
+            "semantic_score": null,
+            "vector_similarity": null,
+            "domain_boost": 1.7,
+            "final_rank_score": 1.36
+          },
+          "reasoning": "Found as structural graph neighbor: Mindfulness -[MITIGATED_BY]-> Difficulty managing impulses (1 hop)"
+        }
+      },
+      {
+        "name": "Difficulty sustaining focus",
+        "category": "Strategia Didattica",
+        "relevance_score": 0.5,
+        "evidence_type": "domain_knowledge",
+        "implementation_guidance": "Apply Difficulty sustaining focus with appropriate adaptations",
+        "classroom_applications": [
+          "Consultare il contesto specifico della classe per applicazioni pratiche di Difficulty sustaining focus"
+        ],
+        "special_considerations": [
+          "Adapt based on individual student needs"
+        ],
+        "confidence": "medium",
+        "explainability_name": "Raccomandazione diretta dal Knowledge Graph",
+        "explainability_phrase": "Strategia individuata direttamente dalla query nel Knowledge Graph. Confidenza: media.",
+        "explainability": {
+          "retrieval_method": "direct_query",
+          "hop_distance": 0,
+          "graph_path": null,
+          "scoring_breakdown": {
+            "base_score": 0.5,
+            "semantic_score": null,
+            "vector_similarity": null,
+            "domain_boost": 2,
+            "final_rank_score": 2
+          },
+          "reasoning": "Direct match from Cypher query (0 hops)"
+        }
+      },
+      {
+        "name": "Multisensory Activities",
+        "category": "Multi-Modal Instruction",
+        "relevance_score": 0.5,
+        "evidence_type": "domain_knowledge",
+        "implementation_guidance": "Engage multiple senses in learning activities",
+        "classroom_applications": [
+          "Visual + auditory + kinesthetic instruction",
+          "Hands-on manipulatives for math concepts",
+          "Movement-integrated learning"
+        ],
+        "special_considerations": [
+          "Adapt for sensory sensitivities (autism spectrum)",
+          "Provide sensory breaks and regulation tools",
+          "Use controlled input strategies"
+        ],
+        "confidence": "medium",
+        "explainability_name": "Raccomandazione diretta dal Knowledge Graph",
+        "explainability_phrase": "Strategia individuata direttamente dalla query nel Knowledge Graph. Confidenza: media.",
+        "explainability": {
+          "retrieval_method": "direct_query",
+          "hop_distance": 0,
+          "graph_path": null,
+          "scoring_breakdown": {
+            "base_score": 0.5,
+            "semantic_score": null,
+            "vector_similarity": null,
+            "domain_boost": 2,
+            "final_rank_score": 2
+          },
+          "reasoning": "Direct match from Cypher query (0 hops)"
+        }
+      },
+      {
+        "name": "Impaired inhibitory control",
+        "category": "Approccio Educativo",
+        "relevance_score": 0.5,
+        "evidence_type": "domain_knowledge",
+        "implementation_guidance": "Apply Impaired inhibitory control with appropriate adaptations",
+        "classroom_applications": [
+          "Consultare il contesto specifico della classe per applicazioni pratiche di Impaired inhibitory control"
+        ],
+        "special_considerations": [
+          "Adapt based on individual student needs"
+        ],
+        "confidence": "medium",
+        "explainability_name": "Raccomandazione diretta dal Knowledge Graph",
+        "explainability_phrase": "Strategia individuata direttamente dalla query nel Knowledge Graph. Confidenza: media.",
+        "explainability": {
+          "retrieval_method": "direct_query",
+          "hop_distance": 0,
+          "graph_path": null,
+          "scoring_breakdown": {
+            "base_score": 0.5,
+            "semantic_score": null,
+            "vector_similarity": null,
+            "domain_boost": 2,
+            "final_rank_score": 2
+          },
+          "reasoning": "Direct match from Cypher query (0 hops)"
+        }
+      }
+    ],
+    "supporting_methodologies": [
+      {
+        "name": "Self-Regulated Learning",
+        "category": "Metacognitive Development",
+        "relevance_score": 0.5,
+        "evidence_type": "domain_knowledge",
+        "implementation_guidance": "Teach students to plan, monitor, and evaluate their own learning",
+        "classroom_applications": [
+          "Self-questioning strategies",
+          "Learning journals and reflection",
+          "Goal setting with visible progress tracking"
+        ],
+        "special_considerations": [
+          "External memory aids for ADHD",
+          "Metacognitive guides for autism spectrum",
+          "Temporal organization support tools"
+        ],
+        "confidence": "medium",
+        "explainability_name": "Raccomandazione diretta dal Knowledge Graph",
+        "explainability_phrase": "Strategia individuata direttamente dalla query nel Knowledge Graph. Confidenza: media.",
+        "explainability": {
+          "retrieval_method": "direct_query",
+          "hop_distance": 0,
+          "graph_path": null,
+          "scoring_breakdown": {
+            "base_score": 0.5,
+            "semantic_score": null,
+            "vector_similarity": null,
+            "domain_boost": 2,
+            "final_rank_score": 2
+          },
+          "reasoning": "Direct match from Cypher query (0 hops)"
+        }
+      },
+      {
+        "name": "Peer to Peer",
+        "category": "Approccio Educativo",
+        "relevance_score": 0.5,
+        "evidence_type": "domain_knowledge",
+        "implementation_guidance": "Apply Peer to Peer with appropriate adaptations",
+        "classroom_applications": [
+          "Consultare il contesto specifico della classe per applicazioni pratiche di Peer to Peer"
+        ],
+        "special_considerations": [
+          "Adapt based on individual student needs"
+        ],
+        "confidence": "medium",
+        "explainability_name": "Raccomandazione diretta dal Knowledge Graph",
+        "explainability_phrase": "Strategia individuata direttamente dalla query nel Knowledge Graph. Confidenza: media.",
+        "explainability": {
+          "retrieval_method": "direct_query",
+          "hop_distance": 0,
+          "graph_path": null,
+          "scoring_breakdown": {
+            "base_score": 0.5,
+            "semantic_score": null,
+            "vector_similarity": null,
+            "domain_boost": 2,
+            "final_rank_score": 2
+          },
+          "reasoning": "Direct match from Cypher query (0 hops)"
+        }
+      },
+      {
+        "name": "Scaffolding",
+        "category": "Instructional Support",
+        "relevance_score": 0.5,
+        "evidence_type": "domain_knowledge",
+        "implementation_guidance": "Graduated support that fades as competence grows",
+        "classroom_applications": [
+          "Goal-Plan-Do-Review framework",
+          "Visual organizers and checklists",
+          "Linguistic scaffolds for L2 learners"
+        ],
+        "special_considerations": [
+          "Externalized executive support (visual timers, planners)",
+          "Initiation cueing for task start",
+          "Accommodation for processing speed"
+        ],
+        "confidence": "medium",
+        "explainability_name": "Raccomandazione diretta dal Knowledge Graph",
+        "explainability_phrase": "Strategia individuata direttamente dalla query nel Knowledge Graph. Confidenza: media.",
+        "explainability": {
+          "retrieval_method": "direct_query",
+          "hop_distance": 0,
+          "graph_path": null,
+          "scoring_breakdown": {
+            "base_score": 0.5,
+            "semantic_score": null,
+            "vector_similarity": null,
+            "domain_boost": 2,
+            "final_rank_score": 2
+          },
+          "reasoning": "Direct match from Cypher query (0 hops)"
+        }
+      },
+      {
+        "name": "Differentiated Instruction",
+        "category": "Inclusive Pedagogy",
+        "relevance_score": 0.5,
+        "evidence_type": "domain_knowledge",
+        "implementation_guidance": "Adapt content, process, product, and environment to learner needs",
+        "classroom_applications": [
+          "Tiered activities by complexity",
+          "Learning stations with varied modalities",
+          "Choice boards for expression"
+        ],
+        "special_considerations": [
+          "Multiple means of engagement (UDL Principle A)",
+          "Multiple means of representation (UDL Principle B)",
+          "Multiple means of action and expression (UDL Principle C)"
+        ],
+        "confidence": "medium",
+        "explainability_name": "Raccomandazione diretta dal Knowledge Graph",
+        "explainability_phrase": "Strategia individuata direttamente dalla query nel Knowledge Graph. Confidenza: media.",
+        "explainability": {
+          "retrieval_method": "direct_query",
+          "hop_distance": 0,
+          "graph_path": null,
+          "scoring_breakdown": {
+            "base_score": 0.5,
+            "semantic_score": null,
+            "vector_similarity": null,
+            "domain_boost": 2,
+            "final_rank_score": 2
+          },
+          "reasoning": "Direct match from Cypher query (0 hops)"
+        }
+      },
+      {
+        "name": "Gammification",
+        "category": "Engagement Strategy",
+        "relevance_score": 0.5,
+        "evidence_type": "domain_knowledge",
+        "implementation_guidance": "Use game-based elements to boost engagement",
+        "classroom_applications": [
+          "Digital educational games",
+          "Gamified math activities for dyscalculia",
+          "Challenge-based learning paths"
+        ],
+        "special_considerations": [
+          "Adjust difficulty levels dynamically",
+          "Provide multimodal interfaces",
+          "Use intrinsic reward structures"
+        ],
+        "confidence": "medium",
+        "explainability_name": "Raccomandazione diretta dal Knowledge Graph",
+        "explainability_phrase": "Strategia individuata direttamente dalla query nel Knowledge Graph. Confidenza: media.",
+        "explainability": {
+          "retrieval_method": "direct_query",
+          "hop_distance": 0,
+          "graph_path": null,
+          "scoring_breakdown": {
+            "base_score": 0.5,
+            "semantic_score": null,
+            "vector_similarity": null,
+            "domain_boost": 1.9,
+            "final_rank_score": 1.9
+          },
+          "reasoning": "Direct match from Cypher query (0 hops)"
+        }
+      }
+    ],
+    "evidence_summary": "Recommendations based on general pedagogical principles and domain expertise.",
+    "implementation_priority": [
+      "Start with Difficulty stopping automatic responses (high confidence)",
+      "Pilot with a subset of students first",
+      "Gather feedback and adjust based on student response",
+      "Gradually expand implementation across all relevant contexts"
+    ],
+    "confidence_level": "high",
+    "fallback_strategies": []
+  },
+  "raw_nodes": null,
+  "metrics": {
+    "total_nodes": 15,
+    "total_relationships": 28,
+    "kg_data_available": true,
+    "context_relevance": null,
+    "processing_time_ms": 34146
+  },
+  "formatted_prompt_section": "## CONTESTO DAL KNOWLEDGE GRAPH UDL (UNIVERSAL DESIGN FOR LEARNING)\n\n**Contesto Educativo:** inclusive_education\n**Profilo Studente:** Bisogni primari: externalized_executive_support | Bisogni secondari: movement_breaks, initiation_cueing, focus_tasks | Contesto: inclusive_education\n\n### Metodologie Raccomandate dal Knowledge Graph\n\n1. **Difficulty stopping automatic responses** (Sfida di Apprendimento)\n   - Rilevanza: 0.90\n   - Confidenza: very_high\n   - Implementazione: Poor inhibitory control predicts observable behaviors like calling out, acting without thinking, or being unable to disengage from a distracting thought to focus on the task at hand.\n   - Applicazioni in classe:\n     - Consultare il contesto specifico della classe per applicazioni pratiche di Difficulty stopping automatic responses\n   - Considerazioni speciali:\n     - Adapt based on individual student needs\n\n2. **Difficulty managing impulses** (Sfida di Apprendimento)\n   - Rilevanza: 0.90\n   - Confidenza: very_high\n   - Implementazione: Poor inhibitory control predicts observable behaviors like calling out, acting without thinking, or being unable to disengage from a distracting thought to focus on the task at hand.\n   - Applicazioni in classe:\n     - Consultare il contesto specifico della classe per applicazioni pratiche di Difficulty managing impulses\n   - Considerazioni speciali:\n     - Adapt based on individual student needs\n\n3. **Difficulty sustaining focus** (Strategia Didattica)\n   - Rilevanza: 0.50\n   - Confidenza: medium\n   - Implementazione: Apply Difficulty sustaining focus with appropriate adaptations\n   - Applicazioni in classe:\n     - Consultare il contesto specifico della classe per applicazioni pratiche di Difficulty sustaining focus\n   - Considerazioni speciali:\n     - Adapt based on individual student needs\n\n4. **Multisensory Activities** (Multi-Modal Instruction)\n   - Rilevanza: 0.50\n   - Confidenza: medium\n   - Implementazione: Engage multiple senses in learning activities\n   - Applicazioni in classe:\n     - Visual + auditory + kinesthetic instruction\n     - Hands-on manipulatives for math concepts\n     - Movement-integrated learning\n   - Considerazioni speciali:\n     - Adapt for sensory sensitivities (autism spectrum)\n     - Provide sensory breaks and regulation tools\n     - Use controlled input strategies\n\n5. **Impaired inhibitory control** (Approccio Educativo)\n   - Rilevanza: 0.50\n   - Confidenza: medium\n   - Implementazione: Apply Impaired inhibitory control with appropriate adaptations\n   - Applicazioni in classe:\n     - Consultare il contesto specifico della classe per applicazioni pratiche di Impaired inhibitory control\n   - Considerazioni speciali:\n     - Adapt based on individual student needs\n\n### Metodologie di Supporto\n- **Self-Regulated Learning** (Metacognitive Development) - Rilevanza: 0.50\n- **Peer to Peer** (Approccio Educativo) - Rilevanza: 0.50\n- **Scaffolding** (Instructional Support) - Rilevanza: 0.50\n- **Differentiated Instruction** (Inclusive Pedagogy) - Rilevanza: 0.50\n- **Gammification** (Engagement Strategy) - Rilevanza: 0.50\n\n### Evidenza e Basi Teoriche\nRecommendations based on general pedagogical principles and domain expertise.\n\n### Priorità di Implementazione\n1. Start with Difficulty stopping automatic responses (high confidence)\n2. Pilot with a subset of students first\n3. Gather feedback and adjust based on student response\n4. Gradually expand implementation across all relevant contexts\n\n### Livello di Confidenza: HIGH",
+  "domain_prompt_context": {
+    "domain": "udl",
+    "domain_display_name": "UDL (Universal Design for Learning)",
+    "system_prompt": "# RUOLO\n\nSei un'Esperta di Pedagogia Inclusiva e Progettazione Universale per l'Apprendimento (UDL - Universal Design for Learning).\nIntegri i principi UDL, le evidenze della ricerca educativa e le strategie didattiche inclusive per fornire raccomandazioni pratiche e personalizzate agli insegnanti italiani.\nIl tuo obiettivo è garantire che ogni studente possa accedere, partecipare e progredire nell'apprendimento, indipendentemente dalle proprie caratteristiche e variabilità.\n\n# TAG-CLOUD (keywords in ordine di importanza)\n\n- Universal Design for Learning (UDL)\n- variabilità degli apprendenti (ADHD, spettro autistico, dislessia, discalculia, plusdotazione, studenti stranieri)\n- barriere all'apprendimento (sensoriali, linguistiche, cognitive, tecnologiche, esecutive)\n- strategie di mitigazione e supporto\n- strumenti digitali e analogici per l'inclusione\n- checkpoint e linee guida UDL\n- differenziazione e personalizzazione didattica\n- scaffolding e supporto graduato\n- ambiente di apprendimento inclusivo\n- valutazione autentica e formativa\n- funzioni esecutive e autoregolazione\n\n# I TRE PRINCIPI UDL\n\nA. Fornire molteplici mezzi di COINVOLGIMENTO (il \"perché\" dell'apprendimento)\n   - Reclutare l'interesse\n   - Sostenere lo sforzo e la persistenza\n   - Sviluppare la capacità di autoregolazione\n   - Gestire la motivazione intrinseca e le percezioni del valore del compito\n\nB. Fornire molteplici mezzi di RAPPRESENTAZIONE (il \"cosa\" dell'apprendimento)\n   - Offrire opzioni per la percezione (visivo, uditivo, tattile)\n   - Offrire opzioni per il linguaggio e i simboli\n   - Offrire opzioni per la comprensione (attivare conoscenze pregresse, evidenziare pattern)\n\nC. Fornire molteplici mezzi di AZIONE ed ESPRESSIONE (il \"come\" dell'apprendimento)\n   - Offrire opzioni per l'azione fisica\n   - Offrire opzioni per l'espressione e la comunicazione\n   - Offrire opzioni per le funzioni esecutive (pianificazione, monitoraggio, autoregolazione)\n\n# VARIABILITÀ DEGLI APPRENDENTI\n\nIl Knowledge Graph contiene informazioni specifiche su:\n- ADHD: difficoltà di attenzione, controllo inibitorio, memoria di lavoro, sensibilità alla ricompensa\n- Spettro autistico: teoria della mente, pragmatica linguistica, sensibilità sensoriale, flessibilità cognitiva\n- Discalculia: comprensione delle quantità, ragionamento spaziale, recupero dei fatti matematici\n- Dislessia: carico cognitivo nella lettura, monitoraggio metacognitivo, efficacia accademica\n- Plusdotazione: ritmo rapido, curiosità intensa, rischio noia, sensibilità emotiva\n- Studenti stranieri: barriere linguistiche, differenze culturali, vocabolario accademico limitato\n\n# CONTESTO METODOLOGICO\n\nUtilizzi i seguenti approcci basati sulla ricerca:\n- Framework UDL (CAST): Principi → Linee Guida → Checkpoint\n- Scaffolding graduato e zona di sviluppo prossimale\n- Apprendimento cooperativo e peer-mediated learning\n- Strumenti digitali e analogici per l'accessibilità\n- Valutazione autentica (task, progetti, performance)\n- Strategie di mitigazione per barriere specifiche\n\n# META-REGOLE\n\n- Personalizza sempre la risposta alla variabilità specifica degli studenti\n- Collega ogni raccomandazione a uno dei 3 Principi UDL\n- Proponi strategie concrete con strumenti specifici (digitali e analogici)\n- Distingui chiaramente tra \"approcci consigliati\" (SUGGESTS) e \"approcci da evitare\" (NO_SUGGESTS)\n- Indica le barriere potenziali e le relative strategie di mitigazione\n- Utilizza i dati dal Knowledge Graph come fonte prioritaria\n- Rispondi SEMPRE in italiano\n- Adotta uno stile propositivo, pratico e inclusivo",
+    "response_template": "ISTRUZIONI PER LA STRUTTURA DELLA RISPOSTA:\n\nStruttura la risposta seguendo lo schema di progettazione inclusiva UDL:\n\n1. **Introduzione Empatica**\n   Riconosci la domanda dell'insegnante e il contesto specifico di variabilità.\n\n2. **Analisi della Variabilità** (basata sui dati del Knowledge Graph)\n   - Caratteristiche specifiche degli studenti coinvolti\n   - Barriere potenziali (sensoriali, linguistiche, cognitive, esecutive)\n   - Manifestazioni comportamentali osservabili\n\n3. **Strategie Raccomandate** (collegare a Principi UDL)\n   Per ogni strategia:\n   - **Principio UDL** di riferimento (Coinvolgimento / Rappresentazione / Azione-Espressione)\n   - **Perché è efficace**: evidenza dalla ricerca\n   - **Come implementarla**: passi concreti per la classe\n   - **Strumenti**: digitali e analogici specifici\n   - **Adattamenti**: per la variabilità specifica\n\n4. **Approcci da Evitare** (se presenti nel Knowledge Graph)\n   - Approcci che il KG indica come NON raccomandati per questa variabilità\n   - Motivazione pedagogica\n\n5. **Strategie di Mitigazione**\n   - Sfide di apprendimento prevedibili\n   - Strategie specifiche per superarle\n\n6. **Valutazione Inclusiva**\n   - Suggerimenti per la valutazione autentica\n   - Modalità multiple di espressione\n\n7. **Ordine di Implementazione**\n   Priorità chiare per l'insegnante.\n\n8. **Note sulla Fiducia**\n   Se la confidenza è bassa, suggerisci di consultare specialisti.\n\nIMPORTANTE:\n- Rispondi SEMPRE in italiano\n- Sii concreto e pratico: nomi di strumenti reali, passi implementabili\n- Collega ogni raccomandazione a un Principio UDL specifico\n- Se la confidenza è BASSA o VERY_LOW, enfatizza la necessità di supporto specialistico\n- Distingui chiaramente tra strategie CONSIGLIATE e approcci da EVITARE",
+    "kg_context_formatted": "## CONTESTO DAL KNOWLEDGE GRAPH UDL (UNIVERSAL DESIGN FOR LEARNING)\n\n**Contesto Educativo:** inclusive_education\n**Profilo Studente:** Bisogni primari: externalized_executive_support | Bisogni secondari: movement_breaks, initiation_cueing, focus_tasks | Contesto: inclusive_education\n\n### Metodologie Raccomandate dal Knowledge Graph\n\n1. **Difficulty stopping automatic responses** (Sfida di Apprendimento)\n   - Rilevanza: 0.90\n   - Confidenza: very_high\n   - Implementazione: Poor inhibitory control predicts observable behaviors like calling out, acting without thinking, or being unable to disengage from a distracting thought to focus on the task at hand.\n   - Applicazioni in classe:\n     - Consultare il contesto specifico della classe per applicazioni pratiche di Difficulty stopping automatic responses\n   - Considerazioni speciali:\n     - Adapt based on individual student needs\n\n2. **Difficulty managing impulses** (Sfida di Apprendimento)\n   - Rilevanza: 0.90\n   - Confidenza: very_high\n   - Implementazione: Poor inhibitory control predicts observable behaviors like calling out, acting without thinking, or being unable to disengage from a distracting thought to focus on the task at hand.\n   - Applicazioni in classe:\n     - Consultare il contesto specifico della classe per applicazioni pratiche di Difficulty managing impulses\n   - Considerazioni speciali:\n     - Adapt based on individual student needs\n\n3. **Difficulty sustaining focus** (Strategia Didattica)\n   - Rilevanza: 0.50\n   - Confidenza: medium\n   - Implementazione: Apply Difficulty sustaining focus with appropriate adaptations\n   - Applicazioni in classe:\n     - Consultare il contesto specifico della classe per applicazioni pratiche di Difficulty sustaining focus\n   - Considerazioni speciali:\n     - Adapt based on individual student needs\n\n4. **Multisensory Activities** (Multi-Modal Instruction)\n   - Rilevanza: 0.50\n   - Confidenza: medium\n   - Implementazione: Engage multiple senses in learning activities\n   - Applicazioni in classe:\n     - Visual + auditory + kinesthetic instruction\n     - Hands-on manipulatives for math concepts\n     - Movement-integrated learning\n   - Considerazioni speciali:\n     - Adapt for sensory sensitivities (autism spectrum)\n     - Provide sensory breaks and regulation tools\n     - Use controlled input strategies\n\n5. **Impaired inhibitory control** (Approccio Educativo)\n   - Rilevanza: 0.50\n   - Confidenza: medium\n   - Implementazione: Apply Impaired inhibitory control with appropriate adaptations\n   - Applicazioni in classe:\n     - Consultare il contesto specifico della classe per applicazioni pratiche di Impaired inhibitory control\n   - Considerazioni speciali:\n     - Adapt based on individual student needs\n\n### Metodologie di Supporto\n- **Self-Regulated Learning** (Metacognitive Development) - Rilevanza: 0.50\n- **Peer to Peer** (Approccio Educativo) - Rilevanza: 0.50\n- **Scaffolding** (Instructional Support) - Rilevanza: 0.50\n- **Differentiated Instruction** (Inclusive Pedagogy) - Rilevanza: 0.50\n- **Gammification** (Engagement Strategy) - Rilevanza: 0.50\n\n### Evidenza e Basi Teoriche\nRecommendations based on general pedagogical principles and domain expertise.\n\n### Priorità di Implementazione\n1. Start with Difficulty stopping automatic responses (high confidence)\n2. Pilot with a subset of students first\n3. Gather feedback and adjust based on student response\n4. Gradually expand implementation across all relevant contexts\n\n### Livello di Confidenza: HIGH"
+  },
+  "explainability_summary": {
+    "embedding_mode": "hybrid_semantic",
+    "retrieval_phases": {
+      "graph_traversal": {
+        "nodes_found": 47,
+        "time_ms": 3442
+      },
+      "semantic_search": {
+        "nodes_found": 9,
+        "time_ms": 1679
+      },
+      "fusion_ranking": {
+        "nodes_found": 56,
+        "time_ms": 1
+      }
+    },
+    "knowledge_graph_stats": {
+      "total_nodes_retrieved": 56,
+      "total_relationships": 28,
+      "direct_hits": 8,
+      "structural_neighbors": 2,
+      "semantic_matches": 0,
+      "label_distribution": {
+        "InstructionalStrategy": 6,
+        "EducationalApproach": 10,
+        "LearningMethodology": 9,
+        "InstructionalTechnique": 3,
+        "LearningChallenge": 6,
+        "LearningFramework": 4,
+        "EmotionRegulationStrategies": 1,
+        "MemoryStrategy": 3,
+        "MotivationalStrategy": 3,
+        "SelfRegulationProcesses": 1,
+        "CognitiveStrategy": 1,
+        "ObservableLearningChallenges": 1,
+        "ObservableLearningOutcomes": 3,
+        "AttentionalControlProcesses": 1,
+        "CognitiveRegulation": 1,
+        "ObservableBehavioralOutcomes": 1,
+        "ObservableLearningChallenge": 1,
+        "CognitiveOutcomes": 1
+      }
+    },
+    "graph_coverage": "This response used 56 concepts from the Knowledge Graph, producing 10 methodology recommendations. 8 found through direct KG relationships (high confidence). 2 through graph neighbor expansion."
+  },
+  "context_warning": null,
+  "error": null
+}

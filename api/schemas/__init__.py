@@ -12,12 +12,22 @@ from .models import (
     MetricsInfo,
     ConfidenceLevel,
     DomainType,
-    LanguageType
+    LanguageType,
+    # Explainability models
+    GraphPath,
+    ScoringBreakdown,
+    MethodologyExplainability,
+    RetrievalPhase,
+    KGStats,
+    ExplainabilitySummary,
+    ConceptGraphNode,
+    ConceptGraphEdge,
+    ConceptGraph,
 )
 
 __all__ = [
     "ContextRequest",
-    "ContextResponse", 
+    "ContextResponse",
     "MethodologyInfo",
     "QueryInfo",
     "ContextData",
@@ -27,6 +37,15 @@ __all__ = [
     "MetricsInfo",
     "ConfidenceLevel",
     "DomainType",
-    "LanguageType"
+    "LanguageType",
+    "GraphPath",
+    "ScoringBreakdown",
+    "MethodologyExplainability",
+    "RetrievalPhase",
+    "KGStats",
+    "ExplainabilitySummary",
+    "ConceptGraphNode",
+    "ConceptGraphEdge",
+    "ConceptGraph",
 ]
 

@@ -757,6 +757,7 @@ class HybridGraphRetriever:
                 'semantic_count': len(semantic_nodes),
                 'total_nodes': len(ranked_nodes),
                 'total_triples': len(triples),
+                'embedding_mode': getattr(self, 'embedding_mode', 'node2vec'),
                 'timings': {
                     'graph_traversal': graph_time,
                     'semantic_search': semantic_time,
@@ -1113,11 +1114,23 @@ class HybridGraphRetriever:
         seen_node_ids = set()
         
         for node in nodes:
-            # Add the original node (hop_distance=0: direct query match)
             node_id = node.get('id') or node.get('name')
             if node_id and node_id not in seen_node_ids:
-                node['hop_distance'] = 0
-                node['retrieval_stage'] = 'direct_query'
+                # If CASE 4 parsing already attached a real relationship (rel_type +
+                # source_node), this node was the TARGET of a Cypher relationship —
+                # treat it as a 1-hop structural match so graph_path is populated in
+                # explainability.  Pure column matches (no rel_type) stay at hop 0.
+                if node.get('rel_type') and node.get('source_node'):
+                    node['hop_distance'] = 1
+                    node['retrieval_stage'] = 'structural_neighbor'
+                    # Ensure triple direction fields are set for _extract_triples
+                    if 'triple_source_name' not in node:
+                        src_name = node.get('source_node', {}).get('name', '')
+                        node['triple_source_name'] = src_name
+                        node['triple_target_name'] = node.get('name', '')
+                else:
+                    node['hop_distance'] = 0
+                    node['retrieval_stage'] = 'direct_query'
                 expanded_nodes.append(self._normalize_node(node))
                 initial_nodes.append(node)  # Track for filtering
                 seen_node_ids.add(node_id)
@@ -1175,11 +1188,13 @@ class HybridGraphRetriever:
 
             main_label = node_labels[0]
 
-            # Prefer putting the label in MATCH (can't parameterize labels)
+            # startNode(r).name lets us detect the actual Neo4j arrow direction,
+            # since the traversal is undirected (-[r]-) and would otherwise lose it.
             neighbor_query = f"""
             MATCH (source:{main_label} {{name: $node_name}})-[r]-(n)
             WHERE any(l IN labels(n) WHERE l IN $relevant_labels)
-            RETURN DISTINCT n, type(r) AS rel_type, source AS source_node
+            RETURN DISTINCT n, type(r) AS rel_type, source AS source_node,
+                   startNode(r).name AS rel_start_name
             LIMIT $limit
             """
 
@@ -1195,18 +1210,35 @@ class HybridGraphRetriever:
                 # n and source_node are Neo4j Node objects — capture labels explicitly
                 n_node = record['n']
                 s_node = record['source_node']
+                rel_start_name = record['rel_start_name']  # actual Neo4j arrow start
 
                 neighbor = dict(n_node)
+                neighbor_name = neighbor.get('name', '')
                 neighbor['labels'] = list(getattr(n_node, 'labels', []))
                 neighbor['rel_type'] = record['rel_type']
 
                 src = dict(s_node)
                 src['labels'] = list(getattr(s_node, 'labels', []))
+                # source_node = expansion start (kept for graph_path display in explainability)
                 neighbor['source_node'] = src
+
+                # Determine actual Neo4j relationship direction for correct triple building.
+                # rel_start_name is the name of the node that is the real "from" of the arrow.
+                # If it matches the expansion start (node_name), the arrow goes forward:
+                #   (expansion_node)-[:REL]->(neighbor)  →  triple: (expansion_node, REL, neighbor)
+                # If it matches the neighbor, the arrow goes backward (traversal was against arrow):
+                #   (neighbor)-[:REL]->(expansion_node)  →  triple: (neighbor, REL, expansion_node)
+                if rel_start_name == node_name:
+                    neighbor['triple_source_name'] = node_name
+                    neighbor['triple_target_name'] = neighbor_name
+                else:
+                    # Arrow goes from neighbor to expansion node — swap for correct direction
+                    neighbor['triple_source_name'] = neighbor_name
+                    neighbor['triple_target_name'] = node_name
 
                 # give a stable id (helps dedup + ranking)
                 label_for_id = neighbor['labels'][0] if neighbor.get('labels') else ''
-                neighbor['id'] = f"{label_for_id}:{neighbor.get('name','')}"
+                neighbor['id'] = f"{label_for_id}:{neighbor_name}"
                 neighbors.append(neighbor)
 
             return neighbors
@@ -2136,19 +2168,34 @@ class HybridGraphRetriever:
         return final_score
     
     def _extract_triples(self, nodes: List[Dict]) -> List[Tuple[str, str, str]]:
-        """Extract relationship triples from nodes"""
+        """Extract relationship triples from nodes.
+
+        Uses triple_source_name / triple_target_name when present — these reflect the
+        actual Neo4j relationship direction as detected by startNode(r) in the neighbor
+        query. Falls back to the old expansion-direction convention for nodes that were
+        added by other code paths (e.g. CASE 4 Cypher result parsing).
+        """
         triples = []
-        
+
         for node in nodes:
-            # Extract triples from neighbor relationships
-            if 'rel_type' in node and 'source_node' in node:
+            rel_type = node.get('rel_type', '')
+            if not rel_type:
+                continue
+
+            if 'triple_source_name' in node and 'triple_target_name' in node:
+                # Direction-corrected path: set by _get_educational_neighbors
+                source_name = node['triple_source_name']
+                target_name = node['triple_target_name']
+            elif 'source_node' in node:
+                # Fallback: expansion-direction convention (CASE 4 and other paths)
                 source_name = node['source_node'].get('name', '')
-                rel_type = node['rel_type']
                 target_name = node.get('name', '')
-                
-                if source_name and rel_type and target_name:
-                    triples.append((source_name, rel_type, target_name))
-        
+            else:
+                continue
+
+            if source_name and target_name:
+                triples.append((source_name, rel_type, target_name))
+
         return triples
     
     def _build_facets(self, nodes: List[Dict], triples: List[Tuple[str, str, str]]) -> Dict[str, Dict[str, int]]:

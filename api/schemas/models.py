@@ -57,6 +57,10 @@ class ContextRequest(BaseModel):
         default=False,
         description="Include raw node data from graph"
     )
+    include_explainability: bool = Field(
+        default=True,
+        description="Include explainability data: per-methodology provenance + response-level KG summary + concept graph for visualization"
+    )
     max_methodologies: int = Field(
         default=10,
         ge=1,
@@ -90,6 +94,10 @@ class MethodologyInfo(BaseModel):
     classroom_applications: List[str] = Field(default=[], description="Practical applications")
     special_considerations: List[str] = Field(default=[], description="Special needs considerations")
     confidence: ConfidenceLevel = Field(..., description="Confidence level")
+    # Explainability fields (populated when include_explainability=True)
+    explainability_name: Optional[str] = Field(None, description="Italian UI label for the source type (e.g. 'Raccomandazione diretta dal Knowledge Graph')")
+    explainability_phrase: Optional[str] = Field(None, description="Italian human-readable sentence explaining how this methodology was retrieved — render directly as a badge or tooltip")
+    explainability: Optional["MethodologyExplainability"] = Field(None, description="Full provenance data for advanced UI rendering")
 
 
 class QueryInfo(BaseModel):
@@ -173,6 +181,113 @@ class DomainPromptContext(BaseModel):
     )
 
 
+# ============================================================================
+# EXPLAINABILITY MODELS
+# ============================================================================
+
+class GraphPath(BaseModel):
+    """Represents a single hop in the knowledge graph: source -[rel]-> target"""
+    source_node: str = Field(..., description="Name of the source node")
+    source_label: str = Field(..., description="Primary Neo4j label of the source node")
+    relationship: str = Field(..., description="Relationship type (e.g. MITIGATED_BY, SUGGESTS)")
+    target_node: str = Field(..., description="Name of the target node")
+    target_label: str = Field(..., description="Primary Neo4j label of the target node")
+
+
+class ScoringBreakdown(BaseModel):
+    """Score components used to rank this node"""
+    base_score: float = Field(..., description="Base score by retrieval source (graph=1.0, structural=0.8, vector=0.6, semantic=0.5)")
+    semantic_score: Optional[float] = Field(None, description="Embedding similarity score 0-1 (null if not computed)")
+    vector_similarity: Optional[float] = Field(None, description="Node2Vec similarity score 0-1 (null if not computed)")
+    domain_boost: float = Field(..., description="Domain-specific multiplier applied to base score")
+    final_rank_score: float = Field(..., description="Final ranking score = base × domain_boost × semantic × vector")
+
+
+class MethodologyExplainability(BaseModel):
+    """
+    Provenance data for a single methodology — explains HOW and WHY it was retrieved.
+
+    Frontend can use this to render source badges, graph path arrows, and score tooltips.
+    """
+    retrieval_method: str = Field(
+        ...,
+        description="How this node was found: 'direct_query' | 'structural_neighbor' | 'vector_neighbor' | 'semantic_search'"
+    )
+    hop_distance: int = Field(
+        ...,
+        description="Graph distance from query: 0=direct match, 1=1-hop neighbor, 2=2-hop/semantic"
+    )
+    graph_path: Optional[GraphPath] = Field(
+        None,
+        description="The graph path that led to this node (only present when hop_distance >= 1)"
+    )
+    scoring_breakdown: ScoringBreakdown = Field(..., description="Score components for transparency")
+    reasoning: str = Field(..., description="Technical English sentence explaining the retrieval")
+
+
+class RetrievalPhase(BaseModel):
+    """Stats for a single retrieval phase"""
+    nodes_found: int = Field(..., description="Number of nodes found in this phase")
+    time_ms: int = Field(..., description="Time taken in milliseconds")
+
+
+class KGStats(BaseModel):
+    """Aggregate statistics about the knowledge graph retrieval"""
+    total_nodes_retrieved: int
+    total_relationships: int
+    direct_hits: int = Field(..., description="Nodes found by direct Cypher query (hop_distance=0)")
+    structural_neighbors: int = Field(..., description="Nodes found by graph neighbor expansion (hop_distance=1)")
+    semantic_matches: int = Field(..., description="Nodes found by semantic/vector similarity (hop_distance=2)")
+    label_distribution: Dict[str, int] = Field(
+        default={},
+        description="Count of nodes per Neo4j label — use this to render concept tags in the UI"
+    )
+
+
+class ExplainabilitySummary(BaseModel):
+    """
+    Response-level explainability data.
+
+    Frontend use:
+    - label_distribution → render colored concept tag chips
+    - graph_coverage → display as summary sentence in reliability panel
+    - retrieval_phases → show retrieval breakdown (graph vs semantic)
+    """
+    embedding_mode: str = Field(..., description="Embedding mode used: 'hybrid_semantic' | 'node2vec' | 'openai_only'")
+    retrieval_phases: Dict[str, RetrievalPhase] = Field(
+        default={},
+        description="Timing and node count per retrieval phase: graph_traversal, semantic_search, fusion_ranking"
+    )
+    knowledge_graph_stats: KGStats = Field(..., description="Aggregate KG retrieval statistics")
+    graph_coverage: str = Field(..., description="Human-readable Italian sentence summarising graph coverage")
+
+
+class ConceptGraphNode(BaseModel):
+    """A node in the concept graph for visualization"""
+    id: str = Field(..., description="Unique node identifier (label:name)")
+    label: str = Field(..., description="Primary Neo4j label")
+    score: float = Field(..., description="Normalized rank score 0-1")
+    hop_distance: int = Field(..., description="Graph distance from query")
+
+
+class ConceptGraphEdge(BaseModel):
+    """A directed edge in the concept graph"""
+    source: str = Field(..., description="Source node name")
+    target: str = Field(..., description="Target node name")
+    relation: str = Field(..., description="Relationship type")
+
+
+class ConceptGraph(BaseModel):
+    """
+    Nodes and edges extracted from the knowledge graph retrieval.
+
+    Feed directly into D3.js / vis.js / sigma.js for graph visualization.
+    Nodes capped at 20, edges at 30 to keep rendering performant.
+    """
+    nodes: List[ConceptGraphNode] = []
+    edges: List[ConceptGraphEdge] = []
+
+
 class RawNode(BaseModel):
     """Raw node data from knowledge graph"""
     id: Optional[str] = None
@@ -228,7 +343,17 @@ class ContextResponse(BaseModel):
         None,
         description="Domain-specific system prompt, response template, and formatted KG context for production integration"
     )
-    
+
+    # Explainability (populated when include_explainability=True)
+    explainability_summary: Optional["ExplainabilitySummary"] = Field(
+        None,
+        description="Response-level KG stats + Italian summary sentence. Use label_distribution for concept tag chips."
+    )
+    concept_graph: Optional["ConceptGraph"] = Field(
+        None,
+        description="Nodes and edges for graph visualization (D3.js / vis.js ready). Max 20 nodes, 30 edges."
+    )
+    context_warning: Optional[str] = Field(None, description="Optional warning about retrieval quality")
     error: Optional[str] = Field(None, description="Error message if success=False")
 
     class Config:
