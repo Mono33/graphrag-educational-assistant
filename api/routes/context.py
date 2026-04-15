@@ -225,12 +225,15 @@ def _build_explainability_summary(retrieval_result, nodes: list, n_methods: int 
     pre_cap_total = graph_count + semantic_count
     embedding_mode = metadata.get("embedding_mode", "hybrid_semantic")
 
-    # English summary sentence matching the reference JSON format
+    # English summary sentence — use graph_count (pre-cap) for the "via graph" count
+    # so that CASE 4 structural nodes (hop=1) are still counted as graph-sourced,
+    # not conflated with direct_hits (hop=0) which may be zero after the hop fix.
+    graph_sourced = graph_count  # all nodes found via Neo4j traversal (pre-cap)
     graph_coverage = (
         f"This response used {pre_cap_total} concepts from the Knowledge Graph, "
         f"producing {n_methods} methodology recommendations. "
-        f"{direct_hits} found through direct KG relationships (high confidence). "
-        f"{structural} through graph neighbor expansion."
+        f"{graph_sourced} found through graph traversal ({structural} via relationships, "
+        f"{direct_hits} direct matches)."
     )
     if semantic:
         graph_coverage += f" {semantic} through semantic similarity."
@@ -312,12 +315,18 @@ def _build_concept_graph(nodes: list, triples: list, max_nodes: int = 20, max_ed
             continue
         seen_edges.add(key)
 
-        # Add a context node for the missing endpoint (capped at max_nodes budget)
+        # Add a context node for the missing endpoint (capped at max_nodes budget).
+        # If the context node cannot be added (cap reached), skip the edge too — no dangling edges.
         total_nodes = len(graph_nodes) + len(context_node_names)
-        if not src_known and src not in context_node_names and total_nodes < max_nodes:
+        if not src_known and src not in context_node_names:
+            if total_nodes >= max_nodes:
+                continue  # can't add context node → skip edge to avoid dangling reference
             context_node_names.add(src)
             graph_nodes.append(ConceptGraphNode(id=src, label="Context", score=0.0, hop_distance=2))
-        if not tgt_known and tgt not in context_node_names and total_nodes < max_nodes:
+        if not tgt_known and tgt not in context_node_names:
+            total_nodes = len(graph_nodes) + len(context_node_names)
+            if total_nodes >= max_nodes:
+                continue  # can't add context node → skip edge to avoid dangling reference
             context_node_names.add(tgt)
             graph_nodes.append(ConceptGraphNode(id=tgt, label="Context", score=0.0, hop_distance=2))
 
@@ -793,8 +802,13 @@ async def get_context(request: ContextRequest) -> ContextResponse:
                 retrieval_result.triples if hasattr(retrieval_result, "triples") else [],
             )
 
-            # Surface a warning if coverage is low
-            if explainability_summary.knowledge_graph_stats.direct_hits == 0:
+            # Surface a warning only when the graph truly returned nothing useful
+            kg_stats = explainability_summary.knowledge_graph_stats
+            if kg_stats.total_nodes_retrieved == 0 or (
+                kg_stats.semantic_matches > 0
+                and kg_stats.direct_hits == 0
+                and kg_stats.structural_neighbors == 0
+            ):
                 context_warning = (
                     "Nessuna corrispondenza diretta trovata nel grafo. "
                     "Le raccomandazioni si basano su similarità semantica."
