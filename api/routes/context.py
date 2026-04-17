@@ -337,6 +337,30 @@ def _build_concept_graph(nodes: list, triples: list, max_nodes: int = 20, max_ed
     return ConceptGraph(nodes=graph_nodes, edges=graph_edges)
 
 
+def _build_context_warning(
+    kg_data_available: bool,
+    overall_confidence: str,
+    methodologies_count: int,
+) -> Optional[str]:
+    """Return an Italian warning when the KG lacks specific or high-quality data.
+
+    Returns None when the KG returned solid, relevant results.
+    """
+    if not kg_data_available or methodologies_count == 0:
+        return (
+            "Attenzione: il Knowledge Graph non contiene dati specifici per questa richiesta. "
+            "Le raccomandazioni si basano su principi pedagogici generali. "
+            "Per risultati più mirati, prova a specificare il tipo di studenti o le difficoltà specifiche."
+        )
+    if overall_confidence in ("very_low", "low"):
+        return (
+            "Nota: i risultati hanno una confidenza limitata. "
+            "Il Knowledge Graph ha trovato pochi dati pertinenti per questa domanda. "
+            "Prova a riformulare la richiesta in modo più specifico."
+        )
+    return None
+
+
 def _format_student_profile(profile) -> str:
     """Format student profile for prompt"""
     parts = []
@@ -747,6 +771,11 @@ async def get_context(request: ContextRequest) -> ContextResponse:
             fallback_strategies=educational_context.fallback_strategies
         )
         
+        # Determine if KG had relevant data (0 methodologies = out of scope)
+        kg_data_available = bool(context_data.primary_methodologies)
+        if not kg_data_available:
+            logger.info("[API] No KG data found for this query — transparent fallback applied")
+
         # -----------------------------------------------------------------------
         # Explainability enrichment (opt-in via include_explainability=True)
         # -----------------------------------------------------------------------
@@ -802,17 +831,15 @@ async def get_context(request: ContextRequest) -> ContextResponse:
                 retrieval_result.triples if hasattr(retrieval_result, "triples") else [],
             )
 
-            # Surface a warning only when the graph truly returned nothing useful
-            kg_stats = explainability_summary.knowledge_graph_stats
-            if kg_stats.total_nodes_retrieved == 0 or (
-                kg_stats.semantic_matches > 0
-                and kg_stats.direct_hits == 0
-                and kg_stats.structural_neighbors == 0
-            ):
-                context_warning = (
-                    "Nessuna corrispondenza diretta trovata nel grafo. "
-                    "Le raccomandazioni si basano su similarità semantica."
-                )
+        # Context warning — computed outside explainability block so it fires even when
+        # include_explainability=False (teachers need this signal regardless)
+        overall_confidence = (
+            context_data.confidence_level.value
+            if hasattr(context_data, "confidence_level") and context_data.confidence_level
+            else "medium"
+        )
+        n_methods_total = len(context_data.primary_methodologies) + len(context_data.supporting_methodologies)
+        context_warning = _build_context_warning(kg_data_available, overall_confidence, n_methods_total)
 
         # Build raw nodes if requested
         raw_nodes = None
@@ -833,13 +860,7 @@ async def get_context(request: ContextRequest) -> ContextResponse:
         domain_prompt_ctx = _build_domain_prompt_context(
             context_data, domain, detected_language
         )
-        
-        # Determine if KG had relevant data (0 methodologies = out of scope)
-        kg_data_available = bool(context_data.primary_methodologies)
-        
-        if not kg_data_available:
-            logger.info("[API] No KG data found for this query — transparent fallback applied")
-        
+
         # Build response
         response = ContextResponse(
             success=True,

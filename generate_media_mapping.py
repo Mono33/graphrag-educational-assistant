@@ -36,6 +36,9 @@ sys.path.insert(0, str(Path(__file__).parent))
 from openai import AsyncOpenAI
 from dotenv import load_dotenv
 
+# Respect LLM_MODEL env var (set in .env); fall back to gpt-4o via OpenRouter
+_DEFAULT_MODEL = os.getenv("LLM_MODEL", "openai/gpt-4o")
+
 # Load environment variables
 load_dotenv()
 
@@ -148,7 +151,7 @@ Output JSON format:
 async def generate_media_for_concept(
     client: AsyncOpenAI,
     concept: Dict[str, Any],
-    model: str = "gpt-4o"
+    model: str = _DEFAULT_MODEL
 ) -> Optional[Dict[str, Any]]:
     """
     Generate media recommendations for a single concept using GPT-4o.
@@ -376,8 +379,8 @@ async def main():
         help='Output file path (default: kg_{domain}_media_mapping.json)'
     )
     parser.add_argument(
-        '--model', type=str, default='gpt-4o',
-        help='OpenAI model to use'
+        '--model', type=str, default=_DEFAULT_MODEL,
+        help='Model to use (via OpenRouter if OPENROUTER_API_KEY is set)'
     )
     
     args = parser.parse_args()
@@ -391,11 +394,12 @@ async def main():
         logger.error(f"Knowledge Graph not found: {kg_path}")
         sys.exit(1)
     
-    # Check API key
-    api_key = os.getenv('OPENAI_API_KEY')
+    # Check API key — prefer OpenRouter, fall back to direct OpenAI
+    api_key = os.getenv('OPENROUTER_API_KEY') or os.getenv('OPENAI_API_KEY')
     if not api_key:
-        logger.error("OPENAI_API_KEY not set in environment")
+        logger.error("OPENROUTER_API_KEY (or OPENAI_API_KEY) not set in environment")
         sys.exit(1)
+    use_openrouter = bool(os.getenv('OPENROUTER_API_KEY'))
     
     logger.info(f"=" * 60)
     logger.info(f"Media Mapping Generator for Agentic GraphRAG")
@@ -414,8 +418,11 @@ async def main():
         concepts = concepts[:args.limit]
         logger.info(f"Limited to {args.limit} concepts")
     
-    # Initialize OpenAI client
-    client = AsyncOpenAI(api_key=api_key)
+    # Initialize client — point to OpenRouter when OPENROUTER_API_KEY is set
+    client = AsyncOpenAI(
+        api_key=api_key,
+        base_url="https://openrouter.ai/api/v1" if use_openrouter else None,
+    )
     
     # Process concepts
     logger.info(f"\nProcessing {len(concepts)} concepts...")
