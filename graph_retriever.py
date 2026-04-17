@@ -1201,17 +1201,12 @@ class HybridGraphRetriever:
             'source_node': node.get('source_node', {})
         }
         
-        # Preserve hop tracking metadata (backward compatible - only add if present)
-        if 'hop_distance' in node:
-            normalized['hop_distance'] = node['hop_distance']
-        if 'retrieval_stage' in node:
-            normalized['retrieval_stage'] = node['retrieval_stage']
-        if 'source' in node:
-            normalized['source'] = node['source']
-        if 'semantic_score' in node:
-            normalized['semantic_score'] = node['semantic_score']
-        if 'vector_similarity' in node:
-            normalized['vector_similarity'] = node['vector_similarity']
+        # Preserve tracking metadata (backward compatible - only add if present)
+        for key in ('hop_distance', 'retrieval_stage', 'source', 'semantic_score',
+                     'vector_similarity', 'rank_score', 'domain_boost', 'base_score',
+                     'query_concept'):
+            if key in node:
+                normalized[key] = node[key]
         
         return normalized
     
@@ -2038,8 +2033,10 @@ class HybridGraphRetriever:
         return ranked_nodes, triples
     
     def _calculate_rank_score(self, node: Dict, source: str = 'graph') -> float:
-        """Calculate ranking score for a node with Node2Vec enhancements"""
-        # Base score by source
+        """Calculate ranking score for a node with Node2Vec enhancements.
+        
+        Also stores scoring components on the node dict for explainability.
+        """
         if source == 'graph':
             base_score = 1.0
         elif source == 'structural':
@@ -2049,18 +2046,16 @@ class HybridGraphRetriever:
         else:  # semantic
             base_score = 0.5
         
-        # Apply domain boosts
         labels = node.get('labels', [])
         domain_boost = max([self.domain_boosts.get(l, 1.0) for l in labels], default=1.0)
         
-        # Apply semantic score if available
         semantic_score = node.get('semantic_score', 1.0)
-        
-        # Apply vector similarity boost if available
         vector_boost = node.get('vector_similarity', 1.0)
         
-        # Calculate final score
         final_score = base_score * domain_boost * semantic_score * vector_boost
+        
+        node['domain_boost'] = domain_boost
+        node['base_score'] = base_score
         
         return final_score
     

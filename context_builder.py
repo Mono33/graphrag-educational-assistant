@@ -34,6 +34,7 @@ class MethodologyRecommendation:
     classroom_applications: List[str]
     special_considerations: List[str]
     confidence: ConfidenceLevel
+    raw_node_metadata: Optional[Dict] = None
 
 @dataclass
 class StudentProfile:
@@ -303,6 +304,24 @@ class MethodologyRanker:
         
         confidence = self._calculate_confidence(relevance_score, evidence_type, kb_info)
         
+        raw_meta = {
+            'hop_distance': node.get('hop_distance', 0),
+            'retrieval_stage': node.get('retrieval_stage', 'unknown'),
+            'source': node.get('source', 'graph'),
+            'rel_type': node.get('rel_type', ''),
+            'source_node_name': node.get('source_node', {}).get('name', '') if isinstance(node.get('source_node'), dict) else '',
+            'source_node_label': '',
+            'labels': node.get('labels', []),
+            'semantic_score': node.get('semantic_score'),
+            'vector_similarity': node.get('vector_similarity'),
+            'rank_score': node.get('rank_score', 0.0),
+            'domain_boost': node.get('domain_boost', 1.0),
+        }
+        source_node = node.get('source_node', {})
+        if isinstance(source_node, dict):
+            src_labels = source_node.get('labels', [])
+            raw_meta['source_node_label'] = src_labels[0] if src_labels else ''
+
         return MethodologyRecommendation(
             name=name,
             category=category,
@@ -311,7 +330,8 @@ class MethodologyRanker:
             implementation_guidance=implementation,
             classroom_applications=applications,
             special_considerations=special_considerations,
-            confidence=confidence
+            confidence=confidence,
+            raw_node_metadata=raw_meta
         )
     
     def _resolve_category_from_labels(self, node: Dict) -> str:

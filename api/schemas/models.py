@@ -77,6 +77,88 @@ class ContextRequest(BaseModel):
 
 
 # ============================================================================
+# EXPLAINABILITY MODELS
+# ============================================================================
+
+class GraphPathInfo(BaseModel):
+    """Traces the KG relationship that produced this recommendation"""
+    source_node: str = Field(..., description="Origin node name (e.g., 'ADHD')")
+    source_label: str = Field(default="", description="Origin node label (e.g., 'Adhd')")
+    relationship: str = Field(default="", description="KG relationship type (e.g., 'SUGGESTS', 'INFLUENCES')")
+    target_node: str = Field(..., description="This methodology's node name")
+    target_label: str = Field(default="", description="This methodology's primary label")
+
+
+class ScoringBreakdown(BaseModel):
+    """Decomposition of how the final relevance score was computed"""
+    base_score: float = Field(..., description="Base score by retrieval source (graph=1.0, structural=0.8, vector=0.6, semantic=0.5)")
+    semantic_score: Optional[float] = Field(None, description="OpenAI embedding similarity (0-1), null if not used")
+    vector_similarity: Optional[float] = Field(None, description="Node2Vec structural similarity (0-1), null if not used")
+    domain_boost: float = Field(default=1.0, description="Domain-specific priority multiplier")
+    final_rank_score: float = Field(..., description="Final fused score after all boosts")
+
+
+class ExplainabilityDetail(BaseModel):
+    """Per-methodology explainability — answers WHERE, HOW, and WHY"""
+    retrieval_method: str = Field(
+        ...,
+        description="How this was found: 'direct_query', 'structural_neighbor', 'vector_neighbor', 'semantic_search', 'keyword_semantic'"
+    )
+    hop_distance: int = Field(
+        ...,
+        description="Graph distance from original query match (0=direct, 1=neighbor, 2=semantic/vector)"
+    )
+    graph_path: Optional[GraphPathInfo] = Field(
+        None,
+        description="KG path that connects query to this methodology (null for domain_knowledge fallbacks)"
+    )
+    scoring_breakdown: ScoringBreakdown = Field(
+        ...,
+        description="Transparent decomposition of the ranking score"
+    )
+    reasoning: str = Field(
+        ...,
+        description="Human-readable explanation (e.g., 'Found via direct KG relationship: ADHD -[SUGGESTS]-> Scaffolding')"
+    )
+
+
+class RetrievalPhaseInfo(BaseModel):
+    """Timing and yield for a single retrieval phase"""
+    nodes_found: int = Field(default=0, description="Nodes found in this phase")
+    time_ms: Optional[int] = Field(None, description="Phase duration in milliseconds")
+
+
+class KnowledgeGraphStats(BaseModel):
+    """Distribution of retrieved nodes by source and label"""
+    total_nodes_retrieved: int = Field(default=0)
+    total_relationships: int = Field(default=0)
+    direct_hits: int = Field(default=0, description="Nodes from direct Cypher query (hop 0)")
+    structural_neighbors: int = Field(default=0, description="Nodes from graph traversal (hop 1)")
+    semantic_matches: int = Field(default=0, description="Nodes from embedding similarity (hop 2)")
+    label_distribution: Dict[str, int] = Field(default={}, description="Count of nodes per KG label")
+
+
+class ExplainabilitySummary(BaseModel):
+    """Top-level retrieval explainability for the entire response"""
+    embedding_mode: str = Field(
+        ...,
+        description="Active embedding mode: 'node2vec', 'hybrid_semantic', or 'openai_only'"
+    )
+    retrieval_phases: Dict[str, RetrievalPhaseInfo] = Field(
+        default={},
+        description="Per-phase breakdown: graph_traversal, neighbor_expansion, semantic_search, fusion_ranking"
+    )
+    knowledge_graph_stats: KnowledgeGraphStats = Field(
+        default_factory=KnowledgeGraphStats,
+        description="Node distribution by retrieval source and label"
+    )
+    graph_coverage: str = Field(
+        default="",
+        description="Human-readable summary of KG coverage for this query"
+    )
+
+
+# ============================================================================
 # RESPONSE MODELS
 # ============================================================================
 
@@ -90,6 +172,18 @@ class MethodologyInfo(BaseModel):
     classroom_applications: List[str] = Field(default=[], description="Practical applications")
     special_considerations: List[str] = Field(default=[], description="Special needs considerations")
     confidence: ConfidenceLevel = Field(..., description="Confidence level")
+    explainability_name: Optional[str] = Field(
+        None,
+        description="Teacher-friendly label in Italian (e.g., 'Raccomandazione diretta dal Knowledge Graph')"
+    )
+    explainability_phrase: Optional[str] = Field(
+        None,
+        description="Teacher-facing Italian sentence explaining WHY this methodology is relevant"
+    )
+    explainability: Optional[ExplainabilityDetail] = Field(
+        None,
+        description="Retrieval explainability: how this methodology was found, graph path, and scoring breakdown"
+    )
 
 
 class QueryInfo(BaseModel):
@@ -227,6 +321,17 @@ class ContextResponse(BaseModel):
     domain_prompt_context: Optional[DomainPromptContext] = Field(
         None,
         description="Domain-specific system prompt, response template, and formatted KG context for production integration"
+    )
+
+    explainability_summary: Optional[ExplainabilitySummary] = Field(
+        None,
+        description="Top-level retrieval explainability: embedding mode, phase timings, KG stats, and coverage summary"
+    )
+
+    context_warning: Optional[str] = Field(
+        None,
+        description="Teacher-facing Italian warning when the query is too vague or the KG lacks specific data. "
+                    "Null when the KG returned relevant results."
     )
     
     error: Optional[str] = Field(None, description="Error message if success=False")

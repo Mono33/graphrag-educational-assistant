@@ -12,7 +12,13 @@ from .models import (
     MetricsInfo,
     ConfidenceLevel,
     DomainType,
-    LanguageType
+    LanguageType,
+    ExplainabilityDetail,
+    ExplainabilitySummary,
+    GraphPathInfo,
+    ScoringBreakdown,
+    RetrievalPhaseInfo,
+    KnowledgeGraphStats,
 )
 
 __all__ = [
@@ -27,6 +33,12 @@ __all__ = [
     "MetricsInfo",
     "ConfidenceLevel",
     "DomainType",
-    "LanguageType"
+    "LanguageType",
+    "ExplainabilityDetail",
+    "ExplainabilitySummary",
+    "GraphPathInfo",
+    "ScoringBreakdown",
+    "RetrievalPhaseInfo",
+    "KnowledgeGraphStats",
 ]
 
