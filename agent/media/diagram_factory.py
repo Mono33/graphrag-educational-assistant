@@ -263,23 +263,23 @@ class DiagramFactory:
                 dalle_type = dt
                 break
         
-        image_url = await self.dalle.generate_diagram(
-            concept_name=concept,
+        generated = await self.dalle.generate_educational_diagram(
+            concept=concept,
+            description=description or "",
             diagram_type=dalle_type,
-            description=description
         )
-        
+
         cost = 0.04  # DALL-E 3 cost per image
         self._total_cost += cost
         self._generation_count["dalle"] += 1
-        
-        if image_url:
+
+        if generated:
             return DiagramResult(
                 success=True,
                 generator_type="dalle",
                 concept=concept,
                 diagram_type=diagram_type,
-                image_url=image_url,
+                image_url=generated.url,
                 cost=cost,
                 metadata={"generator": "DALL-E 3", "model": "dall-e-3"}
             )
