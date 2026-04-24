@@ -65,7 +65,7 @@ class SemanticEmbedder:
         """
         self.domain = domain
         self.cache_dir = cache_dir or app_config.embedding.embeddings_cache_dir
-        self.model = app_config.embedding.openai_embedding_model
+        self.model = app_config.embedding.embedding_model
         
         # OpenAI client (lazy loaded)
         self._openai_client = None
@@ -86,14 +86,13 @@ class SemanticEmbedder:
     
     @property
     def openai_client(self):
-        """Lazy-load OpenAI client"""
+        """Lazy-load OpenRouter-compatible client"""
         if self._openai_client is None:
             try:
-                from openai import OpenAI
-                self._openai_client = OpenAI(api_key=app_config.openai.api_key)
-                logger.info(f"[SemanticEmbedder] OpenAI client initialized (model: {self.model})")
+                self._openai_client = app_config.openai.get_client()
+                logger.info(f"[SemanticEmbedder] Client initialized via {app_config.openai.base_url} (model: {self.model})")
             except Exception as e:
-                logger.error(f"[SemanticEmbedder] Failed to initialize OpenAI client: {e}")
+                logger.error(f"[SemanticEmbedder] Failed to initialize client: {e}")
                 raise
         return self._openai_client
     
@@ -703,23 +702,34 @@ class HybridGraphRetriever:
                 logger.warning("[SemanticEmbedder] Falling back to node2vec mode")
                 self.embedding_mode = "node2vec"
     
-    async def retrieve(self, query: str, cypher_result: Dict) -> RetrievedContext:
-        """Main retrieval method combining graph and semantic search"""
+    async def retrieve(self, query: str, cypher_result: Dict, semantic_query: str = None) -> RetrievedContext:
+        """Main retrieval method combining graph and semantic search.
+
+        Args:
+            query: Original user query (any language) — used for graph traversal context.
+            cypher_result: Output from Text2Cypher pipeline.
+            semantic_query: English query to use for semantic/vector search.
+                If None, falls back to `query`. Always pass the translated English
+                query here when available — Italian text matches nothing in the
+                English node embedding space.
+        """
         start_time = time.time()
-        
+        _semantic_query = semantic_query or query
+
         try:
             # Phase 1: Graph traversal (precision) — includes neighbor expansion
             graph_start = time.time()
             graph_nodes = await self._graph_traversal(cypher_result, query)
             graph_time = time.time() - graph_start
             logger.info(f"[Perf] Graph traversal + expansion: {graph_time:.2f}s ({len(graph_nodes)} nodes)")
-            
+
             # Phase 2: Semantic search (breadth, optional)
+            # Uses translated English query so embeddings match English node names.
             semantic_nodes = []
             semantic_time = 0
             if self.use_vectors:
                 semantic_start = time.time()
-                semantic_nodes = await self._semantic_search(query, graph_nodes)
+                semantic_nodes = await self._semantic_search(_semantic_query, graph_nodes)
                 semantic_time = time.time() - semantic_start
                 logger.info(f"[Perf] Semantic search: {semantic_time:.2f}s ({len(semantic_nodes)} nodes)")
             
@@ -747,6 +757,7 @@ class HybridGraphRetriever:
                 'semantic_count': len(semantic_nodes),
                 'total_nodes': len(ranked_nodes),
                 'total_triples': len(triples),
+                'embedding_mode': getattr(self, 'embedding_mode', 'node2vec'),
                 'timings': {
                     'graph_traversal': graph_time,
                     'semantic_search': semantic_time,
@@ -887,37 +898,97 @@ class HybridGraphRetriever:
                     elif any(isinstance(dict(records[0]).get(k), str) for k in sample_keys):
                         logger.info(f"[CASE 4] Handling aliased scalar results with keys: {sample_keys}")
 
-                        # Parse RETURN clause to map column aliases → query aliases
+                        # Parse RETURN clause to map column aliases → query variable
                         return_map = self._parse_return_aliases(corrected_query)
+
+                        # Parse MATCH relationship patterns: (src_var)-[:REL_TYPE]->(tgt_var)
+                        import re as _re
+                        rel_patterns = _re.findall(
+                            r'\((\w+)(?::\w[\w]*)?(?:\s*\{[^}]*\})?\)\s*-\[(?:\w*):(\w+)\]->\s*\((\w+)(?::\w[\w]*)?(?:\s*\{[^}]*\})?\)',
+                            corrected_query, _re.IGNORECASE
+                        )
+                        # rel_patterns: list of (src_var, rel_type, tgt_var)
+                        logger.debug(f"[CASE 4] Relationship patterns found: {rel_patterns}")
+
+                        # Build inverse map: query_var → list of string-value column aliases
+                        var_to_name_cols = defaultdict(list)
+                        for col_alias, query_var in return_map.items():
+                            if col_alias in sample_keys:
+                                var_to_name_cols[query_var].append(col_alias)
+
+                        # Build per-column label map from alias_labels
+                        col_to_label = {
+                            col_alias: alias_labels.get(query_var, '')
+                            for col_alias, query_var in return_map.items()
+                        }
+
+                        # Build per-column labels() column map:
+                        # e.g. 'giftedness_strategy' → 'giftedness_strategy_type'
+                        # (when labels(s1) AS giftedness_strategy_type returns labels for s1)
+                        col_to_list_col = {}
+                        for col_alias, query_var in return_map.items():
+                            if col_alias not in sample_keys:
+                                continue
+                            for other_col, other_var in return_map.items():
+                                if other_var == query_var and other_col != col_alias:
+                                    col_to_list_col[col_alias] = other_col
+                                    break
 
                         for rec in records:
                             row = dict(rec)
 
-                            # Find label columns (list values from labels() calls)
-                            label_values = []
-                            for k, v in row.items():
-                                if isinstance(v, (list, tuple)):
-                                    label_values = [str(l) for l in v]
+                            # Determine which target columns carry rel_type from the MATCH patterns
+                            target_cols_rel = {}  # tgt_col → (rel_type, src_col)
+                            for src_var, rel_type, tgt_var in rel_patterns:
+                                for src_col in var_to_name_cols.get(src_var, []):
+                                    for tgt_col in var_to_name_cols.get(tgt_var, []):
+                                        target_cols_rel[tgt_col] = (rel_type, src_col)
 
-                            # Create a node for each string column
+                            # First pass: build all nodes with correct per-column labels
+                            created_nodes = {}
                             for col_name, val in row.items():
                                 if not isinstance(val, str) or not val:
                                     continue
 
-                                # Use return_map to find the query alias for this column
-                                query_alias = return_map.get(col_name, '')
-                                node_label = alias_labels.get(query_alias, '')
+                                node_label = col_to_label.get(col_name, '')
+
+                                # Use per-column labels() list if available
+                                list_col = col_to_list_col.get(col_name)
+                                list_labels = []
+                                if list_col and isinstance(row.get(list_col), (list, tuple)):
+                                    list_labels = [str(l) for l in row[list_col]]
 
                                 node = {
                                     "id": f"{node_label}:{val}" if node_label else val,
                                     "name": val,
                                     "category": "",
-                                    "labels": label_values if label_values else ([node_label] if node_label else []),
+                                    "labels": list_labels if list_labels else ([node_label] if node_label else []),
                                     "description": "",
                                     "rel_type": "",
                                     "source_node": {}
                                 }
-                                initial_nodes.append(self._normalize_node(node))
+                                created_nodes[col_name] = node
+
+                            # Second pass: inject rel_type + source_node on target nodes
+                            # so _extract_triples() can pick them up later
+                            for tgt_col, (rel_type, src_col) in target_cols_rel.items():
+                                if tgt_col in created_nodes and src_col in created_nodes:
+                                    src_node = created_nodes[src_col]
+                                    created_nodes[tgt_col]['rel_type'] = rel_type
+                                    created_nodes[tgt_col]['source_node'] = {
+                                        'name': src_node['name'],
+                                        'labels': src_node['labels'],
+                                    }
+
+                            for node in created_nodes.values():
+                                # Only add target nodes (those with rel_type injected by
+                                # the second pass). Source/challenge nodes are not strategy
+                                # recommendations — their data is preserved in
+                                # target.source_node for triple extraction.
+                                # Fallback: if no rel_patterns were found, we have no
+                                # targeting info → add all nodes to avoid empty results.
+                                if not rel_patterns or node.get('rel_type'):
+                                    initial_nodes.append(self._normalize_node(node))
 
                     # CASE 5: Simple node objects without explicit labels
                     else:
@@ -962,7 +1033,8 @@ class HybridGraphRetriever:
         """
         import re
         result = {}
-        return_match = re.search(r'RETURN\s+(.*?)(?:\s+LIMIT|\s+ORDER|\s*$)', cypher_query, re.IGNORECASE)
+        # re.DOTALL so .*? crosses newlines in multi-line RETURN clauses
+        return_match = re.search(r'RETURN\s+(.*?)(?:\s+LIMIT|\s+ORDER|\s*$)', cypher_query, re.IGNORECASE | re.DOTALL)
         if not return_match:
             return result
         return_clause = return_match.group(1)
@@ -1042,11 +1114,23 @@ class HybridGraphRetriever:
         seen_node_ids = set()
         
         for node in nodes:
-            # Add the original node (hop_distance=0: direct query match)
             node_id = node.get('id') or node.get('name')
             if node_id and node_id not in seen_node_ids:
-                node['hop_distance'] = 0
-                node['retrieval_stage'] = 'direct_query'
+                # If CASE 4 parsing already attached a real relationship (rel_type +
+                # source_node), this node was the TARGET of a Cypher relationship —
+                # treat it as a 1-hop structural match so graph_path is populated in
+                # explainability.  Pure column matches (no rel_type) stay at hop 0.
+                if node.get('rel_type') and node.get('source_node'):
+                    node['hop_distance'] = 1
+                    node['retrieval_stage'] = 'structural_neighbor'
+                    # Ensure triple direction fields are set for _extract_triples
+                    if 'triple_source_name' not in node:
+                        src_name = node.get('source_node', {}).get('name', '')
+                        node['triple_source_name'] = src_name
+                        node['triple_target_name'] = node.get('name', '')
+                else:
+                    node['hop_distance'] = 0
+                    node['retrieval_stage'] = 'direct_query'
                 expanded_nodes.append(self._normalize_node(node))
                 initial_nodes.append(node)  # Track for filtering
                 seen_node_ids.add(node_id)
@@ -1104,11 +1188,13 @@ class HybridGraphRetriever:
 
             main_label = node_labels[0]
 
-            # Prefer putting the label in MATCH (can't parameterize labels)
+            # startNode(r).name lets us detect the actual Neo4j arrow direction,
+            # since the traversal is undirected (-[r]-) and would otherwise lose it.
             neighbor_query = f"""
             MATCH (source:{main_label} {{name: $node_name}})-[r]-(n)
             WHERE any(l IN labels(n) WHERE l IN $relevant_labels)
-            RETURN DISTINCT n, type(r) AS rel_type, source AS source_node
+            RETURN DISTINCT n, type(r) AS rel_type, source AS source_node,
+                   startNode(r).name AS rel_start_name
             LIMIT $limit
             """
 
@@ -1124,18 +1210,35 @@ class HybridGraphRetriever:
                 # n and source_node are Neo4j Node objects — capture labels explicitly
                 n_node = record['n']
                 s_node = record['source_node']
+                rel_start_name = record['rel_start_name']  # actual Neo4j arrow start
 
                 neighbor = dict(n_node)
+                neighbor_name = neighbor.get('name', '')
                 neighbor['labels'] = list(getattr(n_node, 'labels', []))
                 neighbor['rel_type'] = record['rel_type']
 
                 src = dict(s_node)
                 src['labels'] = list(getattr(s_node, 'labels', []))
+                # source_node = expansion start (kept for graph_path display in explainability)
                 neighbor['source_node'] = src
+
+                # Determine actual Neo4j relationship direction for correct triple building.
+                # rel_start_name is the name of the node that is the real "from" of the arrow.
+                # If it matches the expansion start (node_name), the arrow goes forward:
+                #   (expansion_node)-[:REL]->(neighbor)  →  triple: (expansion_node, REL, neighbor)
+                # If it matches the neighbor, the arrow goes backward (traversal was against arrow):
+                #   (neighbor)-[:REL]->(expansion_node)  →  triple: (neighbor, REL, expansion_node)
+                if rel_start_name == node_name:
+                    neighbor['triple_source_name'] = node_name
+                    neighbor['triple_target_name'] = neighbor_name
+                else:
+                    # Arrow goes from neighbor to expansion node — swap for correct direction
+                    neighbor['triple_source_name'] = neighbor_name
+                    neighbor['triple_target_name'] = node_name
 
                 # give a stable id (helps dedup + ranking)
                 label_for_id = neighbor['labels'][0] if neighbor.get('labels') else ''
-                neighbor['id'] = f"{label_for_id}:{neighbor.get('name','')}"
+                neighbor['id'] = f"{label_for_id}:{neighbor_name}"
                 neighbors.append(neighbor)
 
             return neighbors
@@ -1201,12 +1304,17 @@ class HybridGraphRetriever:
             'source_node': node.get('source_node', {})
         }
         
-        # Preserve tracking metadata (backward compatible - only add if present)
-        for key in ('hop_distance', 'retrieval_stage', 'source', 'semantic_score',
-                     'vector_similarity', 'rank_score', 'domain_boost', 'base_score',
-                     'query_concept'):
-            if key in node:
-                normalized[key] = node[key]
+        # Preserve hop tracking metadata (backward compatible - only add if present)
+        if 'hop_distance' in node:
+            normalized['hop_distance'] = node['hop_distance']
+        if 'retrieval_stage' in node:
+            normalized['retrieval_stage'] = node['retrieval_stage']
+        if 'source' in node:
+            normalized['source'] = node['source']
+        if 'semantic_score' in node:
+            normalized['semantic_score'] = node['semantic_score']
+        if 'vector_similarity' in node:
+            normalized['vector_similarity'] = node['vector_similarity']
         
         return normalized
     
@@ -2033,10 +2141,8 @@ class HybridGraphRetriever:
         return ranked_nodes, triples
     
     def _calculate_rank_score(self, node: Dict, source: str = 'graph') -> float:
-        """Calculate ranking score for a node with Node2Vec enhancements.
-        
-        Also stores scoring components on the node dict for explainability.
-        """
+        """Calculate ranking score for a node with Node2Vec enhancements"""
+        # Base score by source
         if source == 'graph':
             base_score = 1.0
         elif source == 'structural':
@@ -2046,33 +2152,50 @@ class HybridGraphRetriever:
         else:  # semantic
             base_score = 0.5
         
+        # Apply domain boosts
         labels = node.get('labels', [])
         domain_boost = max([self.domain_boosts.get(l, 1.0) for l in labels], default=1.0)
         
+        # Apply semantic score if available
         semantic_score = node.get('semantic_score', 1.0)
+        
+        # Apply vector similarity boost if available
         vector_boost = node.get('vector_similarity', 1.0)
         
+        # Calculate final score
         final_score = base_score * domain_boost * semantic_score * vector_boost
-        
-        node['domain_boost'] = domain_boost
-        node['base_score'] = base_score
         
         return final_score
     
     def _extract_triples(self, nodes: List[Dict]) -> List[Tuple[str, str, str]]:
-        """Extract relationship triples from nodes"""
+        """Extract relationship triples from nodes.
+
+        Uses triple_source_name / triple_target_name when present — these reflect the
+        actual Neo4j relationship direction as detected by startNode(r) in the neighbor
+        query. Falls back to the old expansion-direction convention for nodes that were
+        added by other code paths (e.g. CASE 4 Cypher result parsing).
+        """
         triples = []
-        
+
         for node in nodes:
-            # Extract triples from neighbor relationships
-            if 'rel_type' in node and 'source_node' in node:
+            rel_type = node.get('rel_type', '')
+            if not rel_type:
+                continue
+
+            if 'triple_source_name' in node and 'triple_target_name' in node:
+                # Direction-corrected path: set by _get_educational_neighbors
+                source_name = node['triple_source_name']
+                target_name = node['triple_target_name']
+            elif 'source_node' in node:
+                # Fallback: expansion-direction convention (CASE 4 and other paths)
                 source_name = node['source_node'].get('name', '')
-                rel_type = node['rel_type']
                 target_name = node.get('name', '')
-                
-                if source_name and rel_type and target_name:
-                    triples.append((source_name, rel_type, target_name))
-        
+            else:
+                continue
+
+            if source_name and target_name:
+                triples.append((source_name, rel_type, target_name))
+
         return triples
     
     def _build_facets(self, nodes: List[Dict], triples: List[Tuple[str, str, str]]) -> Dict[str, Dict[str, int]]:
@@ -2149,9 +2272,13 @@ class EnhancedMultilingualText2Cypher:
         
         # Step 1: Text2Cypher (now with domain support)
         cypher_result = self.text2cypher.process_query(query, domain=domain, execute=True)
-        
+
         # Step 2: Hybrid Retrieval (new functionality)
-        retrieval_result = await self.graph_retriever.retrieve(query, cypher_result)
+        # Use the translated English query for semantic search when available.
+        # The Italian query produces zero semantic matches against English node names.
+        # enhanced_query is set by multilingual_text2cypher when translation occurred.
+        translated_query = cypher_result.get('enhanced_query') or query
+        retrieval_result = await self.graph_retriever.retrieve(query, cypher_result, semantic_query=translated_query)
         
         # Step 3: Build Educational Context (uses real retrieval, domain-aware)
         try:
@@ -2325,7 +2452,7 @@ def precompute_embeddings(domain: str = "neuro"):
     from config import config as app_config
     
     print(f"🔄 Pre-computing OpenAI embeddings for domain: {domain}")
-    print(f"📦 Model: {app_config.embedding.openai_embedding_model}")
+    print(f"📦 Model: {app_config.embedding.embedding_model}")
     print(f"💾 Cache dir: {app_config.embedding.embeddings_cache_dir}")
     
     # Initialize Neo4j driver

@@ -15,7 +15,22 @@ Domain extensions provide:
 3. Lesson structure templates from domain best practices
 """
 
+import logging
 from typing import Optional, Dict
+
+# ---------------------------------------------------------------------------
+# Dynamic domain registry (Option 2, Step 1 — see docs/Agent_Domain_Prompt_Integration.md)
+# If the domains/ package is available, Writer agents load the rich
+# get_system_prompt() from there instead of the hardcoded extensions below.
+# Critic agents still use the static extensions until Option 3 lands.
+# ---------------------------------------------------------------------------
+try:
+    from domains import get_domain_config
+    _DOMAIN_REGISTRY_AVAILABLE = True
+except ImportError:
+    _DOMAIN_REGISTRY_AVAILABLE = False
+
+logger = logging.getLogger(__name__)
 
 
 # =============================================================================
@@ -198,6 +213,13 @@ def get_domain_extension(domain: str, agent: str) -> str:
     2. User has selected a specific domain (neuro, udl)
     3. The agent supports extensions (writer, critic)
     
+    For **writer** agents the function dynamically loads the rich
+    ``get_system_prompt()`` from the ``domains/`` registry when available
+    (Option 2 — see ``docs/Agent_Domain_Prompt_Integration.md``).
+    For **critic** agents the function returns the static hardcoded
+    extensions until Option 3 introduces a dedicated critic prompt
+    method on ``BaseDomainConfig``.
+    
     Args:
         domain: Knowledge domain ("neuro", "udl", "all")
         agent: Agent type ("writer" or "critic")
@@ -212,10 +234,25 @@ def get_domain_extension(domain: str, agent: str) -> str:
         >>> ext = get_domain_extension("neuro", "writer")
         >>> full_prompt = base_prompt + ext
     """
-    # No extension for multi-domain queries
     if domain == "all" or not domain:
         return ""
-    
+
+    if _DOMAIN_REGISTRY_AVAILABLE and agent.lower() == "writer":
+        try:
+            cfg = get_domain_config(domain)
+            if cfg is not None:
+                return (
+                    f"\n\n## Domain Expert Knowledge ({domain.upper()})\n\n"
+                    f"{cfg.get_system_prompt()}"
+                )
+        except Exception as e:
+            logger.warning(
+                "Dynamic domain load failed for %s/%s: %s — falling back to static",
+                domain, agent, e,
+            )
+
+    # Fallback: static extensions (always used for critic, and for writer
+    # if the dynamic path above is unavailable or fails)
     domain_exts = DOMAIN_EXTENSIONS.get(domain.lower(), {})
     return domain_exts.get(agent.lower(), "")
 

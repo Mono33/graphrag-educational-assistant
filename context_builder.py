@@ -34,7 +34,6 @@ class MethodologyRecommendation:
     classroom_applications: List[str]
     special_considerations: List[str]
     confidence: ConfidenceLevel
-    raw_node_metadata: Optional[Dict] = None
 
 @dataclass
 class StudentProfile:
@@ -241,24 +240,72 @@ class MethodologyRanker:
         
         return deduped
     
+    # Relationship-type names that leak through as nodes (they are edge labels, not content)
+    _RELATIONSHIP_NAMES = frozenset({'SUGGESTS', 'NO_SUGGESTS', 'MITIGATED_BY', 'RELATED_TO', 'PART_OF'})
+
+    # Negative-example node names — real KG nodes that model what NOT to do.
+    # Sending these to the LLM as "recommendations" produces confusing output.
+    _NEGATIVE_APPROACH_NAMES = frozenset({
+        'Long Frontal Lesson', 'Long frontal reading lessons',
+        'Passive Learning', 'Passive learning',
+    })
+
+    # Challenge/characteristic labels — describe student profiles, not teaching strategies.
+    # A node whose ALL labels fall in this set is a symptom/profile node, not a methodology.
+    # Mixed-label nodes (e.g. ['Adhd', 'CognitiveStrategy']) still pass through.
+    _CHALLENGE_LABELS = frozenset({
+        'Adhd', 'AutismSpectrum', 'Dyscalculia', 'Dyslexia',
+        'Gifted', 'ForeignStudents', 'SensoryDisabilities', 'PhysicalDisabilities',
+    })
+
     def _is_methodology(self, node: Dict) -> bool:
         """Check if node should be included in recommendations.
-        
-        Phase 1B (Option C): Accept all nodes that survived the retriever's
-        P1+ adaptive threshold filter. The retrieval pipeline already validates
-        relevance via semantic similarity, graph distance, and Node2Vec scores.
-        
-        Only rejects nodes with known system/infrastructure labels that are
-        never educational content (tiny blacklist instead of large whitelist).
-        This is fully dynamic — any new label from future data ingestion is
-        automatically accepted without manual maintenance.
+
+        Rejects five classes of noise that survive the P1+ retrieval filter:
+        1. Neo4j system / infrastructure labels (_GraphConfig, Node, Entity)
+        2. Relationship-type names accidentally stored as nodes (SUGGESTS, NO_SUGGESTS)
+        3. Known negative-example nodes (Long Frontal Lesson, Passive Learning)
+        4. Sentence-nodes — full sentences stored as node names (heuristic: ends
+           with '.' and is longer than 60 chars). These are KG description
+           fragments, not actionable methodology names.
+        5. Pure challenge/characteristic nodes (Adhd, Dyslexia, etc.) — these
+           describe student profiles. Their data is preserved in student_profile
+           and triples; they should not appear as methodology recommendations.
+
+        Everything else is accepted — the retrieval pipeline already validated
+        relevance via Node2Vec and semantic similarity.
         """
+        name = node.get('name', '')
+        if not name:
+            return False
+
+        # Rule 2: relationship-type names
+        if name in self._RELATIONSHIP_NAMES:
+            return False
+
+        # Rule 3: negative-example nodes
+        if name in self._NEGATIVE_APPROACH_NAMES:
+            return False
+
+        # Rule 4: sentence-nodes (heuristic)
+        if name.endswith('.') and len(name) > 60:
+            return False
+
         labels = node.get('labels', [])
         if not labels:
-            return bool(node.get('name'))
-        
+            return True
+
+        # Rule 1: system / infrastructure labels
         system_labels = {'_GraphConfig', 'Node', 'Entity', '__Entity__'}
-        return not all(label in system_labels for label in labels)
+        if all(label in system_labels for label in labels):
+            return False
+
+        # Rule 5: pure challenge/characteristic nodes — all labels are challenge-only.
+        # Node with mixed labels like ['Adhd', 'CognitiveStrategy'] still passes.
+        if all(label in self._CHALLENGE_LABELS for label in labels):
+            return False
+
+        return True
     
     def _create_recommendation(self, node: Dict, query_metadata: Dict) -> Optional[MethodologyRecommendation]:
         """Create a methodology recommendation from a node.
@@ -304,24 +351,6 @@ class MethodologyRanker:
         
         confidence = self._calculate_confidence(relevance_score, evidence_type, kb_info)
         
-        raw_meta = {
-            'hop_distance': node.get('hop_distance', 0),
-            'retrieval_stage': node.get('retrieval_stage', 'unknown'),
-            'source': node.get('source', 'graph'),
-            'rel_type': node.get('rel_type', ''),
-            'source_node_name': node.get('source_node', {}).get('name', '') if isinstance(node.get('source_node'), dict) else '',
-            'source_node_label': '',
-            'labels': node.get('labels', []),
-            'semantic_score': node.get('semantic_score'),
-            'vector_similarity': node.get('vector_similarity'),
-            'rank_score': node.get('rank_score', 0.0),
-            'domain_boost': node.get('domain_boost', 1.0),
-        }
-        source_node = node.get('source_node', {})
-        if isinstance(source_node, dict):
-            src_labels = source_node.get('labels', [])
-            raw_meta['source_node_label'] = src_labels[0] if src_labels else ''
-
         return MethodologyRecommendation(
             name=name,
             category=category,
@@ -330,8 +359,7 @@ class MethodologyRanker:
             implementation_guidance=implementation,
             classroom_applications=applications,
             special_considerations=special_considerations,
-            confidence=confidence,
-            raw_node_metadata=raw_meta
+            confidence=confidence
         )
     
     def _resolve_category_from_labels(self, node: Dict) -> str:
@@ -918,7 +946,8 @@ class EducationalContextBuilder:
         educational_context = metadata.get('educational_context', 'general')
         if any(term in query_lower for term in ['special', 'disabilità', 'difficoltà', 'bisogni']):
             educational_context = 'special_needs'
-        elif any(term in query_lower for term in ['verific', 'valut', 'test', 'esam']):
+        elif any(re.search(r'\b' + re.escape(term), query_lower) for term in
+                 ['verific', 'valut', 'test', 'esam', 'quiz', 'interroga']):
             educational_context = 'assessment'
         
         return StudentProfile(

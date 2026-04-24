@@ -255,7 +255,6 @@ class MermaidGenerator:
             openai_api_key: Optional OpenAI API key. If not provided,
                           will use OPENAI_API_KEY environment variable.
         """
-        self.api_key = openai_api_key or os.getenv('OPENAI_API_KEY')
         self._client: Optional[AsyncOpenAI] = None
         self._session: Optional[aiohttp.ClientSession] = None
         
@@ -265,9 +264,10 @@ class MermaidGenerator:
         logger.info("[MermaidGenerator] Initialized (FREE diagram generation)")
     
     async def _get_client(self) -> AsyncOpenAI:
-        """Get or create OpenAI client"""
+        """Get or create OpenRouter-compatible client"""
         if self._client is None:
-            self._client = AsyncOpenAI(api_key=self.api_key)
+            from config import config as app_config
+            self._client = app_config.openai.get_async_client()
         return self._client
     
     async def _get_session(self) -> aiohttp.ClientSession:

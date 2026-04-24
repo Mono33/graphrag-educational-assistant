@@ -10,6 +10,7 @@ from typing import Optional, Dict, Any
 from dataclasses import dataclass
 
 from openai import AsyncOpenAI
+from config import config as app_config, extract_response_content
 
 from agent.prompts.critic_prompt import (
     get_critic_prompts,
@@ -70,7 +71,7 @@ class CriticAgent:
     def _get_client(self) -> AsyncOpenAI:
         """Lazy initialization of OpenAI client"""
         if self._client is None:
-            self._client = AsyncOpenAI()
+            self._client = app_config.openai.get_async_client()
         return self._client
     
     async def critique(
@@ -159,17 +160,20 @@ class CriticAgent:
             )
         
         try:
+            completion_kwargs = app_config.openai.build_completion_kwargs(
+                temperature=0.3,
+                max_tokens=2000,
+                json_mode=True,
+            )
             response = await client.chat.completions.create(
-                model=self.model,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                response_format={"type": "json_object"},
-                temperature=0.3  # Consistent evaluation
+                **completion_kwargs
             )
-            
-            content = response.choices[0].message.content
+
+            content = extract_response_content(response, logger)
             critique_data = json.loads(content)
             
             result = CritiqueResult(

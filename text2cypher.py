@@ -111,19 +111,35 @@ class Neo4jSchemaExtractor:
 
 class Text2CypherConverter:
     """Main class for converting natural language to Cypher queries"""
-    
-    def __init__(self, neo4j_uri: str, neo4j_user: str, neo4j_password: str, openai_api_key: str, model: str = "gpt-3.5-turbo-16k"):
+
+    # Class-level schema + prompt cache, keyed by domain string.
+    # Populated on first request per domain, reused for the process lifetime.
+    # An API restart clears the cache automatically (safe — schema only changes on data ingestion).
+    _schema_cache: Dict[str, SchemaInfo] = {}
+    _prompt_cache: Dict = {}
+
+    def __init__(self, neo4j_uri: str, neo4j_user: str, neo4j_password: str, openai_api_key: str, model: str = "openai/gpt-4o", base_url: str = "https://openrouter.ai/api/v1"):
         self.schema_extractor = Neo4jSchemaExtractor(neo4j_uri, neo4j_user, neo4j_password)
-        # Don't extract schema in __init__ anymore - do it per-query with domain filter
-        self.schema_info = None  # Will be set per-query
-        
-        # Initialize OpenAI LLM (using Chat API for larger token limits)
-        self.llm = ChatOpenAI(
+        self.schema_info = None  # Set per-query (from cache or fresh extraction)
+
+        # Build kwargs compatible with reasoning and standard models
+        from config import config as _cfg
+        _is_o_series = any(x in model.lower() for x in ("o1", "o3", "o4"))
+        _is_thinking = _cfg.openai.is_reasoning_model()
+        _llm_kwargs: dict = dict(
             openai_api_key=openai_api_key,
-            model=model,  # Uses model from config (e.g., gpt-4o from .env)
-            temperature=0.1,  # Low temperature for deterministic Cypher generation
-            max_tokens=500  # Sufficient for Cypher queries
+            openai_api_base=base_url,
+            model=model,
         )
+        if _is_o_series:
+            _llm_kwargs["max_completion_tokens"] = 500
+        else:
+            _llm_kwargs["temperature"] = 0.1
+            _llm_kwargs["max_tokens"] = 500
+        if _is_thinking:
+            _llm_kwargs["model_kwargs"] = {"extra_body": {"include_reasoning": True}}
+
+        self.llm = ChatOpenAI(**_llm_kwargs)
         
         self.output_parser = StrOutputParser()
         # Prompt template and chain will be created per-query with domain-specific schema
@@ -465,12 +481,21 @@ Cypher: MATCH (i:IntrinsicMotivation) RETURN i, labels(i) as node_labels LIMIT 1
             domain: Domain filter ('udl', 'neuro', 'all', or None)
         """
         try:
-            # Extract domain-specific schema
-            self.schema_info = self.schema_extractor.extract_schema(domain=domain)
-            
-            # Create domain-specific prompt template
-            prompt_template = self._create_prompt_template(domain=domain)
-            
+            # Schema + prompt caching: build once per domain, reuse on every subsequent call.
+            # First request per domain takes the usual time; all others skip the 60+ Neo4j queries.
+            cache_key = domain or "all"
+            if cache_key not in Text2CypherConverter._schema_cache:
+                logger.info(f"[Text2Cypher] Schema cache MISS for domain='{cache_key}' — extracting (one-time cost)")
+                Text2CypherConverter._schema_cache[cache_key] = self.schema_extractor.extract_schema(domain=domain)
+                self.schema_info = Text2CypherConverter._schema_cache[cache_key]
+                Text2CypherConverter._prompt_cache[cache_key] = self._create_prompt_template(domain=domain)
+                logger.info(f"[Text2Cypher] Schema cache BUILT for domain='{cache_key}'")
+            else:
+                logger.debug(f"[Text2Cypher] Schema cache HIT for domain='{cache_key}'")
+                self.schema_info = Text2CypherConverter._schema_cache[cache_key]
+
+            prompt_template = Text2CypherConverter._prompt_cache[cache_key]
+
             # Create chain for this query
             chain = prompt_template | self.llm | self.output_parser
             
@@ -1273,8 +1298,8 @@ Cypher: MATCH (i:IntrinsicMotivation) RETURN i, labels(i) as node_labels LIMIT 1
 class Text2CypherPipeline:
     """Complete pipeline for text2cypher conversion and execution"""
     
-    def __init__(self, neo4j_uri: str, neo4j_user: str, neo4j_password: str, openai_api_key: str, model: str = "gpt-3.5-turbo-16k"):
-        self.converter = Text2CypherConverter(neo4j_uri, neo4j_user, neo4j_password, openai_api_key, model)
+    def __init__(self, neo4j_uri: str, neo4j_user: str, neo4j_password: str, openai_api_key: str, model: str = "openai/gpt-4o", base_url: str = "https://openrouter.ai/api/v1"):
+        self.converter = Text2CypherConverter(neo4j_uri, neo4j_user, neo4j_password, openai_api_key, model, base_url)
     
     def process_question(self, question: str, domain: str = None, execute: bool = True) -> Dict:
         """Process a natural language question end-to-end with smart fallback

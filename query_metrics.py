@@ -155,17 +155,18 @@ class MetricsCalculator:
         logger.info(f"MetricsCalculator initialized (mode={self.mode}, domain={self.domain})")
     
     def calculate_all(
-        self, 
-        query: str, 
+        self,
+        query: str,
         retrieved_nodes: List[Dict],
         llm_response: str,
         cypher_query: str,
         total_relationships: int = 0,
-        domain: str = None
+        domain: str = None,
+        translated_query: str = None,
     ) -> QueryMetrics:
         """
         Calculate all metrics at once with automatic translation support.
-        
+
         Args:
             query: Natural language query (Italian or English)
             retrieved_nodes: List of nodes from graph retrieval
@@ -173,21 +174,28 @@ class MetricsCalculator:
             cypher_query: Generated Cypher query
             total_relationships: Number of relationships retrieved
             domain: Domain filter ('udl', 'neuro', 'all') - overrides instance default
-            
+            translated_query: Pre-translated English query from the main pipeline.
+                              When provided, skips the internal translation call
+                              (avoids a redundant LLM API round-trip).
+
         Returns:
             QueryMetrics object with all calculated metrics
         """
         # Use domain from parameter or instance default
         query_domain = domain or self.domain
-        
+
         logger.info("=" * 80)
         logger.info(f"📊 QUERY METRICS CALCULATION START")
         logger.info(f"   Original Query: {query[:100]}...")
         logger.info(f"   Domain: {query_domain}")
         logger.info(f"   Evaluation Mode: {self.mode}")
-        
-        # Automatically translate Italian queries to English for accurate metrics
-        query_for_metrics = self._prepare_query_for_metrics(query, query_domain)
+
+        # Use pre-translated query when available — avoids a redundant API call
+        if translated_query:
+            query_for_metrics = translated_query
+            logger.info(f"   ✅ Using pre-translated query (skipping re-translation)")
+        else:
+            query_for_metrics = self._prepare_query_for_metrics(query, query_domain)
         
         # Determine if we should use research-grade evaluation
         use_research = self._should_use_research_eval()

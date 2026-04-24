@@ -234,25 +234,3 @@ class GraphRAGTool:
                 }
             }
         }
-
-
-class CurriculumTool:
-    """
-    Placeholder for curriculum standards lookup tool.
-    Will be implemented in Phase 3 to fetch curriculum standards,
-    learning objectives, and grade-level requirements.
-    """
-    
-    name = "curriculum_lookup"
-    description = "Look up curriculum standards and learning objectives (Coming in Phase 3)"
-    
-    def __init__(self):
-        logger.warning("[CurriculumTool] This tool is a placeholder for Phase 3")
-    
-    async def lookup(self, grade_level: str, subject: str) -> Dict[str, Any]:
-        """Placeholder - will be implemented in Phase 3"""
-        return {
-            "status": "not_implemented",
-            "message": "Curriculum lookup will be available in Phase 3"
-        }
-

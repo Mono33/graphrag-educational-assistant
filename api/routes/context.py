@@ -20,12 +20,16 @@ from api.schemas import (
     RawNode,
     MetricsInfo,
     ConfidenceLevel,
-    ExplainabilityDetail,
-    ExplainabilitySummary,
-    GraphPathInfo,
+    # Explainability
+    GraphPath,
     ScoringBreakdown,
-    RetrievalPhaseInfo,
-    KnowledgeGraphStats,
+    MethodologyExplainability,
+    RetrievalPhase,
+    KGStats,
+    ExplainabilitySummary,
+    ConceptGraphNode,
+    ConceptGraphEdge,
+    ConceptGraph,
 )
 
 # Import GraphRAG components - use the enhanced wrapper that handles everything
@@ -52,6 +56,311 @@ def _map_confidence(cb_confidence: CBConfidenceLevel) -> ConfidenceLevel:
     return mapping.get(cb_confidence, ConfidenceLevel.MEDIUM)
 
 
+# ---------------------------------------------------------------------------
+# Explainability helpers
+# ---------------------------------------------------------------------------
+
+# Italian translations for confidence levels
+_CONFIDENCE_IT = {
+    "very_high": "molto alta",
+    "high": "alta",
+    "medium": "media",
+    "low": "bassa",
+    "very_low": "molto bassa",
+}
+
+# Italian translations for common relationship types
+_REL_TYPE_IT = {
+    "SUGGESTS": "suggerisce",
+    "MITIGATED_BY": "mitiga",
+    "RELATED_TO": "è correlato a",
+    "SUPPORTS": "supporta",
+    "INHIBITS": "inibisce",
+    "ENABLES": "abilita",
+    "REQUIRES": "richiede",
+    "ENHANCES": "potenzia",
+    "NO_SUGGESTS": "sconsiglia",
+    "CAUSES": "causa",
+    "REDUCES": "riduce",
+    "IMPROVES": "migliora",
+    "ASSOCIATED_WITH": "è associato a",
+}
+
+# Base scores by retrieval source
+_BASE_SCORES = {"graph": 1.0, "structural": 0.8, "vector": 0.6, "semantic": 0.5}
+
+
+def _build_methodology_explainability(
+    node: dict, confidence_str: str
+) -> tuple[str, str, MethodologyExplainability]:
+    """
+    Build per-methodology explainability from a raw graph node dict.
+
+    Returns (explainability_name, explainability_phrase, MethodologyExplainability).
+
+    explainability_name  — short Italian UI label (e.g. badge title)
+    explainability_phrase — full Italian sentence ready to render in the UI as a tooltip or card text
+
+    The phrase is generated dynamically from the node's provenance data:
+      hop_distance == 0  → direct Cypher query match
+      hop_distance == 1  → structural graph neighbor (shows graph path)
+      hop_distance >= 2  → semantic / vector similarity match
+    """
+    hop = node.get("hop_distance", 0)
+    retrieval_stage = node.get("retrieval_stage", "direct_query")
+    source_node_data = node.get("source_node") or {}
+    rel_type = node.get("rel_type") or ""
+    rank_score = float(node.get("rank_score", 1.0))
+    semantic_score = node.get("semantic_score")
+    vector_similarity = node.get("vector_similarity")
+    source = node.get("source", "graph")
+    node_name = node.get("name", "")
+    node_labels: list = node.get("labels") or []
+
+    confidence_it = _CONFIDENCE_IT.get(confidence_str, "media")
+
+    # Build graph path (only for structural neighbors with a real source node)
+    graph_path: GraphPath | None = None
+    if hop >= 1 and source_node_data and rel_type:
+        src_labels = source_node_data.get("labels") or []
+        graph_path = GraphPath(
+            source_node=source_node_data.get("name", ""),
+            source_label=src_labels[0] if src_labels else "",
+            relationship=rel_type,
+            target_node=node_name,
+            target_label=node_labels[0] if node_labels else "",
+        )
+
+    # base_score is fixed at 0.5 per the reference JSON spec
+    # Approximate domain_boost: rank_score / (semantic * vector) with safe division
+    denom = (semantic_score if semantic_score else 1.0) * (vector_similarity if vector_similarity else 1.0)
+    domain_boost = round(rank_score / denom, 2) if denom else 1.0
+
+    scoring = ScoringBreakdown(
+        base_score=0.5,
+        semantic_score=round(semantic_score, 3) if semantic_score is not None else None,
+        vector_similarity=round(vector_similarity, 3) if vector_similarity is not None else None,
+        domain_boost=domain_boost,
+        final_rank_score=round(rank_score, 3),
+    )
+
+    # Generate dynamic Italian name + phrase based on hop distance
+    if hop == 0:
+        name = "Raccomandazione diretta dal Knowledge Graph"
+        phrase = (
+            f"Strategia individuata direttamente dalla query nel Knowledge Graph. "
+            f"Confidenza: {confidence_it}."
+        )
+        reasoning = f"Direct match from Cypher query (0 hops)"
+
+    elif hop == 1 and graph_path:
+        rel_it = _REL_TYPE_IT.get(rel_type, rel_type.lower().replace("_", " "))
+        name = "Strategia collegata nel Knowledge Graph"
+        phrase = (
+            f"Questa strategia è collegata a «{graph_path.source_node}» "
+            f"che {rel_it} «{node_name}» nel Knowledge Graph. "
+            f"Confidenza: {confidence_it}."
+        )
+        reasoning = (
+            f"Found as structural graph neighbor: "
+            f"{graph_path.source_node} -[{rel_type}]-> {node_name} (1 hop)"
+        )
+
+    elif retrieval_stage == "vector_neighbor":
+        score_pct = f"{round((vector_similarity or 0) * 100)}%" if vector_similarity else ""
+        name = "Strategia identificata per similarità vettoriale"
+        phrase = (
+            f"Strategia individuata per similarità strutturale nel grafo"
+            + (f" (similarità: {score_pct})" if score_pct else "")
+            + f". Confidenza: {confidence_it}."
+        )
+        reasoning = f"Found via Node2Vec vector similarity ({score_pct})"
+
+    else:
+        # semantic_search or keyword_semantic
+        score_pct = f"{round((semantic_score or 0) * 100)}%" if semantic_score else ""
+        name = "Strategia identificata per similarità semantica"
+        phrase = (
+            f"Strategia individuata per similarità semantica con i concetti del Knowledge Graph"
+            + (f" (similarità: {score_pct})" if score_pct else "")
+            + f". Confidenza: {confidence_it}."
+        )
+        reasoning = f"Found via semantic embedding similarity ({score_pct})"
+
+    methodology_exp = MethodologyExplainability(
+        retrieval_method=retrieval_stage,
+        hop_distance=hop,
+        graph_path=graph_path,
+        scoring_breakdown=scoring,
+        reasoning=reasoning,
+    )
+
+    return name, phrase, methodology_exp
+
+
+def _build_explainability_summary(retrieval_result, nodes: list, n_methods: int = 0) -> ExplainabilitySummary:
+    """
+    Build the response-level explainability summary from retrieval metadata.
+
+    total_nodes_retrieved and fusion_ranking.nodes_found use the pre-cap total
+    (graph_count + semantic_count from metadata) to match the reference JSON format.
+    direct_hits / structural_neighbors / semantic_matches use the post-cap nodes list
+    since those reflect the actual provenance of visible methodologies.
+    graph_coverage is in English per the approved reference format.
+    label_distribution drives the concept tag chips in the frontend.
+    """
+    metadata = retrieval_result.metadata if hasattr(retrieval_result, "metadata") else {}
+    timings = metadata.get("timings") or {}
+    facets = (retrieval_result.facets if hasattr(retrieval_result, "facets") else None) or {}
+    label_counts: dict = facets.get("label_counts") or {}
+
+    # Provenance counts from the post-cap nodes (actual visible methodologies)
+    direct_hits = sum(1 for n in nodes if n.get("hop_distance", 0) == 0)
+    structural = sum(1 for n in nodes if n.get("hop_distance", 0) == 1)
+    semantic = sum(1 for n in nodes if (n.get("retrieval_stage") or "") in ("semantic_search", "keyword_semantic", "vector_neighbor"))
+
+    # Pre-cap totals from metadata (how many the KG found before capping)
+    graph_count = metadata.get("graph_count", direct_hits + structural)
+    semantic_count = metadata.get("semantic_count", semantic)
+    pre_cap_total = graph_count + semantic_count
+    embedding_mode = metadata.get("embedding_mode", "hybrid_semantic")
+
+    # English summary sentence — use graph_count (pre-cap) for the "via graph" count
+    # so that CASE 4 structural nodes (hop=1) are still counted as graph-sourced,
+    # not conflated with direct_hits (hop=0) which may be zero after the hop fix.
+    graph_sourced = graph_count  # all nodes found via Neo4j traversal (pre-cap)
+    graph_coverage = (
+        f"This response used {pre_cap_total} concepts from the Knowledge Graph, "
+        f"producing {n_methods} methodology recommendations. "
+        f"{graph_sourced} found through graph traversal ({structural} via relationships, "
+        f"{direct_hits} direct matches)."
+    )
+    if semantic:
+        graph_coverage += f" {semantic} through semantic similarity."
+
+    def _ms(key: str) -> int:
+        val = timings.get(key, 0)
+        return int(val * 1000) if val < 100 else int(val)  # handle both seconds and ms
+
+    return ExplainabilitySummary(
+        embedding_mode=embedding_mode,
+        retrieval_phases={
+            "graph_traversal": RetrievalPhase(nodes_found=graph_count, time_ms=_ms("graph_traversal")),
+            "semantic_search": RetrievalPhase(nodes_found=semantic_count, time_ms=_ms("semantic_search")),
+            "fusion_ranking": RetrievalPhase(nodes_found=pre_cap_total, time_ms=_ms("fusion")),
+        },
+        knowledge_graph_stats=KGStats(
+            total_nodes_retrieved=pre_cap_total,
+            total_relationships=len(retrieval_result.triples) if hasattr(retrieval_result, "triples") else 0,
+            direct_hits=direct_hits,
+            structural_neighbors=structural,
+            semantic_matches=semantic,
+            label_distribution=label_counts,
+        ),
+        graph_coverage=graph_coverage,
+    )
+
+
+def _build_concept_graph(nodes: list, triples: list, max_nodes: int = 20, max_edges: int = 30) -> ConceptGraph:
+    """
+    Build a lightweight graph structure for visualization.
+
+    Primary nodes: top-scored nodes (capped at max_nodes).
+    Context nodes: endpoints referenced in triples but not in the primary set —
+      added automatically so their edges are not orphaned.
+    Edges include all real Neo4j relationships where at least one endpoint is a
+      primary node (not just when both are), ensuring CASE 4 Cypher relationships
+      (e.g. ASSOCIATES_TO, MITIGATED_BY from barrier queries) are visible.
+    """
+    # Sort nodes by rank_score desc, cap at max_nodes
+    sorted_nodes = sorted(nodes, key=lambda n: n.get("rank_score", 0), reverse=True)[:max_nodes]
+    node_names = {n.get("name", "") for n in sorted_nodes}
+
+    # Normalize rank_score to 0-1 for visualization
+    max_score = max((n.get("rank_score", 1.0) for n in sorted_nodes), default=1.0) or 1.0
+
+    graph_nodes = []
+    for n in sorted_nodes:
+        labels = n.get("labels") or []
+        graph_nodes.append(
+            ConceptGraphNode(
+                id=f"{labels[0]}:{n.get('name', '')}" if labels else n.get("name", ""),
+                label=labels[0] if labels else "Unknown",
+                score=round(n.get("rank_score", 0) / max_score, 3),
+                hop_distance=n.get("hop_distance", 0),
+            )
+        )
+
+    # Edges: real Neo4j relationships (skip synthetic ones).
+    # Include edges where AT LEAST ONE endpoint is a primary node.
+    # When the other endpoint is missing, add it as a context node (score=0).
+    _SYNTHETIC_RELATIONS = {"VECTOR_SIMILAR", "SEMANTIC_SIMILAR", "EMBEDDING_SIMILAR"}
+    context_node_names: set = set()  # names already added as context nodes
+    graph_edges = []
+    seen_edges: set = set()
+
+    for triple in triples:
+        if len(triple) != 3:
+            continue
+        src, rel, tgt = triple
+        if rel in _SYNTHETIC_RELATIONS:
+            continue
+        src_known = src in node_names
+        tgt_known = tgt in node_names
+        if not src_known and not tgt_known:
+            continue  # neither endpoint is relevant — skip
+
+        key = (src, rel, tgt)
+        if key in seen_edges:
+            continue
+        seen_edges.add(key)
+
+        # Add a context node for the missing endpoint (capped at max_nodes budget).
+        # If the context node cannot be added (cap reached), skip the edge too — no dangling edges.
+        total_nodes = len(graph_nodes) + len(context_node_names)
+        if not src_known and src not in context_node_names:
+            if total_nodes >= max_nodes:
+                continue  # can't add context node → skip edge to avoid dangling reference
+            context_node_names.add(src)
+            graph_nodes.append(ConceptGraphNode(id=src, label="Context", score=0.0, hop_distance=2))
+        if not tgt_known and tgt not in context_node_names:
+            total_nodes = len(graph_nodes) + len(context_node_names)
+            if total_nodes >= max_nodes:
+                continue  # can't add context node → skip edge to avoid dangling reference
+            context_node_names.add(tgt)
+            graph_nodes.append(ConceptGraphNode(id=tgt, label="Context", score=0.0, hop_distance=2))
+
+        graph_edges.append(ConceptGraphEdge(source=src, target=tgt, relation=rel))
+        if len(graph_edges) >= max_edges:
+            break
+
+    return ConceptGraph(nodes=graph_nodes, edges=graph_edges)
+
+
+def _build_context_warning(
+    kg_data_available: bool,
+    overall_confidence: str,
+    methodologies_count: int,
+) -> Optional[str]:
+    """Return an Italian warning when the KG lacks specific or high-quality data.
+
+    Returns None when the KG returned solid, relevant results.
+    """
+    if not kg_data_available or methodologies_count == 0:
+        return (
+            "Attenzione: il Knowledge Graph non contiene dati specifici per questa richiesta. "
+            "Le raccomandazioni si basano su principi pedagogici generali. "
+            "Per risultati più mirati, prova a specificare il tipo di studenti o le difficoltà specifiche."
+        )
+    if overall_confidence in ("very_low", "low"):
+        return (
+            "Nota: i risultati hanno una confidenza limitata. "
+            "Il Knowledge Graph ha trovato pochi dati pertinenti per questa domanda. "
+            "Prova a riformulare la richiesta in modo più specifico."
+        )
+    return None
+
+
 def _format_student_profile(profile) -> str:
     """Format student profile for prompt"""
     parts = []
@@ -67,181 +376,10 @@ def _format_student_profile(profile) -> str:
     return " | ".join(parts) if parts else "Profilo generale"
 
 
-def _build_explainability(method) -> Optional[ExplainabilityDetail]:
-    """Build per-methodology explainability from raw node metadata."""
-    meta = getattr(method, 'raw_node_metadata', None)
-    if not meta:
-        return None
-
-    retrieval_method = meta.get('retrieval_stage', 'unknown')
-    hop_distance = meta.get('hop_distance', 0)
-    rel_type = meta.get('rel_type', '')
-    source_name = meta.get('source_node_name', '')
-    source_label = meta.get('source_node_label', '')
-    labels = meta.get('labels', [])
-    target_label = labels[0] if labels else ''
-    rank_score = meta.get('rank_score', 0.0)
-    base_score = meta.get('base_score', 0.5)
-    domain_boost = meta.get('domain_boost', 1.0)
-    semantic_score = meta.get('semantic_score')
-    vector_similarity = meta.get('vector_similarity')
-
-    graph_path = None
-    if source_name and rel_type:
-        graph_path = GraphPathInfo(
-            source_node=source_name,
-            source_label=source_label,
-            relationship=rel_type,
-            target_node=method.name,
-            target_label=target_label
-        )
-
-    scoring = ScoringBreakdown(
-        base_score=round(base_score, 3),
-        semantic_score=round(semantic_score, 3) if semantic_score is not None else None,
-        vector_similarity=round(vector_similarity, 3) if vector_similarity is not None else None,
-        domain_boost=round(domain_boost, 3),
-        final_rank_score=round(rank_score, 3)
-    )
-
-    reasoning = _build_reasoning_text(
-        method.name, retrieval_method, hop_distance,
-        source_name, rel_type, semantic_score, vector_similarity
-    )
-
-    return ExplainabilityDetail(
-        retrieval_method=retrieval_method,
-        hop_distance=hop_distance,
-        graph_path=graph_path,
-        scoring_breakdown=scoring,
-        reasoning=reasoning
-    )
-
-
-def _build_reasoning_text(
-    name: str, retrieval_method: str, hop: int,
-    source_name: str, rel_type: str,
-    semantic_score: Optional[float], vector_similarity: Optional[float]
-) -> str:
-    """Generate a human-readable explanation of how a methodology was found."""
-    if retrieval_method == 'direct_query' and rel_type and source_name:
-        return f"Found via direct KG relationship: {source_name} -[{rel_type}]-> {name} (0 hops)"
-    if retrieval_method == 'direct_query':
-        return f"Direct match from Cypher query (0 hops)"
-    if retrieval_method == 'structural_neighbor':
-        path = f"{source_name} -[{rel_type}]-> {name}" if source_name and rel_type else name
-        return f"Found as structural graph neighbor: {path} (1 hop)"
-    if retrieval_method == 'vector_neighbor':
-        sim = f", similarity={vector_similarity:.2f}" if vector_similarity else ""
-        return f"Found via Node2Vec embedding similarity{sim} (2 hops)"
-    if retrieval_method == 'semantic_search':
-        sim = f", similarity={semantic_score:.2f}" if semantic_score else ""
-        return f"Found via semantic embedding search{sim} (2 hops)"
-    if retrieval_method == 'keyword_semantic':
-        return f"Found via keyword matching in node descriptions (2 hops)"
-    return f"Included from domain knowledge base"
-
-
-_CONFIDENCE_IT = {
-    "very_high": "molto alta",
-    "high": "alta",
-    "medium": "media",
-    "low": "bassa",
-    "very_low": "molto bassa",
-}
-
-_RETRIEVAL_NAME_IT = {
-    "direct_query": "Raccomandazione diretta dal Knowledge Graph",
-    "structural_neighbor": "Strategia collegata nel Knowledge Graph",
-    "vector_neighbor": "Strategia simile individuata dall'AI",
-    "semantic_search": "Suggerimento basato su similarità semantica",
-    "keyword_semantic": "Trovato per corrispondenza tematica",
-}
-
-
-def _build_explainability_name(method) -> Optional[str]:
-    """Italian teacher-friendly label derived from retrieval method."""
-    meta = getattr(method, 'raw_node_metadata', None)
-    if not meta:
-        return "Basato su conoscenza pedagogica generale"
-    stage = meta.get('retrieval_stage', 'unknown')
-    return _RETRIEVAL_NAME_IT.get(stage, "Basato su conoscenza pedagogica generale")
-
-
-_REL_VERBS_IT = {
-    'SUGGESTS': 'suggerisce',
-    'MITIGATED_BY': 'mitiga',
-    'INFLUENCES': 'influenza',
-    'RELATED_TO': 'è collegato a',
-    'PART_OF': 'fa parte di',
-    'NO_SUGGESTS': 'sconsiglia',
-}
-
-
-def _build_explainability_phrase(method, confidence_value: str) -> Optional[str]:
-    """Italian teacher-facing sentence explaining pedagogical relevance.
-    
-    Node names are wrapped in guillemets («…») to visually separate
-    English KG labels from the surrounding Italian text.  Raw Neo4j
-    relationship types (e.g. MITIGATED_BY) are replaced by their
-    Italian verb equivalents and never shown to teachers.
-    """
-    meta = getattr(method, 'raw_node_metadata', None)
-    conf_it = _CONFIDENCE_IT.get(confidence_value, confidence_value)
-
-    if not meta:
-        return (
-            f"Questa raccomandazione si basa su principi pedagogici generali. "
-            f"Confidenza: {conf_it}."
-        )
-
-    stage = meta.get('retrieval_stage', 'unknown')
-    rel_type = meta.get('rel_type', '')
-    source_name = meta.get('source_node_name', '')
-
-    if stage == 'direct_query' and source_name and rel_type:
-        verb = _REL_VERBS_IT.get(rel_type, 'è collegato a')
-        return (
-            f"Questa strategia è collegata a «{source_name}» che {verb} "
-            f"«{method.name}» nel Knowledge Graph. Confidenza: {conf_it}."
-        )
-    if stage == 'direct_query':
-        return (
-            f"Strategia individuata direttamente dalla query nel Knowledge Graph. "
-            f"Confidenza: {conf_it}."
-        )
-    if stage == 'structural_neighbor' and source_name and rel_type:
-        verb = _REL_VERBS_IT.get(rel_type, 'è collegato a')
-        return (
-            f"Questa strategia è collegata a «{source_name}» che {verb} "
-            f"«{method.name}» nel Knowledge Graph. Confidenza: {conf_it}."
-        )
-    if stage == 'structural_neighbor':
-        return (
-            f"Strategia trovata tramite connessione nel Knowledge Graph. "
-            f"Confidenza: {conf_it}."
-        )
-    if stage in ('vector_neighbor', 'semantic_search'):
-        return (
-            f"Strategia individuata dall'intelligenza artificiale per similarità "
-            f"con i concetti della tua domanda. Confidenza: {conf_it}."
-        )
-    if stage == 'keyword_semantic':
-        return (
-            f"Strategia trovata per corrispondenza tematica con la tua domanda. "
-            f"Confidenza: {conf_it}."
-        )
-    return (
-        f"Questa raccomandazione si basa su principi pedagogici generali. "
-        f"Confidenza: {conf_it}."
-    )
-
-
 def _format_methodologies(methodologies: list, max_count: int = 5) -> list[MethodologyInfo]:
-    """Convert context_builder methodologies to API format with explainability"""
+    """Convert context_builder methodologies to API format"""
     result = []
     for method in methodologies[:max_count]:
-        confidence = _map_confidence(method.confidence)
         result.append(MethodologyInfo(
             name=method.name,
             category=method.category,
@@ -250,36 +388,9 @@ def _format_methodologies(methodologies: list, max_count: int = 5) -> list[Metho
             implementation_guidance=method.implementation_guidance,
             classroom_applications=method.classroom_applications[:3] if method.classroom_applications else [],
             special_considerations=method.special_considerations[:3] if method.special_considerations else [],
-            confidence=confidence,
-            explainability_name=_build_explainability_name(method),
-            explainability_phrase=_build_explainability_phrase(method, confidence.value),
-            explainability=_build_explainability(method)
+            confidence=_map_confidence(method.confidence)
         ))
     return result
-
-
-def _build_context_warning(
-    kg_data_available: bool,
-    overall_confidence: str,
-    methodologies_count: int
-) -> Optional[str]:
-    """Return an Italian warning when the KG lacks specific data for the query.
-    
-    Returns None when the KG returned solid, relevant results.
-    """
-    if not kg_data_available or methodologies_count == 0:
-        return (
-            "Attenzione: il Knowledge Graph non contiene dati specifici per questa richiesta. "
-            "Le raccomandazioni si basano su principi pedagogici generali. "
-            "Per risultati più mirati, prova a specificare il tipo di studenti o le difficoltà specifiche."
-        )
-    if overall_confidence in ('very_low', 'low'):
-        return (
-            "Nota: i risultati hanno una confidenza limitata. "
-            "Il Knowledge Graph ha trovato pochi dati pertinenti per questa domanda. "
-            "Prova a riformulare la richiesta in modo più specifico."
-        )
-    return None
 
 
 def _get_domain_title(domain: str, language: str = "it") -> str:
@@ -542,91 +653,6 @@ def _build_domain_prompt_context(
     )
 
 
-def _build_explainability_summary(
-    retrieval_result,
-    context_data: ContextData,
-    embedding_mode: str = "node2vec"
-) -> ExplainabilitySummary:
-    """Build top-level retrieval explainability from retrieval metadata."""
-    metadata = {}
-    if retrieval_result and hasattr(retrieval_result, 'metadata'):
-        metadata = retrieval_result.metadata or {}
-    
-    timings = metadata.get('timings', {})
-    
-    retrieval_phases = {
-        'graph_traversal': RetrievalPhaseInfo(
-            nodes_found=metadata.get('graph_count', 0),
-            time_ms=int(timings.get('graph_traversal', 0) * 1000) if timings.get('graph_traversal') else None
-        ),
-        'semantic_search': RetrievalPhaseInfo(
-            nodes_found=metadata.get('semantic_count', 0),
-            time_ms=int(timings.get('semantic_search', 0) * 1000) if timings.get('semantic_search') else None
-        ),
-        'fusion_ranking': RetrievalPhaseInfo(
-            nodes_found=metadata.get('total_nodes', 0),
-            time_ms=int(timings.get('fusion', 0) * 1000) if timings.get('fusion') else None
-        ),
-    }
-
-    direct_hits = 0
-    structural_neighbors = 0
-    semantic_matches = 0
-    label_distribution: dict = {}
-
-    all_methods = list(context_data.primary_methodologies) + list(context_data.supporting_methodologies)
-    for m in all_methods:
-        ex = m.explainability
-        if not ex:
-            continue
-        if ex.hop_distance == 0:
-            direct_hits += 1
-        elif ex.hop_distance == 1:
-            structural_neighbors += 1
-        else:
-            semantic_matches += 1
-
-    facets = metadata.get('facets', {}) if metadata else {}
-    if isinstance(facets, dict):
-        label_distribution = facets.get('label_counts', {})
-
-    if not label_distribution and retrieval_result and hasattr(retrieval_result, 'facets'):
-        rf = retrieval_result.facets or {}
-        label_distribution = rf.get('label_counts', {})
-
-    kg_stats = KnowledgeGraphStats(
-        total_nodes_retrieved=metadata.get('total_nodes', 0),
-        total_relationships=metadata.get('total_triples', 0),
-        direct_hits=direct_hits,
-        structural_neighbors=structural_neighbors,
-        semantic_matches=semantic_matches,
-        label_distribution=label_distribution
-    )
-
-    total = len(all_methods)
-    parts = []
-    if total:
-        parts.append(
-            f"This response used {kg_stats.total_nodes_retrieved} concepts from the Knowledge Graph, "
-            f"producing {total} methodology recommendations."
-        )
-        if direct_hits:
-            parts.append(f"{direct_hits} found through direct KG relationships (high confidence).")
-        if structural_neighbors:
-            parts.append(f"{structural_neighbors} through graph neighbor expansion.")
-        if semantic_matches:
-            parts.append(f"{semantic_matches} through semantic/vector similarity.")
-    else:
-        parts.append("No methodology recommendations were produced from the Knowledge Graph for this query.")
-
-    return ExplainabilitySummary(
-        embedding_mode=embedding_mode,
-        retrieval_phases=retrieval_phases,
-        knowledge_graph_stats=kg_stats,
-        graph_coverage=" ".join(parts)
-    )
-
-
 @router.post("", response_model=ContextResponse)
 async def get_context(request: ContextRequest) -> ContextResponse:
     """
@@ -745,6 +771,76 @@ async def get_context(request: ContextRequest) -> ContextResponse:
             fallback_strategies=educational_context.fallback_strategies
         )
         
+        # Determine if KG had relevant data (0 methodologies = out of scope)
+        kg_data_available = bool(context_data.primary_methodologies)
+        if not kg_data_available:
+            logger.info("[API] No KG data found for this query — transparent fallback applied")
+
+        # -----------------------------------------------------------------------
+        # Explainability enrichment (opt-in via include_explainability=True)
+        # -----------------------------------------------------------------------
+        explainability_summary = None
+        concept_graph = None
+        context_warning = None
+
+        if request.include_explainability and retrieval_result:
+            # Build node lookup: name → raw node dict (with hop_distance, rank_score, etc.)
+            node_lookup: dict = {n.get("name", ""): n for n in nodes if n.get("name")}
+
+            # Enrich each MethodologyInfo with explainability fields
+            for methodology in (
+                context_data.primary_methodologies + context_data.supporting_methodologies
+            ):
+                node = node_lookup.get(methodology.name)
+                if node:
+                    exp_name, exp_phrase, exp_data = _build_methodology_explainability(
+                        node, methodology.confidence.value
+                    )
+                    methodology.explainability_name = exp_name
+                    methodology.explainability_phrase = exp_phrase
+                    methodology.explainability = exp_data
+                else:
+                    # Node not found in lookup (e.g. fallback methodology from domain config)
+                    confidence_it = _CONFIDENCE_IT.get(methodology.confidence.value, "media")
+                    methodology.explainability_name = "Raccomandazione dal Knowledge Graph"
+                    methodology.explainability_phrase = (
+                        f"Metodologia estratta dal Knowledge Graph. "
+                        f"Confidenza: {confidence_it}."
+                    )
+                    methodology.explainability = MethodologyExplainability(
+                        retrieval_method="domain_knowledge",
+                        hop_distance=0,
+                        graph_path=None,
+                        scoring_breakdown=ScoringBreakdown(
+                            base_score=0.5,
+                            semantic_score=None,
+                            vector_similarity=None,
+                            domain_boost=1.0,
+                            final_rank_score=0.5,
+                        ),
+                        reasoning="Retrieved via domain knowledge base (node not in direct retrieval result)",
+                    )
+
+            # Response-level summary
+            n_methods = len(context_data.primary_methodologies) + len(context_data.supporting_methodologies)
+            explainability_summary = _build_explainability_summary(retrieval_result, nodes, n_methods)
+
+            # Concept graph for visualization
+            concept_graph = _build_concept_graph(
+                nodes,
+                retrieval_result.triples if hasattr(retrieval_result, "triples") else [],
+            )
+
+        # Context warning — computed outside explainability block so it fires even when
+        # include_explainability=False (teachers need this signal regardless)
+        overall_confidence = (
+            context_data.confidence_level.value
+            if hasattr(context_data, "confidence_level") and context_data.confidence_level
+            else "medium"
+        )
+        n_methods_total = len(context_data.primary_methodologies) + len(context_data.supporting_methodologies)
+        context_warning = _build_context_warning(kg_data_available, overall_confidence, n_methods_total)
+
         # Build raw nodes if requested
         raw_nodes = None
         if request.include_raw_nodes:
@@ -764,35 +860,7 @@ async def get_context(request: ContextRequest) -> ContextResponse:
         domain_prompt_ctx = _build_domain_prompt_context(
             context_data, domain, detected_language
         )
-        
-        # Determine if KG had relevant data (0 methodologies = out of scope)
-        kg_data_available = bool(context_data.primary_methodologies)
-        
-        if not kg_data_available:
-            logger.info("[API] No KG data found for this query — transparent fallback applied")
-        
-        # Build explainability summary
-        try:
-            from config import config as app_cfg
-            embedding_mode = app_cfg.embedding.mode
-        except Exception:
-            embedding_mode = "node2vec"
-        
-        explain_summary = _build_explainability_summary(
-            retrieval_result, context_data, embedding_mode
-        )
-        
-        overall_conf = (
-            context_data.confidence_level.value
-            if hasattr(context_data, 'confidence_level') and context_data.confidence_level
-            else 'medium'
-        )
-        ctx_warning = _build_context_warning(
-            kg_data_available,
-            overall_conf,
-            len(context_data.primary_methodologies) + len(context_data.supporting_methodologies)
-        )
-        
+
         # Build response
         response = ContextResponse(
             success=True,
@@ -812,8 +880,9 @@ async def get_context(request: ContextRequest) -> ContextResponse:
             ),
             formatted_prompt_section=_format_prompt_section(context_data, detected_language, domain),
             domain_prompt_context=domain_prompt_ctx,
-            explainability_summary=explain_summary,
-            context_warning=ctx_warning
+            explainability_summary=explainability_summary,
+            concept_graph=concept_graph,
+            context_warning=context_warning,
         )
         
         logger.info(f"Context generated successfully in {processing_time}ms")
