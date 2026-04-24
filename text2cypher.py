@@ -867,33 +867,32 @@ Cypher: MATCH (i:IntrinsicMotivation) RETURN i, labels(i) as node_labels LIMIT 1
         
         return contamination_found
     
-    def _validate_labels_against_schema(self, query: str, domain: str) -> None:
-        """Validate that all labels in query exist in domain schema (logging only)
-        
-        Args:
-            query: Cypher query to validate
-            domain: Domain being queried
+    def _validate_labels_against_schema(self, query: str, domain: str) -> set:
+        """Validate that all labels in query exist in domain schema.
+
+        Returns:
+            Set of invalid label names found in the query (empty = all valid).
         """
         if not self.schema_info:
-            return
-        
+            return set()
+
         import re
-        
+
         # Extract ONLY node labels from query pattern (var:Label), not relationship types
-        # Pattern: (var:Label) but NOT [r:RELATIONSHIP]
         node_label_pattern = r'\((?:\w+):(\w+)(?:\s*\{[^}]*\})?\)'
         labels_in_query = set(re.findall(node_label_pattern, query))
-        
-        # Get valid labels for this domain
+
         valid_labels = set(self.schema_info.node_labels)
-        
-        # Check for invalid labels
+
+        invalid = set()
         for label in labels_in_query:
             if label not in valid_labels:
                 logger.warning(
                     f"[Invalid Label] '{label}' does not exist in {domain} domain schema. "
                     f"Query will return 0 results. This may indicate a data gap or invented label."
                 )
+                invalid.add(label)
+        return invalid
     
     def _repair_neuro_query(self, query: str) -> str:
         """Apply Neuro-specific query repairs and optimizations
@@ -1325,7 +1324,36 @@ class Text2CypherPipeline:
         # Execute if requested and query is valid
         if execute and metadata.get("is_valid", False):
             results, execution_error = self.converter.execute_query(cypher_query)
-            
+
+            # Stage 0: Name-based fallback when invalid labels were generated
+            # Convert CamelCase invented labels → name-contains search before wasting Stage 1/2
+            invalid_labels = self.converter._validate_labels_against_schema(cypher_query, domain)
+            if invalid_labels and not results and not execution_error:
+                import re as _re
+                search_terms = [
+                    _re.sub(r'(?<!^)(?=[A-Z])', ' ', lbl).lower().strip()
+                    for lbl in invalid_labels
+                ]
+                conditions = " OR ".join(
+                    [f'toLower(n.name) CONTAINS "{t}"' for t in search_terms]
+                )
+                name_fallback = (
+                    f'MATCH (n {{domain: "{domain}"}}) '
+                    f'WHERE {conditions} '
+                    f'RETURN n, labels(n) AS node_labels LIMIT 10'
+                )
+                fb_results, fb_error = self.converter.execute_query(name_fallback)
+                if fb_results:
+                    logger.info(
+                        f"[Invalid Label Fallback] Name-search returned {len(fb_results)} results "
+                        f"for terms: {search_terms}"
+                    )
+                    results = fb_results
+                    execution_error = fb_error
+                    result["used_fallback"] = True
+                    result["fallback_reason"] = "invalid_label_name_search"
+                    result["fallback_query"] = name_fallback
+
             # Smart Fallback System: Try relationship query first, fallback only on 0 results
             if not results and not execution_error:
                 # Stage 1: Try more tolerant matching (existing logic)

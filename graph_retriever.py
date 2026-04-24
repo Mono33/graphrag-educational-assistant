@@ -1742,7 +1742,18 @@ class HybridGraphRetriever:
                 node_labels = [node_labels]
             
             semantic_score = node.get('semantic_score', 0.0)
-            
+
+            # Structural neighbors (hop_distance=1) bypass semantic threshold entirely.
+            # Their relevance is validated by the Neo4j edge itself — the KG schema defines
+            # which nodes are meaningfully connected, so embedding distance is redundant here.
+            if node.get('hop_distance') == 1 and node.get('retrieval_stage') == 'structural_neighbor':
+                filtered.append(node)
+                logger.debug(
+                    f"[P1+] ✅ KEEP (STRUCTURAL): {node.get('name')} "
+                    f"(hop=1, bypassing semantic threshold)"
+                )
+                continue
+
             # Signal 1: Direct label match (backward compatible)
             has_shared_label = any(label in initial_labels for label in node_labels)
             
@@ -2134,10 +2145,26 @@ class HybridGraphRetriever:
         
         # Sort by rank score
         ranked_nodes = sorted(unique_nodes.values(), key=lambda x: x['rank_score'], reverse=True)
-        
+
         # Extract triples from relationships
         triples = self._extract_triples(ranked_nodes)
-        
+
+        # Fix 4: batch-query Neo4j for any additional edges between final nodes
+        # (catches pairs where both endpoints are semantic/vector nodes — _extract_triples
+        # requires rel_type pre-set on nodes, so those edges are otherwise invisible)
+        node_names = [n.get('name', '') for n in ranked_nodes if n.get('name')]
+        extra_triples = self._fetch_node_relationships(node_names)
+        if extra_triples:
+            existing = set(triples)
+            added = 0
+            for t in extra_triples:
+                if t not in existing:
+                    triples.append(t)
+                    existing.add(t)
+                    added += 1
+            if added:
+                logger.info(f"[Fix4] Batch query added {added} cross-node edge(s) to triples")
+
         return ranked_nodes, triples
     
     def _calculate_rank_score(self, node: Dict, source: str = 'graph') -> float:
@@ -2198,6 +2225,31 @@ class HybridGraphRetriever:
 
         return triples
     
+    def _fetch_node_relationships(self, node_names: List[str]) -> List[Tuple[str, str, str]]:
+        """Batch Neo4j query: find all directed relationships between any two nodes in the set.
+
+        Bounded by max_nodes (≤20) so latency is ~20-50ms. Only runs real KG edges —
+        no synthetic relations are created.
+        """
+        if len(node_names) < 2:
+            return []
+        try:
+            with self.neo4j_driver.session() as session:
+                result = session.run(
+                    """
+                    MATCH (a)-[r]->(b)
+                    WHERE a.name IN $names AND b.name IN $names
+                    AND (a.domain = $domain OR a.domain IS NULL)
+                    RETURN a.name AS src, type(r) AS rel, b.name AS tgt
+                    """,
+                    names=node_names,
+                    domain=self.domain,
+                )
+                return [(r["src"], r["rel"], r["tgt"]) for r in result]
+        except Exception as e:
+            logger.warning(f"[Fix4] Batch relationship query failed: {e}")
+            return []
+
     def _build_facets(self, nodes: List[Dict], triples: List[Tuple[str, str, str]]) -> Dict[str, Dict[str, int]]:
         """Build facet summaries for the retrieved context"""
         # Count by label

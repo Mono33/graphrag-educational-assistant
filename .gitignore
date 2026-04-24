@@ -95,7 +95,7 @@ lesson_plan_*.md
 activity_*.md
 
 # Embeddings cache (auto-regenerated)
-models/embeddings_cache/
+# models/embeddings_cache/
 
 # Neo4j data (if running locally)
 neo4j_data/
