@@ -24,7 +24,7 @@ def test_writer_media_formatting():
     print("="*60)
     
     try:
-        from agent.agents.writer_agent import WriterAgent
+        from aix.agent.agents.writer_agent import WriterAgent
         
         writer = WriterAgent()
         
@@ -101,9 +101,9 @@ def test_writer_backward_compat():
     print("="*60)
     
     try:
-        from agent.agents.writer_agent import WriterAgent
-        from agent.agents.planner_agent import RetrievalPlan
-        from agent.agents.retriever_agent import RetrievalResult
+        from aix.agent.agents.writer_agent import WriterAgent
+        from aix.agent.agents.planner_agent import RetrievalPlan
+        from aix.agent.agents.retriever_agent import RetrievalResult
         
         writer = WriterAgent()
         
@@ -153,7 +153,7 @@ async def test_full_pipeline_with_media():
     print("="*60)
     
     try:
-        from agent.orchestrator import AgenticGraphRAG
+        from aix.agent.orchestrator import AgenticGraphRAG
         
         print("🔄 Initializing AgenticGraphRAG...")
         agent = AgenticGraphRAG(domain="neuro")

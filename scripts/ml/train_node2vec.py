@@ -17,7 +17,7 @@ import json
 from datetime import datetime
 
 # Import domain configuration system
-from domains import get_domain_config
+from aix.domains import get_domain_config
 
 logger = logging.getLogger(__name__)
 
@@ -467,7 +467,7 @@ def main(domain: str = "all"):
     Args:
         domain: Domain to train ('udl', 'neuro', 'all')
     """
-    from config import config
+    from aix.core.config import config
     from neo4j import GraphDatabase
     
     # Setup logging

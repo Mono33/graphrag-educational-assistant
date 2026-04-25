@@ -20,7 +20,7 @@ def preflight_check():
     print("1️⃣ Testing config loading...")
     try:
         sys.path.append(str(Path(__file__).parent.parent))
-        from config import config
+        from aix.core.config import config
         
         is_valid, errors = config.validate()
         if is_valid:

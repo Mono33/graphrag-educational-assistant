@@ -24,7 +24,7 @@ if not os.getenv("OPENAI_API_KEY"):
     print("❌ Error: OPENAI_API_KEY not found in .env file")
     sys.exit(1)
 
-from agent import AgentOrchestrator
+from aix.agent import AgentOrchestrator
 
 
 def setup_logging(verbose: bool = False):

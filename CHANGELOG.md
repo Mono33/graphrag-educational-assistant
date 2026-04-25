@@ -1,7 +1,93 @@
 # Changelog — GraphRAG AixLearning
 
 **Date:** 25 April 2026  
-**Session scope:** Repository reorganization (Phase 1 + Phase 2 + Phase 3A + Phase 3B)
+**Session scope:** Repository reorganization (Phase 1 + Phase 2 + Phase 3A + Phase 3B + Phase 3C)
+
+## 0c. Repository reorganization (Phase 3C — `src/aix/` package layout)
+
+**Why:** Eliminate the last 7 root-level Python files and 3 root packages (`agent/`,
+`api/`, `domains/`) by consolidating ALL importable code into a single, modern
+`src/aix/` package. This is the canonical Python "src layout" and makes the
+project genuinely production-ready: no implicit cwd imports, no namespace
+clashes, exactly one place to look for application code.
+
+**Structural changes (10 `git mv` operations):**
+
+- 7 root modules moved to typed sub-packages under `src/aix/`:
+  - `config.py`                       → `src/aix/core/config.py`
+  - `graph_retriever.py`              → `src/aix/retrieval/graph_retriever.py`
+  - `context_builder.py`              → `src/aix/retrieval/context_builder.py`
+  - `text2cypher.py`                  → `src/aix/retrieval/text2cypher.py`
+  - `multilingual_text2cypher.py`     → `src/aix/retrieval/multilingual_text2cypher.py`
+  - `query_metrics.py`                → `src/aix/retrieval/query_metrics.py`
+  - `llm_chain.py`                    → `src/aix/generation/llm_chain.py`
+- 3 root packages relocated wholesale (history preserved via `git mv`):
+  - `agent/`   → `src/aix/agent/`
+  - `api/`     → `src/aix/api/`
+  - `domains/` → `src/aix/domains/`
+- New package init files: `src/aix/__init__.py` (`__version__ = "0.2.0"`),
+  `src/aix/core/__init__.py`, `src/aix/retrieval/__init__.py`,
+  `src/aix/generation/__init__.py`.
+
+**Build & tooling updates:**
+
+- `pyproject.toml`: switched to src layout
+  - `[tool.setuptools.package-dir] "" = "src"`
+  - `[tool.setuptools.packages.find] where = ["src"], include = ["aix*"]`
+  - Removed flat `py-modules` list (no more root file exposure)
+  - `[tool.ruff] src = ["src"]` and `[tool.mypy] mypy_path = "src"`
+- `Dockerfile`: `CMD uvicorn api.main:app …` → `CMD uvicorn aix.api.main:app …`
+- `Makefile`: `uvicorn api.main:app` → `uvicorn aix.api.main:app`
+- `.github/workflows/ci.yml`: `mypy config.py graph_retriever.py …` → `mypy src/aix/`
+
+**Mechanical import rewrite (NEW script):**
+
+- `scripts/_phase3c_rewrite_imports.py` — deterministic, idempotent regex rewriter
+  that mapped every `from <old> …` / `import <old>` across `src/`, `apps/`,
+  `scripts/`, `tests/` to the new `aix.*` namespace. Anchored regex
+  (`(?m)^([ \t]*)import …`) prevents false matches on imported value names
+  inside `from X import Y` clauses.
+- All `from config import …`, `from agent import …`, `from api.* import …`,
+  `from domains.* import …`, `from graph_retriever import …`,
+  `from context_builder import …`, `from text2cypher import …`,
+  `from multilingual_text2cypher import …`, `from query_metrics import …`,
+  `from llm_chain import …` rewritten to their `aix.*` equivalents.
+
+**Verification (R4 smoke tests, all PASSED):**
+
+- `python -m compileall src/aix/` — every file byte-compiles
+- `python -m pytest tests/ --collect-only -q` — 17 tests collected, 0 errors
+- `python -c "import ast; ast.parse(open('apps/streamlit/main.py').read())"` — OK
+- `python -c "import ast; ast.parse(open('apps/cli/run_agent.py').read())"` — OK
+- `uvicorn aix.api.main:app --reload --port 8000` — full live test:
+  - Logs confirm `aix.api.main`, `aix.api.routes.context`,
+    `aix.retrieval.graph_retriever`, `aix.retrieval.multilingual_text2cypher`,
+    `aix.retrieval.text2cypher`, `aix.retrieval.context_builder` namespaces
+    are active end-to-end
+  - Swagger UI loads at `/docs`
+  - `POST /api/v1/context` (Italian ADHD query, domain=udl) → **200 OK in 6394 ms**,
+    returned 10 balanced methodologies (3× EducationalApproach, 3× LearningMethodology,
+    3× InstructionalStrategy, 1× InstructionalTechnique)
+
+**Docs updates:**
+
+- `README.md` "Project Structure" section rewritten to show the `src/aix/`
+  tree and adds an "entry points" cheat sheet (`uvicorn aix.api.main:app`,
+  `streamlit run apps/streamlit/main.py`, `python apps/cli/run_agent.py`).
+- `CHANGELOG.md` (this entry).
+
+**Migration notes for collaborators:**
+
+- After pulling, run `pip install -e .[dev]` once to re-register the package
+  via the updated `src` layout. The old root-level `config`, `agent`,
+  `api`, `domains`, `graph_retriever`, `text2cypher`, etc. modules **no longer
+  exist at the repository root** — all imports must use the `aix.*` namespace.
+- Any private branches still using `from config import …` will need the same
+  mechanical rewrite (`python scripts/_phase3c_rewrite_imports.py`).
+
+**Tag:** `phase-3c-complete`
+
+---
 
 ## 0b. Repository reorganization (Phase 3B — Folder consolidation)
 

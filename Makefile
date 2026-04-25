@@ -42,7 +42,7 @@ install:
 	$(PIP) install -r requirements.txt
 
 api:
-	uvicorn api.main:app --reload --port 8000
+	uvicorn aix.api.main:app --reload --port 8000
 
 streamlit:
 	streamlit run apps/streamlit/main.py

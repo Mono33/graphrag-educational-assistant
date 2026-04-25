@@ -15,7 +15,7 @@ import os
 # Add project path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from agent.orchestrator import AgentOrchestrator, LessonPlanResult
+from aix.agent.orchestrator import AgentOrchestrator, LessonPlanResult
 
 
 async def test_lesson_plan_result_structure():

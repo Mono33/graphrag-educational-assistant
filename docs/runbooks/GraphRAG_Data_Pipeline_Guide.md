@@ -339,7 +339,7 @@ Start the API locally and test each query:
 
 ```bash
 # Start API
-uvicorn api.main:app --reload --port 8000
+uvicorn aix.api.main:app --reload --port 8000
 
 # Test query
 curl -X POST http://localhost:8000/api/v1/context \

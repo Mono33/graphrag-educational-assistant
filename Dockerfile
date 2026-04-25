@@ -37,4 +37,4 @@ RUN $VIRTUAL_ENV/bin/pip install --no-deps -e .
 # Enable venv
 ENV PATH="/opt/venv/bin:$PATH"
 ENV CODE_VERSION=${GIT_SHA}
-CMD uvicorn api.main:app --host 0.0.0.0 --port 80 $API_CMD_ARGS
+CMD uvicorn aix.api.main:app --host 0.0.0.0 --port 80 $API_CMD_ARGS

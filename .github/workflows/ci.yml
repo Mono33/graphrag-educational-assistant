@@ -36,7 +36,7 @@ jobs:
         run: ruff format --check .
 
       - name: Mypy (non-blocking)
-        run: mypy config.py graph_retriever.py llm_chain.py api/ agent/ domains/ || true
+        run: mypy src/aix/ || true
 
       - name: Pytest
         run: pytest tests/ -v --tb=short -x

@@ -60,7 +60,7 @@ OPENAI_API_KEY=your_openai_key
 ### 3. Run the API
 
 ```bash
-uvicorn api.main:app --reload --port 8000
+uvicorn aix.api.main:app --reload --port 8000
 ```
 
 ### 4. Test It
@@ -322,13 +322,13 @@ console.log(data.formatted_prompt_section);
 ### Local Development
 
 ```bash
-uvicorn api.main:app --reload --port 8000
+uvicorn aix.api.main:app --reload --port 8000
 ```
 
 ### Production (with Gunicorn)
 
 ```bash
-gunicorn api.main:app -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8000
+gunicorn aix.api.main:app -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8000
 ```
 
 ### Docker

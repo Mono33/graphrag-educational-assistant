@@ -23,7 +23,7 @@ def test_media_lookup():
     print("="*60)
     
     try:
-        from agent.media import MediaLookup
+        from aix.agent.media import MediaLookup
         
         lookup = MediaLookup(domain="neuro")
         
@@ -58,8 +58,8 @@ def test_retriever_backward_compat():
     print("="*60)
     
     try:
-        from agent.agents.retriever_agent import RetrieverAgent, RetrievalResult
-        from agent.agents.planner_agent import RetrievalPlan
+        from aix.agent.agents.retriever_agent import RetrieverAgent, RetrievalResult
+        from aix.agent.agents.planner_agent import RetrievalPlan
         
         # Test 1: Create retriever with media enabled (default)
         retriever_with_media = RetrieverAgent(domain="neuro", enable_media_lookup=True)
@@ -101,8 +101,8 @@ async def test_retriever_integration():
     print("="*60)
     
     try:
-        from agent.agents.retriever_agent import RetrieverAgent
-        from agent.agents.planner_agent import RetrievalPlan
+        from aix.agent.agents.retriever_agent import RetrieverAgent
+        from aix.agent.agents.planner_agent import RetrievalPlan
         
         retriever = RetrieverAgent(domain="neuro")
         

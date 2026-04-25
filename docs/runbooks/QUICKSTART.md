@@ -217,22 +217,22 @@ pip install -r requirements.txt --upgrade
 ### **Issue: "Neo4j connection failed"**
 ```bash
 # Verify credentials
-python -c "from config import config; print(config.neo4j.uri)"
+python -c "from aix.core.config import config; print(config.neo4j.uri)"
 
 # Test connection
-python verify_ingestion.py
+python scripts/audit/verify_ingestion.py
 ```
 
 ### **Issue: "No Node2Vec model found"**
 ```bash
 # Train model for your domain
-python train_node2vec.py neuro  # or udl
+python scripts/ml/train_node2vec.py neuro  # or udl
 ```
 
 ### **Issue: "OpenAI API error"**
 ```bash
 # Verify API key
-python -c "from config import config; print(config.openai.api_key[:10])"
+python -c "from aix.core.config import config; print(config.openai.api_key[:10])"
 
 # Check your OpenAI account has credits:
 # https://platform.openai.com/usage
@@ -244,7 +244,7 @@ python -c "from config import config; print(config.openai.api_key[:10])"
 
 ### **Check Neo4j Data**:
 ```bash
-python audit_neuro_graph.py
+python scripts/audit/audit_domain_graph.py neuro
 ```
 
 **Expected output**:

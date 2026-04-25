@@ -19,11 +19,11 @@ from datetime import datetime
 from io import BytesIO
 
 # Import your GraphRAG components
-from graph_retriever import EnhancedMultilingualText2Cypher
-from llm_chain import EducationalResponseGenerator
-from context_builder import EducationalContext
-from config import config
-from query_metrics import MetricsCalculator, QueryMetrics
+from aix.retrieval.graph_retriever import EnhancedMultilingualText2Cypher
+from aix.generation.llm_chain import EducationalResponseGenerator
+from aix.retrieval.context_builder import EducationalContext
+from aix.core.config import config
+from aix.retrieval.query_metrics import MetricsCalculator, QueryMetrics
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -948,7 +948,7 @@ def _process_agent_query(query: str, domain: str, language: str):
         
         try:
             # Import the orchestrator
-            from agent.orchestrator import AgentOrchestrator
+            from aix.agent.orchestrator import AgentOrchestrator
             
             # Step 1: Initialize
             status_text.markdown("🔧 **Inizializzazione agenti...**")
@@ -1288,7 +1288,7 @@ def _display_agent_results():
                     st.caption("Risorse educative verificate da esperti di dominio (tutte copyright-safe):")
                     
                     try:
-                        from agent.media.resource_lookup import ResourceLookup
+                        from aix.agent.media.resource_lookup import ResourceLookup
                         
                         # Get domain from session state
                         expert_domain = st.session_state.get('agent_result_domain', 'neuro')
@@ -1431,7 +1431,7 @@ def _display_agent_results():
                         
                         with st.spinner(f"Cercando '{search_query}'..."):
                             try:
-                                from agent.media.external_apis import ExternalMediaAPI
+                                from aix.agent.media.external_apis import ExternalMediaAPI
                                 api = ExternalMediaAPI()
                                 
                                 if search_type == 'youtube':
@@ -1584,7 +1584,7 @@ def _display_agent_results():
                             try:
                                 if selected_generator == "mermaid":
                                     # Use Mermaid generator (FREE)
-                                    from agent.media.mermaid_generator import MermaidGenerator
+                                    from aix.agent.media.mermaid_generator import MermaidGenerator
                                     
                                     generator = MermaidGenerator()
                                     mermaid_result = asyncio.run(generator.generate(
@@ -1611,7 +1611,7 @@ def _display_agent_results():
                                 
                                 elif selected_generator == "dalle":
                                     # Use DALL-E generator
-                                    from agent.media.image_generator import ImageGenerator, DiagramType
+                                    from aix.agent.media.image_generator import ImageGenerator, DiagramType
                                     
                                     # Map to DALL-E diagram types
                                     dalle_type_mapping = {
@@ -1881,9 +1881,9 @@ def main():
         st.divider()
         st.markdown("### 🔬 Ricerca Semantica")
         
-        # Get current embedding mode from config
+        # Get current embedding mode from aix.core.config
         try:
-            from config import config as app_config
+            from aix.core.config import config as app_config
             embedding_mode = getattr(app_config.embedding, 'mode', 'node2vec')
             node2vec_weight = getattr(app_config.embedding, 'node2vec_weight', 0.4)
             semantic_weight = 1 - node2vec_weight
@@ -2305,7 +2305,7 @@ def main():
             
             # Show current embedding mode
             try:
-                from config import config as app_config
+                from aix.core.config import config as app_config
                 embedding_mode = getattr(app_config.embedding, 'mode', 'node2vec')
                 node2vec_weight = getattr(app_config.embedding, 'node2vec_weight', 0.4)
                 semantic_weight = 1 - node2vec_weight

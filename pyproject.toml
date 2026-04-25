@@ -1,15 +1,17 @@
 # =============================================================================
-# graphaixlearning — Python project configuration (Phase 3A + 3B)
+# graphaixlearning — Python project configuration (Phase 3A + 3B + 3C)
 #
 # Single source of truth for: build system, project metadata, dependencies,
 # pytest, ruff (lint + format), and mypy (type-checking).
 #
-# After Phase 3A, install in editable mode for local dev:
+# Phase 3C layout: every importable module lives under `src/aix/...`.
+# Install in editable mode for local dev:
+#
 #     pip install -e .[dev]
 #
-# Phase 3C will switch the layout from flat-root to src/aix/ and update the
-# [tool.setuptools] block accordingly. Until then, the 7 core modules live at
-# the repo root and are exposed via `py-modules`.
+# That registers the `aix` package globally so it can be imported from any
+# working directory (entry points: uvicorn aix.api.main:app, streamlit run
+# apps/streamlit/main.py, python apps/cli/run_agent.py, pytest tests/).
 # =============================================================================
 
 [build-system]
@@ -64,42 +66,21 @@ dev = [
 Repository = "https://github.com/FEM-modena/graphrag-aixlearning"
 
 # -----------------------------------------------------------------------------
-# setuptools — package discovery (Phase 3A: flat root layout)
+# setuptools — package discovery (Phase 3C: src layout)
+#
+# All importable code lives under `src/aix/`. Setuptools is told that the
+# package root is `src/` and that we want every package starting with `aix`.
 # -----------------------------------------------------------------------------
 [tool.setuptools.dynamic]
 dependencies = { file = ["requirements.txt"] }
 
-[tool.setuptools]
-# Single-file modules at the repo root (Phase 3C will move these into src/aix/).
-py-modules = [
-    "config",
-    "graph_retriever",
-    "context_builder",
-    "llm_chain",
-    "text2cypher",
-    "multilingual_text2cypher",
-    "query_metrics",
-]
+[tool.setuptools.package-dir]
+"" = "src"
 
 [tool.setuptools.packages.find]
-where = ["."]
-include = ["agent*", "api*", "domains*"]
-exclude = [
-    "tests*",
-    "scripts*",
-    "apps*",
-    "docs*",
-    "data*",
-    "models*",
-    "artifacts*",
-    "logs*",
-    "neo4j_migrations*",
-    "archive*",
-    "venv*",
-    ".venv*",
-    "build*",
-    "dist*",
-]
+where = ["src"]
+include = ["aix*"]
+exclude = []
 
 # -----------------------------------------------------------------------------
 # Pytest (migrated from pytest.ini in step 3A.7)
@@ -127,6 +108,7 @@ asyncio_mode = "auto"
 [tool.ruff]
 line-length = 100
 target-version = "py310"
+src = ["src"]
 extend-exclude = [
     "neo4j_migrations",
     "archive",
@@ -172,6 +154,7 @@ python_version = "3.10"
 warn_return_any = false
 warn_unused_configs = true
 ignore_missing_imports = true
+mypy_path = "src"
 exclude = [
     "neo4j_migrations/",
     "archive/",

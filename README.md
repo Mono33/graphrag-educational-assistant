@@ -352,7 +352,7 @@ Sì, ci sono diverse strategie efficaci per studenti con ADHD:
 ### Using Agent Mode Programmatically
 
 ```python
-from agent import AgentOrchestrator
+from aix.agent import AgentOrchestrator
 
 # Initialize orchestrator
 orchestrator = AgentOrchestrator(
@@ -395,34 +395,42 @@ python -m pytest tests/integration/test_intent_detection.py
 
 ### Project Structure
 
+The repository follows the modern Python **src layout**: every importable module lives
+under a single top-level package `aix`, exposed by `pip install -e .[dev]`.
+
 ```
 graphaixlearning/
-├── config.py                       # Configuration management
-├── graph_retriever.py              # Hybrid retrieval + Node2Vec
-├── text2cypher.py                  # Base Text2Cypher
-├── multilingual_text2cypher.py     # Multilingual support
-├── context_builder.py              # Context structuring
-├── llm_chain.py                    # Response generation
-├── query_metrics.py                # Query-level metrics
 │
-├── agent/                          # Agentic GraphRAG (Multi-Agent Pipeline)
-│   ├── orchestrator.py             #   Main entry point (AgentOrchestrator)
-│   ├── agents/                     #   Planner, Retriever, Writer, Critic
-│   ├── graph/                      #   LangGraph state machine
-│   ├── prompts/                    #   Intent-specific prompts
-│   ├── media/                      #   Media lookup + diagram generation
-│   └── tools/                      #   GraphRAG wrapper for agents
+├── src/                            # All importable source code
+│   └── aix/                        #   Top-level package (import as `aix.*`)
+│       ├── __init__.py
+│       ├── core/                   #   Shared config + utilities
+│       │   └── config.py           #     `from aix.core.config import config`
+│       ├── retrieval/              #   GraphRAG retrieval layer
+│       │   ├── graph_retriever.py
+│       │   ├── context_builder.py
+│       │   ├── text2cypher.py
+│       │   ├── multilingual_text2cypher.py
+│       │   └── query_metrics.py
+│       ├── generation/             #   LLM response generation
+│       │   └── llm_chain.py
+│       ├── agent/                  #   Agentic GraphRAG (multi-agent pipeline)
+│       │   ├── orchestrator.py     #     `from aix.agent import AgentOrchestrator`
+│       │   ├── agents/             #     Planner, Retriever, Writer, Critic
+│       │   ├── graph/              #     LangGraph state machine
+│       │   ├── prompts/            #     Intent-specific prompts
+│       │   ├── media/              #     Media lookup + diagram generation
+│       │   ├── tools/              #     GraphRAG wrapper for agents
+│       │   └── configs/            #     Domain prompt extensions
+│       ├── api/                    #   FastAPI service
+│       │   ├── main.py             #     uvicorn aix.api.main:app
+│       │   ├── routes/context.py   #     /api/v1/context endpoint
+│       │   ├── schemas/models.py   #     Pydantic models
+│       │   └── graphrag_client.py  #     Helper client for DEV team
+│       └── domains/                #   Domain configs (UDL, Neuro)
 │
-├── api/                            # FastAPI module for integrations
-│   ├── main.py                     #   FastAPI app entry point
-│   ├── routes/context.py           #   /api/v1/context endpoint
-│   ├── schemas/models.py           #   Pydantic models
-│   └── graphrag_client.py          #   Helper client for DEV team
-│
-├── domains/                        # Domain configs (UDL, Neuro)
-│
-├── apps/                           # Entry points (not importable libraries)
-│   ├── streamlit/main.py           #   Streamlit interface (with Agent Mode)
+├── apps/                           # User-facing entry points (NOT importable libs)
+│   ├── streamlit/main.py           #   Streamlit interface (Agent + GraphRAG modes)
 │   └── cli/run_agent.py            #   Interactive agent testing CLI
 │
 ├── scripts/                        # Operational & data-prep scripts
@@ -442,7 +450,7 @@ graphaixlearning/
 │   ├── node2vec/                   #   Node2Vec {config,embeddings,model}
 │   └── embeddings_cache/           #   OpenAI embeddings cache
 │
-├── tests/                          # Test suite
+├── tests/                          # Test suite (mirrors src/aix/ structure)
 │   ├── integration/                #   Integration tests (external services)
 │   └── conftest.py                 #   Pytest config / shared fixtures
 │
@@ -459,9 +467,25 @@ graphaixlearning/
 ├── pyproject.toml                  # Build, deps, pytest, ruff, mypy config
 ├── requirements.txt                # Runtime dependencies
 ├── Makefile                        # Shortcuts: make test / api / streamlit
-├── Dockerfile                      # Container build
+├── Dockerfile                      # Container build (uvicorn aix.api.main:app)
 ├── .env.example                    # Environment template
 └── README.md                       # This file
+```
+
+**Common entry points** (after `pip install -e .[dev]`):
+
+```bash
+# FastAPI server (Swagger UI at http://localhost:8000/docs)
+uvicorn aix.api.main:app --reload --port 8000        # or: make api
+
+# Streamlit demo UI (http://localhost:8501)
+streamlit run apps/streamlit/main.py                 # or: make streamlit
+
+# Interactive Agent CLI
+python apps/cli/run_agent.py                         # or: make agent
+
+# Tests
+pytest tests/ -v                                     # or: make test
 ```
 
 ### Testing
@@ -528,7 +552,7 @@ streamlit run apps/streamlit/main.py
 
 ### 2. API Integration (FastAPI) 🆕
 ```bash
-uvicorn api.main:app --reload --port 8000
+uvicorn aix.api.main:app --reload --port 8000
 ```
 See [API_INTEGRATION_GUIDE.md](API_INTEGRATION_GUIDE.md) for full documentation.
 

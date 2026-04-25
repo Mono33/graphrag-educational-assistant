@@ -22,7 +22,7 @@ def test_resource_lookup():
     print("="*60)
     
     try:
-        from agent.media import ResourceLookup, ResourceCollection, ExpertResource
+        from aix.agent.media import ResourceLookup, ResourceCollection, ExpertResource
         
         # Initialize lookup
         lookup = ResourceLookup(domain="neuro")
@@ -125,7 +125,7 @@ def test_copyright_safety():
     print("="*60)
     
     try:
-        from agent.media import ResourceLookup
+        from aix.agent.media import ResourceLookup
         
         lookup = ResourceLookup(domain="neuro")
         all_resources = lookup.get_all_resources()

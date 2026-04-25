@@ -4,7 +4,7 @@ Test script for Hybrid Translation (Solution 3)
 Tests dictionary coverage and OpenAI fallback
 """
 
-from multilingual_text2cypher import MultilingualText2Cypher
+from aix.retrieval.multilingual_text2cypher import MultilingualText2Cypher
 import logging
 
 # Enable logging to see the hybrid logic

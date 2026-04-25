@@ -4,7 +4,7 @@ Tests that the Planner correctly identifies query intents.
 """
 
 import asyncio
-from agent.agents.planner_agent import PlannerAgent
+from aix.agent.agents.planner_agent import PlannerAgent
 
 
 async def test_intent_detection():

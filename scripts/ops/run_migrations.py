@@ -228,7 +228,7 @@ def main():
     # Use same configuration as your working scripts
     try:
         sys.path.append(str(Path(__file__).parent.parent))
-        from config import config
+        from aix.core.config import config
         
         # Validate config first
         is_valid, errors = config.validate()
