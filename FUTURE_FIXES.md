@@ -86,3 +86,40 @@ Current default: `openai/gpt-4o`. Evaluation criteria: Italian fluency, 4-phase 
 | `include_explainability=false` | `context_warning` still appears in response |
 | Concept graph max cap | No dangling edges, ≤20 nodes, ≤30 edges |
 | MITIGATED_BY edges (post Neo4j fix) | Correct direction in `concept_graph.edges` |
+
+---
+
+## 7. UDL KG Coverage Gap — Framework Taxonomy Not in Graph
+
+**Priority**: MEDIUM  
+**Files**: Neo4j UDL source JSON (UDL ingestion data)
+
+The UDL framework's own structural taxonomy (3 Principles → Guidelines → Checkpoints) is not stored as graph nodes. It exists only as prose in the system prompt. Queries that reference UDL principles by name produce Cypher with labels like `Principle`, `Guideline`, `Checkpoint` and relationships like `ALIGNS_TO`, `MENTIONS` — none of which exist in the UDL KG schema — and return 0 results with a transparent fallback.
+
+**Observed in diagnostic test (2026-04-24):**
+- Query: `"Come posso offrire molteplici modalità di rappresentazione dei contenuti"`
+- Generated Cypher: `MATCH (p:Principle {domain: "udl", name: "Representation"})<-[:ALIGNS_TO]-(g:Guideline {domain: "udl"})`
+- Result: 0 nodes, `context_warning` fires correctly
+
+**Fix**: Design and ingest a Principle→Guideline→Checkpoint node hierarchy into the UDL Neo4j KG. Suggested relationships: `(Guideline)-[:BELONGS_TO]->(Principle)`, `(Checkpoint)-[:BELONGS_TO]->(Guideline)`. Each Checkpoint should link to the teaching strategies and barriers already in the KG (e.g. `(Checkpoint)-[:ADDRESSED_BY]->(TeachingStrategy)`). This would allow framework queries to traverse into existing strategy/barrier nodes rather than hitting 0 results.
+
+**Note**: Until this is fixed, the transparent fallback (context_warning + 0 results) is the correct behavior — it does not silently return wrong results.
+
+---
+
+## 8. UDL Data Quality — `Public Error Correction` Inverted Relationship Type (Dyslexia)
+
+**Priority**: HIGH  
+**Files**: Neo4j UDL source JSON (Dyslexia ingestion data)
+
+`Public error correction` is stored with an inverted relationship type in the Dyslexia KG:
+- **Current (wrong)**: `(Risk of reduced self-efficacy in academics:Dyslexia) -[:SUGGESTS]-> (Public error correction)`
+- **Expected**: `(Risk of reduced self-efficacy in academics:Dyslexia) -[:NO_SUGGESTS]-> (Public error correction)`
+
+The system prompt explicitly lists this strategy under `NON SUGGERITO` for the self-efficacy risk barrier. However, `context_builder` accepts any `SUGGESTS`-linked node as a positive methodology recommendation, so the bug causes an actively harmful strategy (public correction of dyslexic students' errors) to surface as a recommended teaching approach.
+
+This is the same class of inverted-relationship error as Fix #1 (MITIGATED_BY in neuro domain).
+
+**Observed in diagnostic test (2026-04-24):** Query A UDL (`"Strategie per studenti con dislessia"`) — `Public error correction` appeared in methodology results linked via `SUGGESTS` from `Risk of reduced self-efficacy in academics`.
+
+**Fix**: In the Dyslexia source JSON, change the relationship type from `SUGGESTS` to `NO_SUGGESTS` for `Public error correction`. Re-ingest. Also audit all other Dyslexia barrier nodes for similarly inverted NO_SUGGESTS strategies (check `Unguided independent reading`, `Peer learning` — these were correctly stored as NO_SUGGESTS in the same query run, but a systematic audit is warranted).
