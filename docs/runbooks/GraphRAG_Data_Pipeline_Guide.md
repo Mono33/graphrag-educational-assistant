@@ -107,9 +107,9 @@ These steps are repeatable for any new domain. The scripts are shared.
 
 **How to run:**
 ```bash
-python clean_udl_data.py
+python scripts/data_prep/clean_udl_data.py
 # Runs all 3 phases automatically
-# Output: UDLdata/KG_UDL_FINAL.xlsx
+# Output: data/raw/udl/KG_UDL_FINAL.xlsx
 ```
 
 ---
@@ -131,8 +131,8 @@ python clean_udl_data.py
 
 **How to run:**
 ```bash
-python transform_team_data.py --team udl --input UDLdata/KG_UDL_FINAL.xlsx
-# Output: UDLdata/kg_udl_neo4j.json
+python scripts/data_prep/transform_team_data.py --team udl --input data/raw/udl/KG_UDL_FINAL.xlsx
+# Output: data/kg/udl/kg_udl_neo4j.json
 ```
 
 **UDL example:** Generated 763 nodes + 799 relationships.
@@ -147,7 +147,7 @@ python transform_team_data.py --team udl --input UDLdata/KG_UDL_FINAL.xlsx
 
 ### Step 3 — Neo4j Ingestion
 
-**Script:** `data_ingestion_neo4j.py` (shared across ALL domains)
+**Script:** `scripts/ingest/data_ingestion_neo4j.py` (shared across ALL domains)
 
 **Input:** JSON from Step 2
 
@@ -159,11 +159,11 @@ python transform_team_data.py --team udl --input UDLdata/KG_UDL_FINAL.xlsx
 
 **How to run:**
 ```bash
-python data_ingestion_neo4j.py \
+python scripts/ingest/data_ingestion_neo4j.py \
   --uri "bolt+s://graph.aiforlearning.digital:7687" \
   --user neo4j \
   --password "YOUR_PASSWORD" \
-  --file UDLdata/kg_udl_neo4j.json \
+  --file data/kg/udl/kg_udl_neo4j.json \
   --domain udl
 ```
 
@@ -194,16 +194,16 @@ Two embedding systems must be retrained after ingestion:
 
 #### 4a — Node2Vec (structural embeddings)
 
-**Script:** `train_node2vec.py`
+**Script:** `scripts/ml/train_node2vec.py`
 
 **What it does:** Trains graph embeddings that capture structural relationships between nodes (which nodes are connected, how, and through what paths).
 
 **How to run:**
 ```bash
-python train_node2vec.py udl
+python scripts/ml/train_node2vec.py udl
 ```
 
-**Output:** `models/udl_node2vec/` directory containing:
+**Output:** `artifacts/node2vec/` directory containing:
 - `udl_node2vec_model.pkl` — trained model
 - `udl_node2vec_embeddings.npz` — embedding vectors
 - `udl_node2vec_config.json` — training configuration
@@ -212,16 +212,16 @@ python train_node2vec.py udl
 
 #### 4b — OpenAI Semantic Embeddings
 
-**Script:** `graph_retriever.py --precompute`
+**Script:** `python -m aix.retrieval.graph_retriever --precompute`
 
 **What it does:** Generates OpenAI `text-embedding-3-small` embeddings for all node names, enabling semantic similarity search.
 
 **How to run:**
 ```bash
-python graph_retriever.py --precompute udl
+python -m aix.retrieval.graph_retriever --precompute udl
 ```
 
-**Output:** `models/embeddings_cache/udl_openai_embeddings.json`
+**Output:** `artifacts/embeddings_cache/udl_openai_embeddings.json`
 
 **UDL example:** 763 embeddings generated.
 
@@ -358,7 +358,7 @@ curl -X POST http://localhost:8000/api/v1/context \
 ### Step 7c — Streamlit Visual Validation (Optional)
 
 ```bash
-streamlit run streamlit_app.py
+streamlit run apps/streamlit/main.py    # or: make streamlit
 ```
 
 - Select UDL domain

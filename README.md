@@ -180,23 +180,32 @@ The Planner Agent automatically classifies queries into 7 intent types:
    # - OPENAI_API_KEY: Your OpenAI API key
    ```
 
-4. **Set up Neo4j database**
+4. **Ingest a Knowledge Graph into Neo4j**
+
+   Pre-baked KG dumps for both domains ship with the repo at
+   `data/kg/neuro/kg_neuro_neo4j.json` and `data/kg/udl/kg_udl_neo4j.json`,
+   so no data preparation is required for the default setup.
+
    ```bash
-   # Process your data (if starting fresh)
-   python process_data_graph4.py
-   
-   # Ingest data into Neo4j
-   python data_ingestion_neo4j.py --file concepts4_neo4j.json --password YOUR_PASSWORD --clear
+   # Ingest the included Neuro KG (or swap in kg_udl_neo4j.json for UDL)
+   python scripts/ingest/data_ingestion_neo4j.py \
+       --file data/kg/neuro/kg_neuro_neo4j.json \
+       --password YOUR_NEO4J_PASSWORD \
+       --clear
    ```
 
-5. **Train Node2Vec model** (optional, pre-trained models included)
+   *Advanced:* if you want to re-build the KG from raw team data,
+   use the helpers under `scripts/data_prep/` (e.g.
+   `clean_and_compare_neuro_data.py`, `merge_kg_json.py`).
+
+5. **Train Node2Vec model** (optional — pre-trained artifacts ship in `artifacts/node2vec/`)
    ```bash
-   python train_node2vec.py
+   python scripts/ml/train_node2vec.py neuro   # or udl
    ```
 
 6. **Run the Streamlit app**
-```bash
-   streamlit run apps/streamlit/main.py
+   ```bash
+   streamlit run apps/streamlit/main.py     # or: make streamlit
    ```
 
 7. **Access the app**
@@ -220,8 +229,8 @@ NEO4J_PASSWORD=your_password
 # OpenAI Configuration
 OPENAI_API_KEY=sk-your-openai-key
 
-# Node2Vec Model Path
-NODE2VEC_MODEL_DIR=./models
+# Node2Vec Model Path (Phase 3B: models/ was renamed to artifacts/)
+NODE2VEC_MODEL_DIR=./artifacts/node2vec
 ```
 
 ### Neo4j Setup
@@ -260,8 +269,8 @@ OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 **First-time setup for hybrid mode:**
 ```bash
 # Pre-compute OpenAI embeddings (one-time, ~$0.01)
-python graph_retriever.py --precompute neuro
-python graph_retriever.py --precompute udl
+python -m aix.retrieval.graph_retriever --precompute neuro
+python -m aix.retrieval.graph_retriever --precompute udl
 ```
 
 ### Comparison
@@ -279,8 +288,8 @@ Models are stored in `artifacts/`:
 
 ### Retrain Node2Vec:
 ```bash
-python train_node2vec.py neuro
-python train_node2vec.py udl
+python scripts/ml/train_node2vec.py neuro
+python scripts/ml/train_node2vec.py udl
 ```
 
 **Node2Vec Parameters:**

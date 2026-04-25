@@ -85,7 +85,9 @@ Teacher Query (Italian/English)
 
 ## What Works
 
-| Component | File | Lines | Status |
+> **Path note (post-`phase-3c-complete`):** all paths in the `File` column of the next two tables are relative to `src/aix/agent/` unless prefixed otherwise. For example `orchestrator.py` lives at `src/aix/agent/orchestrator.py`. The two non-agent rows below (`apps/streamlit/main.py` and `apps/cli/run_agent.py`) sit outside `src/aix/`.
+
+| Component | File (relative to `src/aix/agent/` unless noted) | Lines | Status |
 |---|---|---|---|
 | Orchestrator (entry point) | `orchestrator.py` | 356 | **Working** |
 | LangGraph state machine | `graph/lesson_planner_graph.py` | 186 | **Working** |
@@ -103,12 +105,12 @@ Teacher Query (Italian/English)
 | Resource lookup | `media/resource_lookup.py` | 447 | **Working** |
 | Prompts (Planner/Writer/Critic) | `prompts/*.py` | 1,265 | **Working** |
 | Domain extensions (Neuro/UDL) | `configs/domain_prompts.py` | 232 | **Working** (UDL thin) |
-| Streamlit UI (Agent mode tab) | `streamlit_app.py` | — | **Working** |
-| CLI test harness | `test_agent.py` | 242 | **Working** |
+| Streamlit UI (Agent mode tab) | *repo-relative:* `apps/streamlit/main.py` | — | **Working** |
+| CLI test harness | *repo-relative:* `apps/cli/run_agent.py` | 242 | **Working** |
 
 ## What's Placeholder (Phase 3)
 
-| Component | File | Lines | Status |
+| Component | File (relative to `src/aix/agent/`) | Lines | Status |
 |---|---|---|---|
 | Graph Updater Agent | `agents/graph_updater_agent.py` | 96 | **Stub** — returns empty |
 | Curriculum Tool | `tools/curriculum_tool.py` | 180 | **Stub** — returns placeholder |

@@ -90,8 +90,8 @@ python scripts/ingest/data_ingestion_neo4j.py \
 
 ```bash
 # Ingest UDL data (if you have it)
-python data_ingestion_neo4j.py \
-    --file kg_udl_neo4j.json \
+python scripts/ingest/data_ingestion_neo4j.py \
+    --file data/kg/udl/kg_udl_neo4j.json \
     --domain udl \
     --clear-domain udl \
     --uri $NEO4J_URI \
@@ -117,7 +117,7 @@ Node2Vec enables semantic search for better query results (+60-80% recall improv
 
 ### **Train for Neuro Domain**:
 ```bash
-python train_node2vec.py neuro
+python scripts/ml/train_node2vec.py neuro
 ```
 
 **Expected output**:
@@ -131,14 +131,14 @@ Training Node2Vec model...
 [Progress bars]
 Node2Vec training completed!
 Building embeddings index: 478 nodes
-Model saved to models/neuro_node2vec
+Model saved to artifacts/node2vec/neuro_node2vec_*
 
 🔍 Node2Vec Similarity Test Results (Domain: neuro)
 ============================================================
 [Test results showing similarity scores]
 
 ✅ Training completed successfully!
-📁 Model saved to: models/neuro_node2vec
+📁 Model saved to: artifacts/node2vec/neuro_node2vec_*
 🎯 Ready to use in graph retriever with use_vectors=True
 ```
 
@@ -148,14 +148,14 @@ Model saved to models/neuro_node2vec
 
 ### **Train for UDL Domain** (if you ingested UDL data):
 ```bash
-python train_node2vec.py udl
+python scripts/ml/train_node2vec.py udl
 ```
 
 ---
 
 ### **Train for All Domains**:
 ```bash
-python train_node2vec.py all
+python scripts/ml/train_node2vec.py all
 ```
 
 **Note**: If you skip this step, the system will still work but without semantic search capabilities. You can train Node2Vec later at any time.

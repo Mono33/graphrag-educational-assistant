@@ -1,7 +1,9 @@
 # [AI TEAM] - AGENTIC GRAPHRAG — Updated Task Description
 
-**Last Updated:** January 27, 2026  
+**Last Updated:** April 25, 2026 *(repo paths refreshed for `phase-3c-complete` — all `agent/`, `api/`, `domains/` are now under `src/aix/`)*
 **Copy-paste the sections below into ClickUp**
+
+> 📦 **Repo layout note:** Since `phase-3c-complete` (April 25, 2026), every importable module lives under `src/aix/`. References below to `src/aix/agent/...`, `src/aix/api/...`, `src/aix/domains/...`, etc. are the canonical post-reorg locations. See `docs/product/REPO_REORG_MIGRATION_GUIDE.md` for a one-page cheat sheet on the new layout. The implementation plan, dependencies, and effort estimates below are unchanged by the reorg.
 
 ---
 
@@ -71,7 +73,7 @@ Extend the existing GraphRAG system with a multi-agent pipeline for intelligent,
 - **Issues:** UDL has no media JSON, Neuro only 20/695 concepts mapped, `diagram_factory.py` has DALL-E method name bug, External APIs not tested with real keys
 
 **Neuro Media Mapping** *(partial — 20/695 concepts = 2.9% coverage)*
-- `generate_media_mapping.py`: Script to generate curated media JSON from KG concepts via GPT-4o
+- `scripts/ml/generate_media_mapping.py`: Script to generate curated media JSON from KG concepts via GPT-4o
 - Supports batched async processing with rate limiting
 - Only 20 concepts mapped due to `--limit` during initial test run
 
@@ -79,54 +81,54 @@ Extend the existing GraphRAG system with a multi-agent pipeline for intelligent,
 - Neuro domain: Full prompt extensions (~85 lines) covering neurodidactic principles
 - UDL domain: Basic prompt extensions (~25 lines) — needs enrichment
 - Domain-aware prompt routing for Writer and Critic agents
-- **Critical gap:** Agent Writer/Critic completely disconnected from rich `domains/udl_domain.py` (200+ lines) and `domains/neuro_domain.py` configs. Design doc with 3 options exists, none implemented.
+- **Critical gap:** Agent Writer/Critic completely disconnected from rich `src/aix/domains/udl_domain.py` (200+ lines) and `src/aix/domains/neuro_domain.py` configs. Design doc with 3 options exists, none implemented.
 
 **CLI Test Harness**
-- `test_agent.py`: Interactive CLI for testing agent pipeline with custom queries
+- `apps/cli/run_agent.py`: Interactive CLI for testing agent pipeline with custom queries (Phase 3B: was `test_agent.py` at repo root)
 - `--query` flag for single-run mode, interactive loop for exploration
 
 ---
 
-### 📁 Files Modified/Created (30 files in agent/)
+### 📁 Files Modified/Created (30 files under `src/aix/agent/`)
 
 **Core Pipeline:**
-- `agent/orchestrator.py` | Main entry point, simplified API (356 lines)
-- `agent/graph/lesson_planner_graph.py` | LangGraph state machine (186 lines)
-- `agent/graph/nodes.py` | Pipeline node definitions (386 lines)
-- `agent/graph/state.py` | State types + enums (213 lines)
+- `src/aix/agent/orchestrator.py` | Main entry point, simplified API (356 lines)
+- `src/aix/agent/graph/lesson_planner_graph.py` | LangGraph state machine (186 lines)
+- `src/aix/agent/graph/nodes.py` | Pipeline node definitions (386 lines)
+- `src/aix/agent/graph/state.py` | State types + enums (213 lines)
 
 **Agents:**
-- `agent/agents/planner_agent.py` | Query analysis + intent + scope detection (189 lines)
-- `agent/agents/retriever_agent.py` | Multi-search + media + external APIs (619 lines)
-- `agent/agents/writer_agent.py` | Adaptive content generation (415 lines)
-- `agent/agents/critic_agent.py` | Review + quality scoring (224 lines)
-- `agent/agents/graph_updater_agent.py` | Phase 3 placeholder (96 lines)
+- `src/aix/agent/agents/planner_agent.py` | Query analysis + intent + scope detection (189 lines)
+- `src/aix/agent/agents/retriever_agent.py` | Multi-search + media + external APIs (619 lines)
+- `src/aix/agent/agents/writer_agent.py` | Adaptive content generation (415 lines)
+- `src/aix/agent/agents/critic_agent.py` | Review + quality scoring (224 lines)
+- `src/aix/agent/agents/graph_updater_agent.py` | Phase 3 placeholder (96 lines)
 
 **Tools:**
-- `agent/tools/graphrag_tool.py` | GraphRAG wrapper for agents (258 lines)
-- `agent/tools/curriculum_tool.py` | Phase 3 placeholder (180 lines)
+- `src/aix/agent/tools/graphrag_tool.py` | GraphRAG wrapper for agents (258 lines)
+- `src/aix/agent/tools/curriculum_tool.py` | Phase 3 placeholder (180 lines)
 
 **Prompts:**
-- `agent/prompts/planner_prompt.py` | Planner system + user prompts (295 lines)
-- `agent/prompts/writer_prompt.py` | Intent-specific writer prompts (725 lines)
-- `agent/prompts/critic_prompt.py` | Evaluation criteria prompts (245 lines)
-- `agent/prompts/templates/lesson_template.txt` | Italian lesson template (94 lines — not imported)
-- `agent/configs/domain_prompts.py` | Neuro/UDL prompt extensions (232 lines)
+- `src/aix/agent/prompts/planner_prompt.py` | Planner system + user prompts (295 lines)
+- `src/aix/agent/prompts/writer_prompt.py` | Intent-specific writer prompts (725 lines)
+- `src/aix/agent/prompts/critic_prompt.py` | Evaluation criteria prompts (245 lines)
+- `src/aix/agent/prompts/templates/lesson_template.txt` | Italian lesson template (94 lines — not imported)
+- `src/aix/agent/configs/domain_prompts.py` | Neuro/UDL prompt extensions (232 lines)
 
 **Media Layer:**
-- `agent/media/external_apis.py` | YouTube, Wikipedia, Semantic Scholar, OER (1,054 lines)
-- `agent/media/media_lookup.py` | Sidecar JSON media loading (419 lines)
-- `agent/media/mermaid_generator.py` | LLM → Mermaid diagrams (510 lines)
-- `agent/media/image_generator.py` | DALL-E 3 diagrams (442 lines)
-- `agent/media/diagram_factory.py` | Routing to Mermaid/DALL-E/Canva (371 lines)
-- `agent/media/resource_lookup.py` | Static resource lookup (447 lines)
-- `agent/media/canva_generator.py` | Phase 5 placeholder (238 lines)
+- `src/aix/agent/media/external_apis.py` | YouTube, Wikipedia, Semantic Scholar, OER (1,054 lines)
+- `src/aix/agent/media/media_lookup.py` | Sidecar JSON media loading (419 lines)
+- `src/aix/agent/media/mermaid_generator.py` | LLM → Mermaid diagrams (510 lines)
+- `src/aix/agent/media/image_generator.py` | DALL-E 3 diagrams (442 lines)
+- `src/aix/agent/media/diagram_factory.py` | Routing to Mermaid/DALL-E/Canva (371 lines)
+- `src/aix/agent/media/resource_lookup.py` | Static resource lookup (447 lines)
+- `src/aix/agent/media/canva_generator.py` | Phase 5 placeholder (238 lines)
 
-**Other:**
-- `streamlit_app.py` | UI with mode toggle + agent mode
-- `test_agent.py` | CLI test harness (242 lines)
-- `generate_media_mapping.py` | Media mapping generator (488 lines)
-- `kg_neuro_media_mapping.json` | Curated media for 20 Neuro concepts
+**Other (entry points & data, NOT under `src/aix/`):**
+- `apps/streamlit/main.py` | UI with mode toggle + agent mode (Phase 3B: moved out of repo root)
+- `apps/cli/run_agent.py` | CLI test harness (Phase 3B: was `test_agent.py` at repo root)
+- `scripts/ml/generate_media_mapping.py` | Media mapping generator (488 lines)
+- `data/media/kg_neuro_media_mapping.json` | Curated media for 20 Neuro concepts (Phase 3B: moved from repo root)
 
 **Total: ~7,500+ lines | 24 working files | 4 stubs/placeholders | 2 known bugs**
 
@@ -355,17 +357,17 @@ Three quick bug fixes / tech debt cleanups to do before validation work.
 **Priority:** 🔴 Urgent | **Effort:** 1-4h | **Assignee:** LM
 
 **Description:**
-Connect Agent mode Writer/Critic to the rich domain configs in `domains/udl_domain.py` (200+ lines) and `domains/neuro_domain.py`. Currently the Agent pipeline's prompts are completely isolated — the UDL Writer extension is only 25 lines vs 200+ available. Design doc exists with 3 options (`docs/Agent_Domain_Prompt_Integration.md`), none implemented.
+Connect Agent mode Writer/Critic to the rich domain configs in `src/aix/domains/udl_domain.py` (200+ lines) and `src/aix/domains/neuro_domain.py`. Currently the Agent pipeline's prompts are completely isolated — the UDL Writer extension is only 25 lines vs 200+ available. Design doc exists with 3 options (`docs/architecture/Agent_Domain_Prompt_Integration.md`), none implemented.
 
 **Migration path:**
-- Step 1 — Option 2 (quick win, ~1h): Modify `get_domain_extension()` in `domain_prompts.py` to dynamically load `get_system_prompt()` from `domains/`. Writer keeps its lesson plan format. 1 file changed.
-- Step 2 — Option 3 (clean architecture, ~4h): Add `get_lesson_plan_template()` to `base_config.py`, implement domain-specific lesson structures (Neuro: I Do/We Do/You Do; UDL: 3-Principle framework).
+- Step 1 — Option 2 (quick win, ~1h): Modify `get_domain_extension()` in `src/aix/agent/configs/domain_prompts.py` to dynamically load `get_system_prompt()` from `src/aix/domains/`. Writer keeps its lesson plan format. 1 file changed.
+- Step 2 — Option 3 (clean architecture, ~4h): Add `get_lesson_plan_template()` to `src/aix/domains/base_config.py`, implement domain-specific lesson structures (Neuro: I Do/We Do/You Do; UDL: 3-Principle framework).
 
 **Acceptance Criteria:**
-- [ ] Writer agent receives rich domain expertise (variability profiles, checkpoints, meta-rules) from `domains/` configs
+- [ ] Writer agent receives rich domain expertise (variability profiles, checkpoints, meta-rules) from `src/aix/domains/` configs
 - [ ] Critic agent gets domain-specific evaluation criteria
-- [ ] Backward compatible (graceful fallback if `domains/` import fails)
-- [ ] Test both Neuro and UDL domains via `test_agent.py`
+- [ ] Backward compatible (graceful fallback if `aix.domains` import fails)
+- [ ] Test both Neuro and UDL domains via `python apps/cli/run_agent.py`
 - [ ] Existing Subtask E5 (Quality Assurance) benefits from enriched Critic criteria
 
 **Depends on:** None
@@ -384,24 +386,24 @@ Port the per-request `EducationalProfile` schema from the existing `fem/enhanced
 **What's already coded** (on `fem/enhanced-variables-extraction`, ready to port):
 - 6 enums: `GradeLevel`, `DisabilityType` (10 BES types: DSA, ADHD, DOP, DF, DCGL/M/S, DLDS, PD, SA), `ClassFeature`, `StudentAttribute`, `FornitureMobility`, `OwnDevicePolicy`
 - 3 Pydantic models: `EducationalGroup`, `ClassroomEnvironment`, `EducationalProfile`
-- File: `api/schemas/educational_profile.py`
+- File on source branch: `api/schemas/educational_profile.py` (pre-reorg path) → ports to `src/aix/api/schemas/educational_profile.py` on this branch
 
 **Why it matters:** Without this, the rich domain prompts from #2 have nothing to specialize against — every lesson gets generic adaptations because the agent doesn't know it's a 25-student class with 2 ADHD + 1 DSA in a non-mobile room with no LIM. Subtasks #2 and #2.5 are the *input → processing* pair that together unlock real personalization.
 
 **Acceptance Criteria:**
-- [ ] Port `api/schemas/educational_profile.py` (6 enums + 3 Pydantic models) into the current branch
-- [ ] Add optional `educational_profile: Optional[EducationalProfile] = None` field to `ContextRequest` (GraphRAG) and the future `AgentRequest` (#7)
-- [ ] Propagate profile through `AgentState` (`agent/graph/state.py` — pattern already exists on source branch)
+- [ ] Port the schema (6 enums + 3 Pydantic models) into `src/aix/api/schemas/educational_profile.py`
+- [ ] Add optional `educational_profile: Optional[EducationalProfile] = None` field to `ContextRequest` (GraphRAG, in `src/aix/api/schemas/models.py`) and the future `AgentRequest` (#7)
+- [ ] Propagate profile through `AgentState` (`src/aix/agent/graph/state.py` — pattern already exists on source branch)
 - [ ] Inject profile context into Writer / Planner / Critic prompts via the domain extension layer (combines with #2)
 - [ ] Use profile in `MethodologyRanker` to boost methodologies matching disabilities present (e.g., if `ADHD` in profile, boost ADHD-tagged strategies)
 - [ ] Backward compatible: every field is `Optional`; missing profile falls back to current generic behavior
-- [ ] Document profile fields in `docs/Explainability_API_Guide_for_Frontend.md` so Simone knows exactly what to send
+- [ ] Document profile fields in `docs/api/Explainability_API_Guide_for_Frontend.md` so Simone knows exactly what to send
 - [ ] Test: same query with and without profile produces measurably different recommendations
 
 **Depends on:** None (can start immediately, ideally in parallel with #2)
 **Pairs with:** #2 (Agent ↔ Domain Config Integration)
 **Unblocks:** E5 (Quality Assurance — Critic can now evaluate profile-aware adaptations), #7 (Agent endpoint accepts richer payload), #16 (Long-Term Memory will store last-used `EducationalProfile` per teacher)
-**Reference branch to port from:** `fem/enhanced-variables-extraction` — files: `api/schemas/educational_profile.py`, `agent/graph/state.py`
+**Reference branch to port from:** `fem/enhanced-variables-extraction` — source files (pre-reorg paths): `api/schemas/educational_profile.py`, `agent/graph/state.py` → land here as `src/aix/api/schemas/educational_profile.py` and `src/aix/agent/graph/state.py`
 
 ---
 
@@ -413,10 +415,10 @@ Port the per-request `EducationalProfile` schema from the existing `fem/enhanced
 The Critic Agent already exists with multi-criteria scoring (Structure, Evidence Grounding, Pedagogical Soundness) and an automatic revision loop (max 2 cycles, triggers if average < 3.5 or any criterion < 2). Two pieces are still missing for production-quality evaluation: (1) the UDL evaluation criteria are thin (~25 lines) compared to Neuro (~85 lines), and (2) the end-to-end revision loop has never been exercised against real teacher queries with the rich domain configs and the `EducationalProfile`.
 
 **Acceptance Criteria:**
-- [ ] After #2 lands: confirm Critic auto-loads UDL evaluation criteria from `domains/udl_domain.py` via the dynamic `get_domain_extension()` path
+- [ ] After #2 lands: confirm Critic auto-loads UDL evaluation criteria from `src/aix/domains/udl_domain.py` via the dynamic `get_domain_extension()` path
 - [ ] After #2.5 lands: confirm Critic penalizes lesson plans that ignore the `EducationalProfile` (e.g., ignoring stated disabilities, exceeding class capacity)
-- [ ] Run `test_agent.py` with 5 representative UDL queries and 5 Neuro queries; verify revision loop fires when expected
-- [ ] Document the Critic's scoring rubric for both domains in `docs/Agentic_GraphRAG_Architecture_Analysis.md`
+- [ ] Run `python apps/cli/run_agent.py` with 5 representative UDL queries and 5 Neuro queries; verify revision loop fires when expected
+- [ ] Document the Critic's scoring rubric for both domains in `docs/architecture/Agentic_GraphRAG_Architecture_Analysis.md`
 - [ ] Auto-approve safety net (after `max_revisions=2`) still works to prevent infinite loops
 
 **Depends on:** #2 (Agent ↔ Domain Config Integration), #2.5 (Educational Profile Schema Integration)
@@ -428,18 +430,18 @@ The Critic Agent already exists with multi-criteria scoring (Structure, Evidence
 **Priority:** 🟠 High | **Effort:** 2h | **Assignee:** LM
 
 **Description:**
-Fix `generate_media_mapping.py` for UDL support and generate `kg_udl_media_mapping.json`. Currently 3 issues block UDL: wrong KG path, Neuro-specific system prompt, Neuro-specific priority categories.
+Fix `scripts/ml/generate_media_mapping.py` for UDL support and generate `data/media/kg_udl_media_mapping.json`. Currently 3 issues block UDL: wrong KG path, Neuro-specific system prompt, Neuro-specific priority categories.
 
 **Acceptance Criteria:**
-- [ ] Fix KG path resolution for UDL (`UDLdata/kg_udl_neo4j.json`)
+- [ ] Fix KG path resolution for UDL (`data/kg/udl/kg_udl_neo4j.json` — Phase 3B layout)
 - [ ] Create UDL-specific system prompt (CAST framework, inclusive education, variability profiles, UDL-specific OER sources)
 - [ ] Add UDL priority categories (`Adhd`, `AutismSpectrum`, `Dyslexia`, `UdlPrinciple`, `Barrier`, `MitigationStrategy`, etc.)
 - [ ] Create UDL-specific user prompt template
 - [ ] Test with `--limit 5` before full run
-- [ ] Generate `kg_udl_media_mapping.json` (~763 concepts)
+- [ ] Generate `data/media/kg_udl_media_mapping.json` (~763 concepts)
 
 **Depends on:** None
-**Reference:** `docs/Media_Mapping_and_Model_Upgrade_Analysis.md` — Part A, Sections A5-A7
+**Reference:** `docs/architecture/Media_Mapping_and_Model_Upgrade_Analysis.md` — Part A, Sections A5-A7
 
 ---
 
@@ -447,16 +449,16 @@ Fix `generate_media_mapping.py` for UDL support and generate `kg_udl_media_mappi
 **Priority:** 🟠 High | **Effort:** 1h | **Assignee:** LM/AG
 
 **Description:**
-Run `generate_media_mapping.py` for all ~695 Neuro concepts. Currently only 20 are mapped (2.9% coverage) due to `--limit 20` during initial test run. Cost: ~$5-8. Time: ~40 min.
+Run `scripts/ml/generate_media_mapping.py` for all ~695 Neuro concepts. Currently only 20 are mapped (2.9% coverage) due to `--limit 20` during initial test run. Cost: ~$5-8. Time: ~40 min.
 
 **Acceptance Criteria:**
-- [ ] Run: `python generate_media_mapping.py --domain neuro --batch-size 10`
+- [ ] Run: `python scripts/ml/generate_media_mapping.py --domain neuro --batch-size 10`
 - [ ] Verify output covers ~695 concepts
 - [ ] Spot-check 10 entries for quality (videos, citations, OER)
 - [ ] Backup existing 20-concept JSON before overwriting
 
 **Depends on:** None
-**Reference:** `docs/Media_Mapping_and_Model_Upgrade_Analysis.md` — Part A, Section A4
+**Reference:** `docs/architecture/Media_Mapping_and_Model_Upgrade_Analysis.md` — Part A, Section A4
 
 ---
 
@@ -484,8 +486,8 @@ The ExternalMediaAPI (YouTube, Wikipedia, Semantic Scholar, OER) has 1,054 lines
 The full media layer (MediaLookup + ExternalMediaAPI + MermaidGenerator + ImageGenerator + DiagramFactory) must be validated as a whole. Individual components may work but the integration through RetrieverAgent → WriterAgent has not been tested.
 
 **Acceptance Criteria:**
-- [ ] MediaLookup loads `kg_neuro_media_mapping.json` correctly
-- [ ] MediaLookup loads `kg_udl_media_mapping.json` correctly (requires #3 done first)
+- [ ] MediaLookup loads `data/media/kg_neuro_media_mapping.json` correctly
+- [ ] MediaLookup loads `data/media/kg_udl_media_mapping.json` correctly (requires #3 done first)
 - [ ] MermaidGenerator produces valid diagram URLs
 - [ ] ImageGenerator produces DALL-E images (requires OpenAI API)
 - [ ] DiagramFactory routes correctly to Mermaid and DALL-E (DALL-E fix from #1 required)
@@ -546,13 +548,13 @@ Research and decide which frontend platform best fits the Agentic GraphRAG **as 
 Create a FastAPI endpoint `POST /api/v1/agent/lesson` that exposes the Agent pipeline to the chosen frontend (decided in #6.5). Currently only GraphRAG mode has an API endpoint (`/api/v1/context`). The Agent mode is only accessible via Streamlit and CLI.
 
 **Acceptance Criteria:**
-- [ ] New route file `api/routes/agent.py`
+- [ ] New route file `src/aix/api/routes/agent.py`
 - [ ] Endpoint accepts: `query`, `domain`, `language`, `session_id`, **`educational_profile`** (from #2.5)
 - [ ] Returns: lesson plan content, metadata (intent, scope), scores, approval status, **explainability fields** (matching `/api/v1/context` patterns)
 - [ ] Error handling and validation (Pydantic)
 - [ ] Auth middleware (scheme determined by #6.5)
 - [ ] CORS configuration matching the chosen frontend host (#6.5)
-- [ ] Registered in `api/main.py`
+- [ ] Registered in `src/aix/api/main.py` (served by `uvicorn aix.api.main:app`)
 
 **Depends on:** #6.5 (Frontend Platform Evaluation — defines auth + payload contract), #2.5 (Educational Profile schema)
 **Blocks:** #12 (SSE Streaming)
@@ -600,14 +602,14 @@ Add a retrieval quality grading step between Retriever and Writer in the LangGra
 **Description:**
 Add LangGraph checkpointing so teachers can refine lesson plans across multiple turns ("add an ADHD activity", "change duration to 45 min"). Currently `session_id` exists in AgentState but is never used for persistence — every query starts from scratch.
 
-Root cause: `lesson_planner_graph.py` line 68 compiles without a checkpointer:
+Root cause: `src/aix/agent/graph/lesson_planner_graph.py` line 68 compiles without a checkpointer:
 `compiled = workflow.compile()  # ← No checkpointer!`
 
 **Acceptance Criteria:**
-- [ ] Add `MemorySaver` (dev) or `PostgresSaver` (production) to `lesson_planner_graph.py`
+- [ ] Add `MemorySaver` (dev) or `PostgresSaver` (production) to `src/aix/agent/graph/lesson_planner_graph.py`
 - [ ] Pass `thread_id` config at invocation using `session_id`
 - [ ] Multi-turn test: query → follow-up modification → verify context preserved
-- [ ] Update `test_agent.py` to support session mode
+- [ ] Update `apps/cli/run_agent.py` to support session mode
 - [ ] Update FastAPI endpoint (#7) to accept and pass session_id
 
 **Depends on:** None
@@ -625,7 +627,7 @@ Add structured tracing (LangSmith or Langfuse — Langfuse is open-source/self-h
 - [ ] Add `LANGCHAIN_TRACING_V2=true` + `LANGCHAIN_API_KEY` (or Langfuse equivalent) to `.env`
 - [ ] Verify trace appears in dashboard for agent pipeline (planner → retriever → writer → critic)
 - [ ] Verify cost tracking (tokens per node, $ per request)
-- [ ] Document setup in README and `docs/GraphRAG_Data_Pipeline_Guide.md`
+- [ ] Document setup in README and `docs/runbooks/GraphRAG_Data_Pipeline_Guide.md`
 
 **Depends on:** LangSmith API key (free tier: 5K traces/month) OR self-hosted Langfuse instance
 **Unblocks:** CORE 3 (#13, #14, #17, #18 all need traces for measurement)
@@ -787,7 +789,7 @@ Wrap GraphRAG and Media tools as MCP (Model Context Protocol) servers so externa
 - [ ] Test with MCP client
 
 **Depends on:** None (additive, doesn't replace existing code)
-**Reference:** `docs/Agentic_GraphRAG_Architecture_Analysis.md` — Section 3
+**Reference:** `docs/architecture/Agentic_GraphRAG_Architecture_Analysis.md` — Section 3
 
 ---
 
@@ -795,7 +797,7 @@ Wrap GraphRAG and Media tools as MCP (Model Context Protocol) servers so externa
 **Priority:** 🔵 Low | **Effort:** 2-3 days | **Assignee:** LM
 
 **Description:**
-Implement the Graph Updater Agent to extract new concepts from generated lesson plans and propose Knowledge Graph additions. Currently a stub returning empty results (`agent/agents/graph_updater_agent.py`). Critical for keeping the KG fresh as teachers use the system — without it, the KG ossifies.
+Implement the Graph Updater Agent to extract new concepts from generated lesson plans and propose Knowledge Graph additions. Currently a stub returning empty results (`src/aix/agent/agents/graph_updater_agent.py`). Critical for keeping the KG fresh as teachers use the system — without it, the KG ossifies.
 
 **Acceptance Criteria:**
 - [ ] LLM extracts candidate concepts from approved lesson plans (e.g., new strategies mentioned)
@@ -812,7 +814,7 @@ Implement the Graph Updater Agent to extract new concepts from generated lesson 
 **Priority:** 🔵 Low | **Effort:** 2-3 days | **Assignee:** LM/AG
 
 **Description:**
-Implement curriculum standards lookup: Italian National Curriculum (Indicazioni Nazionali), European Qualifications Framework, regional school authority standards. Currently a stub returning placeholder data (`agent/tools/curriculum_tool.py`). Lets the agent verify each lesson aligns with required learning outcomes for the teacher's grade level.
+Implement curriculum standards lookup: Italian National Curriculum (Indicazioni Nazionali), European Qualifications Framework, regional school authority standards. Currently a stub returning placeholder data (`src/aix/agent/tools/curriculum_tool.py`). Lets the agent verify each lesson aligns with required learning outcomes for the teacher's grade level.
 
 **Acceptance Criteria:**
 - [ ] Source: Italian Ministry of Education API or scraped/cached dataset
@@ -828,7 +830,7 @@ Implement curriculum standards lookup: Italian National Curriculum (Indicazioni 
 **Priority:** 🔵 Low | **Effort:** 1-2 days | **Assignee:** AG
 
 **Description:**
-Implement Canva Connect API for professional template-based slide-deck and worksheet generation. Currently a stub returning "coming soon" (`agent/media/canva_generator.py`). Lets teachers export a generated lesson plan as a polished slide deck or worksheet ready to use in class.
+Implement Canva Connect API for professional template-based slide-deck and worksheet generation. Currently a stub returning "coming soon" (`src/aix/agent/media/canva_generator.py`). Lets teachers export a generated lesson plan as a polished slide deck or worksheet ready to use in class.
 
 **Acceptance Criteria:**
 - [ ] Canva Connect API integration
@@ -844,11 +846,12 @@ Implement Canva Connect API for professional template-based slide-deck and works
 
 | Document | Content |
 |---|---|
-| `docs/Agentic_GraphRAG_Architecture_Analysis.md` | Full architecture analysis, best practices gaps (10 items), MCP analysis, memory analysis (3 types), priority roadmap |
-| `docs/Media_Mapping_and_Model_Upgrade_Analysis.md` | Media mapping script analysis (3 UDL blocking bugs) + GPT-5.x upgrade strategy (tiered recommendation) |
-| `docs/Agent_Domain_Prompt_Integration.md` | 3 options for connecting Agent prompts to domain configs. Option 2 (quick win) → Option 3 (clean architecture) |
-| `docs/GraphRAG_Data_Pipeline_Guide.md` | Data pipeline documentation for data ingestion and validation |
-| `docs/Agentic_GraphRAG_BestPractices_Validation.md` | **Companion doc** — validates CORE 1–6 plan against 2026 Agentic RAG best practices: subtask coverage audit, tech stack validation (17/17), architecture pattern check, 3 minor gap recommendations |
+| `docs/architecture/Agentic_GraphRAG_Architecture_Analysis.md` | Full architecture analysis, best practices gaps (10 items), MCP analysis, memory analysis (3 types), priority roadmap |
+| `docs/architecture/Media_Mapping_and_Model_Upgrade_Analysis.md` | Media mapping script analysis (3 UDL blocking bugs) + GPT-5.x upgrade strategy (tiered recommendation) |
+| `docs/architecture/Agent_Domain_Prompt_Integration.md` | 3 options for connecting Agent prompts to domain configs. Option 2 (quick win) → Option 3 (clean architecture) |
+| `docs/runbooks/GraphRAG_Data_Pipeline_Guide.md` | Data pipeline documentation for data ingestion and validation |
+| `docs/architecture/Agentic_GraphRAG_BestPractices_Validation.md` | **Companion doc** — validates CORE 1–6 plan against 2026 Agentic RAG best practices: subtask coverage audit, tech stack validation (17/17), architecture pattern check, 3 minor gap recommendations |
+| `docs/product/REPO_REORG_MIGRATION_GUIDE.md` | **Onboarding cheat-sheet** — one-page guide explaining the `src/aix/` layout (Phase 3C), old→new path mappings, new entry points, and how to fix old-import branches with the rewrite script |
 
 ---
 

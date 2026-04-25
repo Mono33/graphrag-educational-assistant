@@ -121,7 +121,7 @@ The existing `kg_neuro_media_mapping.json` was generated on **January 16, 2026**
 
 ## A5. Issues Blocking UDL Support
 
-Three critical issues prevent running `python generate_media_mapping.py --domain udl`:
+Three critical issues prevent running `python scripts/ml/generate_media_mapping.py --domain udl`:
 
 ### Issue 1: Wrong KG File Path
 
@@ -572,7 +572,7 @@ Use GPT-5.1 for the GraphRAG pipeline (no LangChain upgrade risk), upgrade to GP
 - [ ] Change Planner: `model="gpt-5.4-mini"`
 - [ ] Change Writer: `model="gpt-5.4"`
 - [ ] Change Critic: `model="gpt-5.4-mini"`
-- [ ] Run `test_agent.py` with 3 queries per domain
+- [ ] Run `python apps/cli/run_agent.py` with 3 queries per domain
 - [ ] Compare lesson plan quality with GPT-4o baseline
 
 ### Phase 5: Validation & Production (1 day)
