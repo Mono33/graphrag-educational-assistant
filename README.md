@@ -118,7 +118,7 @@ The Planner Agent automatically classifies queries into 7 intent types:
    - Evidence-based recommendations
    - Confidence assessment
 
-5. **Streamlit Interface** (`streamlit_app.py`)
+5. **Streamlit Interface** (`apps/streamlit/main.py`)
    - Interactive web application
    - Real-time pipeline visualization
    - Evidence and comparison views
@@ -189,7 +189,7 @@ The Planner Agent automatically classifies queries into 7 intent types:
 
 6. **Run the Streamlit app**
 ```bash
-   streamlit run streamlit_app.py
+   streamlit run apps/streamlit/main.py
    ```
 
 7. **Access the app**
@@ -323,7 +323,7 @@ Sì, ci sono diverse strategie efficaci per studenti con ADHD:
 
 ### Using Agent Mode in Streamlit
 
-1. Launch the Streamlit app: `streamlit run streamlit_app.py`
+1. Launch the Streamlit app: `streamlit run apps/streamlit/main.py`
 2. Toggle **"🤖 Modalità Agente"** in the sidebar
 3. Enter your query (lesson request, definition, comparison, etc.)
 4. The multi-agent pipeline will:
@@ -370,16 +370,16 @@ print(result.query_intent)      # Detected intent type
 
 ```bash
 # Interactive testing
-python test_agent.py
+python apps/cli/run_agent.py
 
 # With options
-python test_agent.py --domain neuro --language it
+python apps/cli/run_agent.py --domain neuro --language it
 
 # Single query mode
-python test_agent.py --query "Crea una lezione sulla memoria"
+python apps/cli/run_agent.py --query "Crea una lezione sulla memoria"
 
 # Test intent detection
-python test_intent_detection.py
+python -m pytest tests/integration/test_intent_detection.py
 ```
 
 ---
@@ -390,15 +390,27 @@ python test_intent_detection.py
 
 ```
 graphaixlearning/
-├── streamlit_app.py                # Streamlit interface (with Agent Mode)
 ├── graph_retriever.py              # Hybrid retrieval + Node2Vec
 ├── text2cypher.py                  # Base Text2Cypher
 ├── multilingual_text2cypher.py     # Multilingual support
 ├── context_builder.py              # Context structuring
 ├── llm_chain.py                    # Response generation
 ├── config.py                       # Configuration management
-├── train_node2vec.py               # Node2Vec training
-├── data_ingestion_neo4j.py         # Neo4j data import
+│
+├── apps/                           # 🆕 Entry points (Phase 2 reorg)
+│   ├── streamlit/main.py           # Streamlit interface (with Agent Mode)
+│   └── cli/run_agent.py            # Interactive agent testing CLI
+│
+├── scripts/                        # 🆕 Operational scripts (Phase 1 reorg)
+│   ├── ingest/data_ingestion_neo4j.py    # Neo4j data import
+│   ├── ml/train_node2vec.py              # Node2Vec training
+│   ├── ml/generate_media_mapping.py      # Media-mapping generator
+│   ├── audit/audit_domain_graph.py       # KG audit
+│   └── data_prep/                        # Data cleaning utilities
+│
+├── data/                           # 🆕 KG data + contracts (Phase 2 reorg)
+│   ├── contracts/JSON_reference.json     # Frontend API contract
+│   └── kg/{neuro,udl}/                   # Knowledge graphs + media mappings
 │
 ├── agent/                          # 🆕 Agentic GraphRAG (Multi-Agent Pipeline)
 │   ├── __init__.py                 # Package exports
@@ -430,8 +442,8 @@ graphaixlearning/
 │   ├── neuro_node2vec_config.json
 │   └── neuro_node2vec_model.pkl
 │
-├── test_agent.py                   # 🆕 Interactive agent testing CLI
-├── test_intent_detection.py        # 🆕 Intent detection validation
+├── tests/integration/              # 🆕 Test suite (Phase 1 reorg)
+│   └── test_intent_detection.py    # Intent detection validation
 ├── requirements.txt                # Dependencies (includes langgraph)
 ├── .env.example                    # Environment template
 ├── API_INTEGRATION_GUIDE.md        # API documentation
@@ -492,7 +504,7 @@ All responses are:
 
 ### 1. Local Development (Streamlit)
 ```bash
-streamlit run streamlit_app.py
+streamlit run apps/streamlit/main.py
 ```
 
 ### 2. API Integration (FastAPI) 🆕

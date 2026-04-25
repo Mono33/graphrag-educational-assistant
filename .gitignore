@@ -116,9 +116,12 @@ NeuroData/
 UDLdata/
 KG_NEURO_Transformed.xlsx
 *_Transformed.xlsx
-kg_neuro_neo4j.json
-*_neo4j.json
+
+# KG core data is now TRACKED under data/kg/{domain}/ (see Phase 2 reorg).
+# Only transient backups are ignored:
 kg_neuro_neo4j_backup_*.json
+kg_udl_neo4j_backup_*.json
+*_neo4j_backup_*.json
 
 # Test output files
 *_test_output.json

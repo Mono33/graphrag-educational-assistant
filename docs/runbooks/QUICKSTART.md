@@ -67,8 +67,8 @@ NODE2VEC_DIMENSIONS=128
 
 ```bash
 # Ingest Neuro data (478 nodes, 501 relationships)
-python data_ingestion_neo4j.py \
-    --file kg_neuro_neo4j.json \
+python scripts/ingest/data_ingestion_neo4j.py \
+    --file data/kg/neuro/kg_neuro_neo4j.json \
     --domain neuro \
     --clear-domain neuro \
     --uri $NEO4J_URI \
@@ -105,8 +105,8 @@ python data_ingestion_neo4j.py \
 
 ```bash
 # Ingest both domains
-python data_ingestion_neo4j.py --file kg_udl_neo4j.json --domain udl
-python data_ingestion_neo4j.py --file kg_neuro_neo4j.json --domain neuro
+python scripts/ingest/data_ingestion_neo4j.py --file data/kg/udl/kg_udl_neo4j.json --domain udl
+python scripts/ingest/data_ingestion_neo4j.py --file data/kg/neuro/kg_neuro_neo4j.json --domain neuro
 ```
 
 ---
@@ -165,7 +165,7 @@ python train_node2vec.py all
 ## 5️⃣ **Run the App**
 
 ```bash
-streamlit run streamlit_app.py
+streamlit run apps/streamlit/main.py
 ```
 
 **Expected output**:
@@ -313,7 +313,7 @@ python -c "import os; print('Neuro model exists:', os.path.exists('models/neuro_
 - [ ] `.env` file configured with Neo4j and OpenAI credentials
 - [ ] Data ingested (at least one domain)
 - [ ] Node2Vec trained (optional but recommended)
-- [ ] App running (`streamlit run streamlit_app.py`)
+- [ ] App running (`streamlit run apps/streamlit/main.py`)
 - [ ] Test query executed successfully
 
 ---

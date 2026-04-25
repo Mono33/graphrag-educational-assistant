@@ -185,10 +185,11 @@ class ResourceLookup:
         self.loaded = False
         self.metadata: Dict[str, Any] = {}
         
-        # Default path based on domain
+        # Default path based on domain.
+        # Phase 2 reorg: KG data files now live under data/kg/{domain}/
         if resources_path is None:
             base_path = Path(__file__).parent.parent.parent
-            resources_path = base_path / f"kg_{domain}_resources.json"
+            resources_path = base_path / "data" / "kg" / domain / f"kg_{domain}_resources.json"
         else:
             resources_path = Path(resources_path)
         

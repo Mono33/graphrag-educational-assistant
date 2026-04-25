@@ -1,5 +1,50 @@
 # Changelog — GraphRAG AixLearning
 
+**Date:** 25 April 2026  
+**Session scope:** Repository reorganization (Phase 1 + Phase 2)
+
+## 0. Repository reorganization (Phase 1 + Phase 2)
+
+**Why:** Move from a flat root layout to a clean, scalable, production-ready
+folder structure without breaking GraphRAG / Agent / FastAPI behavior.
+
+**Phase 1 — cosmetic moves (commit `06087de`):**
+- 8 root `.md` files → `docs/{api,reports,runbooks,prompts_reference}/`
+- 1 prompt `.txt` → `docs/prompts_reference/`
+- 7 root `.py` utilities → `scripts/{ingest,audit,data_prep,ml}/`
+- 1 root test → `tests/integration/`
+- `.gitignore`: removed blanket `scripts/` ignore (folder is now a tracked
+  package); added `UDLdata/` and `kg_*_neo4j_backup_*.json` patterns.
+
+**Phase 2 — apps + data + infra:**
+- `streamlit_app.py` → `apps/streamlit/main.py` (run with
+  `streamlit run apps/streamlit/main.py`)
+- `test_agent.py` → `apps/cli/run_agent.py` (run with
+  `python apps/cli/run_agent.py`)
+- `JSON_reference.json` → `data/contracts/JSON_reference.json`
+- `kg_neuro_media_mapping.json`, `kg_neuro_resources.json`,
+  `kg_neuro_neo4j.json` → `data/kg/neuro/`
+- `kg_udl_neo4j.json` (was untracked under `UDLdata/`) → `data/kg/udl/`
+- Code patches for new paths: `agent/media/media_lookup.py`,
+  `agent/media/resource_lookup.py`,
+  `scripts/data_prep/clean_and_compare_neuro_data.py`.
+- Shim `sys.path` insertion at the top of `apps/streamlit/main.py` and
+  `apps/cli/run_agent.py` so root-level modules (`config`, `graph_retriever`,
+  …) remain importable from the new locations.
+- `.devcontainer/devcontainer.json` updated to point Codespaces at
+  `apps/streamlit/main.py`.
+
+**Backward-compatibility notes:**
+- The 8 core importable modules (`config.py`, `context_builder.py`,
+  `graph_retriever.py`, `llm_chain.py`, `text2cypher.py`,
+  `multilingual_text2cypher.py`, `query_metrics.py`, plus `agent/`, `api/`,
+  `domains/`) **stay at the repo root**. All existing `from config import …`,
+  `from agent import …` imports continue to work unchanged. Phase 3 will
+  introduce the `aix.*` package layout in a subsequent step.
+- Dockerfile and FastAPI entry (`uvicorn api.main:app`) are unaffected.
+
+---
+
 **Date:** 10 April 2026  
 **Session scope:** Update from main branch + OpenRouter migration + pipeline quality improvements
 

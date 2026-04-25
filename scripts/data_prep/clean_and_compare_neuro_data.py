@@ -33,9 +33,10 @@ if sys.platform == 'win32':
 # CONFIGURATION
 # ============================================================================
 
-# File paths - Using the CURATED cleaned Excel as input now
+# File paths - Using the CURATED cleaned Excel as input now.
+# Phase 2 reorg: KG core JSON now lives under data/kg/{domain}/
 NEW_EXCEL_PATH = "NeuroData/KG_NEURO_CLEANED.xlsx"  # Curated by user
-EXISTING_KG_PATH = "kg_neuro_neo4j.json"
+EXISTING_KG_PATH = "data/kg/neuro/kg_neuro_neo4j.json"
 OUTPUT_CLEANED_EXCEL = "NeuroData/KG_NEURO_FINAL.xlsx"  # Final version ready for transform
 OUTPUT_REPORT = "NeuroData/KG_NEURO_FINAL_COMPARISON_REPORT.md"
 

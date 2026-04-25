@@ -80,7 +80,7 @@ class GraphRAGTool:
             
             logger.info(f"[GraphRAGTool] Initializing for domain: {self.domain}")
             
-            # Initialize components using YOUR EXISTING code (same as streamlit_app.py)
+            # Initialize components using YOUR EXISTING code (same as apps/streamlit/main.py)
             # EnhancedMultilingualText2Cypher creates its own HybridGraphRetriever internally
             self._text2cypher = EnhancedMultilingualText2Cypher(
                 domain=self.domain,

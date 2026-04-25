@@ -2575,7 +2575,7 @@ Example:
     EMBEDDING_MODE=hybrid_semantic
     
     # Step 3: Run Streamlit app
-    streamlit run streamlit_app.py
+    streamlit run apps/streamlit/main.py
             """)
         else:
             print(f"Unknown command: {command}")
