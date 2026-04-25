@@ -1,5 +1,5 @@
 # =============================================================================
-# graphaixlearning — Python project configuration (Phase 3A)
+# graphaixlearning — Python project configuration (Phase 3A + 3B)
 #
 # Single source of truth for: build system, project metadata, dependencies,
 # pytest, ruff (lint + format), and mypy (type-checking).
@@ -132,7 +132,6 @@ extend-exclude = [
     "archive",
     "data",
     "logs",
-    "models",
     "artifacts",
     "venv",
     ".venv",
@@ -178,7 +177,6 @@ exclude = [
     "archive/",
     "data/",
     "logs/",
-    "models/",
     "artifacts/",
     "venv/",
     ".venv/",

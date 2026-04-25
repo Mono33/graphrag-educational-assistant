@@ -1,7 +1,54 @@
 # Changelog — GraphRAG AixLearning
 
 **Date:** 25 April 2026  
-**Session scope:** Repository reorganization (Phase 1 + Phase 2 + Phase 3A)
+**Session scope:** Repository reorganization (Phase 1 + Phase 2 + Phase 3A + Phase 3B)
+
+## 0b. Repository reorganization (Phase 3B — Folder consolidation)
+
+**Why:** Organize all remaining scattered files into their canonical folders.
+After Phase 3A gave us a real installable package, Phase 3B now moves every
+file into its production-ready location. Zero import changes to core code
+(only 2 data-path patches in `agent/media/`).
+
+**Changes:**
+
+- `models/` renamed to `artifacts/`:
+  - `models/{*_node2vec_*}` → `artifacts/node2vec/` (9 files, git mv)
+  - `models/embeddings_cache/` → `artifacts/embeddings_cache/` (2 files, git mv)
+  - `artifacts/generated_images/` created (gitignored, for DALL-E outputs)
+- `data/` reorganized:
+  - `data/contracts/JSON_reference.json` → `data/reference/JSON_reference.json`
+  - `data/kg/neuro/kg_neuro_media_mapping.json` → `data/media/` (+ code patch)
+  - `data/kg/neuro/kg_neuro_resources.json` → `data/media/` (+ code patch)
+  - `data/media/kg_neuro_media_mapping_test.json` added (was ignored at root)
+  - `data/reports/neuro_audit_report.{json,md}` added (were ignored at root)
+  - `data/kg/backups/` created (ignored, for rolling KG backups)
+- Root test scripts (6 files) moved to `tests/integration/`
+  (were previously `.gitignore`'d at root, now tracked at new location)
+- Root utility scripts (7 files) moved to `scripts/{audit,ingest,ml,data_prep}/`
+- `scripts/ops/` created: `preflight_check.py`, `run_migrations.py` moved there
+- `docs/` top-level files sorted into subfolders:
+  - `docs/architecture/` (3 files), `docs/product/` (5 files),
+    `docs/api/` (1 file), `docs/runbooks/` (1 file),
+    `docs/reports/` (2 files), `docs/progress_reports/` (3 files)
+- `archive/README.md` created (explains conventions for deprecated modules)
+- `.gitignore` rewritten: removed bare-filename patterns that blocked tracking
+  at new locations; added personal-doc ignore rules; added `~$*` lock file
+  pattern; cleaned up structure with section headers
+- `agent/media/media_lookup.py` patched: `data/kg/{domain}/` → `data/media/`
+- `agent/media/resource_lookup.py` patched: `data/kg/{domain}/` → `data/media/`
+- `README.md` project structure section updated to reflect Phase 3B layout
+- `CHANGELOG.md` updated (this section)
+- Ingestion logs moved from root to `logs/` (still ignored)
+- KG backup JSON moved from root to `data/kg/backups/` (still ignored)
+- Office lock files (`~$*`) deleted from tracked tree
+
+**Backward compatibility:**
+- All existing imports unchanged (no core module paths changed)
+- FastAPI (`uvicorn api.main:app`), Streamlit, Agent CLI all run identically
+- `pyproject.toml` exclude list already covered `models*` and `artifacts*`
+
+---
 
 ## 0a. Repository reorganization (Phase 3A — Packaging foundation)
 

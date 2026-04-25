@@ -61,7 +61,7 @@ class SemanticEmbedder:
         
         Args:
             domain: Domain for cache isolation ("neuro", "udl", "all")
-            cache_dir: Directory for embedding cache (default: models/embeddings_cache)
+            cache_dir: Directory for embedding cache (default: artifacts/embeddings_cache)
         """
         self.domain = domain
         self.cache_dir = cache_dir or app_config.embedding.embeddings_cache_dir
@@ -644,7 +644,7 @@ class HybridGraphRetriever:
         try:
             # Use domain-specific path if not explicitly provided
             if model_path is None:
-                model_path = f"models/{domain}_node2vec"
+                model_path = f"artifacts/node2vec/{domain}_node2vec"
             
             logger.info(f"Loading Node2Vec model for domain: {domain} from {model_path}")
             

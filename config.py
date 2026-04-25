@@ -139,7 +139,7 @@ class EmbeddingConfig:
 
     # Cache settings
     cache_embeddings: bool = True
-    embeddings_cache_dir: str = "models/embeddings_cache"
+    embeddings_cache_dir: str = "artifacts/embeddings_cache"
 
 
 class Config:

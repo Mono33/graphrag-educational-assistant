@@ -323,9 +323,9 @@ class EducationalNode2VecTrainer:
     def save_model(self, model_path: str = None):
         """Save trained model and embeddings with domain-specific path"""
         if model_path is None:
-            model_path = f"models/{self.domain}_node2vec"
+            model_path = f"artifacts/node2vec/{self.domain}_node2vec"
         
-        os.makedirs(os.path.dirname(model_path) if os.path.dirname(model_path) else "models", exist_ok=True)
+        os.makedirs(os.path.dirname(model_path) if os.path.dirname(model_path) else "artifacts/node2vec", exist_ok=True)
         
         # Save Node2Vec model
         model_file = f"{model_path}_model.pkl"
@@ -356,7 +356,7 @@ class EducationalNode2VecTrainer:
     def load_model(self, model_path: str = None):
         """Load pre-trained model and embeddings from domain-specific path"""
         if model_path is None:
-            model_path = f"models/{self.domain}_node2vec"
+            model_path = f"artifacts/node2vec/{self.domain}_node2vec"
         
         try:
             # Load Node2Vec model
@@ -383,7 +383,7 @@ class EducationalNode2VecTrainer:
         logger.info(f"Starting Node2Vec training pipeline for domain: {self.domain}...")
         
         if model_path is None:
-            model_path = f"models/{self.domain}_node2vec"
+            model_path = f"artifacts/node2vec/{self.domain}_node2vec"
         
         # Step 1: Extract graph data
         G, node_labels = self.extract_graph_data()
@@ -509,7 +509,7 @@ def main(domain: str = "all"):
         test_node2vec_similarities(trainer, test_concepts)
         
         logger.info(f"\n✅ Training completed successfully!")
-        logger.info(f"📁 Model saved to: models/{domain}_node2vec")
+        logger.info(f"📁 Model saved to: artifacts/node2vec/{domain}_node2vec")
         logger.info(f"🎯 Ready to use in graph retriever with use_vectors=True")
         
     except Exception as e:

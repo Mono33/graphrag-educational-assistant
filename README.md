@@ -273,9 +273,9 @@ python graph_retriever.py --precompute udl
 
 ### Pre-trained Models
 
-Models are stored in `models/`:
-- `{domain}_node2vec_embeddings.npz`: Node2Vec embeddings
-- `models/embeddings_cache/{domain}_openai_embeddings.json`: OpenAI embeddings cache
+Models are stored in `artifacts/`:
+- `artifacts/node2vec/{domain}_node2vec_embeddings.npz`: Node2Vec embeddings
+- `artifacts/embeddings_cache/{domain}_openai_embeddings.json`: OpenAI embeddings cache
 
 ### Retrain Node2Vec:
 ```bash
@@ -397,77 +397,89 @@ python -m pytest tests/integration/test_intent_detection.py
 
 ```
 graphaixlearning/
+├── config.py                       # Configuration management
 ├── graph_retriever.py              # Hybrid retrieval + Node2Vec
 ├── text2cypher.py                  # Base Text2Cypher
 ├── multilingual_text2cypher.py     # Multilingual support
 ├── context_builder.py              # Context structuring
 ├── llm_chain.py                    # Response generation
-├── config.py                       # Configuration management
+├── query_metrics.py                # Query-level metrics
 │
-├── apps/                           # 🆕 Entry points (Phase 2 reorg)
-│   ├── streamlit/main.py           # Streamlit interface (with Agent Mode)
-│   └── cli/run_agent.py            # Interactive agent testing CLI
-│
-├── scripts/                        # 🆕 Operational scripts (Phase 1 reorg)
-│   ├── ingest/data_ingestion_neo4j.py    # Neo4j data import
-│   ├── ml/train_node2vec.py              # Node2Vec training
-│   ├── ml/generate_media_mapping.py      # Media-mapping generator
-│   ├── audit/audit_domain_graph.py       # KG audit
-│   └── data_prep/                        # Data cleaning utilities
-│
-├── data/                           # 🆕 KG data + contracts (Phase 2 reorg)
-│   ├── contracts/JSON_reference.json     # Frontend API contract
-│   └── kg/{neuro,udl}/                   # Knowledge graphs + media mappings
-│
-├── agent/                          # 🆕 Agentic GraphRAG (Multi-Agent Pipeline)
-│   ├── __init__.py                 # Package exports
-│   ├── orchestrator.py             # Main entry point (AgentOrchestrator)
-│   ├── agents/                     # Individual agents
-│   │   ├── planner_agent.py        # Query analysis & intent detection
-│   │   ├── retriever_agent.py      # GraphRAG knowledge retrieval
-│   │   ├── writer_agent.py         # Adaptive content generation
-│   │   └── critic_agent.py         # Quality review & scoring
-│   ├── graph/                      # LangGraph state machine
-│   │   ├── lesson_planner_graph.py # Pipeline definition
-│   │   ├── nodes.py                # Node implementations
-│   │   └── state.py                # AgentState TypedDict
-│   ├── prompts/                    # Intent-specific prompts
-│   │   ├── planner_prompt.py       # Planning prompts
-│   │   ├── writer_prompt.py        # Writing prompts (7 intents)
-│   │   └── critic_prompt.py        # Critique prompts
-│   └── tools/                      # Agent tools
-│       └── graphrag_tool.py        # GraphRAG wrapper for agents
+├── agent/                          # Agentic GraphRAG (Multi-Agent Pipeline)
+│   ├── orchestrator.py             #   Main entry point (AgentOrchestrator)
+│   ├── agents/                     #   Planner, Retriever, Writer, Critic
+│   ├── graph/                      #   LangGraph state machine
+│   ├── prompts/                    #   Intent-specific prompts
+│   ├── media/                      #   Media lookup + diagram generation
+│   └── tools/                      #   GraphRAG wrapper for agents
 │
 ├── api/                            # FastAPI module for integrations
-│   ├── main.py                     # FastAPI app entry point
-│   ├── routes/context.py           # /api/v1/context endpoint
-│   ├── schemas/models.py           # Pydantic models
-│   └── graphrag_client.py          # Helper client for DEV team
+│   ├── main.py                     #   FastAPI app entry point
+│   ├── routes/context.py           #   /api/v1/context endpoint
+│   ├── schemas/models.py           #   Pydantic models
+│   └── graphrag_client.py          #   Helper client for DEV team
 │
-├── models/                         # Node2Vec models
-│   ├── neuro_node2vec_embeddings.npz
-│   ├── neuro_node2vec_config.json
-│   └── neuro_node2vec_model.pkl
+├── domains/                        # Domain configs (UDL, Neuro)
 │
-├── tests/integration/              # 🆕 Test suite (Phase 1 reorg)
-│   └── test_intent_detection.py    # Intent detection validation
-├── requirements.txt                # Dependencies (includes langgraph)
+├── apps/                           # Entry points (not importable libraries)
+│   ├── streamlit/main.py           #   Streamlit interface (with Agent Mode)
+│   └── cli/run_agent.py            #   Interactive agent testing CLI
+│
+├── scripts/                        # Operational & data-prep scripts
+│   ├── ingest/                     #   Neo4j data import/export
+│   ├── audit/                      #   KG auditing + label checks
+│   ├── data_prep/                  #   Data cleaning, merging, label fixes
+│   ├── ml/                         #   Node2Vec training, media mapping gen
+│   └── ops/                        #   Preflight checks, migration runners
+│
+├── data/                           # KG data, media mappings, reports
+│   ├── kg/{neuro,udl}/             #   Knowledge graph core dumps
+│   ├── media/                      #   Media mappings + resource JSONs
+│   ├── reference/                  #   API contract (JSON_reference.json)
+│   └── reports/                    #   Audit reports
+│
+├── artifacts/                      # ML model artifacts (was models/)
+│   ├── node2vec/                   #   Node2Vec {config,embeddings,model}
+│   └── embeddings_cache/           #   OpenAI embeddings cache
+│
+├── tests/                          # Test suite
+│   ├── integration/                #   Integration tests (external services)
+│   └── conftest.py                 #   Pytest config / shared fixtures
+│
+├── docs/                           # Documentation
+│   ├── api/                        #   API guides
+│   ├── architecture/               #   Architecture analyses
+│   ├── runbooks/                   #   Quickstart, data pipeline guides
+│   ├── reports/                    #   Diff reports, analysis docs
+│   ├── product/                    #   ClickUp updates, AI literacy, etc.
+│   ├── progress_reports/           #   Templates + generated reports
+│   └── prompts_reference/          #   Reference prompt texts
+│
+├── archive/                        # Deprecated modules (kept for reference)
+├── pyproject.toml                  # Build, deps, pytest, ruff, mypy config
+├── requirements.txt                # Runtime dependencies
+├── Makefile                        # Shortcuts: make test / api / streamlit
+├── Dockerfile                      # Container build
 ├── .env.example                    # Environment template
-├── API_INTEGRATION_GUIDE.md        # API documentation
 └── README.md                       # This file
 ```
 
 ### Testing
 
-Test scripts are available in the `NOTPUSHED/` folder for local development.
+```bash
+# Run all tests (with pytest via pyproject.toml config)
+pytest tests/ -v
+
+# Run only integration tests (requires Neo4j / LLM API keys)
+pytest tests/integration/ -v -m integration
+```
 
 ### Adding New Data
 
-1. **Prepare data**: Format as JSON (see `concepts4_neo4j.json`)
-2. **Process**: Run `process_data_graph4.py` if needed
-3. **Ingest**: Run `data_ingestion_neo4j.py --file your_data.json --clear`
-4. **Retrain Node2Vec**: Run `train_node2vec.py`
-5. **Test**: Launch app and verify results
+1. **Prepare data**: Format as JSON (see `data/reference/JSON_reference.json`)
+2. **Ingest**: Run `python -m scripts.ingest.data_ingestion_neo4j --file your_data.json --clear`
+3. **Retrain Node2Vec**: Run `python -m scripts.ml.train_node2vec`
+4. **Test**: Launch app and verify results
 
 ---
 

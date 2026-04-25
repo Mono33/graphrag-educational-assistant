@@ -175,10 +175,11 @@ class MediaLookup:
         self.loaded = False
         
         # Default path based on domain.
-        # Phase 2 reorg: KG data files now live under data/kg/{domain}/
+        # Phase 3B reorg: media mapping JSONs now live under data/media/
+        # (separated from data/kg/{domain}/ which holds the KG dump only).
         if mapping_path is None:
             base_path = Path(__file__).parent.parent.parent
-            mapping_path = base_path / "data" / "kg" / domain / f"kg_{domain}_media_mapping.json"
+            mapping_path = base_path / "data" / "media" / f"kg_{domain}_media_mapping.json"
         else:
             mapping_path = Path(mapping_path)
         
