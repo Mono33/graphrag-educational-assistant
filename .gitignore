@@ -113,10 +113,12 @@ hf-space-graphrag-educational-assistant/
 # Non-mandatory files folder (not to be pushed)
 NOTPUSHED/
 NeuroData/
+UDLdata/
 KG_NEURO_Transformed.xlsx
 *_Transformed.xlsx
 kg_neuro_neo4j.json
 *_neo4j.json
+kg_neuro_neo4j_backup_*.json
 
 # Test output files
 *_test_output.json
@@ -167,13 +169,14 @@ check_new_labels.py
 MIGRATION_TO_FEM_GUIDE.md
 *_export.json
 
-# Migrations and scripts (not needed for deployment)
+# Migrations (not needed for deployment)
 neo4j_migrations/
-scripts/
 
-# Scripts output (if scripts folder is enabled)
-# scripts/output/
-# scripts/*.log
+# scripts/ is now a tracked top-level directory (ingest, audit, data_prep, ml).
+# Only local user-specific subfolders and runtime output are ignored:
+scripts/local/
+scripts/output/
+scripts/*.log
 
 # Shell scripts (optional - uncomment if you don't need them)
 # setup_neo4j.sh
