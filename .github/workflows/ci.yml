@@ -1,0 +1,44 @@
+name: CI — lint + typecheck + test
+
+on:
+  push:
+    branches: [main, feature/*, chore/*]
+  pull_request:
+    branches: [main]
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Compile check (syntax validation)
+        run: python -m compileall -q .
+
+      - name: Ruff lint
+        run: ruff check .
+
+      - name: Ruff format check
+        run: ruff format --check .
+
+      - name: Mypy (non-blocking)
+        run: mypy config.py graph_retriever.py llm_chain.py api/ agent/ domains/ || true
+
+      - name: Pytest
+        run: pytest tests/ -v --tb=short -x
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"

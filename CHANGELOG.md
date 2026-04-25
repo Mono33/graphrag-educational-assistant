@@ -1,6 +1,46 @@
 # Changelog — GraphRAG AixLearning
 
 **Date:** 25 April 2026  
+**Session scope:** Repository reorganization (Phase 1 + Phase 2 + Phase 3A)
+
+## 0a. Repository reorganization (Phase 3A — Packaging foundation)
+
+**Why:** Make the project a real installable Python package so all imports
+resolve via `pip install -e .` instead of `sys.path` shims. Adds CI, lint
+(ruff), type-check (mypy), and consolidates pytest config in `pyproject.toml`.
+
+**Changes:**
+
+- `pyproject.toml` (NEW) — single source of truth for build, deps, pytest,
+  ruff, and mypy. Uses dynamic `dependencies` from `requirements.txt`
+  (no duplication). `py-modules` exposes the 7 root core files (`config`,
+  `graph_retriever`, `context_builder`, `llm_chain`, `text2cypher`,
+  `multilingual_text2cypher`, `query_metrics`) as importable. `packages.find`
+  registers `agent`, `api`, `domains` as packages.
+- `pip install -e ".[dev]"` is now the canonical install command. Adds
+  `pytest`, `pytest-asyncio`, `pytest-cov`, `ruff`, `mypy` as dev extras.
+- Removed `sys.path` shims from `apps/streamlit/main.py` and
+  `apps/cli/run_agent.py` (no longer needed — the editable install handles
+  imports). `tests/conftest.py` simplified to a marker file.
+- Deleted `pytest.ini` — pytest config now lives in
+  `[tool.pytest.ini_options]` inside `pyproject.toml`.
+- `Dockerfile` updated: copies `pyproject.toml` + `README.md` alongside
+  `requirements.txt` and runs `pip install --no-deps -e .` after the source
+  is copied. FastAPI entrypoint (`uvicorn api.main:app`) unchanged.
+- `.github/workflows/ci.yml` (NEW) — runs on Python 3.11 + 3.12: compile
+  check, ruff lint + format check, mypy (non-blocking), pytest. Coexists
+  with the existing `deploy-api.yaml` and `sync-to-fem.yml` workflows.
+
+**Backward compatibility:**
+- All existing `from config import …` / `from agent import …` / `from api import …`
+  / `from domains import …` imports work unchanged.
+- The 7 root modules and the 3 root packages STAY at the repo root in this
+  phase. Phase 3C will move them into `src/aix/{core,retrieval,generation}/`.
+- FastAPI, Streamlit, Agent CLI all run identically to Phase 2.
+
+---
+
+**Date:** 25 April 2026  
 **Session scope:** Repository reorganization (Phase 1 + Phase 2)
 
 ## 0. Repository reorganization (Phase 1 + Phase 2)

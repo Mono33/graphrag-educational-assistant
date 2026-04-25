@@ -7,16 +7,6 @@ Run from the repo root:
     streamlit run apps/streamlit/main.py
 """
 
-# Phase 2 reorg: this file moved from <repo_root>/streamlit_app.py to
-# <repo_root>/apps/streamlit/main.py. Streamlit puts the script's directory
-# on sys.path, but our core modules (config, graph_retriever, llm_chain,
-# context_builder, query_metrics) live at the repo root, so we bootstrap.
-import sys
-import os
-_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-if _PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, _PROJECT_ROOT)
-
 import streamlit as st
 import asyncio
 import logging

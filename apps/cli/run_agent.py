@@ -16,21 +16,8 @@ import logging
 import sys
 import os
 
-# Phase 2 reorg: this file moved from <repo_root>/test_agent.py to
-# <repo_root>/apps/cli/run_agent.py. Add the repo root to sys.path so the
-# top-level "agent" package and other root modules remain importable.
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-if PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, PROJECT_ROOT)
-
-if not os.path.isdir(os.path.join(PROJECT_ROOT, "agent")):
-    print("❌ Error: cannot locate the 'agent' package at the repo root")
-    print(f"   Expected: {os.path.join(PROJECT_ROOT, 'agent')}")
-    sys.exit(1)
-
-# Load environment variables (.env at repo root)
 from dotenv import load_dotenv
-load_dotenv(os.path.join(PROJECT_ROOT, ".env"))
+load_dotenv()
 
 # Verify OpenAI API key
 if not os.getenv("OPENAI_API_KEY"):

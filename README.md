@@ -157,9 +157,16 @@ The Planner Agent automatically classifies queries into 7 intent types:
    ```
 
 2. **Install dependencies**
+
    ```bash
-   pip install -r requirements_streamlit.txt
+   # Editable install — exposes the project as the `graphaixlearning` package.
+   # Required after Phase 3A (pyproject.toml) so all imports resolve cleanly.
+   pip install -e ".[dev]"
    ```
+
+   The `[dev]` extras add `pytest`, `pytest-asyncio`, `pytest-cov`, `ruff`,
+   and `mypy` (used by `make test`, `make lint`, and CI). Production
+   deployments can use `pip install -e .` (without `[dev]`).
 
 3. **Configure environment**
    ```bash
