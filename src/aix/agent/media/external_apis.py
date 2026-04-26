@@ -798,9 +798,12 @@ class ExternalMediaAPI:
                         results = []
                         
                         for item in data[:max_results]:
-                            # Parse DOAB response format
-                            metadata = item.get("metadata", {})
-                            title = self._get_doab_field(metadata, "dc.title")
+                            # Parse DOAB response format (metadata is a list of {key, value} rows)
+                            metadata = item.get("metadata") or []
+                            title = (
+                                self._get_doab_field(metadata, "dc.title")
+                                or item.get("name")
+                            )
                             authors = self._get_doab_authors(metadata)
                             url_link = self._get_doab_field(metadata, "dc.identifier.uri") or f"https://directory.doabooks.org/handle/{item.get('handle', '')}"
                             
@@ -829,20 +832,31 @@ class ExternalMediaAPI:
             logger.debug(f"[DOAB] Search failed: {e}")
             return []
     
-    def _get_doab_field(self, metadata: dict, field: str) -> Optional[str]:
-        """Extract a field from DOAB metadata"""
-        for item in metadata.get("value", []):
-            if item.get("key") == field:
-                return item.get("value")
+    def _get_doab_field(self, metadata: Any, field: str) -> Optional[str]:
+        """Extract a field from DOAB metadata (list of {key, value} or legacy dict wrapper)."""
+        if isinstance(metadata, list):
+            for row in metadata:
+                if row.get("key") == field:
+                    return row.get("value")
+            return None
+        if isinstance(metadata, dict):
+            for row in metadata.get("value", []):
+                if row.get("key") == field:
+                    return row.get("value")
         return None
     
-    def _get_doab_authors(self, metadata: dict) -> List[str]:
-        """Extract authors from DOAB metadata"""
-        authors = []
-        for item in metadata.get("value", []):
-            if item.get("key") == "dc.contributor.author":
-                authors.append(item.get("value", ""))
-        return authors[:3]  # Limit to 3 authors
+    def _get_doab_authors(self, metadata: Any) -> List[str]:
+        """Extract authors from DOAB metadata."""
+        authors: List[str] = []
+        rows: List[Dict[str, Any]] = []
+        if isinstance(metadata, list):
+            rows = [r for r in metadata if isinstance(r, dict)]
+        elif isinstance(metadata, dict):
+            rows = list(metadata.get("value", []))
+        for row in rows:
+            if row.get("key") == "dc.contributor.author":
+                authors.append(row.get("value", ""))
+        return authors[:3]
     
     async def _search_open_textbook_library(self, query: str, max_results: int = 3) -> List[OERTextbook]:
         """

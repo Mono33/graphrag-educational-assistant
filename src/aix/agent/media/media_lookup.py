@@ -175,11 +175,12 @@ class MediaLookup:
         self.loaded = False
         
         # Default path based on domain.
-        # Phase 3B reorg: media mapping JSONs now live under data/media/
+        # Media mapping JSONs live under <repo_root>/data/media/
         # (separated from data/kg/{domain}/ which holds the KG dump only).
         if mapping_path is None:
-            base_path = Path(__file__).parent.parent.parent
-            mapping_path = base_path / "data" / "media" / f"kg_{domain}_media_mapping.json"
+            # Walk up from src/aix/agent/media/ to the repo root (5 levels)
+            repo_root = Path(__file__).resolve().parent.parent.parent.parent.parent
+            mapping_path = repo_root / "data" / "media" / f"kg_{domain}_media_mapping.json"
         else:
             mapping_path = Path(mapping_path)
         

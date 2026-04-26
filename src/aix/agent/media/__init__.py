@@ -28,15 +28,6 @@ from .resource_lookup import (
     ResourceType,
     AudienceLevel
 )
-from .external_apis import (
-    ExternalMediaAPI, 
-    ExternalAPIs,  # Alias for backward compatibility
-    YouTubeVideo, 
-    WikipediaSummary, 
-    SemanticScholarPaper,
-    RateLimiter,
-    USER_AGENT
-)
 from .image_generator import ImageGenerator, GeneratedImage, DiagramType
 from .mermaid_generator import MermaidGenerator, MermaidResult, MermaidDiagramType
 from .canva_generator import CanvaGenerator, CanvaResult
@@ -58,7 +49,29 @@ __all__ = [
     'ExpertResource',
     'ResourceType',
     'AudienceLevel',
-    
+]
+
+_EXTERNAL_API_EXPORTS = frozenset({
+    "ExternalMediaAPI",
+    "ExternalAPIs",
+    "YouTubeVideo",
+    "WikipediaSummary",
+    "SemanticScholarPaper",
+    "RateLimiter",
+    "USER_AGENT",
+})
+
+
+def __getattr__(name: str):
+    """Lazy-load external_apis so `python -m aix.agent.media.external_apis` runs without RuntimeWarning."""
+    if name in _EXTERNAL_API_EXPORTS:
+        from . import external_apis as _ext
+        return getattr(_ext, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+# Re-append external API names to __all__ (kept in one place for readers)
+__all__ = __all__ + [
     # External APIs (Phase 4)
     'ExternalMediaAPI',
     'ExternalAPIs',  # Alias
