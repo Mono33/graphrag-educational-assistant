@@ -1,23 +1,24 @@
 """
 Media Mapping Generator for Agentic GraphRAG
 
-This script generates a sidecar media mapping JSON file from the existing
-Knowledge Graph. It uses GPT-4o to act as a neuroscience/cognitive psychology
-expert to recommend:
+Generates a sidecar media mapping JSON from the Knowledge Graph.
+An LLM acts as a domain expert to recommend per-concept:
 
-1. Educational videos (YouTube search queries)
-2. Diagrams/images (descriptions for generation or search)
-3. External resources (Wikipedia, educational sites)
-4. Academic citations (seminal papers with DOIs)
+  1. Educational videos (YouTube search queries)
+  2. Diagrams / images (descriptions for generation or search)
+  3. External resources (Wikipedia, educational sites)
+  4. Academic citations (seminal papers with DOIs)
+  5. Open-access textbooks (OER)
 
-The output JSON can be reviewed and improved by domain experts before
-being used in the multimodal pipeline.
+Supports both **neuro** and **udl** domains with domain-specific
+system prompts, user prompts, and priority orderings.
 
 Usage:
-    python generate_media_mapping.py --domain neuro --batch-size 10
+    python scripts/ml/generate_media_mapping.py --domain neuro --batch-size 10
+    python scripts/ml/generate_media_mapping.py --domain udl --model google/gemini-2.5-flash --limit 5
 
 Output:
-    kg_{domain}_media_mapping.json
+    data/media/kg_{domain}_media_mapping.json
 """
 
 import os
@@ -50,52 +51,10 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ============================================================================
-# NEUROSCIENCE EXPERT PROMPT
+# JSON OUTPUT SCHEMA  (shared across domains)
 # ============================================================================
 
-MEDIA_GENERATOR_SYSTEM_PROMPT = """You are an expert educational content curator specializing in **cognitive neuroscience, educational psychology, and evidence-based learning**.
-
-Your task is to generate high-quality educational media recommendations for neuroscience/cognitive concepts used in teacher training. You must act as a domain expert who understands:
-
-- Cognitive processes (attention, memory, executive functions)
-- Learning theories (cognitive load, metacognition, self-regulation)
-- Motivation and emotion in learning
-- Neuroscience of education (neuroplasticity, brain development)
-- Evidence-based teaching strategies
-
-For each concept, generate:
-
-1. **Videos**: Suggest 2-3 specific educational YouTube videos or search queries
-   - Prefer established educational channels (CrashCourse, TED-Ed, Khan Academy, Sprouts)
-   - Include estimated duration
-   - Focus on teacher-appropriate content
-
-2. **Images/Diagrams**: Describe 1-2 ideal educational diagrams
-   - Be specific about what the diagram should show
-   - Include search queries for finding similar diagrams
-
-3. **External Resources**: Suggest 2-3 quality educational resources
-   - Wikipedia articles (use actual URLs when confident)
-   - Educational websites (Simply Psychology, Verywell Mind, etc.)
-   - Teacher-focused resources
-
-4. **Academic Citations**: Suggest 2-3 seminal papers
-   - Include real authors, years, and journals when you know them
-   - Include DOI if known
-   - Focus on foundational, highly-cited papers
-
-5. **Open Textbooks (OER)**: Suggest 1-2 relevant chapters from open access textbooks
-   - Use these COPYRIGHT-SAFE sources (CC BY or open access):
-     * OpenStax Psychology (https://openstax.org/subjects/social-sciences)
-     * DOAB - Directory of Open Access Books (https://www.doabooks.org)
-     * Pressbooks Psychology (https://pressbooks.directory/?subj=Psychology)
-     * Open Textbook Library (https://open.umn.edu/opentextbooks/subjects/psychology)
-     * BC Campus OpenEd (https://collection.bccampus.ca)
-   - Suggest specific chapters or sections relevant to the concept
-   - Include the license type (CC BY, CC BY-SA, etc.)
-
-Be SPECIFIC and EDUCATIONAL. These recommendations will help teachers create better lessons.
-
+_JSON_SCHEMA = """\
 Output JSON format:
 {
   "videos": [
@@ -147,29 +106,119 @@ Output JSON format:
 }
 """
 
+# ============================================================================
+# DOMAIN-SPECIFIC SYSTEM PROMPTS
+# ============================================================================
 
-async def generate_media_for_concept(
-    client: AsyncOpenAI,
-    concept: Dict[str, Any],
-    model: str = _DEFAULT_MODEL
-) -> Optional[Dict[str, Any]]:
-    """
-    Generate media recommendations for a single concept using GPT-4o.
-    
-    Args:
-        client: OpenAI async client
-        concept: Concept data from KG
-        model: OpenAI model to use
-        
-    Returns:
-        Media recommendations dict or None on failure
-    """
-    name = concept.get('name', 'Unknown')
-    category = concept.get('category', 'Unknown')
-    description = concept.get('description', 'No description')
-    label = concept.get('label', '')
-    
-    user_prompt = f"""Generate educational media recommendations for this neuroscience/cognitive concept:
+_NEURO_SYSTEM_PROMPT = f"""You are an expert educational content curator specializing in **cognitive neuroscience, educational psychology, and evidence-based learning**.
+
+Your task is to generate high-quality educational media recommendations for neuroscience/cognitive concepts used in teacher training. You must act as a domain expert who understands:
+
+- Cognitive processes (attention, memory, executive functions)
+- Learning theories (cognitive load, metacognition, self-regulation)
+- Motivation and emotion in learning
+- Neuroscience of education (neuroplasticity, brain development)
+- Evidence-based teaching strategies
+
+For each concept, generate:
+
+1. **Videos**: Suggest 2-3 specific educational YouTube videos or search queries
+   - Prefer established educational channels (CrashCourse, TED-Ed, Khan Academy, Sprouts)
+   - Include estimated duration
+   - Focus on teacher-appropriate content
+
+2. **Images/Diagrams**: Describe 1-2 ideal educational diagrams
+   - Be specific about what the diagram should show
+   - Include search queries for finding similar diagrams
+
+3. **External Resources**: Suggest 2-3 quality educational resources
+   - Wikipedia articles (use actual URLs when confident)
+   - Educational websites (Simply Psychology, Verywell Mind, etc.)
+   - Teacher-focused resources
+
+4. **Academic Citations**: Suggest 2-3 seminal papers
+   - Include real authors, years, and journals when you know them
+   - Include DOI if known
+   - Focus on foundational, highly-cited papers
+
+5. **Open Textbooks (OER)**: Suggest 1-2 relevant chapters from open access textbooks
+   - Use these COPYRIGHT-SAFE sources (CC BY or open access):
+     * OpenStax Psychology (https://openstax.org/subjects/social-sciences)
+     * DOAB - Directory of Open Access Books (https://www.doabooks.org)
+     * Pressbooks Psychology (https://pressbooks.directory/?subj=Psychology)
+     * Open Textbook Library (https://open.umn.edu/opentextbooks/subjects/psychology)
+     * BC Campus OpenEd (https://collection.bccampus.ca)
+   - Suggest specific chapters or sections relevant to the concept
+   - Include the license type (CC BY, CC BY-SA, etc.)
+
+Be SPECIFIC and EDUCATIONAL. These recommendations will help teachers create better lessons.
+
+{_JSON_SCHEMA}"""
+
+_UDL_SYSTEM_PROMPT = f"""You are an expert educational content curator specializing in **Universal Design for Learning (UDL), inclusive education, and special educational needs (BES/SEN)**.
+
+Your task is to generate high-quality educational media recommendations for UDL concepts used in Italian teacher training. You must act as a domain expert who understands:
+
+- The CAST UDL framework (Engagement, Representation, Action & Expression)
+- UDL Guidelines and Checkpoints (e.g. "Provide options for recruiting interest", "Provide options for comprehension")
+- Learner variability profiles: ADHD, Autism Spectrum, Dyslexia, Dyscalculia, Gifted, Physical Disabilities, Sensory Disabilities, Foreign Students
+- Barriers to learning (cognitive, sensory, environmental, linguistic, technological, pedagogical)
+- Mitigation strategies (accommodations, scaffolds, assistive technologies, environmental modifications)
+- Executive function supports (goal-setting, planning, self-monitoring, self-regulation)
+- Metacognitive and self-regulation strategies
+- Inclusive instructional design (multisensory, collaborative, structured)
+- Italian BES/DSA legislation and inclusive education practices
+- Environmental design for accessibility (sensory, physical, digital)
+
+For each concept, generate:
+
+1. **Videos**: Suggest 2-3 specific educational YouTube videos or search queries
+   - Prefer: CAST UDL channel, Understood.org, Edutopia, TED-Ed, National Center on UDL
+   - Include Italian-language resources when relevant (e.g. AID Italia, Erickson, MIUR webinars)
+   - Include estimated duration
+   - Focus on teacher-training content
+
+2. **Images/Diagrams**: Describe 1-2 ideal educational diagrams
+   - UDL Guidelines grid, barrier-mitigation flowcharts, learner variability profiles
+   - Be specific about what the diagram should show
+   - Include search queries for finding similar diagrams
+
+3. **External Resources**: Suggest 2-3 quality educational resources
+   - CAST (https://www.cast.org), Understood.org, Erickson (Italian publisher for inclusion)
+   - Wikipedia articles (use actual URLs when confident)
+   - Italian Ministry of Education / MIUR resources on BES/DSA when relevant
+   - Teacher-focused resources on inclusive practices
+
+4. **Academic Citations**: Suggest 2-3 seminal papers
+   - Key UDL researchers: Meyer, Rose, Gordon (CAST founders); Tomlinson (differentiation); Hattie (visible learning)
+   - Include DOI if known
+   - Focus on foundational, highly-cited papers in UDL, inclusive education, and the specific learner variability area
+
+5. **Open Textbooks (OER)**: Suggest 1-2 relevant chapters from open access textbooks
+   - Use these COPYRIGHT-SAFE sources (CC BY or open access):
+     * UDL Book: "Universal Design for Learning: Theory and Practice" by Meyer, Rose, Gordon (free at udltheorypractice.cast.org)
+     * OpenStax Psychology / Education (https://openstax.org)
+     * DOAB - Directory of Open Access Books (https://www.doabooks.org) — search for "inclusive education", "special needs", "UDL"
+     * Pressbooks Education (https://pressbooks.directory/?subj=Education)
+     * Open Textbook Library (https://open.umn.edu/opentextbooks/subjects/education)
+     * BC Campus OpenEd (https://collection.bccampus.ca)
+   - Suggest specific chapters or sections relevant to the concept
+   - Include the license type (CC BY, CC BY-SA, etc.)
+
+Be SPECIFIC and EDUCATIONAL. These recommendations will help Italian teachers implement inclusive practices in their classrooms.
+
+{_JSON_SCHEMA}"""
+
+
+def get_system_prompt(domain: str) -> str:
+    """Return the domain-appropriate system prompt."""
+    if domain == "udl":
+        return _UDL_SYSTEM_PROMPT
+    return _NEURO_SYSTEM_PROMPT
+
+
+_NEURO_USER_PROMPT = """\
+Generate educational media recommendations for this neuroscience/cognitive concept:
 
 **Concept Name:** {name}
 **Category:** {category}
@@ -192,21 +241,80 @@ Remember to:
 Output ONLY valid JSON.
 """
 
+_UDL_USER_PROMPT = """\
+Generate educational media recommendations for this UDL / inclusive education concept:
+
+**Concept Name:** {name}
+**Category:** {category}
+**Label/Domain:** {label}
+**Description:** {description}
+
+This concept is part of the Universal Design for Learning (UDL) knowledge graph for Italian teacher training. Generate specific, high-quality educational media that would help teachers understand and apply this concept in inclusive classrooms.
+
+Remember to:
+- Suggest real, findable videos (CAST UDL, Understood.org, Edutopia, TED-Ed, Italian BES/DSA channels)
+- Describe diagrams that clarify the concept (UDL guidelines grid, barrier→mitigation flowcharts, learner profiles)
+- Include CAST, Understood.org, Erickson, Wikipedia, and MIUR resource links
+- Cite real, seminal papers in UDL, inclusive education, or the specific disability/barrier area
+- **IMPORTANT**: Include relevant chapters from Open Textbooks (OER):
+  * "Universal Design for Learning: Theory and Practice" by Meyer, Rose, Gordon (udltheorypractice.cast.org)
+  * OpenStax Education / Psychology titles
+  * DOAB or Pressbooks inclusive education textbooks
+  * These are COPYRIGHT-SAFE resources with CC licenses
+
+Output ONLY valid JSON.
+"""
+
+
+def _get_user_prompt(domain: str) -> str:
+    """Return the domain-appropriate user prompt template."""
+    if domain == "udl":
+        return _UDL_USER_PROMPT
+    return _NEURO_USER_PROMPT
+
+
+async def generate_media_for_concept(
+    client: AsyncOpenAI,
+    concept: Dict[str, Any],
+    model: str = _DEFAULT_MODEL,
+    domain: str = "neuro",
+) -> Optional[Dict[str, Any]]:
+    """
+    Generate media recommendations for a single concept.
+
+    Args:
+        client: OpenAI-compatible async client (direct or OpenRouter)
+        concept: Concept data from KG
+        model: Model identifier (OpenRouter format)
+        domain: 'neuro' or 'udl' — selects prompts
+
+    Returns:
+        Media recommendations dict or None on failure
+    """
+    name = concept.get('name', 'Unknown')
+    category = concept.get('category', 'Unknown')
+    description = concept.get('description', 'No description')
+    label = concept.get('label', '')
+
+    user_prompt = _get_user_prompt(domain).format(
+        name=name, category=category, label=label, description=description,
+    )
+
     try:
         response = await client.chat.completions.create(
             model=model,
             messages=[
-                {"role": "system", "content": MEDIA_GENERATOR_SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt}
+                {"role": "system", "content": get_system_prompt(domain)},
+                {"role": "user", "content": user_prompt},
             ],
             response_format={"type": "json_object"},
             temperature=0.7,
-            max_tokens=1500
+            max_tokens=2500,
         )
-        
+
         content = response.choices[0].message.content
         media_data = json.loads(content)
-        
+
         return {
             "id": concept.get('id', ''),
             "name": name,
@@ -216,9 +324,9 @@ Output ONLY valid JSON.
             "images": media_data.get('images', []),
             "resources": media_data.get('resources', []),
             "citations": media_data.get('citations', []),
-            "open_textbooks": media_data.get('open_textbooks', [])
+            "open_textbooks": media_data.get('open_textbooks', []),
         }
-        
+
     except json.JSONDecodeError as e:
         logger.error(f"JSON decode error for '{name}': {e}")
         return None
@@ -272,88 +380,124 @@ def extract_unique_concepts(kg_path: str) -> List[Dict[str, Any]]:
 async def process_concepts_batch(
     client: AsyncOpenAI,
     concepts: List[Dict[str, Any]],
-    batch_size: int = 5
+    batch_size: int = 5,
+    model: str = _DEFAULT_MODEL,
+    domain: str = "neuro",
 ) -> List[Dict[str, Any]]:
     """
     Process concepts in batches with rate limiting.
-    
+
     Args:
-        client: OpenAI async client
+        client: OpenAI-compatible async client
         concepts: List of concepts to process
         batch_size: Number of concurrent requests
-        
+        model: Model identifier
+        domain: 'neuro' or 'udl'
+
     Returns:
         List of media mappings
     """
     results = []
     total = len(concepts)
-    
+
     for i in range(0, total, batch_size):
         batch = concepts[i:i + batch_size]
         batch_num = i // batch_size + 1
         total_batches = (total + batch_size - 1) // batch_size
-        
+
         logger.info(f"Processing batch {batch_num}/{total_batches} ({len(batch)} concepts)...")
-        
-        # Process batch concurrently
-        tasks = [generate_media_for_concept(client, c) for c in batch]
+
+        tasks = [
+            generate_media_for_concept(client, c, model=model, domain=domain)
+            for c in batch
+        ]
         batch_results = await asyncio.gather(*tasks)
-        
-        # Filter successful results
+
         for result in batch_results:
             if result:
                 results.append(result)
-        
+
         logger.info(f"Batch {batch_num} complete. Total processed: {len(results)}/{total}")
-        
-        # Rate limiting - pause between batches
+
         if i + batch_size < total:
             await asyncio.sleep(1.0)
-    
+
     return results
 
 
-def prioritize_concepts(concepts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+_NEURO_PRIORITY_CATEGORIES = [
+    'attention types', 'memory systems', 'executive functions',
+    'cognitive processes', 'learning processes', 'motivational types',
+    'metacognitive processes', 'belief systems', 'emotions',
+    'neuroscience foundations', 'cognitive load',
+]
+
+_NEURO_PRIORITY_LABELS = [
+    'Attention', 'Memory', 'ExecutiveFunctions', 'Metacognition',
+    'Motivation', 'Emotions', 'CognitiveLoad', 'Neuroplasticity',
+    'Creativity', 'LearningStrategies',
+]
+
+_UDL_PRIORITY_CATEGORIES = [
+    'learner variability', 'pedagogical barrier', 'barriers',
+    'udl', 'udl framework', 'design principle',
+    'executive functions', 'executive function support',
+    'metacognitive processes', 'metacognitive strategy',
+    'self-regulation', 'affective factors', 'affective & motivational factors',
+    'sensory processing', 'cognitive load', 'cognitive processes',
+    'pedagogical support', 'universal support',
+    'instructional design', 'inclusive design',
+    'environmental barrier', 'environmental design',
+    'digital support', 'learning strategy',
+]
+
+_UDL_PRIORITY_LABELS = [
+    'Adhd', 'AutismSpectrum', 'Dyslexia', 'Dyscalculia',
+    'SensoryDisabilities', 'PhysicalDisabilities', 'Gifted', 'ForeignStudents',
+    'Barrier', 'Principle', 'Guideline', 'Checkpoint',
+    'LearningFramework', 'Framework',
+    'Metacognition', 'CognitiveLoad', 'SelfRegulationProcesses',
+    'InstructionalStrategy', 'LearningMethodology', 'EducationalApproach',
+    'InclusiveDesign', 'InclusiveLearning',
+    'SensoryProcessing', 'SensoryAccommodation',
+    'EnvironmentalDesignForMobility',
+]
+
+
+def prioritize_concepts(
+    concepts: List[Dict[str, Any]], domain: str = "neuro"
+) -> List[Dict[str, Any]]:
     """
-    Prioritize concepts for processing - core educational concepts first.
-    
+    Prioritize concepts for processing — core concepts first.
+
     Args:
         concepts: List of all concepts
-        
+        domain: 'neuro' or 'udl'
+
     Returns:
         Prioritized list with important concepts first
     """
-    # High-priority categories (core neuroscience/education concepts)
-    priority_categories = [
-        'attention types', 'memory systems', 'executive functions',
-        'cognitive processes', 'learning processes', 'motivational types',
-        'metacognitive processes', 'belief systems', 'emotions',
-        'neuroscience foundations', 'cognitive load'
-    ]
-    
-    # High-priority labels
-    priority_labels = [
-        'Attention', 'Memory', 'ExecutiveFunctions', 'Metacognition',
-        'Motivation', 'Emotions', 'CognitiveLoad', 'Neuroplasticity',
-        'Creativity', 'LearningStrategies'
-    ]
-    
+    if domain == "udl":
+        priority_categories = _UDL_PRIORITY_CATEGORIES
+        priority_labels = _UDL_PRIORITY_LABELS
+    else:
+        priority_categories = _NEURO_PRIORITY_CATEGORIES
+        priority_labels = _NEURO_PRIORITY_LABELS
+
     def get_priority(concept: Dict) -> int:
         category = concept.get('category', '').lower()
         label = concept.get('label', '')
-        
-        # Check category priority
+
         for i, cat in enumerate(priority_categories):
             if cat in category:
                 return i
-        
-        # Check label priority
+
         for i, lab in enumerate(priority_labels):
             if lab.lower() == label.lower():
                 return len(priority_categories) + i
-        
+
         return 999
-    
+
     return sorted(concepts, key=get_priority)
 
 
@@ -384,11 +528,13 @@ async def main():
     )
     
     args = parser.parse_args()
-    
-    # Paths
-    base_path = Path(__file__).parent
-    kg_path = base_path / f"kg_{args.domain}_neo4j.json"
-    output_path = args.output or base_path / f"kg_{args.domain}_media_mapping.json"
+
+    # Paths — resolve relative to repo root, not script location
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    kg_path = repo_root / "data" / "kg" / args.domain / f"kg_{args.domain}_neo4j.json"
+    output_path = Path(args.output) if args.output else (
+        repo_root / "data" / "media" / f"kg_{args.domain}_media_mapping.json"
+    )
     
     if not kg_path.exists():
         logger.error(f"Knowledge Graph not found: {kg_path}")
@@ -412,7 +558,7 @@ async def main():
     
     # Extract and prioritize concepts
     concepts = extract_unique_concepts(str(kg_path))
-    concepts = prioritize_concepts(concepts)
+    concepts = prioritize_concepts(concepts, domain=args.domain)
     
     if args.limit:
         concepts = concepts[:args.limit]
@@ -429,7 +575,8 @@ async def main():
     start_time = datetime.now()
     
     media_mappings = await process_concepts_batch(
-        client, concepts, args.batch_size
+        client, concepts, batch_size=args.batch_size,
+        model=args.model, domain=args.domain,
     )
     
     elapsed = datetime.now() - start_time
