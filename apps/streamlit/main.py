@@ -831,7 +831,43 @@ def render_agent_mode():
     
     This function provides a complete UI for generating lesson plans
     using the multi-agent pipeline: Planner → Retriever → Writer → Critic
+
+    Status: this Streamlit-based Agent Mode is **retired** as the canonical
+    end-to-end test surface for the agent pipeline. It is superseded by the
+    Path C webui (FastAPI + htmx 2 + WebAwesome + Tailwind + sse-starlette)
+    served at ``/webui/`` from the same uvicorn process — see
+    ``docs/product/ClickUp_Agentic_GraphRAG_Update.md`` §6.6.
+
+    The Streamlit page is kept here only for backwards compatibility with
+    existing teacher-side flows; **no new agent features land here**
+    (tool approval, multi-turn chat, file upload, conversation memory all
+    live on /webui/). The GraphRAG admin mode in this same Streamlit app
+    is unaffected by this retirement and remains the read-only KG inspector.
     """
+    # Retirement banner: shown only on Agent Mode (the GraphRAG admin mode
+    # in this same app is intentionally untouched — it remains the
+    # read-only knowledge-graph inspector for the team).
+    st.warning(
+        "🚧 **Questa interfaccia di Agent Mode è in fase di pensionamento.**\n\n"
+        "L'interfaccia ufficiale per generare piani di lezione con la pipeline "
+        "multi-agente (Planner → Retriever → Writer → Critic) è ora la nuova "
+        "**chat workspace su `/webui/`**, che offre:\n"
+        "- Profilo educativo persistente (BES, classe, mobilità, dispositivi) e modifica inline\n"
+        "- Streaming live dei singoli step dell'agente come chat card\n"
+        "- Pannello risorse multimediali curate (video, articoli, OER)\n"
+        "- Replay del piano finale su reload pagina\n\n"
+        "👉 **Apri la nuova interfaccia:** "
+        "[http://127.0.0.1:8765/webui/](http://127.0.0.1:8765/webui/) "
+        "*(richiede l'API FastAPI attiva: "
+        "`python -m uvicorn aix.api.main:app --host 127.0.0.1 --port 8765`)*\n\n"
+        "Le nuove feature agente (tool approval, file upload, chat multi-turno, "
+        "conversation memory) saranno disponibili **solo** su `/webui/`.\n\n"
+        "ℹ️ La modalità **GraphRAG** in questa app *non è interessata* da questa "
+        "migrazione e rimane lo strumento ufficiale di ispezione admin read-only "
+        "del Knowledge Graph."
+    )
+    st.divider()
+
     st.header("🎓 Agent Mode: Lesson Plan Generator")
     
     st.markdown("""

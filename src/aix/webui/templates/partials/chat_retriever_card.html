@@ -1,0 +1,108 @@
+{#
+  Retriever Agent card (CORE 2 #6.6 P2 phase 2).
+
+  Rendered after the `retrieve` LangGraph node finishes. The retriever's
+  output is THE substrate for the lesson — KG nodes, relationships,
+  pedagogical recommendations, and curated media. We surface counts and
+  the top-N concept titles so the teacher can sanity-check what the agent
+  is about to write *from*.
+
+  Side effect: this event also drives the right-sidebar media panel via
+  an OOB swap — see ``service.py`` and ``routes.py`` for how the media
+  block is composited into the SSE payload alongside this card.
+
+  Required context (set by ``_build_retriever_payload``):
+    payload = {
+      nodes_count, relationships_count, recommendations_count,
+      media_counts: {videos, articles, oer},
+      top_concepts: [...],
+      retrieval_confidence
+    }
+#}
+
+{% set p = payload or {} %}
+{% set mc = p.get('media_counts') or {} %}
+
+<div class="flex items-start gap-3">
+
+  {# ── Avatar (retriever = violet / knowledge graph) ────────────────── #}
+  <div class="flex-shrink-0 w-9 h-9 rounded-full bg-violet-100 text-violet-700
+              flex items-center justify-center ring-2 ring-white shadow-sm">
+    <wa-icon name="diagram-project" style="font-size:1rem;"></wa-icon>
+  </div>
+
+  {# ── Card body ────────────────────────────────────────────────────── #}
+  <div class="flex-1 min-w-0">
+    <article class="rounded-xl border border-violet-200 bg-white shadow-sm overflow-hidden">
+
+      <header class="px-4 py-2 border-b border-violet-100 bg-violet-50/60
+                     flex items-center justify-between gap-2 flex-wrap">
+        <div class="flex items-baseline gap-2">
+          <strong class="text-slate-800">Retriever Agent</strong>
+          <span class="text-xs text-slate-500">· interroga il Knowledge Graph e i media curati</span>
+        </div>
+        <wa-tag size="small" variant="neutral" pill>retrieve</wa-tag>
+      </header>
+
+      <div class="px-4 py-3 space-y-3 text-sm">
+
+        {# Tool-call header: shows we explicitly hit GraphRAG #}
+        <div class="flex items-center gap-2 text-xs text-slate-600
+                    bg-slate-50 border border-slate-200 rounded px-2 py-1.5 w-fit">
+          <wa-icon name="wrench" style="font-size:0.85rem;"></wa-icon>
+          <code class="text-[11px]">graphrag.search</code>
+          <span class="text-slate-400">·</span>
+          <span>{{ p.get('retrieval_confidence') or 'medium' }} confidence</span>
+        </div>
+
+        {# Counts grid #}
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-center">
+          <div class="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2">
+            <div class="text-lg font-semibold text-slate-800">{{ p.get('nodes_count', 0) }}</div>
+            <div class="text-[10px] uppercase tracking-wide text-slate-500">nodi KG</div>
+          </div>
+          <div class="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2">
+            <div class="text-lg font-semibold text-slate-800">{{ p.get('relationships_count', 0) }}</div>
+            <div class="text-[10px] uppercase tracking-wide text-slate-500">relazioni</div>
+          </div>
+          <div class="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2">
+            <div class="text-lg font-semibold text-slate-800">{{ p.get('recommendations_count', 0) }}</div>
+            <div class="text-[10px] uppercase tracking-wide text-slate-500">strategie</div>
+          </div>
+          <div class="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2">
+            <div class="text-lg font-semibold text-slate-800">
+              {{ (mc.get('videos', 0) + mc.get('articles', 0) + mc.get('oer', 0)) }}
+            </div>
+            <div class="text-[10px] uppercase tracking-wide text-slate-500">media</div>
+          </div>
+        </div>
+
+        {# Top-N concept titles #}
+        {% if p.get('top_concepts') %}
+          <div>
+            <div class="text-xs uppercase tracking-wide text-slate-500 mb-1">
+              Concetti più rilevanti recuperati
+            </div>
+            <div class="flex flex-wrap gap-1">
+              {% for c in p.top_concepts %}
+                <wa-tag size="small" variant="neutral" pill>{{ c }}</wa-tag>
+              {% endfor %}
+            </div>
+          </div>
+        {% endif %}
+
+        <p class="text-xs text-slate-500 italic">
+          I dettagli completi (video curati, articoli, manuali OER) sono
+          disponibili nel pannello "Risorse multimediali" a destra.
+        </p>
+
+      </div>
+
+    </article>
+    <div class="text-[11px] text-slate-400 mt-1 ml-1 flex items-center gap-1">
+      <wa-icon name="diagram-project" style="font-size:0.7rem;"></wa-icon>
+      <span>Retriever · GraphRAG + curated media</span>
+    </div>
+  </div>
+
+</div>

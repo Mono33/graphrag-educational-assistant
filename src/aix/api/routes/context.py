@@ -7,7 +7,7 @@ This is the core endpoint that DEV team will call to get knowledge graph context
 import logging
 import time
 from typing import Optional
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Body, HTTPException
 
 # Import schemas
 from aix.api.schemas import (
@@ -653,19 +653,99 @@ def _build_domain_prompt_context(
     )
 
 
+# Two named call examples for Swagger UI Try-it-out. Rendered as a dropdown
+# (FastAPI converts this to OpenAPI 3.1 `examples` keyed by name on the request
+# body MediaType — Swagger UI then shows a real picker, unlike `json_schema_extra.examples`
+# which leaks the wrapper object into the editable body).
+_CONTEXT_REQUEST_OPENAPI_EXAMPLES: dict = {
+    "minimal": {
+        "summary": "Minimal — legacy DEV contract (frozen, no profile)",
+        "description": (
+            "The original frozen contract used by the DEV team. "
+            "Backward-compatible: omitting `educational_profile` preserves the "
+            "original generic GraphRAG behavior."
+        ),
+        "value": {
+            "query": "Quali strategie per studenti con ADHD?",
+            "domain": "neuro",
+            "language": "it",
+            "include_raw_nodes": False,
+            "max_methodologies": 10,
+        },
+    },
+    "rich": {
+        "summary": "Rich — with EducationalProfile (CORE 1 #2.5)",
+        "description": (
+            "Includes the optional `educational_profile` so downstream prompt "
+            "enrichment and methodology ranking can specialize against the "
+            "class profile (BES, grade level, classroom resources)."
+        ),
+        "value": {
+            "query": "Crea una lezione sulla fotosintesi",
+            "domain": "neuro",
+            "language": "it",
+            "include_raw_nodes": False,
+            "max_methodologies": 10,
+            "educational_profile": {
+                "group": {
+                    "title": "3A Liceo Scientifico",
+                    "students_number": 25,
+                    "grade": "SECONDARIA_II_GRADO",
+                    "disabilities": ["ADHD", "DSA"],
+                    "class_features": ["MOTIVATA"],
+                    "student_attributes": [
+                        "PUNTI_DI_ECCELLENZA",
+                        "PUNTI_DI_CADUTA",
+                    ],
+                },
+                "classroom": {
+                    "title": "Aula 101",
+                    "forniture_mobility": "PARTIALLY",
+                    "has_lim": True,
+                    "has_wifi": True,
+                    "has_suite": True,
+                    "pc_station": False,
+                    "own_device": "BES",
+                },
+                "time_available_minutes": 60,
+                "subject_area": "Scienze",
+                "specific_topic": "Fotosintesi",
+            },
+        },
+    },
+}
+
+
 @router.post("", response_model=ContextResponse)
-async def get_context(request: ContextRequest) -> ContextResponse:
+async def get_context(
+    request: ContextRequest = Body(..., openapi_examples=_CONTEXT_REQUEST_OPENAPI_EXAMPLES),
+) -> ContextResponse:
     """
-    Get educational context from GraphRAG knowledge graph
-    
+    Get educational context from GraphRAG knowledge graph (retrieval-only mode of the Agentic GraphRAG system).
+
     This endpoint:
     1. Translates the query (if needed)
     2. Generates a Cypher query
     3. Retrieves relevant nodes from Neo4j
     4. Builds structured educational context
     5. Returns everything in a format ready for prompt injection
-    
+
     DEV team can use the returned data directly in their Jinja2 templates.
+
+    **Inputs:**
+    - `query`, `domain`, `language` — frozen base contract (unchanged for the DEV team).
+    - `educational_profile` *(optional, CORE 1 #2.5)* — per-request class / classroom context
+      (BES, grade level, classroom resources). Backward compatible: omit it and the response
+      preserves the original generic behavior. When supplied, downstream prompt enrichment
+      and methodology ranking will specialize against the profile.
+
+    *Tip:* in the Swagger UI **Try it out** panel, use the **Examples** dropdown to switch
+    between the *Minimal* (legacy) and *Rich* (with `educational_profile`) call shapes.
+
+    *Note:* Agent mode (LangGraph multi-agent lesson planning) is exposed by separate
+    endpoints (`POST /api/v1/agent/run` for sync JSON and `POST /api/v1/agent/stream`
+    for SSE; CORE 2 #7) and is not available here. Both use the same
+    `educational_profile` shape as the Rich example below.
     """
     start_time = time.time()
     

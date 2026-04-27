@@ -1,0 +1,62 @@
+{% extends "_base.html" %}
+
+{% block content %}
+<section class="max-w-md mx-auto space-y-6">
+
+  <div class="space-y-2">
+    <h1 class="text-3xl font-serif tracking-tight">Accedi</h1>
+    <p class="text-slate-600">
+      Inserisci le tue credenziali per continuare.
+    </p>
+  </div>
+
+  {% if form_errors %}
+    <wa-callout variant="danger" appearance="filled outlined">
+      <wa-icon slot="icon" name="circle-exclamation"></wa-icon>
+      <strong>Impossibile accedere.</strong>
+      <ul class="mt-2 ml-4 list-disc text-sm">
+        {% for err in form_errors %}
+          <li>{{ err }}</li>
+        {% endfor %}
+      </ul>
+    </wa-callout>
+  {% endif %}
+
+  <wa-card>
+    <form method="post" action="/auth/login" class="flex flex-col gap-4">
+      <input type="hidden" name="next" value="{{ next }}">
+
+      <wa-input
+        type="email"
+        name="email"
+        label="Email"
+        required
+        autocomplete="email"
+        autofocus
+        value="{{ form_values.get('email', '') }}"
+      ></wa-input>
+
+      <wa-input
+        type="password"
+        name="password"
+        label="Password"
+        required
+        autocomplete="current-password"
+        password-toggle
+      ></wa-input>
+
+      <div class="flex items-center justify-between gap-3 pt-2">
+        <a href="/auth/register{% if next and next != '/webui/' %}?next={{ next }}{% endif %}"
+           class="text-sm text-slate-600 hover:text-slate-900">
+          Non hai un account? Registrati
+        </a>
+        <wa-button type="submit" variant="brand" appearance="filled">
+          <wa-icon slot="prefix" name="right-to-bracket"></wa-icon>
+          Accedi
+        </wa-button>
+      </div>
+    </form>
+  </wa-card>
+
+</section>
+{% endblock %}

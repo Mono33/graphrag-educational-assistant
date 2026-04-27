@@ -6,9 +6,9 @@ This is the main graph that connects all agents together.
 """
 
 import logging
-from typing import Optional
+from typing import Any, Dict, Optional
 
-from langgraph.graph import StateGraph, END
+from langgraph.graph import END, StateGraph
 
 from aix.agent.graph.state import AgentState, create_initial_state
 from aix.agent.graph.nodes import (
@@ -22,33 +22,30 @@ from aix.agent.graph.nodes import (
 logger = logging.getLogger(__name__)
 
 
-def build_lesson_planner_graph() -> StateGraph:
+def build_lesson_planner_graph() -> Any:
     """
     Build the lesson planner state machine.
-    
+
     Pipeline:
         START → Plan → Retrieve → Write → Critique → [Revise/END]
                                            ↑    ↓
                                            └────┘ (revision loop)
-    
+
     Returns:
-        Compiled LangGraph StateGraph
+        Compiled LangGraph runnable
     """
     logger.info("[LessonPlannerGraph] Building graph...")
-    
+
     # Create the graph with AgentState
     workflow = StateGraph(AgentState)
-    
+
     # Add nodes
     workflow.add_node("plan", plan_node)
     workflow.add_node("retrieve", retrieve_node)
     workflow.add_node("write", write_node)
     workflow.add_node("critique", critique_node)
-    
-    # Set entry point
+
     workflow.set_entry_point("plan")
-    
-    # Add edges (sequential flow)
     workflow.add_edge("plan", "retrieve")
     workflow.add_edge("retrieve", "write")
     workflow.add_edge("write", "critique")
@@ -98,38 +95,55 @@ class LessonPlannerPipeline:
         self.domain = domain
         self.language = language
         self.max_revisions = max_revisions
-        self._graph = None
-    
-    def _get_graph(self) -> StateGraph:
-        """Lazy initialization of the graph"""
+        self._graph: Optional[Any] = None
+
+    def _get_graph(self) -> Any:
+        """Lazy initialization of the compiled graph."""
         if self._graph is None:
             self._graph = build_lesson_planner_graph()
         return self._graph
-    
+
     async def run(
         self,
         query: str,
-        session_id: Optional[str] = None
+        session_id: Optional[str] = None,
+        educational_profile: Optional[Dict[str, Any]] = None,
     ) -> dict:
         """
         Run the lesson planner pipeline.
-        
+
         Args:
             query: Teacher's natural language query
             session_id: Optional session ID for persistence
-            
+            educational_profile: Optional class/classroom context (CORE 1 #2.5).
+                Passed through `AgentState` to prompts and ranking. Pass either
+                a `dict` (already serialized) or a Pydantic
+                `EducationalProfile` (it will be normalized to dict here).
+
         Returns:
             Dictionary with lesson plan and metadata
         """
         logger.info(f"[Pipeline] Starting for query: {query[:50]}...")
-        
+
+        # Normalize Pydantic models to dict so the LangGraph state stays
+        # JSON-serializable across nodes / checkpoints.
+        profile_dict: Optional[Dict[str, Any]] = None
+        if educational_profile is not None:
+            if hasattr(educational_profile, "model_dump"):
+                profile_dict = educational_profile.model_dump(exclude_none=True)
+            elif hasattr(educational_profile, "dict"):
+                profile_dict = educational_profile.dict(exclude_none=True)  # type: ignore[attr-defined]
+            else:
+                profile_dict = educational_profile
+
         # Create initial state
         initial_state = create_initial_state(
             query=query,
             domain=self.domain,
             language=self.language,
             session_id=session_id,
-            max_revisions=self.max_revisions
+            max_revisions=self.max_revisions,
+            educational_profile=profile_dict,
         )
         
         # Get compiled graph

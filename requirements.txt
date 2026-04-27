@@ -9,6 +9,29 @@ uvicorn[standard]>=0.24.0
 pydantic>=2.0.0
 python-multipart>=0.0.6
 
+# WebUI — Path C "Mirror Stack" frontend (htmx + WebAwesome + Tailwind via CDN)
+# Used by src/aix/webui/ as the in-process e2e test surface for the agent.
+# See docs/architecture/Frontend_Platform_Evaluation.md (ADR-0001).
+jinja2>=3.1.0
+# sse-starlette 3.x requires starlette>=0.49 which conflicts with fastapi 0.119.x
+# (fastapi pins starlette<0.49). Stay on the 2.x line until we bump fastapi.
+sse-starlette>=2.1.0,<3.0
+
+# WebUI auth + persistence (CORE 2 #6.6 P1).
+# Async SQLAlchemy 2.x + aiosqlite for dev (SQLite at data/webui/webui.db).
+# Swap to asyncpg + Postgres in CORE 6 deploy — no model changes required.
+sqlalchemy[asyncio]>=2.0.25
+aiosqlite>=0.19.0
+fastapi-users[sqlalchemy]>=14.0.0
+
+# Markdown → HTML for the streamed lesson plan (CORE 2 #6.6 P2).
+# We render server-side so SSE 'done' events can drop ready-to-paint HTML
+# into the stream pane without a JS markdown parser. `extras` enables
+# fenced code, tables, GFM-style footnotes — useful for richer lesson plans.
+markdown>=3.5.0
+# WebUI P3 — PDF text extraction for teacher uploads (explicit pin; also common transitive dep).
+pypdf>=5.0.0
+
 # Core dependencies
 langchain>=0.1.0
 langchain-openai>=0.0.5
@@ -36,3 +59,14 @@ langgraph==0.5.4
 
 # Error Monitoring (GlitchTip — Sentry-compatible)
 sentry-sdk[fastapi]>=2.0.0
+
+# CORE 5 #20 — MCP Tool Servers (Phase 1: stdio entry; Phase 5: Streamable HTTP mount in /api/v1/main).
+# FastMCP 3.x is the production-grade Pythonic wrapper around the official `mcp` SDK.
+# It ships:
+#   * decorator-based @mcp.tool / @mcp.resource / @mcp.prompt API,
+#   * Streamable HTTP transport (the post-Nov-2025 spec replacement for raw SSE),
+#   * `MultiAuth` for composing JWT Bearer + future OAuth 2.1 / PKCE in parallel,
+#   * an ASGI exporter that mounts cleanly inside the existing uvicorn process.
+# Pinning <4.0 to opt in to FastMCP 3.x's stable Provider/Transform architecture
+# without auto-jumping to a future major (4.x) that may break decorators.
+fastmcp>=3.0.0,<4.0.0

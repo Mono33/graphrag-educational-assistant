@@ -40,11 +40,11 @@ class ScopeStatus(Enum):
 class AgentState(TypedDict, total=False):
     """
     Shared state passed between all agents in the pipeline.
-    
+
     This TypedDict defines the complete state that flows through:
     Planner → Retriever → Writer → Critic → (Output or back to Writer)
     """
-    
+
     # ========================================
     # INPUT (set at start)
     # ========================================
@@ -52,7 +52,11 @@ class AgentState(TypedDict, total=False):
     domain: str                     # Knowledge domain ("neuro" or "udl")
     language: str                   # Response language ("it" or "en")
     session_id: Optional[str]       # For conversation persistence
-    
+    educational_profile: Optional[Dict[str, Any]]  # CORE 1 #2.5 — per-request class/classroom context (group, classroom, time, subject)
+    # WebUI #6.6 P3 — joined text from teacher file uploads. Used by the Writer
+    # only as additional context; never sent to the GraphRAG / KG retriever.
+    teacher_provided_context: Optional[str]
+
     # ========================================
     # PLANNER OUTPUT
     # ========================================
@@ -62,13 +66,13 @@ class AgentState(TypedDict, total=False):
     target_grade: Optional[str]     # Target grade level (if detected)
     key_concepts: Optional[List[str]]  # Key concepts to search for
     search_queries: Optional[List[str]]  # Queries to run on GraphRAG
-    
+
     # NEW: Scope Detection (Phase A - Out-of-domain handling)
     scope_status: Optional[str]     # "in_scope", "partial_scope", "out_of_scope"
     scope_confidence: Optional[float]  # 0.0-1.0 confidence in scope detection
     subject_concepts: Optional[List[str]]  # Subject-specific concepts (may be out of scope)
     pedagogy_concepts: Optional[List[str]]  # Pedagogical concepts (always from KG)
-    
+
     # ========================================
     # RETRIEVER OUTPUT
     # ========================================
@@ -79,17 +83,17 @@ class AgentState(TypedDict, total=False):
     retrieval_confidence: Optional[str]  # Confidence from GraphRAG
     # NEW Phase 1: Curated media from sidecar JSON (optional, backward compatible)
     curated_media: Optional[Dict[str, Any]]  # Videos, resources, citations
-    
+
     # NEW Phase A: External resources for out-of-scope queries
     external_resources: Optional[Dict[str, Any]]  # Wikipedia, OER, Semantic Scholar results
-    
+
     # ========================================
     # WRITER OUTPUT
     # ========================================
     lesson_plan_draft: Optional[str]  # Generated lesson plan
     lesson_plan_structured: Optional[Dict[str, Any]]  # Structured version
     sources_cited: Optional[List[str]]  # Sources used in lesson plan
-    
+
     # ========================================
     # CRITIC OUTPUT
     # ========================================
@@ -97,7 +101,7 @@ class AgentState(TypedDict, total=False):
     critique_score: Optional[float]  # Quality score (0-1)
     approved: bool                   # Whether critic approved
     revision_instructions: Optional[str]  # What to fix if not approved
-    
+
     # ========================================
     # METADATA
     # ========================================
@@ -105,7 +109,7 @@ class AgentState(TypedDict, total=False):
     max_revisions: int               # Maximum allowed revisions
     current_step: str                # Current step in pipeline
     error: Optional[str]             # Error message if any
-    
+
     # ========================================
     # FINAL OUTPUT
     # ========================================
@@ -118,18 +122,28 @@ def create_initial_state(
     domain: str = "neuro",
     language: str = "it",
     session_id: Optional[str] = None,
-    max_revisions: int = 2
+    max_revisions: int = 2,
+    educational_profile: Optional[Dict[str, Any]] = None,
+    teacher_provided_context: Optional[str] = None,
 ) -> AgentState:
     """
     Create initial state for a new lesson planning request.
-    
+
     Args:
         query: Teacher's natural language query
         domain: Knowledge domain ("neuro" or "udl")
         language: Response language ("it" for Italian, "en" for English)
         session_id: Optional session ID for persistence
         max_revisions: Maximum revision cycles allowed
-        
+        educational_profile: Optional per-request class/classroom context
+            (CORE 1 #2.5). When provided, prompts and ranking can specialize
+            against grade level, BES, classroom resources, etc. Backward
+            compatible — omitting it preserves the original generic behavior.
+        teacher_provided_context: Optional plain-text concatenation of files
+            uploaded by the teacher in the WebUI chat (CORE 2 #6.6 P3). Passed
+            into the Writer prompt only; the Planner / Retriever stay KG-only,
+            and nothing here is ingested into the shared Knowledge Graph.
+
     Returns:
         Initialized AgentState
     """
@@ -139,7 +153,9 @@ def create_initial_state(
         domain=domain,
         language=language,
         session_id=session_id,
-        
+        educational_profile=educational_profile,
+        teacher_provided_context=teacher_provided_context,
+
         # Planner (empty)
         plan=None,
         query_intent=None,
@@ -152,7 +168,7 @@ def create_initial_state(
         scope_confidence=None,
         subject_concepts=None,
         pedagogy_concepts=None,
-        
+
         # Retriever (empty)
         graphrag_results=None,
         retrieved_nodes=None,
@@ -161,27 +177,27 @@ def create_initial_state(
         retrieval_confidence=None,
         curated_media=None,  # NEW Phase 1
         external_resources=None,  # NEW Phase A
-        
+
         # Writer (empty)
         lesson_plan_draft=None,
         lesson_plan_structured=None,
         sources_cited=None,
-        
+
         # Critic (empty)
         critique=None,
         critique_score=None,
         approved=False,
         revision_instructions=None,
-        
+
         # Metadata
         revision_count=0,
         max_revisions=max_revisions,
         current_step="start",
         error=None,
-        
+
         # Final (empty)
         final_lesson_plan=None,
-        final_metadata=None
+        final_metadata=None,
     )
 
 
@@ -196,7 +212,7 @@ class RetrievalPlan:
     time_constraints: Optional[str] = None
 
 
-@dataclass  
+@dataclass
 class LessonPlanStructure:
     """Structured lesson plan output"""
     title: str
@@ -210,4 +226,3 @@ class LessonPlanStructure:
     differentiation: Dict[str, List[str]]
     sources: List[str]
     metadata: Dict[str, Any] = field(default_factory=dict)
-

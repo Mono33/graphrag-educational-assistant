@@ -1,0 +1,27 @@
+TITLE  : GraphRAG Educational API
+VERSION: 1.1.0
+BASELINE: captured 2026-04-26 21:46 CET, before CORE 2 #7 implementation
+------------------------------------------------------------
+GET    /                                           [tags: root]
+POST   /api/v1/context                             [tags: context]
+GET    /api/v1/context/domains                     [tags: context]
+GET    /api/v1/health                              [tags: health]
+GET    /auth/login                                 [tags: webui,webui-auth]
+POST   /auth/login                                 [tags: webui,webui-auth]
+GET    /auth/logout                                [tags: webui,webui-auth]
+GET    /auth/register                              [tags: webui,webui-auth]
+POST   /auth/register                              [tags: webui,webui-auth]
+GET    /webui/                                     [tags: webui]
+GET    /webui/health                               [tags: webui]
+POST   /webui/lesson                               [tags: webui,webui-lessons]
+GET    /webui/lesson/new                           [tags: webui,webui-lessons]
+GET    /webui/lesson/{lesson_id}                   [tags: webui,webui-lessons]
+GET    /webui/lesson/{lesson_id}/profile           [tags: webui,webui-lessons]
+POST   /webui/lesson/{lesson_id}/profile           [tags: webui,webui-lessons]
+GET    /webui/lesson/{lesson_id}/profile/edit      [tags: webui,webui-lessons]
+POST   /webui/lesson/{lesson_id}/run               [tags: webui,webui-lessons]
+GET    /webui/lesson/{lesson_id}/stream            [tags: webui,webui-lessons]
+POST   /webui/lesson/{lesson_id}/upload            [tags: webui,webui-lessons]
+DELETE /webui/lesson/{lesson_id}/upload/{file_id}  [tags: webui,webui-lessons]
+------------------------------------------------------------
+Total operations: 21

@@ -5,6 +5,22 @@ The Writer generates context-aware responses based on the detected query intent.
 Adapts output format for lesson plans, definitions, comparisons, explanations, etc.
 """
 
+# Appended to the user prompt when the WebUI teacher uploads files (P3). This
+# material is not ingested into the shared KG — it is session-local context.
+WRITER_TEACHER_UPLOADS_APPENDIX = """
+
+---
+
+## Materiale caricato dall'insegnante (contesto aggiuntivo)
+
+Il testo seguente proviene da file caricati dall'insegnante per **questa lezione**.
+Non fa parte del Knowledge Graph condiviso: usalo per allineare terminologia,
+programma, vincoli di classe o brani testuali, **senza contraddire** le evidenze
+e le strategie indicate nei nodi recuperati dal KG.
+
+{teacher_provided_context}
+"""
+
 # =============================================================================
 # SYSTEM PROMPTS BY INTENT
 # =============================================================================

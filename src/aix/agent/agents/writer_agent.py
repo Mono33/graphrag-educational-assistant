@@ -17,6 +17,7 @@ from aix.agent.prompts.writer_prompt import (
     get_writer_prompts,
     format_external_resources,
     WRITER_REVISION_TEMPLATE,
+    WRITER_TEACHER_UPLOADS_APPENDIX,
     WRITER_USER_TEMPLATE_LESSON,
     WRITER_USER_TEMPLATE_DEFINITION,
     WRITER_USER_TEMPLATE_COMPARISON,
@@ -74,11 +75,12 @@ class WriterAgent:
         language: str = "it",
         curated_media: Optional[Dict[str, Any]] = None,  # Phase 2: Optional media
         external_resources: Optional[Dict[str, Any]] = None,  # Phase A: External resources
-        domain: str = "neuro"  # Phase B: Domain for extensions
+        domain: str = "neuro",  # Phase B: Domain for extensions
+        teacher_provided_context: Optional[str] = None,  # WebUI #6.6 P3: chat uploads
     ) -> str:
         """
         Generate content based on the detected intent and retrieved context.
-        
+
         Args:
             teacher_query: Original teacher request
             plan: Retrieval plan with intent and lesson requirements
@@ -86,7 +88,12 @@ class WriterAgent:
             language: Output language ("it" or "en")
             curated_media: Optional curated media from sidecar JSON (Phase 2)
             external_resources: Optional external resources for hybrid mode (Phase A)
-            
+            teacher_provided_context: Optional plain-text appendix from files
+                attached by the teacher in the WebUI chat (CORE 2 #6.6 P3).
+                These do NOT enter the Knowledge Graph and do NOT influence
+                the Planner / Retriever — they are appended only to this
+                Writer prompt as supplementary context.
+
         Returns:
             Generated content as markdown string
         """
@@ -170,6 +177,11 @@ class WriterAgent:
                 language="Italian" if language == "it" else "English"
             )
         
+        if teacher_provided_context and teacher_provided_context.strip():
+            user_prompt += WRITER_TEACHER_UPLOADS_APPENDIX.format(
+                teacher_provided_context=teacher_provided_context.strip()
+            )
+
         # NEW Phase 2: Append media context if available
         if media_text:
             user_prompt += media_text

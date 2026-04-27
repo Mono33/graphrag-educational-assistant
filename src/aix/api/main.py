@@ -24,13 +24,23 @@ import os
 import sys
 import time
 from pathlib import Path
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, AsyncExitStack
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-# Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Add the project source root (``src/``) to sys.path so ``aix.api``,
+# ``aix.mcp``, ``aix.webui`` … all resolve via their canonical names when
+# the file is invoked directly (``python src/aix/api/main.py``).
+#
+# CRITICAL: we deliberately insert ``src/`` (parent of ``aix``), NOT
+# ``src/aix``. Adding ``src/aix`` would make our internal ``aix.mcp``
+# package ALSO importable as plain ``mcp``, which collides with the
+# official Anthropic ``mcp`` SDK (a transitive dep of ``fastmcp``).
+# When ``fastmcp.utilities.logging`` does ``import mcp`` it would land
+# on our package, triggering a circular import while ``aix.mcp.server``
+# is mid-loading. See CORE 5 #20 Phase 5 for the bug we hit and fixed.
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from aix.api import __version__
 from aix.api.routes import context_router
@@ -84,6 +94,26 @@ def _warm_schema(domain: str) -> None:
         logger.warning(f"⚠️ Schema cache warm-up failed for domain='{domain}': {e}")
 
 
+# CORE 5 #20 Phase 5 — Build the MCP Streamable HTTP sub-app once, at import
+# time. ``build_mcp_http_app()`` is idempotent and side-effect-free at the
+# Neo4j level (tool/resource/prompt registration only); the actual MCP
+# session manager starts later inside ``lifespan`` via
+# ``mcp_app.lifespan(app)``. We assign to a module-level variable so both
+# ``lifespan`` (closure lookup) and the ``app.mount(...)`` call below see
+# the same instance. Wrapped in try/except so an MCP build failure cannot
+# block the public /api/v1 surface from coming up.
+_mcp_http_app = None
+try:
+    from aix.mcp.http_app import build_mcp_http_app, MCP_MOUNT_PATH
+
+    _mcp_http_app = build_mcp_http_app()
+    if _mcp_http_app is None:
+        logger.info("ℹ️ MCP HTTP app not built (build_mcp_http_app returned None)")
+except Exception as exc:  # noqa: BLE001 - any import/build failure must be soft
+    logger.warning("⚠️ MCP HTTP app could not be loaded: %s", exc, exc_info=True)
+    MCP_MOUNT_PATH = "/mcp"  # noqa: F811 - default path for the log line below
+
+
 # Lifespan context manager for startup/shutdown
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -135,10 +165,38 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"⚠️ Schema cache warm-up scheduling failed: {e}")
 
-    logger.info("✅ API ready to serve requests")
+    # Path C webui — initialise the SQLite (or Postgres in CORE 6) schema
+    # used by /webui auth + lessons. Idempotent: create_all is a no-op if
+    # tables already exist. Wrapped so a webui DB problem never blocks the
+    # public /api/v1 surface from coming up.
+    try:
+        from aix.webui.db import init_db as _webui_init_db
+        await _webui_init_db()
+    except Exception as e:
+        logger.warning(f"⚠️ WebUI DB init failed (auth + lessons disabled): {e}")
 
-    yield  # Server is running
-    
+    # CORE 5 #20 Phase 5 — MCP Streamable HTTP sub-app lifespan.
+    # FastMCP's http_app() Starlette app initialises an internal
+    # ``StreamableHTTPSessionManager`` inside its own lifespan. If we don't
+    # enter that lifespan from the parent app, the very first request to
+    # ``/mcp/`` raises "Task group is not initialized". We use an
+    # AsyncExitStack so that any failure in MCP startup never prevents the
+    # main API from coming up.
+    async with AsyncExitStack() as _mcp_stack:
+        if _mcp_http_app is not None:
+            try:
+                await _mcp_stack.enter_async_context(_mcp_http_app.lifespan(app))
+                logger.info("✅ MCP HTTP sub-app lifespan started (mounted at /mcp/)")
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "⚠️ MCP HTTP sub-app lifespan failed to start (skipping): %s",
+                    exc,
+                )
+
+        logger.info("✅ API ready to serve requests")
+
+        yield  # Server is running
+
     # Shutdown
     logger.info("👋 Shutting down GraphRAG Educational API...")
 
@@ -190,17 +248,100 @@ context = response.json()
     redoc_url="/redoc"
 )
 
-# Add CORS middleware
+# ---------------------------------------------------------------------------
+# CORS — env-driven allow-list (CORE 2 #7).
+#
+# Backward-compat: ``WEBUI_CORS_ALLOW_ORIGINS`` defaults to ``*`` so existing
+# .env files keep working unchanged. To tighten in deploy, set e.g.
+#    WEBUI_CORS_ALLOW_ORIGINS=https://aixlearning.it,https://app.aixlearning.it
+# Comma-separated. We also support a single ``*`` for "allow any origin"
+# explicitly, since the FastAPI middleware treats ``["*"]`` differently
+# from a populated allow-list.
+# ---------------------------------------------------------------------------
+_cors_raw = os.getenv("WEBUI_CORS_ALLOW_ORIGINS", "*").strip()
+if _cors_raw == "*" or not _cors_raw:
+    _cors_origins: list[str] = ["*"]
+else:
+    _cors_origins = [o.strip() for o in _cors_raw.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+logger.info("✅ CORS configured: origins=%s", _cors_origins)
 
 # Include routers
 app.include_router(context_router, prefix="/api/v1")
+
+# Public Agent API (CORE 2 #7) — JSON+SSE contract for the multi-agent
+# pipeline. Wrapped in try/except so an import failure here can never
+# break the existing /api/v1/context surface from coming up.
+try:
+    from aix.api.routes import agent_router
+    app.include_router(agent_router, prefix="/api/v1")
+    logger.info("✅ Agent JSON+SSE API mounted at /api/v1/agent/*")
+except Exception as exc:  # noqa: BLE001
+    logger.warning("⚠️ Agent JSON+SSE API not loaded (skipping): %s", exc)
+
+# Path C webui — internal HTML+SSE surface for agent end-to-end testing.
+# Mounts at /webui/* (not /api/v1/*), so the public JSON contract used by the
+# DEV team is unaffected. See docs/architecture/Frontend_Platform_Evaluation.md
+# (ADR-0001) and CORE 2 subtask #6.6 in ClickUp_Agentic_GraphRAG_Update.md.
+try:
+    from aix.webui import router as webui_router
+    app.include_router(webui_router)
+    logger.info("✅ Path C webui mounted at /webui/")
+except ImportError as exc:
+    logger.warning(f"⚠️ Path C webui not loaded (skipping): {exc}")
+
+# JSON Bearer auth router (CORE 2 #7).
+#
+# Mounts ``POST /auth/jwt/login`` and ``POST /auth/jwt/logout``. These are
+# **separate from** the existing HTML cookie endpoints at /auth/login etc.
+# (different paths, no collision). Their job is to give the public JSON
+# API a way to mint Bearer tokens, which Swagger UI's "Authorize" dialog
+# can then send on every /api/v1/agent/* call so /docs becomes a live
+# test bench for the agent — same UX you used for /api/v1/context.
+#
+# Wrapped in try/except so an import failure can never block the existing
+# /webui/* and /api/v1/context surfaces.
+try:
+    from aix.webui.auth import bearer_backend, fastapi_users
+
+    app.include_router(
+        fastapi_users.get_auth_router(bearer_backend),
+        prefix="/auth/jwt",
+        tags=["api-auth"],
+    )
+    logger.info("✅ JSON Bearer auth router mounted at /auth/jwt/*")
+except Exception as exc:  # noqa: BLE001
+    logger.warning("⚠️ JSON Bearer auth router not loaded (skipping): %s", exc)
+
+
+# CORE 5 #20 Phase 5 — Mount the Streamable HTTP MCP endpoint at /mcp/.
+#
+# Same JWT Bearer secret as /api/v1/agent/* (see aix.mcp.http_app for the
+# JWTVerifier configuration), so a teacher can POST /auth/jwt/login once and
+# use the resulting token against /api/v1/agent/run AND /mcp/ interchange-
+# ably. To temporarily disable auth for local dev (e.g. while testing with
+# the MCP Inspector without minting a token first), set
+# ``AIX_MCP_REQUIRE_AUTH=0`` in .env — NEVER in production.
+#
+# We mount unconditionally only when ``_mcp_http_app`` was built above; if
+# it wasn't (e.g. fastmcp not installed in this environment), we just skip
+# silently — the rest of the API surface is unaffected.
+if _mcp_http_app is not None:
+    try:
+        app.mount(MCP_MOUNT_PATH, _mcp_http_app)
+        logger.info(
+            "✅ MCP Streamable HTTP endpoint mounted at %s/ (Phase 5)",
+            MCP_MOUNT_PATH,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("⚠️ MCP HTTP endpoint mount failed (skipping): %s", exc)
 
 
 @app.get("/", tags=["root"])

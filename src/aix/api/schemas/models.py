@@ -7,6 +7,11 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 from enum import Enum
 
+# Educational Profile is defined in a sibling module so the same shape can be
+# reused by Agent mode (#7) and the future AgentRequest. Imported eagerly so
+# the field below is available at module-import time. See CORE 1 #2.5.
+from aix.api.schemas.educational_profile import EducationalProfile
+
 
 class DomainType(str, Enum):
     """Available knowledge domains"""
@@ -67,16 +72,56 @@ class ContextRequest(BaseModel):
         le=20,
         description="Maximum number of methodologies to return (split ~50/50 primary/supporting)"
     )
+    educational_profile: Optional[EducationalProfile] = Field(
+        default=None,
+        description=(
+            "Optional per-request educational context (CORE 1 #2.5). "
+            "When provided, downstream prompt enrichment and methodology "
+            "ranking can specialize against the class profile (BES, grade, "
+            "classroom environment). Backward compatible: omitting this "
+            "field preserves the original generic behavior."
+        ),
+    )
 
     class Config:
+        # Canonical schema example — shows the full shape including the optional
+        # educational_profile (CORE 1 #2.5) so DEV can see every available field.
+        # Multiple named call examples (Minimal vs Rich) are exposed via
+        # FastAPI's `Body(..., openapi_examples=...)` on the route handler — that
+        # is the OpenAPI 3.1 + Swagger UI canonical way to render a dropdown.
         json_schema_extra = {
             "example": {
-                "query": "Quali strategie per studenti con ADHD?",
+                "query": "Crea una lezione sulla fotosintesi",
                 "domain": "neuro",
                 "language": "it",
                 "include_raw_nodes": False,
-                "max_methodologies": 10
-            }
+                "max_methodologies": 10,
+                "educational_profile": {
+                    "group": {
+                        "title": "3A Liceo Scientifico",
+                        "students_number": 25,
+                        "grade": "SECONDARIA_II_GRADO",
+                        "disabilities": ["ADHD", "DSA"],
+                        "class_features": ["MOTIVATA"],
+                        "student_attributes": [
+                            "PUNTI_DI_ECCELLENZA",
+                            "PUNTI_DI_CADUTA",
+                        ],
+                    },
+                    "classroom": {
+                        "title": "Aula 101",
+                        "forniture_mobility": "PARTIALLY",
+                        "has_lim": True,
+                        "has_wifi": True,
+                        "has_suite": True,
+                        "pc_station": False,
+                        "own_device": "BES",
+                    },
+                    "time_available_minutes": 60,
+                    "subject_area": "Scienze",
+                    "specific_topic": "Fotosintesi",
+                },
+            },
         }
 
 

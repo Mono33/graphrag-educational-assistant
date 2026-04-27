@@ -1,0 +1,55 @@
+{#
+  Live chat stream pane (CORE 2 #6.6 P2 phase 2).
+
+  Rendered as part of ``partials/chat_conversation.html`` whenever
+  ``lesson.status == "running"``. The conversation partial is itself
+  returned by POST /run and inlined by lesson_show.html, so this pane
+  enters the DOM when:
+    - the user submits the chat-input form on a draft lesson,
+    - the user clicks "Rigenera" / "Riprova" on a terminal lesson, or
+    - the user reloads ``/webui/lesson/{id}`` mid-run (re-attaches to
+      the in-flight stream).
+
+  htmx-SSE wiring:
+    - sse-connect on this root opens the EventSource as soon as the pane
+      enters the DOM.
+    - sse-close="end" guarantees the EventSource gets eventSource.close()'d
+      when the server emits its final ``event: end`` marker, preventing
+      the browser's default 3-second auto-reconnect that would otherwise
+      replay the whole run.
+    - sse-swap="card,final,error" with hx-swap="beforeend" on #chat-cards
+      means every per-agent event APPENDS a fresh card. The 'final' event
+      appends the lesson card, 'error' appends the error card. Writer-pending
+      cards carry an id="writer-card-rev{N}" so the matching 'card' event
+      with hx-swap-oob="outerHTML" replaces them in place when the writer
+      finishes.
+
+  Required context:
+    lesson    Lesson ORM (for the SSE URL)
+#}
+
+<div id="chat-stream"
+     hx-ext="sse"
+     sse-connect="/webui/lesson/{{ lesson.id }}/stream"
+     sse-close="end"
+     class="space-y-4">
+
+  {# Cards land here, top-down, in the order the agent emitted them.
+     The "card" SSE event is the workhorse — every per-agent card goes
+     through it. "final" and "error" share the same swap target so the
+     terminating card appears immediately after the last per-agent card. #}
+  <div id="chat-cards"
+       sse-swap="card,final,error"
+       hx-swap="beforeend"
+       class="space-y-4">
+    {# Empty initially — the very first 'card' event (planner) lands here. #}
+  </div>
+
+  {# Subtle "agent pipeline running" status line. Kept tiny and quiet
+     because the cards themselves carry the active-state signal. #}
+  <div class="text-xs text-slate-400 flex items-center gap-2 pl-12">
+    <wa-spinner style="font-size:0.85rem;"></wa-spinner>
+    <span>L'agente sta lavorando — i passaggi si aggiungono qui sopra man mano che procedono.</span>
+  </div>
+
+</div>

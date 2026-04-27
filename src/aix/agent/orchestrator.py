@@ -147,17 +147,18 @@ class AgentOrchestrator:
     async def create_lesson_plan(
         self,
         query: str,
-        session_id: Optional[str] = None
+        session_id: Optional[str] = None,
+        educational_profile: Optional[Any] = None,
     ) -> LessonPlanResult:
         """
         Create a lesson plan from a teacher's query.
-        
+
         This runs the full multi-agent pipeline:
         1. Planner analyzes the query
         2. Retriever searches the knowledge graph
         3. Writer generates the lesson plan
         4. Critic reviews and may request revisions
-        
+
         Args:
             query: Teacher's natural language query
                 Examples:
@@ -165,16 +166,20 @@ class AgentOrchestrator:
                 - "Attività di 30 minuti sulla metacognizione"
                 - "How to teach executive functions to high school students"
             session_id: Optional session ID for tracking/persistence
-            
+            educational_profile: Optional per-request class/classroom context
+                (CORE 1 #2.5). Either a Pydantic `EducationalProfile` or a
+                pre-serialized `dict`. Backward compatible — when omitted,
+                the pipeline keeps the original generic behavior.
+
         Returns:
             LessonPlanResult containing the lesson plan and metadata
         """
         logger.info(f"[Orchestrator] Creating lesson plan: {query[:50]}...")
-        
+
         pipeline = self._get_pipeline()
-        
+
         try:
-            result = await pipeline.run(query, session_id)
+            result = await pipeline.run(query, session_id, educational_profile=educational_profile)
             
             return LessonPlanResult(
                 success=result.get("success", False),
@@ -214,7 +219,8 @@ class AgentOrchestrator:
     def create_lesson_plan_sync(
         self,
         query: str,
-        session_id: Optional[str] = None
+        session_id: Optional[str] = None,
+        educational_profile: Optional[Any] = None,
     ) -> LessonPlanResult:
         """
         Synchronous version of create_lesson_plan().
@@ -222,7 +228,9 @@ class AgentOrchestrator:
         Use this in non-async contexts (e.g., scripts, Jupyter notebooks).
         """
         import asyncio
-        return asyncio.run(self.create_lesson_plan(query, session_id))
+        return asyncio.run(
+            self.create_lesson_plan(query, session_id, educational_profile=educational_profile)
+        )
     
     async def quick_search(self, query: str) -> Dict[str, Any]:
         """

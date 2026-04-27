@@ -1,0 +1,84 @@
+{#
+  Conversation column body (CORE 2 #6.6 P2 phase 2).
+
+  Renders everything inside ``#chat-conversation``: optional user bubble +
+  state-driven chat content (empty hint, live SSE pane, final lesson card,
+  or error card) + the chat input.
+
+  This partial is included in two places:
+    1. ``pages/lesson_show.html`` — full page render.
+    2. The response body of POST ``/webui/lesson/{id}/run`` — htmx swaps it
+       into ``#chat-conversation`` (innerHTML) so the user's just-typed
+       query appears as a bubble AND the SSE pane lights up in one tick.
+
+  State matrix:
+    draft     empty-state hint + chat input (first turn) + attachments tray.
+    running   user bubble + chat_pane (SSE). chat input disabled.
+    complete  user bubble + final lesson card. chat input parked on #10.
+    error     user bubble + error card. chat input parked on #10.
+
+  Required context:
+    lesson           Lesson ORM
+    lesson_plan_html Optional[str]  rendered final markdown for replay
+    meta             Optional[dict] meta for the lesson card (replay path)
+    user             Optional[User] for the user bubble avatar
+#}
+
+{% if lesson.teacher_query %}
+  {% include "partials/chat_user_message.html" with context %}
+{% endif %}
+
+{% if lesson.status == "draft" %}
+
+  {# Empty state — chat input below is the affordance. #}
+  <div id="chat-stream"
+       class="rounded-xl border-2 border-dashed border-slate-200 p-8
+              flex flex-col items-center text-center gap-3">
+    <wa-icon name="comments" style="font-size:2rem; color:#94a3b8;"></wa-icon>
+    <div class="space-y-1">
+      <p class="font-medium text-slate-700">Inizia la conversazione</p>
+      <p class="text-sm text-slate-500 max-w-md mx-auto">
+        Scrivi la tua richiesta nel campo qui sotto. L'agente userà
+        sia il messaggio sia il <strong>profilo educativo</strong>
+        a sinistra per generare la lezione personalizzata.
+      </p>
+    </div>
+  </div>
+
+{% elif lesson.status == "running" %}
+
+  {# Live SSE stream — chat_pane.html owns ``id="chat-stream"`` itself. #}
+  {% include "partials/chat_pane.html" with context %}
+
+{% elif lesson.status == "complete" %}
+
+  {# Replay path — final lesson card only (per-agent cards are not
+     persisted today; that's P4 follow-up). #}
+  <div id="chat-stream" class="space-y-4">
+    {% include "partials/chat_lesson_card.html" with context %}
+  </div>
+
+{% elif lesson.status == "error" %}
+
+  {# Replay path — persisted error_message rendered by chat_error.html. #}
+  <div id="chat-stream" class="space-y-4">
+    {% set error = lesson.error_message or "Errore sconosciuto" %}
+    {% include "partials/chat_error.html" with context %}
+  </div>
+
+{% else %}
+
+  {# Defensive default — unknown status. Should never happen. #}
+  <div id="chat-stream"
+       class="rounded-xl border-2 border-dashed border-slate-200 p-6
+              text-sm text-slate-500 text-center">
+    Stato lezione sconosciuto: <code>{{ lesson.status }}</code>
+  </div>
+
+{% endif %}
+
+{# Chat input — state-driven inside the partial. Sits below the stream
+   so it's the natural "next thing to do" on draft, and disabled
+   afterwards. Including it here means /run's response carries the
+   updated input (active → disabled spinner) in the same swap. #}
+{% include "partials/chat_input.html" with context %}

@@ -193,3 +193,13 @@ scripts/*.log
 # =============================================================================
 # setup_neo4j.sh
 # update-hf-space.sh
+
+# =============================================================================
+# WebUI runtime data (CORE 2 #6.6 P1)
+# SQLite DB for users + lessons. Generated on first uvicorn start.
+# Never commit user data; deploy uses managed Postgres in CORE 6.
+# =============================================================================
+data/webui/*.db
+data/webui/*.db-journal
+data/webui/*.db-wal
+data/webui/*.db-shm

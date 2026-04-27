@@ -25,6 +25,44 @@ from .models import (
     ConceptGraph,
 )
 
+# Educational Profile schema (CORE 1 #2.5 — ported from FEM-modena/graphrag-aixlearning@Angelo)
+from .educational_profile import (
+    GradeLevel,
+    DisabilityType,
+    ClassFeature,
+    StudentAttribute,
+    FornitureMobility,
+    OwnDevicePolicy,
+    EducationalGroup,
+    ClassroomEnvironment,
+    EducationalProfile,
+    GRADE_LABELS,
+    DISABILITY_LABELS,
+    CLASS_FEATURE_LABELS,
+    STUDENT_ATTR_LABELS,
+    FORNITURE_MOBILITY_LABELS,
+    OWN_DEVICE_LABELS,
+)
+
+# Public Agent API schemas (CORE 2 #7 — JSON+SSE contract for /api/v1/agent/*)
+from .agent import (
+    AgentRunRequest,
+    AgentRunResponse,
+    AgentRunMeta,
+    CriticScores,
+    MediaCounts,
+    PlannerInfo,
+    RetrieverInfo,
+    AgentStreamEvent,
+    PlannerEvent,
+    RetrieverEvent,
+    WriterPendingEvent,
+    WriterEvent,
+    CriticEvent,
+    DoneEvent,
+    ErrorEvent,
+)
+
 __all__ = [
     "ContextRequest",
     "ContextResponse",
@@ -47,5 +85,37 @@ __all__ = [
     "ConceptGraphNode",
     "ConceptGraphEdge",
     "ConceptGraph",
+    # Educational Profile (#2.5)
+    "GradeLevel",
+    "DisabilityType",
+    "ClassFeature",
+    "StudentAttribute",
+    "FornitureMobility",
+    "OwnDevicePolicy",
+    "EducationalGroup",
+    "ClassroomEnvironment",
+    "EducationalProfile",
+    "GRADE_LABELS",
+    "DISABILITY_LABELS",
+    "CLASS_FEATURE_LABELS",
+    "STUDENT_ATTR_LABELS",
+    "FORNITURE_MOBILITY_LABELS",
+    "OWN_DEVICE_LABELS",
+    # Public Agent API (#7)
+    "AgentRunRequest",
+    "AgentRunResponse",
+    "AgentRunMeta",
+    "CriticScores",
+    "MediaCounts",
+    "PlannerInfo",
+    "RetrieverInfo",
+    "AgentStreamEvent",
+    "PlannerEvent",
+    "RetrieverEvent",
+    "WriterPendingEvent",
+    "WriterEvent",
+    "CriticEvent",
+    "DoneEvent",
+    "ErrorEvent",
 ]
 

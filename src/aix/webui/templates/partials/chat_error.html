@@ -1,0 +1,67 @@
+{#
+  Error card (CORE 2 #6.6 P2 phase 2).
+
+  Rendered:
+    - On the SSE 'error' event, appended to the chat as the run's last card.
+    - On a fresh GET to /webui/lesson/{id} when ``lesson.status == "error"``
+      (replay path — error_message persisted on disk).
+
+  Required context:
+    lesson    ORM Lesson (for the rerun POST URL)
+    error     str — short human-readable message
+#}
+
+<div class="flex items-start gap-3">
+
+  {# ── Avatar (error = rose / circle-x) ─────────────────────────────── #}
+  <div class="flex-shrink-0 w-9 h-9 rounded-full bg-rose-100 text-rose-700
+              flex items-center justify-center ring-2 ring-white shadow-sm">
+    <wa-icon name="circle-exclamation" style="font-size:1rem;"></wa-icon>
+  </div>
+
+  <div class="flex-1 min-w-0">
+    <article class="rounded-xl border border-rose-200 bg-rose-50/50 shadow-sm overflow-hidden">
+
+      <header class="px-4 py-2 border-b border-rose-200 bg-rose-100/50
+                     flex items-center justify-between gap-2 flex-wrap">
+        <div class="flex items-baseline gap-2">
+          <strong class="text-rose-900">Errore durante la generazione</strong>
+        </div>
+        <wa-tag size="small" variant="danger" pill>error</wa-tag>
+      </header>
+
+      <div class="px-4 py-3 space-y-3 text-sm text-slate-700">
+        <p class="whitespace-pre-wrap">{{ error or "Errore sconosciuto." }}</p>
+
+        <p class="text-xs text-slate-500 italic">
+          Suggerimento: controlla la connessione, le chiavi API in ``.env``,
+          e i log del server. Se l'errore persiste, allega il messaggio
+          quando segnali il problema.
+        </p>
+
+        <div class="flex flex-wrap items-center justify-end gap-2 pt-1">
+          <a href="/webui/lesson/new" class="no-underline">
+            <wa-button size="small" variant="default">
+              <wa-icon slot="prefix" name="circle-plus"></wa-icon>
+              Nuova lezione
+            </wa-button>
+          </a>
+          <wa-button size="small"
+                     variant="brand"
+                     hx-post="/webui/lesson/{{ lesson.id }}/run"
+                     hx-target="#chat-conversation"
+                     hx-swap="innerHTML">
+            <wa-icon slot="prefix" name="rotate"></wa-icon>
+            Riprova
+          </wa-button>
+        </div>
+      </div>
+
+    </article>
+    <div class="text-[11px] text-slate-400 mt-1 ml-1 flex items-center gap-1">
+      <wa-icon name="circle-exclamation" style="font-size:0.7rem;"></wa-icon>
+      <span>Sistema · errore</span>
+    </div>
+  </div>
+
+</div>
