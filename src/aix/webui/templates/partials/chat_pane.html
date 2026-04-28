@@ -47,9 +47,37 @@
 
   {# Subtle "agent pipeline running" status line. Kept tiny and quiet
      because the cards themselves carry the active-state signal. #}
-  <div class="text-xs text-slate-400 flex items-center gap-2 pl-12">
+  <div id="chat-spinner" class="text-xs text-slate-400 flex items-center gap-2 pl-12">
     <wa-spinner style="font-size:0.85rem;"></wa-spinner>
     <span>L'agente sta lavorando — i passaggi si aggiungono qui sopra man mano che procedono.</span>
   </div>
 
 </div>
+
+<script>
+(function () {
+  var lessonId = '{{ lesson.id }}';
+
+  function onSseClose() {
+    // Remove the "generating" spinner
+    var sp = document.getElementById('chat-spinner');
+    if (sp) sp.remove();
+
+    // The SSE "done" payload is a small placeholder card (#lesson-card-loading).
+    // Give the browser one tick to finish inserting it (SSE events are ordered
+    // but the swap is async), then fetch the full lesson card via a regular
+    // GET (no SSE size limit) and swap it in place of the placeholder.
+    setTimeout(function () {
+      var placeholder = document.getElementById('lesson-card-loading');
+      if (placeholder) {
+        htmx.ajax('GET', '/webui/lesson/' + lessonId + '/card-fragment', {
+          target: '#lesson-card-loading',
+          swap: 'outerHTML'
+        });
+      }
+    }, 50);
+  }
+
+  document.addEventListener('htmx:sseClose', onSseClose, { once: true });
+})();
+</script>

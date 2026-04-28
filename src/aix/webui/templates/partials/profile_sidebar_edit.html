@@ -27,7 +27,7 @@
 
 <aside id="profile-sidebar"
        class="rounded-xl border-2 border-sky-300 bg-white p-4 shadow-md space-y-3
-              text-sm sticky top-4">
+              text-sm sticky top-4 overflow-y-auto max-h-[calc(100vh-5rem)]">
 
   {# ── Header ──────────────────────────────────────────────────────── #}
   <div class="flex items-center gap-2 text-sky-700">
@@ -51,9 +51,25 @@
         hx-swap="outerHTML"
         class="space-y-3">
 
+    {# ── Lesson title ──────────────────────────────────────────────── #}
+    <fieldset class="space-y-2">
+      <legend class="text-[10px] uppercase tracking-wide text-slate-500">Titolo</legend>
+      <wa-input type="text" name="lesson_title"
+                label="Titolo lezione" size="small"
+                value="{{ lesson.title or '' }}"
+                placeholder="Es. Motivazione 3A"></wa-input>
+    </fieldset>
+
     {# ── Lesson framing ────────────────────────────────────────────── #}
     <fieldset class="space-y-2">
       <legend class="text-[10px] uppercase tracking-wide text-slate-500">Lezione</legend>
+
+      <wa-select name="domain" label="Dominio" size="small"
+                 value="{{ lesson.domain }}">
+        <wa-option value="neuro">🧠 Neuro</wa-option>
+        <wa-option value="udl">🎯 UDL</wa-option>
+        <wa-option value="all">🌐 Tutti</wa-option>
+      </wa-select>
 
       <wa-input type="text" name="subject_area"
                 label="Materia" size="small"

@@ -137,6 +137,114 @@ def _bounce_to_login(target_path: str) -> RedirectResponse:
 
 
 # ----------------------------------------------------------------------------
+# GET /webui/lessons — lesson history list
+# ----------------------------------------------------------------------------
+
+@router.get(
+    "/lessons",
+    response_class=HTMLResponse,
+    name="webui_lessons_list",
+)
+async def lesson_list(
+    request: Request,
+    user: Optional[User] = Depends(optional_current_user),
+    session: AsyncSession = Depends(get_async_session),
+) -> Response:
+    """List all lessons for the current user, newest first."""
+    if user is None:
+        return _bounce_to_login("/webui/lessons")
+
+    result = await session.execute(
+        select(Lesson)
+        .where(Lesson.owner_id == user.id)
+        .order_by(Lesson.created_at.desc())
+    )
+    lessons = result.scalars().all()
+
+    return templates.TemplateResponse(
+        "pages/lesson_list.html",
+        {"request": request, "user": user, "lessons": lessons},
+    )
+
+
+# ----------------------------------------------------------------------------
+# DELETE /webui/lesson/{id} — delete a lesson
+# ----------------------------------------------------------------------------
+
+@router.delete(
+    "/lesson/{lesson_id}",
+    name="webui_lesson_delete",
+)
+async def lesson_delete(
+    lesson_id: uuid.UUID,
+    session: AsyncSession = Depends(get_async_session),
+    user: Optional[User] = Depends(optional_current_user),
+) -> Response:
+    """Permanently delete a lesson owned by the current user."""
+    if user is None:
+        raise HTTPException(status_code=401)
+
+    result = await session.execute(
+        select(Lesson).where(Lesson.id == lesson_id, Lesson.owner_id == user.id)
+    )
+    lesson = result.scalar_one_or_none()
+    if lesson is None:
+        raise HTTPException(status_code=404, detail="Lezione non trovata")
+
+    await session.delete(lesson)
+    await session.commit()
+
+    return Response(
+        status_code=204,
+        headers={"HX-Redirect": "/webui/lessons"},
+    )
+
+
+# ----------------------------------------------------------------------------
+# GET /webui/lesson/{id}/card-fragment — full lesson card (non-SSE)
+# ----------------------------------------------------------------------------
+
+@router.get(
+    "/lesson/{lesson_id}/card-fragment",
+    response_class=HTMLResponse,
+    name="webui_lesson_card_fragment",
+)
+async def lesson_card_fragment(
+    request: Request,
+    lesson_id: uuid.UUID,
+    session: AsyncSession = Depends(get_async_session),
+    user: Optional[User] = Depends(optional_current_user),
+) -> Response:
+    """
+    Return the full lesson card HTML via a regular GET (no SSE).
+
+    Called by the htmx:sseClose handler in chat_pane.html to replace the small
+    'done' placeholder with the complete lesson card fetched from the DB.
+    This sidesteps the htmx-ext-sse single-line buffer limit that truncates
+    large lesson plans when sent as SSE event data.
+    """
+    if user is None:
+        raise HTTPException(status_code=401)
+
+    result = await session.execute(
+        select(Lesson).where(Lesson.id == lesson_id, Lesson.owner_id == user.id)
+    )
+    lesson = result.scalar_one_or_none()
+    if lesson is None:
+        raise HTTPException(status_code=404, detail="Lezione non trovata")
+
+    return templates.TemplateResponse(
+        "partials/chat_lesson_card.html",
+        {
+            "request": request,
+            "lesson": lesson,
+            "lesson_plan_html": _markdown_to_html(lesson.lesson_plan_md or ""),
+            "meta": {"approved": lesson.status == "complete", "revision_count": 0},
+        },
+    )
+
+
+# ----------------------------------------------------------------------------
 # GET /webui/lesson/new — render the form
 # ----------------------------------------------------------------------------
 
@@ -655,15 +763,20 @@ async def lesson_stream(
 
         # ── REPLAY paths ─────────────────────────────────────────────
         if lesson.status == "complete":
+            # Send the same small placeholder used by the live run path.
+            # chat_pane.html's htmx:sseClose handler fetches the full card
+            # via GET /card-fragment after the stream closes.
+            lid = str(lesson.id)
             yield {
                 "event": "final",
-                "data": _render_partial(
-                    request, "partials/chat_lesson_card.html",
-                    {
-                        "lesson": lesson,
-                        "lesson_plan_html": _markdown_to_html(lesson.lesson_plan_md or ""),
-                        "meta": {"approved": True, "revision_count": 0},
-                    },
+                "data": (
+                    f'<div id="lesson-card-loading" class="flex items-start gap-3">'
+                    f'<div class="flex-shrink-0 w-9 h-9 rounded-full bg-slate-800 text-white'
+                    f' flex items-center justify-center ring-2 ring-white shadow-sm">'
+                    f'<wa-icon name="book-open" style="font-size:1rem;"></wa-icon></div>'
+                    f'<div class="flex-1 min-w-0"><div class="rounded-xl border border-slate-200'
+                    f' bg-white shadow-sm px-4 py-3 text-sm text-slate-500 animate-pulse">'
+                    f'Caricamento lezione…</div></div></div>'
                 ),
             }
             yield terminal_marker
@@ -863,17 +976,114 @@ async def lesson_profile_save(
         )
 
     lesson.educational_profile_json = profile_dict
+
+    new_domain = str(form.get("domain", lesson.domain) or lesson.domain).strip()
+    if new_domain in {"neuro", "udl", "all"}:
+        lesson.domain = new_domain
+
+    lesson_title = str(form.get("lesson_title", "") or "").strip()
+    lesson.title = lesson_title or None
+
     await session.commit()
     await session.refresh(lesson)
 
     logger.info(
-        "✏️  Profile updated inline: lesson_id=%s owner=%s",
-        lesson.id, user.id,
+        "✏️  Profile updated inline: lesson_id=%s owner=%s domain=%s title=%r",
+        lesson.id, user.id, lesson.domain, lesson.title,
     )
 
     return templates.TemplateResponse(
         "partials/profile_sidebar.html",
         {"request": request, "lesson": lesson, **_label_dicts()},
+    )
+
+
+# ----------------------------------------------------------------------------
+# GET /webui/lesson/{id}/export — download lesson as MD or TXT
+# GET /webui/lesson/{id}/print  — print-friendly page (browser → PDF)
+# ----------------------------------------------------------------------------
+
+@router.get(
+    "/lesson/{lesson_id}/export",
+    name="webui_lesson_export",
+)
+async def lesson_export(
+    lesson_id: uuid.UUID,
+    format: str = "md",
+    session: AsyncSession = Depends(get_async_session),
+    user: Optional[User] = Depends(optional_current_user),
+) -> Response:
+    """Download the lesson plan as markdown or plain text."""
+    if user is None:
+        raise HTTPException(status_code=401)
+
+    result = await session.execute(
+        select(Lesson).where(Lesson.id == lesson_id, Lesson.owner_id == user.id)
+    )
+    lesson = result.scalar_one_or_none()
+    if lesson is None:
+        raise HTTPException(status_code=404, detail="Lezione non trovata")
+    if not lesson.lesson_plan_md:
+        raise HTTPException(status_code=404, detail="Nessun contenuto disponibile")
+
+    slug = (lesson.title or f"lezione-{lesson.id}").lower()
+    slug = "".join(c if c.isalnum() or c in "-_" else "-" for c in slug).strip("-")[:60]
+
+    if format == "md":
+        return Response(
+            content=lesson.lesson_plan_md,
+            media_type="text/markdown; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{slug}.md"'},
+        )
+
+    if format == "txt":
+        import re
+        text = lesson.lesson_plan_md
+        text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)  # links
+        text = re.sub(r"!\[[^\]]*\]\([^)]+\)", "", text)       # images
+        text = re.sub(r"#{1,6}\s*", "", text)                   # headings
+        text = re.sub(r"\*{1,3}([^*]+)\*{1,3}", r"\1", text)   # bold/italic
+        text = re.sub(r"`{1,3}[^`]*`{1,3}", lambda m: m.group().strip("`"), text)  # code
+        text = re.sub(r"_{1,2}([^_]+)_{1,2}", r"\1", text)     # underscores
+        text = re.sub(r"^\s*[-*+]\s+", "• ", text, flags=re.MULTILINE)  # bullets
+        return Response(
+            content=text,
+            media_type="text/plain; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{slug}.txt"'},
+        )
+
+    raise HTTPException(status_code=400, detail="Formato non supportato. Usa ?format=md o ?format=txt")
+
+
+@router.get(
+    "/lesson/{lesson_id}/print",
+    response_class=HTMLResponse,
+    name="webui_lesson_print",
+)
+async def lesson_print(
+    request: Request,
+    lesson_id: uuid.UUID,
+    session: AsyncSession = Depends(get_async_session),
+    user: Optional[User] = Depends(optional_current_user),
+) -> Response:
+    """Print-friendly page — the browser's Print → Save as PDF handles PDF export."""
+    if user is None:
+        return _bounce_to_login(f"/webui/lesson/{lesson_id}/print")
+
+    result = await session.execute(
+        select(Lesson).where(Lesson.id == lesson_id, Lesson.owner_id == user.id)
+    )
+    lesson = result.scalar_one_or_none()
+    if lesson is None:
+        raise HTTPException(status_code=404, detail="Lezione non trovata")
+
+    return templates.TemplateResponse(
+        "pages/lesson_print.html",
+        {
+            "request": request,
+            "lesson": lesson,
+            "lesson_plan_html": _markdown_to_html(lesson.lesson_plan_md or ""),
+        },
     )
 
 
@@ -966,15 +1176,18 @@ def _stream_event_to_sse(
         }
 
     if event.kind == "done":
+        # Send a small placeholder; chat_pane.html's htmx:sseClose handler
+        # fetches the full lesson card via GET /card-fragment (no SSE size limit).
         return {
             "event": "final",
-            "data": _render_partial(
-                request, "partials/chat_lesson_card.html",
-                {
-                    "lesson": lesson,
-                    "lesson_plan_html": _markdown_to_html(event.lesson_plan_md or ""),
-                    "meta": event.meta or {},
-                },
+            "data": (
+                f'<div id="lesson-card-loading" class="flex items-start gap-3">'
+                f'<div class="flex-shrink-0 w-9 h-9 rounded-full bg-slate-800 text-white'
+                f' flex items-center justify-center ring-2 ring-white shadow-sm">'
+                f'<wa-icon name="book-open" style="font-size:1rem;"></wa-icon></div>'
+                f'<div class="flex-1 min-w-0"><div class="rounded-xl border border-slate-200'
+                f' bg-white shadow-sm px-4 py-3 text-sm text-slate-500 animate-pulse">'
+                f'Caricamento lezione finalizzata…</div></div></div>'
             ),
         }
 

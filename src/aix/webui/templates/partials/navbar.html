@@ -19,6 +19,12 @@
       {% endif %}
 
       {% if user %}
+        <a href="/webui/lessons" class="no-underline">
+          <wa-button size="small" variant="default">
+            <wa-icon slot="prefix" name="books"></wa-icon>
+            Le mie lezioni
+          </wa-button>
+        </a>
         <a href="/webui/lesson/new" class="no-underline">
           <wa-button size="small" variant="brand">
             <wa-icon slot="prefix" name="circle-plus"></wa-icon>
@@ -49,6 +55,10 @@
             <small class="text-slate-500">{{ user.email }}</small>
           </wa-dropdown-item>
           <wa-divider></wa-divider>
+          <wa-dropdown-item value="/webui/lessons">
+            <wa-icon slot="icon" name="books"></wa-icon>
+            Le mie lezioni
+          </wa-dropdown-item>
           <wa-dropdown-item value="/webui/lesson/new">
             <wa-icon slot="icon" name="circle-plus"></wa-icon>
             Nuova lezione

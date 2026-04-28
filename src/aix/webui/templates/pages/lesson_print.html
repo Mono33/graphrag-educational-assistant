@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ lesson.title or 'Piano della lezione' }} — AixLearning</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 12pt;
+      line-height: 1.7;
+      color: #1e293b;
+      background: white;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 2cm 2cm 3cm;
+    }
+
+    header {
+      border-bottom: 2px solid #e2e8f0;
+      padding-bottom: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    header h1 { font-size: 1.6rem; font-weight: 700; }
+    header .meta { font-size: 0.85rem; color: #64748b; margin-top: 0.4rem; }
+    header .no-print-hint {
+      font-family: ui-sans-serif, system-ui, sans-serif;
+      font-size: 0.8rem;
+      color: #64748b;
+      margin-top: 0.75rem;
+      background: #f1f5f9;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 0.5rem 0.75rem;
+    }
+
+    /* lesson prose */
+    h1, h2, h3, h4 { margin: 1.2rem 0 0.4rem; font-weight: 700; }
+    h1 { font-size: 1.4rem; }
+    h2 { font-size: 1.2rem; }
+    h3 { font-size: 1.05rem; }
+    p  { margin: 0.5rem 0; }
+    ul, ol { margin: 0.5rem 0; padding-left: 1.5rem; }
+    ul { list-style: disc; }
+    ol { list-style: decimal; }
+    li { margin: 0.2rem 0; }
+    strong { font-weight: 700; }
+    em { font-style: italic; }
+    code { background: #f1f5f9; padding: 0.05rem 0.3rem; border-radius: 3px; font-family: monospace; font-size: 0.9em; }
+    pre { background: #0f172a; color: #f1f5f9; padding: 0.75rem; border-radius: 6px; overflow-x: auto; margin: 0.75rem 0; }
+    pre code { background: transparent; color: inherit; padding: 0; }
+    table { border-collapse: collapse; margin: 0.75rem 0; width: 100%; }
+    th, td { border: 1px solid #e2e8f0; padding: 0.4rem 0.6rem; text-align: left; }
+    th { background: #f8fafc; font-weight: 600; }
+    blockquote { border-left: 3px solid #cbd5e1; padding-left: 0.75rem; color: #475569; margin: 0.75rem 0; }
+
+    footer.doc-footer {
+      border-top: 1px solid #e2e8f0;
+      padding-top: 0.75rem;
+      margin-top: 2rem;
+      font-size: 0.75rem;
+      color: #94a3b8;
+    }
+
+    @media print {
+      .no-print-hint { display: none !important; }
+      body { padding: 0; }
+      @page { margin: 2cm; }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>{{ lesson.title or 'Piano della lezione' }}</h1>
+    <div class="meta">
+      Dominio: {{ lesson.domain }}
+      {% set profile = lesson.educational_profile_json or {} %}
+      {% if profile.get('subject_area') %} · {{ profile.get('subject_area') }}{% endif %}
+      {% if profile.get('specific_topic') %} — {{ profile.get('specific_topic') }}{% endif %}
+      {% if lesson.created_at %} · {{ lesson.created_at.strftime('%d/%m/%Y') }}{% endif %}
+    </div>
+    <div class="no-print-hint">
+      💡 Per salvare come PDF: usa <strong>File → Stampa → Salva come PDF</strong> nel tuo browser,
+      oppure premi <kbd>Ctrl+P</kbd> (Windows) / <kbd>⌘+P</kbd> (Mac).
+    </div>
+  </header>
+
+  <main>
+    {{ lesson_plan_html | safe }}
+  </main>
+
+  <footer class="doc-footer">
+    Generato da AixLearning · Agentic GraphRAG — {{ lesson.created_at.strftime('%d/%m/%Y %H:%M') if lesson.created_at else '' }}
+  </footer>
+
+  <script>
+    // Auto-open print dialog when the page loads.
+    window.addEventListener("load", () => window.print());
+  </script>
+
+</body>
+</html>

@@ -156,8 +156,29 @@ async def retrieve_node(state: AgentState) -> Dict[str, Any]:
             pedagogy_concepts=plan_data.get("pedagogy_concepts")
         )
         
+        # Enrich plan.search_queries with educational profile terms
+        ep = state.get("educational_profile") or {}
+        profile_terms: list = []
+        if ep.get("specific_topic"):
+            profile_terms.append(ep["specific_topic"])
+        if ep.get("subject_area") and ep["subject_area"] != ep.get("specific_topic"):
+            profile_terms.append(ep["subject_area"])
+        for d in (ep.get("group") or {}).get("disabilities") or []:
+            if d:
+                profile_terms.append(d)
+        if profile_terms:
+            existing_lower = {q.lower() for q in plan.search_queries}
+            for pt in profile_terms:
+                if pt.lower() not in existing_lower:
+                    plan.search_queries.append(pt)
+                    existing_lower.add(pt.lower())
+            logger.info(
+                "[Node: Retrieve] Profile enrichment added %d terms: %s",
+                len(profile_terms), profile_terms
+            )
+
         result = await retriever.retrieve(plan)
-        
+
         # Log hybrid retrieval if applicable
         if result.is_hybrid:
             logger.info(f"[Node: Retrieve] ⚠️ HYBRID mode: KG pedagogy + external resources")
