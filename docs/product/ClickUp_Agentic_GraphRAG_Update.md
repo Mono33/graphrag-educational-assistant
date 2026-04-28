@@ -222,7 +222,7 @@ Dependency graph:
 | # | Subtask Name | Assignee | Priority | Est. Effort | Depends On | Status |
 |---|---|---|---|---|---|---|
 | **6.5** | **Frontend Platform Evaluation & Decision (Research Spike)** | LM (+ Diego, Simone input) | 🔴 Urgent | 4-6h | None | ✅ DONE — see `docs/architecture/Frontend_Platform_Evaluation.md` |
-| **6.6** | **Path C Webui Skeleton + Agent In-Process Integration** ⭐ NEW | LM | 🔴 Urgent | 8-10h | #6.5, CORE 1 | TODO |
+| **6.6** | **Path C Webui Skeleton + Agent In-Process Integration** ⭐ NEW | LM | 🔴 Urgent | 8-10h | #6.5, CORE 1 | 🟡 IN PROGRESS *(P0–P3 ✅ DONE 2026-04-26; P4/P5/P6 TODO — see phase table in Subtask 6.6 section below)* |
 | 7 | **FastAPI JSON+SSE Agent Endpoint (public contract)** | LM | 🔴 Urgent | 4-6h | #6.6 | ✅ DONE *(2026-04-26)* — `POST /api/v1/agent/run` + `POST /api/v1/agent/stream` mounted; JWT Bearer transport added in parallel to the cookie backend (zero webui regression); Minimal / Rich examples dropdown in Swagger UI mirrors `/api/v1/context`; 7 contract tests green; OpenAPI inventory strictly additive |
 | 8 | **Guardrails: Input/Output Validation** | LM | 🔴 Urgent | 3-5h | #6.6 | TODO |
 | 11 | **Observability (Agent JSON Parse Hardening + LangSmith/Langfuse)** | LM | 🟠 High | 4-6h | #6.6 (for 11a repro) | TODO — split into **11a** (JSON parse hardening, must precede 11b) + **11b** (tracing dashboard) |
