@@ -1,0 +1,168 @@
+# =============================================================================
+# graphaixlearning — Python project configuration (Phase 3A + 3B + 3C)
+#
+# Single source of truth for: build system, project metadata, dependencies,
+# pytest, ruff (lint + format), and mypy (type-checking).
+#
+# Phase 3C layout: every importable module lives under `src/aix/...`.
+# Install in editable mode for local dev:
+#
+#     pip install -e .[dev]
+#
+# That registers the `aix` package globally so it can be imported from any
+# working directory (entry points: uvicorn aix.api.main:app, streamlit run
+# apps/streamlit/main.py, python apps/cli/run_agent.py, pytest tests/).
+# =============================================================================
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+# -----------------------------------------------------------------------------
+# Project metadata
+# -----------------------------------------------------------------------------
+[project]
+name = "graphaixlearning"
+version = "0.2.0"
+description = "GraphRAG-powered educational content generation with multi-agent pipeline (UDL + Neuroscience domains)."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Proprietary" }
+authors = [
+    { name = "FEM Modena" },
+]
+keywords = [
+    "graphrag",
+    "neo4j",
+    "education",
+    "udl",
+    "neuroscience",
+    "langchain",
+    "fastapi",
+    "openrouter",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Education",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Education",
+]
+# Runtime dependencies are pulled from requirements.txt (single source of truth).
+dynamic = ["dependencies"]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=5.0",
+    "ruff>=0.4",
+    "mypy>=1.10",
+]
+
+[project.urls]
+Repository = "https://github.com/FEM-modena/graphrag-aixlearning"
+
+# -----------------------------------------------------------------------------
+# setuptools — package discovery (Phase 3C: src layout)
+#
+# All importable code lives under `src/aix/`. Setuptools is told that the
+# package root is `src/` and that we want every package starting with `aix`.
+# -----------------------------------------------------------------------------
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+
+[tool.setuptools.package-dir]
+"" = "src"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["aix*"]
+exclude = []
+
+# -----------------------------------------------------------------------------
+# Pytest (migrated from pytest.ini in step 3A.7)
+# -----------------------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-v",
+    "--tb=short",
+    "--strict-markers",
+]
+markers = [
+    "integration: tests that hit external services (Neo4j, OpenRouter, LLM APIs)",
+    "slow: tests taking more than ~1 second",
+    "unit: pure unit tests with no external dependencies",
+]
+asyncio_mode = "auto"
+
+# -----------------------------------------------------------------------------
+# Ruff — linter + formatter (replaces flake8/black/isort)
+# -----------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src"]
+extend-exclude = [
+    "neo4j_migrations",
+    "archive",
+    "data",
+    "logs",
+    "artifacts",
+    "venv",
+    ".venv",
+    "build",
+    "dist",
+    "**/_generate_report_template.py",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "W",   # pycodestyle warnings
+    "I",   # isort (import ordering)
+    "B",   # bugbear
+    "UP",  # pyupgrade
+]
+ignore = [
+    "E501",  # line too long (let the formatter handle wrapping)
+    "B008",  # function call in default arg (FastAPI Depends() pattern is intentional)
+    "UP007", # `Optional[X]` vs `X | None` — keep both styles during transition
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["F401", "F811"]  # allow unused-import / redefined-fixture in tests
+"apps/**/*.py" = ["E402"]           # imports after sys.path manipulation (legacy; safe to allow)
+"scripts/**/*.py" = ["E402", "T20"] # scripts are allowed to print
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+# -----------------------------------------------------------------------------
+# Mypy — optional type checking (lenient; strict mode is opt-in per-module)
+# -----------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = false
+warn_unused_configs = true
+ignore_missing_imports = true
+mypy_path = "src"
+exclude = [
+    "neo4j_migrations/",
+    "archive/",
+    "data/",
+    "logs/",
+    "artifacts/",
+    "venv/",
+    ".venv/",
+    "build/",
+    "dist/",
+]

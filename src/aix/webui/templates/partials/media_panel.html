@@ -1,0 +1,183 @@
+{#
+  Media panel — right column of the chat workspace
+  (CORE 2 #6.6 P2 phase 2).
+
+  Displays the ``curated_media`` payload from the retriever agent.
+  Updated live during a run via OOB swap (the SSE 'card' event for the
+  retriever includes a sibling element with id="media-panel"
+  hx-swap-oob="outerHTML"). On reload (status=complete), the show page
+  passes ``media`` directly so this same partial renders the persisted
+  data — except today we don't persist the full curated_media dict on
+  the Lesson row (only counts via meta), so on reload the panel renders
+  in its empty/placeholder state. Persisting full media is P4 work.
+
+  Required context:
+    media     dict | None — the curated_media payload, possibly empty.
+              Shape: { videos: [...], resources: [...],
+                       citations: [...], open_textbooks: [...] }
+#}
+
+{% set m = media or {} %}
+{% set videos = m.get('videos') or [] %}
+{% set resources = m.get('resources') or [] %}
+{% set citations = m.get('citations') or [] %}
+{% set textbooks = m.get('open_textbooks') or [] %}
+{% set total = (videos | length) + (resources | length) + (citations | length) + (textbooks | length) %}
+
+<aside id="media-panel"
+       {% if oob is defined and oob %}hx-swap-oob="outerHTML"{% endif %}
+       class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm space-y-4
+              text-sm sticky top-4">
+
+  {# ── Header ───────────────────────────────────────────────────────── #}
+  <div>
+    <div class="flex items-center justify-between gap-2">
+      <div class="flex items-center gap-2 text-slate-700">
+        <wa-icon name="photo-film"></wa-icon>
+        <strong>Risorse multimediali</strong>
+      </div>
+      <wa-tag size="small" variant="neutral" pill>{{ total }}</wa-tag>
+    </div>
+    <p class="text-xs text-slate-500 mt-1">
+      Selezionate dal Retriever Agent dal database curato.
+    </p>
+  </div>
+
+  {% if total == 0 %}
+    {# ── Empty / placeholder state ─────────────────────────────────── #}
+    <div class="rounded-lg border-2 border-dashed border-slate-200 p-4
+                text-center text-xs text-slate-500 space-y-2">
+      <wa-icon name="photo-film" style="font-size:1.25rem;color:#cbd5e1;"></wa-icon>
+      <p>Le risorse multimediali appariranno qui dopo che il Retriever
+         Agent avrà interrogato il database.</p>
+    </div>
+  {% else %}
+
+    {# ── Videos ──────────────────────────────────────────────────── #}
+    {% if videos %}
+      <details open>
+        <summary class="cursor-pointer select-none flex items-center justify-between
+                        text-[11px] uppercase tracking-wide text-slate-500
+                        hover:text-slate-700 mb-1">
+          <span class="flex items-center gap-1.5">
+            <wa-icon name="video" style="font-size:0.8rem;"></wa-icon>
+            Video curati
+          </span>
+          <wa-tag size="small" variant="neutral" pill>{{ videos | length }}</wa-tag>
+        </summary>
+        <ul class="space-y-1.5 mt-2">
+          {% for v in videos[:6] %}
+            {% set url = v.get('url') or v.get('suggested_url') %}
+            <li class="text-[12px] leading-snug">
+              {% if url %}
+                <a href="{{ url }}" target="_blank" rel="noopener noreferrer"
+                   class="text-sky-700 hover:text-sky-900 hover:underline
+                          flex items-start gap-1.5">
+                  <wa-icon name="play" style="font-size:0.7rem;margin-top:3px;"></wa-icon>
+                  <span class="line-clamp-2">{{ v.get('title') or 'Video' }}</span>
+                </a>
+              {% else %}
+                <span class="text-slate-700 flex items-start gap-1.5">
+                  <wa-icon name="magnifying-glass" style="font-size:0.7rem;margin-top:3px;"></wa-icon>
+                  <span class="line-clamp-2">{{ v.get('title') or v.get('search_query') or 'Video' }}</span>
+                </span>
+              {% endif %}
+              {% if v.get('duration_hint') %}
+                <span class="text-[10px] text-slate-400 ml-4">{{ v.duration_hint }}</span>
+              {% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      </details>
+    {% endif %}
+
+    {# ── Citations / scientific articles ────────────────────────── #}
+    {% if citations %}
+      <details {% if not videos %}open{% endif %}>
+        <summary class="cursor-pointer select-none flex items-center justify-between
+                        text-[11px] uppercase tracking-wide text-slate-500
+                        hover:text-slate-700 mb-1">
+          <span class="flex items-center gap-1.5">
+            <wa-icon name="newspaper" style="font-size:0.8rem;"></wa-icon>
+            Articoli scientifici
+          </span>
+          <wa-tag size="small" variant="neutral" pill>{{ citations | length }}</wa-tag>
+        </summary>
+        <ul class="space-y-1.5 mt-2">
+          {% for c in citations[:5] %}
+            <li class="text-[12px] leading-snug text-slate-700">
+              <div class="font-medium line-clamp-2">{{ c.get('title') or 'Articolo' }}</div>
+              <div class="text-[10px] text-slate-500">
+                {% set authors = c.get('authors') or [] %}
+                {% if authors %}
+                  {{ authors[:2] | join(', ') }}{% if authors | length > 2 %} et al.{% endif %}
+                {% endif %}
+                {% if c.get('year') %} · {{ c.year }}{% endif %}
+                {% if c.get('journal') %} · <em>{{ c.journal }}</em>{% endif %}
+              </div>
+              {% if c.get('doi') %}
+                <a href="https://doi.org/{{ c.doi }}" target="_blank" rel="noopener noreferrer"
+                   class="text-[10px] text-sky-700 hover:text-sky-900 hover:underline">
+                  DOI: {{ c.doi }}
+                </a>
+              {% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      </details>
+    {% endif %}
+
+    {# ── OER & textbooks ────────────────────────────────────────── #}
+    {% if resources or textbooks %}
+      <details {% if not videos and not citations %}open{% endif %}>
+        <summary class="cursor-pointer select-none flex items-center justify-between
+                        text-[11px] uppercase tracking-wide text-slate-500
+                        hover:text-slate-700 mb-1">
+          <span class="flex items-center gap-1.5">
+            <wa-icon name="book" style="font-size:0.8rem;"></wa-icon>
+            OER &amp; Manuali
+          </span>
+          <wa-tag size="small" variant="neutral" pill>{{ (resources | length) + (textbooks | length) }}</wa-tag>
+        </summary>
+        <ul class="space-y-1.5 mt-2">
+          {% for r in resources[:4] %}
+            {% set url = r.get('url') or r.get('suggested_url') %}
+            <li class="text-[12px] leading-snug">
+              {% if url %}
+                <a href="{{ url }}" target="_blank" rel="noopener noreferrer"
+                   class="text-sky-700 hover:text-sky-900 hover:underline
+                          flex items-start gap-1.5">
+                  <wa-icon name="link" style="font-size:0.7rem;margin-top:3px;"></wa-icon>
+                  <span class="line-clamp-2">{{ r.get('title') or 'Risorsa' }}</span>
+                </a>
+              {% else %}
+                <span class="text-slate-700">{{ r.get('title') or 'Risorsa' }}</span>
+              {% endif %}
+            </li>
+          {% endfor %}
+          {% for t in textbooks[:3] %}
+            <li class="text-[12px] leading-snug text-slate-700">
+              <div class="font-medium flex items-start gap-1.5">
+                <wa-icon name="book" style="font-size:0.7rem;margin-top:3px;"></wa-icon>
+                <span class="line-clamp-2">
+                  {{ t.get('title') or 'Libro' }}{% if t.get('chapter') %} — {{ t.chapter }}{% endif %}
+                </span>
+              </div>
+              <div class="text-[10px] text-slate-500 ml-4">
+                {{ t.get('source') or 'OER' }}
+                {% if t.get('license') %} · {{ t.license }}{% endif %}
+              </div>
+            </li>
+          {% endfor %}
+        </ul>
+      </details>
+    {% endif %}
+
+  {% endif %}
+
+  <p class="text-[10px] text-slate-400 italic pt-2 border-t border-slate-100">
+    I link aprono in una nuova scheda. Le risorse sono già citate
+    inline nel piano della lezione.
+  </p>
+
+</aside>

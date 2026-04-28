@@ -1,0 +1,140 @@
+{#
+  Final lesson card (CORE 2 #6.6 P2 phase 2).
+
+  THE artifact. Rendered:
+    - On the SSE 'final' event, appended to the chat after the critic card.
+    - On a fresh GET to /webui/lesson/{id} when ``lesson.status == "complete"``
+      (replay path — the agent is not re-run).
+
+  Carries a metadata header (duration, KG nodes, media counts, approval
+  badge, revision count) so the teacher can read quality signals at a
+  glance before scrolling into the content. Footer offers "Rigenera"
+  (re-runs the agent) and "Nuova lezione" (back to the form).
+
+  Required context:
+    lesson              ORM Lesson (for the rerun POST URL)
+    lesson_plan_html    pre-rendered HTML of the agent's markdown
+    meta = {            optional, may be {} on replay
+      duration_seconds, approved, revision_count,
+      nodes_count, recommendations_count, search_queries_count,
+      media_counts: {videos, articles, oer},
+      scores
+    }
+#}
+
+{% set m = meta or {} %}
+{% set mc = m.get('media_counts') or {} %}
+
+<div class="flex items-start gap-3">
+
+  {# ── Avatar (lesson = slate / book) — neutral, this is the artifact, no agent #}
+  <div class="flex-shrink-0 w-9 h-9 rounded-full bg-slate-800 text-white
+              flex items-center justify-center ring-2 ring-white shadow-sm">
+    <wa-icon name="book-open" style="font-size:1rem;"></wa-icon>
+  </div>
+
+  {# ── Card body ────────────────────────────────────────────────────── #}
+  <div class="flex-1 min-w-0">
+    <article class="rounded-xl border border-slate-300 bg-white shadow-md overflow-hidden">
+
+      <header class="px-4 py-3 border-b border-slate-200 bg-slate-50
+                     flex items-start justify-between gap-3 flex-wrap">
+        <div class="flex items-start gap-2">
+          <wa-icon name="book-open" style="font-size:1.1rem;color:#475569;"></wa-icon>
+          <div>
+            <div class="text-base font-semibold text-slate-900">
+              Piano della lezione
+            </div>
+            <div class="text-xs text-slate-500">
+              Output finale dell'agente · {{ lesson.title or 'lezione senza titolo' }}
+            </div>
+          </div>
+        </div>
+        {% if m.get('approved') is not none %}
+          {% if m.approved %}
+            <wa-tag size="small" variant="success" pill>
+              <wa-icon name="circle-check" style="font-size:0.7rem;"></wa-icon>
+              approvata dal critic
+            </wa-tag>
+          {% else %}
+            <wa-tag size="small" variant="warning" pill>
+              limite revisioni raggiunto
+            </wa-tag>
+          {% endif %}
+        {% endif %}
+      </header>
+
+      {# Compact metadata strip — duration, sources, revisions #}
+      <div class="px-4 py-2 border-b border-slate-100 bg-white text-xs
+                  flex flex-wrap items-center gap-x-4 gap-y-1 text-slate-600">
+
+        {% if m.get('duration_seconds') is not none %}
+          <span class="flex items-center gap-1">
+            <wa-icon name="clock" style="font-size:0.7rem;"></wa-icon>
+            <strong>{{ '%.1f' | format(m.duration_seconds) }} s</strong>
+          </span>
+        {% endif %}
+
+        {% if m.get('revision_count') is not none %}
+          <span class="flex items-center gap-1">
+            <wa-icon name="rotate" style="font-size:0.7rem;"></wa-icon>
+            <strong>{{ m.revision_count }}</strong> revisioni
+          </span>
+        {% endif %}
+
+        {% if m.get('nodes_count') %}
+          <span class="flex items-center gap-1">
+            <wa-icon name="diagram-project" style="font-size:0.7rem;"></wa-icon>
+            <strong>{{ m.nodes_count }}</strong> nodi KG
+          </span>
+        {% endif %}
+
+        {% if m.get('search_queries_count') %}
+          <span class="flex items-center gap-1">
+            <wa-icon name="magnifying-glass" style="font-size:0.7rem;"></wa-icon>
+            <strong>{{ m.search_queries_count }}</strong> ricerche
+          </span>
+        {% endif %}
+
+        {% set total_media = (mc.get('videos', 0) + mc.get('articles', 0) + mc.get('oer', 0)) %}
+        {% if total_media %}
+          <span class="flex items-center gap-1">
+            <wa-icon name="photo-film" style="font-size:0.7rem;"></wa-icon>
+            <strong>{{ total_media }}</strong> media curati
+          </span>
+        {% endif %}
+      </div>
+
+      {# The lesson body #}
+      <article class="lesson-prose px-5 py-4">
+        {{ lesson_plan_html | safe }}
+      </article>
+
+      {# Footer actions #}
+      <footer class="px-4 py-3 border-t border-slate-200 bg-slate-50
+                     flex flex-wrap items-center justify-end gap-2">
+        <a href="/webui/lesson/new" class="no-underline">
+          <wa-button size="small" variant="default">
+            <wa-icon slot="prefix" name="circle-plus"></wa-icon>
+            Nuova lezione
+          </wa-button>
+        </a>
+        <wa-button size="small"
+                   variant="brand"
+                   hx-post="/webui/lesson/{{ lesson.id }}/run"
+                   hx-target="#chat-conversation"
+                   hx-swap="innerHTML">
+          <wa-icon slot="prefix" name="rotate"></wa-icon>
+          Rigenera
+        </wa-button>
+      </footer>
+
+    </article>
+
+    <div class="text-[11px] text-slate-400 mt-1 ml-1 flex items-center gap-1">
+      <wa-icon name="check-double" style="font-size:0.7rem;"></wa-icon>
+      <span>Lezione finalizzata</span>
+    </div>
+  </div>
+
+</div>

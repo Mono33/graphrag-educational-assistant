@@ -4,11 +4,12 @@ AI-powered educational assistant that combines Knowledge Graphs (Neo4j) with Ret
 
 ![Python](https://img.shields.io/badge/python-3.10+-blue.svg)
 ![Neo4j](https://img.shields.io/badge/neo4j-5.0+-green.svg)
-![Streamlit](https://img.shields.io/badge/streamlit-1.28+-red.svg)
-![OpenAI](https://img.shields.io/badge/openai-GPT--4o-orange.svg)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688.svg)
+![htmx](https://img.shields.io/badge/htmx-2.0-3366CC.svg)
+![MCP](https://img.shields.io/badge/MCP-FastMCP_3.x-blueviolet.svg)
 ![LangGraph](https://img.shields.io/badge/LangGraph-Multi--Agent-purple.svg)
+![OpenAI](https://img.shields.io/badge/openai-GPT--4o-orange.svg)
 ![Node2Vec](https://img.shields.io/badge/Node2Vec-Enabled-brightgreen.svg)
-![Hybrid](https://img.shields.io/badge/Hybrid_Embeddings-Node2Vec+OpenAI-blueviolet.svg)
 
 ---
 
@@ -26,12 +27,14 @@ Get up and running in 5 minutes with our step-by-step guide.
 - **🔍 Hybrid Graph Retrieval**: Combines traditional graph traversal with Node2Vec semantic search for superior results
 - **🎯 Educational Context Building**: Structures recommendations specifically for teaching methodologies
 - **💬 Natural Language Generation**: Produces natural Italian responses tailored for educators
-- **🖥️ Interactive Streamlit Interface**: Beautiful, user-friendly demo for live presentations
 - **📊 Evidence-Based Responses**: All recommendations backed by knowledge graph evidence
-- **🤖 Agentic GraphRAG Mode** 🆕: Multi-agent pipeline for intelligent lesson plan generation
-- **🎯 Intelligent Intent Detection** 🆕: Automatically detects 7 query types (lesson, definition, comparison, etc.)
-- **✍️ Adaptive Content Generation** 🆕: Generates different formats based on query intent
-- **🔄 Quality Control Loop** 🆕: Critic agent reviews and requests revisions automatically
+- **🤖 Agentic GraphRAG Mode**: Multi-agent pipeline for intelligent lesson plan generation
+- **🎯 Intelligent Intent Detection**: Automatically detects 7 query types (lesson, definition, comparison, etc.)
+- **✍️ Adaptive Content Generation**: Generates different formats based on query intent
+- **🔄 Quality Control Loop**: Critic agent reviews and requests revisions automatically
+- **🖥️ Teacher Webui** 🆕: Authenticated three-pane chat workspace (FastAPI + htmx + WebAwesome + Tailwind) with SSE streaming, file uploads, and educational profile editing
+- **🔌 Public Agent API** 🆕: `POST /api/v1/agent/run` (JSON) + `POST /api/v1/agent/stream` (SSE) with JWT Bearer auth and Swagger UI examples
+- **🧩 MCP Tool Servers** 🆕: 10 tools / 4 resources / 2 prompts exposed via Model Context Protocol (stdio + Streamable HTTP) — works with Claude Desktop, Cursor IDE, MCP Inspector, and any MCP-compatible client
 
 ---
 
@@ -118,18 +121,20 @@ The Planner Agent automatically classifies queries into 7 intent types:
    - Evidence-based recommendations
    - Confidence assessment
 
-5. **Streamlit Interface** (`streamlit_app.py`)
-   - Interactive web application
+5. **Streamlit Interface** (`apps/streamlit/main.py`)
+   - Interactive web application (legacy demo — retirement banner points to `/webui/`)
    - Real-time pipeline visualization
    - Evidence and comparison views
-   - **Agent Mode toggle** for lesson generation 🆕
+   - Agent Mode toggle for lesson generation
 
-6. **FastAPI Module** (`api/`)
-   - REST API for external integrations
-   - Provides structured context for prompt injection
-   - See [API_INTEGRATION_GUIDE.md](API_INTEGRATION_GUIDE.md) for details
+6. **FastAPI API** (`src/aix/api/`)
+   - `POST /api/v1/context` — GraphRAG context endpoint (original)
+   - `POST /api/v1/agent/run` — Synchronous agent JSON endpoint 🆕
+   - `POST /api/v1/agent/stream` — SSE streaming agent endpoint 🆕
+   - JWT Bearer + Cookie auth, Swagger UI at `/docs`
+   - See [API_INTEGRATION_GUIDE.md](docs/api/API_INTEGRATION_GUIDE.md) for details
 
-7. **Agentic GraphRAG** (`agent/`) 🆕
+7. **Agentic GraphRAG** (`src/aix/agent/`)
    - **Orchestrator** (`orchestrator.py`): Main entry point, clean API
    - **Planner Agent** (`agents/planner_agent.py`): Query analysis & intent detection
    - **Retriever Agent** (`agents/retriever_agent.py`): GraphRAG knowledge retrieval
@@ -137,6 +142,19 @@ The Planner Agent automatically classifies queries into 7 intent types:
    - **Critic Agent** (`agents/critic_agent.py`): Quality review & revision control
    - **LangGraph Pipeline** (`graph/`): State machine orchestration
    - **Intent-Specific Prompts** (`prompts/`): Optimized prompts per query type
+
+8. **Teacher Webui** (`src/aix/webui/`) 🆕
+   - Authenticated three-pane chat workspace at `/webui/lesson/{id}`
+   - FastAPI-Users (JWT cookies), educational profile, file uploads (PDF/TXT/MD)
+   - SSE streaming of granular agent phase cards (Planner → Retriever → Writer → Critic)
+   - htmx 2 + WebAwesome 3.x + Tailwind CSS
+
+9. **MCP Tool Servers** (`src/aix/mcp/`) 🆕
+   - 10 tools (`kg.*`, `media.*`, `agent.run_lesson_plan`)
+   - 4 resources (`kg://schema`, `kg://concepts/{domain}`, `methodology://list`, `media://stats`)
+   - 2 prompts (`educational-query`, `lesson-plan-request`)
+   - Two transports: **stdio** (Claude Desktop / Cursor IDE) + **Streamable HTTP** at `/mcp/` (JWT Bearer)
+   - See [MCP_Setup.md](docs/integrations/MCP_Setup.md) for client onboarding
 
 ---
 
@@ -157,9 +175,16 @@ The Planner Agent automatically classifies queries into 7 intent types:
    ```
 
 2. **Install dependencies**
+
    ```bash
-   pip install -r requirements_streamlit.txt
+   # Editable install — exposes the project as the `graphaixlearning` package.
+   # Required after Phase 3A (pyproject.toml) so all imports resolve cleanly.
+   pip install -e ".[dev]"
    ```
+
+   The `[dev]` extras add `pytest`, `pytest-asyncio`, `pytest-cov`, `ruff`,
+   and `mypy` (used by `make test`, `make lint`, and CI). Production
+   deployments can use `pip install -e .` (without `[dev]`).
 
 3. **Configure environment**
    ```bash
@@ -173,23 +198,32 @@ The Planner Agent automatically classifies queries into 7 intent types:
    # - OPENAI_API_KEY: Your OpenAI API key
    ```
 
-4. **Set up Neo4j database**
+4. **Ingest a Knowledge Graph into Neo4j**
+
+   Pre-baked KG dumps for both domains ship with the repo at
+   `data/kg/neuro/kg_neuro_neo4j.json` and `data/kg/udl/kg_udl_neo4j.json`,
+   so no data preparation is required for the default setup.
+
    ```bash
-   # Process your data (if starting fresh)
-   python process_data_graph4.py
-   
-   # Ingest data into Neo4j
-   python data_ingestion_neo4j.py --file concepts4_neo4j.json --password YOUR_PASSWORD --clear
+   # Ingest the included Neuro KG (or swap in kg_udl_neo4j.json for UDL)
+   python scripts/ingest/data_ingestion_neo4j.py \
+       --file data/kg/neuro/kg_neuro_neo4j.json \
+       --password YOUR_NEO4J_PASSWORD \
+       --clear
    ```
 
-5. **Train Node2Vec model** (optional, pre-trained models included)
+   *Advanced:* if you want to re-build the KG from raw team data,
+   use the helpers under `scripts/data_prep/` (e.g.
+   `clean_and_compare_neuro_data.py`, `merge_kg_json.py`).
+
+5. **Train Node2Vec model** (optional — pre-trained artifacts ship in `artifacts/node2vec/`)
    ```bash
-   python train_node2vec.py
+   python scripts/ml/train_node2vec.py neuro   # or udl
    ```
 
 6. **Run the Streamlit app**
-```bash
-   streamlit run streamlit_app.py
+   ```bash
+   streamlit run apps/streamlit/main.py     # or: make streamlit
    ```
 
 7. **Access the app**
@@ -213,8 +247,8 @@ NEO4J_PASSWORD=your_password
 # OpenAI Configuration
 OPENAI_API_KEY=sk-your-openai-key
 
-# Node2Vec Model Path
-NODE2VEC_MODEL_DIR=./models
+# Node2Vec Model Path (Phase 3B: models/ was renamed to artifacts/)
+NODE2VEC_MODEL_DIR=./artifacts/node2vec
 ```
 
 ### Neo4j Setup
@@ -253,8 +287,8 @@ OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 **First-time setup for hybrid mode:**
 ```bash
 # Pre-compute OpenAI embeddings (one-time, ~$0.01)
-python graph_retriever.py --precompute neuro
-python graph_retriever.py --precompute udl
+python -m aix.retrieval.graph_retriever --precompute neuro
+python -m aix.retrieval.graph_retriever --precompute udl
 ```
 
 ### Comparison
@@ -266,14 +300,14 @@ python graph_retriever.py --precompute udl
 
 ### Pre-trained Models
 
-Models are stored in `models/`:
-- `{domain}_node2vec_embeddings.npz`: Node2Vec embeddings
-- `models/embeddings_cache/{domain}_openai_embeddings.json`: OpenAI embeddings cache
+Models are stored in `artifacts/`:
+- `artifacts/node2vec/{domain}_node2vec_embeddings.npz`: Node2Vec embeddings
+- `artifacts/embeddings_cache/{domain}_openai_embeddings.json`: OpenAI embeddings cache
 
 ### Retrain Node2Vec:
 ```bash
-python train_node2vec.py neuro
-python train_node2vec.py udl
+python scripts/ml/train_node2vec.py neuro
+python scripts/ml/train_node2vec.py udl
 ```
 
 **Node2Vec Parameters:**
@@ -323,7 +357,7 @@ Sì, ci sono diverse strategie efficaci per studenti con ADHD:
 
 ### Using Agent Mode in Streamlit
 
-1. Launch the Streamlit app: `streamlit run streamlit_app.py`
+1. Launch the Streamlit app: `streamlit run apps/streamlit/main.py`
 2. Toggle **"🤖 Modalità Agente"** in the sidebar
 3. Enter your query (lesson request, definition, comparison, etc.)
 4. The multi-agent pipeline will:
@@ -345,7 +379,7 @@ Sì, ci sono diverse strategie efficaci per studenti con ADHD:
 ### Using Agent Mode Programmatically
 
 ```python
-from agent import AgentOrchestrator
+from aix.agent import AgentOrchestrator
 
 # Initialize orchestrator
 orchestrator = AgentOrchestrator(
@@ -370,16 +404,16 @@ print(result.query_intent)      # Detected intent type
 
 ```bash
 # Interactive testing
-python test_agent.py
+python apps/cli/run_agent.py
 
 # With options
-python test_agent.py --domain neuro --language it
+python apps/cli/run_agent.py --domain neuro --language it
 
 # Single query mode
-python test_agent.py --query "Crea una lezione sulla memoria"
+python apps/cli/run_agent.py --query "Crea una lezione sulla memoria"
 
 # Test intent detection
-python test_intent_detection.py
+python -m pytest tests/integration/test_intent_detection.py
 ```
 
 ---
@@ -388,67 +422,141 @@ python test_intent_detection.py
 
 ### Project Structure
 
+The repository follows the modern Python **src layout**: every importable module lives
+under a single top-level package `aix`, exposed by `pip install -e .[dev]`.
+
 ```
 graphaixlearning/
-├── streamlit_app.py                # Streamlit interface (with Agent Mode)
-├── graph_retriever.py              # Hybrid retrieval + Node2Vec
-├── text2cypher.py                  # Base Text2Cypher
-├── multilingual_text2cypher.py     # Multilingual support
-├── context_builder.py              # Context structuring
-├── llm_chain.py                    # Response generation
-├── config.py                       # Configuration management
-├── train_node2vec.py               # Node2Vec training
-├── data_ingestion_neo4j.py         # Neo4j data import
 │
-├── agent/                          # 🆕 Agentic GraphRAG (Multi-Agent Pipeline)
-│   ├── __init__.py                 # Package exports
-│   ├── orchestrator.py             # Main entry point (AgentOrchestrator)
-│   ├── agents/                     # Individual agents
-│   │   ├── planner_agent.py        # Query analysis & intent detection
-│   │   ├── retriever_agent.py      # GraphRAG knowledge retrieval
-│   │   ├── writer_agent.py         # Adaptive content generation
-│   │   └── critic_agent.py         # Quality review & scoring
-│   ├── graph/                      # LangGraph state machine
-│   │   ├── lesson_planner_graph.py # Pipeline definition
-│   │   ├── nodes.py                # Node implementations
-│   │   └── state.py                # AgentState TypedDict
-│   ├── prompts/                    # Intent-specific prompts
-│   │   ├── planner_prompt.py       # Planning prompts
-│   │   ├── writer_prompt.py        # Writing prompts (7 intents)
-│   │   └── critic_prompt.py        # Critique prompts
-│   └── tools/                      # Agent tools
-│       └── graphrag_tool.py        # GraphRAG wrapper for agents
+├── src/                            # All importable source code
+│   └── aix/                        #   Top-level package (import as `aix.*`)
+│       ├── __init__.py
+│       ├── core/                   #   Shared config + utilities
+│       │   └── config.py           #     `from aix.core.config import config`
+│       ├── retrieval/              #   GraphRAG retrieval layer
+│       │   ├── graph_retriever.py
+│       │   ├── context_builder.py
+│       │   ├── text2cypher.py
+│       │   ├── multilingual_text2cypher.py
+│       │   └── query_metrics.py
+│       ├── generation/             #   LLM response generation
+│       │   └── llm_chain.py
+│       ├── agent/                  #   Agentic GraphRAG (multi-agent pipeline)
+│       │   ├── orchestrator.py     #     `from aix.agent import AgentOrchestrator`
+│       │   ├── agents/             #     Planner, Retriever, Writer, Critic
+│       │   ├── graph/              #     LangGraph state machine
+│       │   ├── prompts/            #     Intent-specific prompts
+│       │   ├── media/              #     Media lookup + diagram generation
+│       │   ├── tools/              #     GraphRAG wrapper for agents
+│       │   └── configs/            #     Domain prompt extensions
+│       ├── api/                    #   FastAPI service
+│       │   ├── main.py             #     uvicorn aix.api.main:app --port 8765
+│       │   ├── routes/context.py   #     /api/v1/context (GraphRAG)
+│       │   ├── routes/agent.py     #     /api/v1/agent/run + /stream (Agent API) 🆕
+│       │   ├── schemas/            #     Pydantic models (agent.py, models.py, etc.)
+│       │   └── graphrag_client.py  #     Helper client for DEV team
+│       ├── webui/                  #   Teacher webui (htmx + WebAwesome) 🆕
+│       │   ├── auth/               #     FastAPI-Users (cookie + Bearer JWT)
+│       │   ├── lessons/            #     Lesson CRUD, uploads, schemas
+│       │   ├── agent/service.py    #     run_agent_stream + stream_agent_events
+│       │   ├── templates/          #     Jinja2: _base, pages/, partials/
+│       │   ├── routes.py           #     /webui/* route handlers
+│       │   └── db.py               #     SQLAlchemy async + aiosqlite (dev)
+│       ├── mcp/                    #   MCP Tool Servers (FastMCP 3.x) 🆕
+│       │   ├── server.py           #     build_mcp_server() — composition root
+│       │   ├── stdio_main.py       #     stdio entry (Claude Desktop / Cursor)
+│       │   ├── http_app.py         #     Streamable HTTP factory (JWT Bearer)
+│       │   ├── tools/              #     kg_tools, media_tools, agent_tools
+│       │   ├── resources/          #     kg_resources (schema, concepts, etc.)
+│       │   └── prompts/            #     educational_prompts
+│       └── domains/                #   Domain configs (UDL, Neuro)
 │
-├── api/                            # FastAPI module for integrations
-│   ├── main.py                     # FastAPI app entry point
-│   ├── routes/context.py           # /api/v1/context endpoint
-│   ├── schemas/models.py           # Pydantic models
-│   └── graphrag_client.py          # Helper client for DEV team
+├── apps/                           # User-facing entry points (NOT importable libs)
+│   ├── streamlit/main.py           #   Streamlit interface (legacy — retirement banner)
+│   └── cli/run_agent.py            #   Interactive agent testing CLI
 │
-├── models/                         # Node2Vec models
-│   ├── neuro_node2vec_embeddings.npz
-│   ├── neuro_node2vec_config.json
-│   └── neuro_node2vec_model.pkl
+├── scripts/                        # Operational & data-prep scripts
+│   ├── ingest/                     #   Neo4j data import/export
+│   ├── audit/                      #   KG auditing + label checks
+│   ├── data_prep/                  #   Data cleaning, merging, label fixes
+│   ├── ml/                         #   Node2Vec training, media mapping gen
+│   ├── diagnostic/                 #   MCP smoke tests, OpenAPI probes 🆕
+│   └── ops/                        #   Preflight checks, migration runners
 │
-├── test_agent.py                   # 🆕 Interactive agent testing CLI
-├── test_intent_detection.py        # 🆕 Intent detection validation
-├── requirements.txt                # Dependencies (includes langgraph)
+├── data/                           # KG data, media mappings, reports
+│   ├── kg/{neuro,udl}/             #   Knowledge graph core dumps
+│   ├── media/                      #   Media mappings + resource JSONs
+│   ├── reference/                  #   API contract (JSON_reference.json)
+│   ├── reports/                    #   Audit reports
+│   └── diagnostic/                 #   OpenAPI baselines (regression guard) 🆕
+│
+├── artifacts/                      # ML model artifacts (was models/)
+│   ├── node2vec/                   #   Node2Vec {config,embeddings,model}
+│   └── embeddings_cache/           #   OpenAI embeddings cache
+│
+├── tests/                          # Test suite
+│   ├── integration/                #   Integration tests (external services)
+│   ├── api/                        #   Agent API contract tests 🆕
+│   ├── mcp_server/                 #   MCP regression suite (19 tests) 🆕
+│   └── conftest.py                 #   Pytest config / shared fixtures
+│
+├── docs/                           # Documentation
+│   ├── api/                        #   API guides
+│   ├── architecture/               #   Architecture analyses + frontend eval
+│   ├── integrations/               #   MCP_Setup.md (client onboarding) 🆕
+│   ├── runbooks/                   #   Quickstart, data pipeline guides
+│   ├── reports/                    #   Diff reports, analysis docs
+│   ├── product/                    #   ClickUp tracker, handoff docs
+│   ├── progress_reports/           #   Templates + generated reports
+│   └── prompts_reference/          #   Reference prompt texts
+│
+├── archive/                        # Deprecated modules (kept for reference)
+├── pyproject.toml                  # Build, deps, pytest, ruff, mypy config
+├── requirements.txt                # Runtime dependencies
+├── Makefile                        # Shortcuts: make test / api / streamlit
+├── Dockerfile                      # Container build (uvicorn aix.api.main:app)
 ├── .env.example                    # Environment template
-├── API_INTEGRATION_GUIDE.md        # API documentation
 └── README.md                       # This file
+```
+
+**Common entry points** (after `pip install -e .[dev]`):
+
+```bash
+# FastAPI server — serves /docs, /webui/, /api/v1/*, /mcp/ on a single port
+uvicorn aix.api.main:app --reload --port 8765 --app-dir src
+
+# Streamlit demo UI (legacy — retirement banner points to /webui/)
+streamlit run apps/streamlit/main.py                 # or: make streamlit
+
+# Interactive Agent CLI
+python apps/cli/run_agent.py                         # or: make agent
+
+# Tests (all suites)
+pytest tests/ -v                                     # or: make test
+
+# MCP regression tests only
+pytest tests/mcp_server/ -v
+
+# MCP smoke test (in-process, no uvicorn needed)
+python scripts/diagnostic/mcp_smoke.py
 ```
 
 ### Testing
 
-Test scripts are available in the `NOTPUSHED/` folder for local development.
+```bash
+# Run all tests (with pytest via pyproject.toml config)
+pytest tests/ -v
+
+# Run only integration tests (requires Neo4j / LLM API keys)
+pytest tests/integration/ -v -m integration
+```
 
 ### Adding New Data
 
-1. **Prepare data**: Format as JSON (see `concepts4_neo4j.json`)
-2. **Process**: Run `process_data_graph4.py` if needed
-3. **Ingest**: Run `data_ingestion_neo4j.py --file your_data.json --clear`
-4. **Retrain Node2Vec**: Run `train_node2vec.py`
-5. **Test**: Launch app and verify results
+1. **Prepare data**: Format as JSON (see `data/reference/JSON_reference.json`)
+2. **Ingest**: Run `python -m scripts.ingest.data_ingestion_neo4j --file your_data.json --clear`
+3. **Retrain Node2Vec**: Run `python -m scripts.ml.train_node2vec`
+4. **Test**: Launch app and verify results
 
 ---
 
@@ -461,14 +569,18 @@ For additional documentation and guides, see the `NOTPUSHED/` folder (local deve
 ## 🧪 Technologies Used
 
 - **[Neo4j](https://neo4j.com/)**: Graph database for knowledge representation
-- **[OpenAI GPT-4o](https://openai.com/)**: Language model for response generation
+- **[OpenAI GPT-4o](https://openai.com/)** (via OpenRouter): Language model for response generation
 - **[LangChain](https://langchain.com/)**: LLM application framework
-- **[LangGraph](https://langchain-ai.github.io/langgraph/)** 🆕: Multi-agent orchestration framework
-- **[Streamlit](https://streamlit.io/)**: Web interface framework
+- **[LangGraph](https://langchain-ai.github.io/langgraph/)**: Multi-agent orchestration framework
+- **[FastAPI](https://fastapi.tiangolo.com/)**: REST API + webui serving (single process)
+- **[FastAPI-Users](https://fastapi-users.github.io/)**: Authentication (cookie + JWT Bearer)
+- **[htmx 2](https://htmx.org/)**: HTML-over-the-wire for the teacher webui
+- **[WebAwesome 3.x](https://www.webawesome.com/)**: Web component library
+- **[Tailwind CSS](https://tailwindcss.com/)**: Utility-first CSS framework
+- **[sse-starlette](https://github.com/sysid/sse-starlette)**: Server-Sent Events for streaming
+- **[FastMCP 3.x](https://github.com/jlowin/fastmcp)**: Model Context Protocol server framework
 - **[Node2Vec](https://github.com/eliorc/node2vec)**: Graph embedding for semantic search
-- **[NetworkX](https://networkx.org/)**: Graph analysis library
-- **[Pandas](https://pandas.pydata.org/)**: Data manipulation
-- **[NumPy](https://numpy.org/)**: Numerical computing
+- **[Streamlit](https://streamlit.io/)**: Legacy web interface (retirement banner active)
 
 ---
 
@@ -490,21 +602,34 @@ All responses are:
 
 ## 🚀 Deployment Options
 
-### 1. Local Development (Streamlit)
+### 1. Local Development (single process — all surfaces)
 ```bash
-streamlit run streamlit_app.py
+uvicorn aix.api.main:app --reload --port 8765 --app-dir src
+```
+This single uvicorn process serves:
+- `/docs` — Swagger UI (GraphRAG + Agent API endpoints)
+- `/webui/` — Teacher webui (auth, lesson creation, SSE chat)
+- `/api/v1/context` — GraphRAG context endpoint
+- `/api/v1/agent/run` + `/api/v1/agent/stream` — Agent API (JSON + SSE)
+- `/mcp/` — MCP Streamable HTTP (JWT Bearer auth)
+- `/auth/jwt/login` — JWT token minting
+
+### 2. MCP Clients (Claude Desktop / Cursor IDE)
+```bash
+# stdio transport — no uvicorn needed, clients launch the subprocess directly
+python -m aix.mcp.stdio_main
+```
+See [MCP_Setup.md](docs/integrations/MCP_Setup.md) for client configuration.
+
+### 3. Streamlit (legacy demo)
+```bash
+streamlit run apps/streamlit/main.py
 ```
 
-### 2. API Integration (FastAPI) 🆕
-```bash
-uvicorn api.main:app --reload --port 8000
-```
-See [API_INTEGRATION_GUIDE.md](API_INTEGRATION_GUIDE.md) for full documentation.
-
-### 3. Cloud Deployment
+### 4. Cloud Deployment
 - Use Neo4j Aura for cloud database
-- Deploy Streamlit app to Streamlit Cloud, Heroku, or AWS
-- Contact the development team for deployment guides
+- Docker Compose on Hetzner/Coolify (planned — see `ClickUp_Agentic_GraphRAG_Update.md` #6.6 P6)
+- See [API_INTEGRATION_GUIDE.md](docs/api/API_INTEGRATION_GUIDE.md) for REST API docs
 
 ---
 
@@ -563,13 +688,18 @@ For questions or issues:
 - [x] ~~Intelligent query intent detection~~ ✅ **DONE** (7 intent types)
 - [x] ~~Adaptive content generation~~ ✅ **DONE** (Lesson, definition, comparison, etc.)
 - [x] ~~Quality control with revision loop~~ ✅ **DONE** (Critic agent + scoring)
+- [x] ~~Streaming response generation~~ ✅ **DONE** (SSE via `/api/v1/agent/stream` + webui SSE chat)
+- [x] ~~MCP Tool Servers~~ ✅ **DONE** (10 tools / 4 resources / 2 prompts, stdio + Streamable HTTP)
+- [x] ~~Teacher webui with auth~~ ✅ **DONE** (FastAPI + htmx + WebAwesome, P0–P3)
+- [ ] Lesson library + history + PDF export (#6.6 P4)
+- [ ] Italian copy + accessibility + mobile breakpoints + Tailwind CLI (#6.6 P5)
+- [ ] Agent JSON parse hardening (#11a)
+- [ ] Observability / tracing dashboard (LangSmith/Langfuse, #11b)
 - [ ] Multi-language response generation (English, Spanish)
 - [ ] Expanded knowledge graph (500+ concepts)
-- [ ] Student progress tracking
-- [ ] Persistent memory for teacher interactions
-- [ ] Streaming response generation
+- [ ] Long-term memory for teacher profiles (#16)
+- [ ] Conversation memory (LangGraph Checkpointer, #10)
 - [ ] Collaborative filtering for recommendations
-- [ ] Mobile-responsive interface
 
 ---
 

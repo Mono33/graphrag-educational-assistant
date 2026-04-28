@@ -1,0 +1,55 @@
+{#
+  Chat attachments tray (CORE 2 #6.6 P3).
+
+  Sits directly above the chat input. Renders one chip per file in
+  ``lesson.uploaded_files_json``; each chip carries a remove button that
+  htmx-DELETEs the file and replaces this whole partial.
+
+  We intentionally stay quiet (render an empty placeholder) when no files
+  are attached so the chat input doesn't shift visually on first load.
+  The wrapper ``<div id="chat-attachments">`` is the htmx swap target for
+  both the upload POST and the remove DELETE responses — both routes
+  return *this same partial*, which keeps the round-trip trivial.
+
+  Required context:
+    lesson    Lesson ORM
+#}
+{% set files = lesson.uploaded_files_json or [] %}
+<div id="chat-attachments"
+     class="px-1 {% if files %}pb-2{% endif %}">
+  {% if files %}
+    <div class="flex flex-wrap gap-1.5">
+      {% for f in files %}
+        {% set fid = f.id if f.id else loop.index0|string %}
+        <span class="inline-flex items-center gap-1.5 rounded-full
+                     border border-slate-200 bg-slate-50 px-2.5 py-1
+                     text-[11px] text-slate-700 shadow-sm">
+          <wa-icon name="file-lines" style="font-size:0.8rem;color:#475569;"></wa-icon>
+          <span class="max-w-[18ch] truncate"
+                title="{{ f.filename }}">{{ f.filename }}</span>
+          <span class="text-slate-400">·</span>
+          <span class="text-slate-400">{{ ((f.size or 0) / 1024) | round(0, "floor") | int }} KB</span>
+          {% if lesson.status != "running" %}
+            <button type="button"
+                    class="ml-0.5 rounded-full p-0.5 text-slate-400
+                           hover:text-rose-600 hover:bg-rose-50"
+                    aria-label="Rimuovi {{ f.filename }}"
+                    title="Rimuovi"
+                    hx-delete="/webui/lesson/{{ lesson.id }}/upload/{{ fid }}"
+                    hx-target="#chat-attachments"
+                    hx-swap="outerHTML">
+              <wa-icon name="xmark" style="font-size:0.7rem;"></wa-icon>
+            </button>
+          {% endif %}
+        </span>
+      {% endfor %}
+    </div>
+    <p class="mt-1 px-1 text-[10.5px] text-slate-400 flex items-center gap-1">
+      <wa-icon name="info-circle" style="font-size:0.7rem;"></wa-icon>
+      <span>
+        Gli allegati sono usati come <strong>contesto</strong> per la lezione e
+        non vengono inviati al Knowledge Graph.
+      </span>
+    </p>
+  {% endif %}
+</div>

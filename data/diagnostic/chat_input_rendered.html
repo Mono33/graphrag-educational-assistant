@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="it" class="wa-theme-default">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>motivazione 3A · AixLearning</title>
+
+  
+
+  <link rel="stylesheet"
+        href="https://ka-f.webawesome.com/webawesome@3.5.0/styles/themes/default.css">
+  <script type="module"
+          src="https://ka-f.webawesome.com/webawesome@3.5.0/webawesome.loader.js"></script>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <script src="https://cdn.jsdelivr.net/npm/htmx-ext-sse@2.2.4"></script>
+
+  <script defer
+          src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.0/dist/cdn.min.js"></script>
+
+  <style>
+    /* Avoid flash of unstyled content from web-component upgrades. */
+    :not(:defined) { visibility: hidden; }
+    body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+                        Roboto, "Helvetica Neue", Arial, sans-serif; }
+    .font-serif { font-family: "Source Serif Pro", Georgia, serif; }
+
+    /*
+      ── .lesson-prose ────────────────────────────────────────────────
+      Shared typography for any agent-produced markdown rendered to
+      HTML inside a card. Used by partials/chat_lesson_card.html and
+      partials/chat_writer_card.html (P2 phase 2). Sits here rather
+      than in a per-partial <style> block because it's two templates
+      now and almost certainly N templates by P5.
+
+      We're CDN-only on Tailwind today (no plugin loader), so we can't
+      rely on @tailwindcss/typography. These rules cover typical agent
+      output (headings, lists, tables, code, blockquotes). Lifted into
+      a Tailwind preset / first-party stylesheet in P5 polish.
+    */
+    .lesson-prose { line-height: 1.7; color: #1e293b; }
+    .lesson-prose h1 { font-size: 1.5rem; font-weight: 700; margin: 1.25rem 0 0.5rem; }
+    .lesson-prose h2 { font-size: 1.25rem; font-weight: 700; margin: 1.25rem 0 0.5rem; }
+    .lesson-prose h3 { font-size: 1.1rem; font-weight: 600; margin: 1rem 0 0.5rem; }
+    .lesson-prose p  { margin: 0.5rem 0; }
+    .lesson-prose ul, .lesson-prose ol { margin: 0.5rem 0; padding-left: 1.5rem; }
+    .lesson-prose ul { list-style: disc; }
+    .lesson-prose ol { list-style: decimal; }
+    .lesson-prose li { margin: 0.25rem 0; }
+    .lesson-prose strong { font-weight: 600; }
+    .lesson-prose code { background: #f1f5f9; padding: 0.05rem 0.3rem; border-radius: 3px; font-size: 0.9em; }
+    .lesson-prose pre { background: #0f172a; color: #f1f5f9; padding: 0.75rem; border-radius: 6px; overflow-x: auto; }
+    .lesson-prose pre code { background: transparent; color: inherit; padding: 0; }
+    .lesson-prose table { border-collapse: collapse; margin: 0.75rem 0; }
+    .lesson-prose th, .lesson-prose td { border: 1px solid #e2e8f0; padding: 0.4rem 0.6rem; }
+    .lesson-prose th { background: #f8fafc; font-weight: 600; }
+    .lesson-prose blockquote { border-left: 3px solid #cbd5e1; padding-left: 0.75rem; color: #475569; }
+
+    /*
+      Tailwind line-clamp utility shim — used by media-panel titles to
+      keep them to a max of 2 lines without ellipsis-overrun. Tailwind
+      CDN ships @tailwindcss/line-clamp out of the box in v3.x but the
+      explicit fallback keeps the styles deterministic across CDN drift.
+    */
+    .line-clamp-2 {
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+  </style>
+
+  
+</head>
+<body class="bg-slate-50 text-slate-900 min-h-screen flex flex-col">
+
+  
+<header class="bg-white border-b border-slate-200">
+  <div class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between gap-4">
+    <a href="/webui/" class="flex items-baseline gap-2 no-underline">
+      <span class="text-xl font-serif tracking-tight text-slate-900">AixLearning</span>
+      <span class="text-slate-400">·</span>
+      <span class="text-base font-medium text-slate-700">Agentic GraphRAG</span>
+    </a>
+
+    <nav class="flex items-center gap-3">
+      
+        <wa-tag variant="neutral" size="small" pill>P3 — Chat workspace + allegati</wa-tag>
+      
+
+      
+        <a href="/webui/lesson/new" class="no-underline">
+          <wa-button size="small" variant="brand">
+            <wa-icon slot="prefix" name="circle-plus"></wa-icon>
+            Nuova lezione
+          </wa-button>
+        </a>
+
+        
+        <wa-dropdown placement="bottom-end"
+                     x-data
+                     @wa-select="if ($event.detail.item.value) { window.location.href = $event.detail.item.value }">
+          <wa-button slot="trigger" with-caret size="small" variant="default">
+            <wa-icon slot="prefix" name="user"></wa-icon>
+            LM
+          </wa-button>
+
+          <wa-dropdown-item disabled>
+            <small class="text-slate-500">louis.mono@fem.digital</small>
+          </wa-dropdown-item>
+          <wa-divider></wa-divider>
+          <wa-dropdown-item value="/webui/lesson/new">
+            <wa-icon slot="icon" name="circle-plus"></wa-icon>
+            Nuova lezione
+          </wa-dropdown-item>
+          <wa-divider></wa-divider>
+          <wa-dropdown-item value="/auth/logout" variant="danger">
+            <wa-icon slot="icon" name="right-from-bracket"></wa-icon>
+            Esci
+          </wa-dropdown-item>
+        </wa-dropdown>
+      
+    </nav>
+  </div>
+</header>
+
+  
+  <main class="flex-1 max-w-7xl mx-auto w-full px-6 py-8">
+    
+<section class="max-w-7xl mx-auto space-y-4">
+
+  
+  
+  
+  <div class="flex items-start justify-between gap-4 flex-wrap">
+    <div class="space-y-1 min-w-0">
+      <h1 class="text-2xl md:text-3xl font-serif tracking-tight truncate">
+        motivazione 3A
+      </h1>
+      <p class="text-xs text-slate-500 flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span>ID <code class="text-[10px]">57993d71-b96b-4150-84db-22041d5dbda5</code></span>
+        <span>·</span>
+        <span>Stato
+          <wa-tag size="small" variant="neutral" pill>draft</wa-tag>
+        </span>
+        <span>·</span>
+        <span>Creata il 26/04/2026 19:04</span>
+      </p>
+    </div>
+    <a href="/webui/lesson/new" class="no-underline">
+      <wa-button size="small" variant="default">
+        <wa-icon slot="prefix" name="circle-plus"></wa-icon>
+        Nuova lezione
+      </wa-button>
+    </a>
+  </div>
+
+  
+  
+  
+  <div class="grid grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)_320px] gap-4">
+
+    
+    <div class="order-2 lg:order-1 space-y-4">
+      
+
+
+
+
+
+<aside id="profile-sidebar"
+       class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm space-y-4
+              text-sm sticky top-4">
+
+  
+  <div>
+    <div class="flex items-center gap-2 text-slate-700">
+      <wa-icon name="user-graduate"></wa-icon>
+      <strong>Profilo educativo</strong>
+    </div>
+    <p class="text-xs text-slate-500 mt-1">
+      Snapshot al momento della creazione della lezione.
+    </p>
+  </div>
+
+  
+  <div>
+    <h3 class="text-[10px] uppercase tracking-wide text-slate-500 mb-1">Lezione</h3>
+    <dl class="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[13px]">
+      <dt class="text-slate-500">Dominio</dt>
+      <dd class="text-slate-800 truncate">neuro</dd>
+      <dt class="text-slate-500">Materia</dt>
+      <dd class="text-slate-800 truncate">Scienze</dd>
+      <dt class="text-slate-500">Argomento</dt>
+      <dd class="text-slate-800 truncate">motivazione intrinseca</dd>
+      <dt class="text-slate-500">Durata</dt>
+      <dd class="text-slate-800">
+        
+          45 min
+        
+      </dd>
+    </dl>
+  </div>
+
+  
+  <div>
+    <h3 class="text-[10px] uppercase tracking-wide text-slate-500 mb-1">Classe</h3>
+    <dl class="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[13px]">
+      <dt class="text-slate-500">Nome</dt>
+      <dd class="text-slate-800 truncate">3A liceo scientifico</dd>
+      <dt class="text-slate-500">Studenti</dt>
+      <dd class="text-slate-800">20</dd>
+      <dt class="text-slate-500">Livello</dt>
+      <dd class="text-slate-800 truncate">
+        
+        Secondaria di secondo grado
+      </dd>
+    </dl>
+
+    
+      <div class="mt-2">
+        <span class="text-[10px] uppercase tracking-wide text-slate-500">BES</span>
+        <div class="flex flex-wrap gap-1 mt-1">
+          
+            <wa-tag size="small" variant="warning" pill>
+              Disturbo dell&#39;attenzione (ADHD)
+            </wa-tag>
+          
+            <wa-tag size="small" variant="warning" pill>
+              Disturbi specifici dell&#39;apprendimento (DSA)
+            </wa-tag>
+          
+        </div>
+      </div>
+    
+
+    
+      <div class="mt-2">
+        <span class="text-[10px] uppercase tracking-wide text-slate-500">Caratteristiche</span>
+        <div class="flex flex-wrap gap-1 mt-1">
+          
+            <wa-tag size="small" variant="neutral" pill>
+              Motivata
+            </wa-tag>
+          
+        </div>
+      </div>
+    
+
+    
+      <div class="mt-2">
+        <span class="text-[10px] uppercase tracking-wide text-slate-500">Studenti</span>
+        <div class="flex flex-wrap gap-1 mt-1">
+          
+            <wa-tag size="small" variant="neutral" pill>
+              Punti di caduta / difficoltà
+            </wa-tag>
+          
+            <wa-tag size="small" variant="neutral" pill>
+              Punti di eccellenza in alcune discipline
+            </wa-tag>
+          
+        </div>
+      </div>
+    
+  </div>
+
+  
+  <div>
+    <h3 class="text-[10px] uppercase tracking-wide text-slate-500 mb-1">Aula</h3>
+    <dl class="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[13px]">
+      <dt class="text-slate-500">Nome</dt>
+      <dd class="text-slate-800 truncate">Aula 101</dd>
+      <dt class="text-slate-500">Mobilità</dt>
+      <dd class="text-slate-800 truncate">
+        
+        Parzialmente
+      </dd>
+      <dt class="text-slate-500">BYOD</dt>
+      <dd class="text-slate-800 truncate">
+        
+        Solo studenti con BES
+      </dd>
+    </dl>
+    <div class="mt-2 flex flex-wrap gap-1 text-[11px] text-slate-600">
+      <wa-tag size="small" variant="success" pill>LIM</wa-tag>
+      <wa-tag size="small" variant="success" pill>WiFi</wa-tag>
+      <wa-tag size="small" variant="success" pill>Suite</wa-tag>
+      
+    </div>
+  </div>
+
+  
+  <div class="pt-2 border-t border-slate-200">
+    <wa-button size="small" variant="default" class="w-full"
+               hx-get="/webui/lesson/57993d71-b96b-4150-84db-22041d5dbda5/profile/edit"
+               hx-target="#profile-sidebar"
+               hx-swap="outerHTML">
+      <wa-icon slot="prefix" name="pen-to-square"></wa-icon>
+      Aggiorna profilo
+    </wa-button>
+  </div>
+
+  
+  <details class="text-[11px] text-slate-500">
+    <summary class="cursor-pointer select-none hover:text-slate-700">
+      Mostra payload JSON
+    </summary>
+    <pre class="mt-2 p-2 bg-slate-900 text-slate-100 rounded text-[10px]
+                overflow-x-auto leading-tight"
+>{
+  "classroom": {
+    "forniture_mobility": "PARTIALLY",
+    "has_lim": true,
+    "has_suite": true,
+    "has_wifi": true,
+    "own_device": "BES",
+    "pc_station": false,
+    "title": "Aula 101"
+  },
+  "group": {
+    "class_features": [
+      "MOTIVATA"
+    ],
+    "disabilities": [
+      "ADHD",
+      "DSA"
+    ],
+    "grade": "SECONDARIA_II_GRADO",
+    "student_attributes": [
+      "PUNTI_DI_CADUTA",
+      "PUNTI_DI_ECCELLENZA"
+    ],
+    "students_number": 20,
+    "title": "3A liceo scientifico"
+  },
+  "specific_topic": "motivazione intrinseca",
+  "subject_area": "Scienze",
+  "time_available_minutes": 45
+}</pre>
+  </details>
+
+</aside>
+    </div>
+
+    
+    
+    <main class="order-1 lg:order-2 min-w-0">
+      <div id="chat-conversation" class="space-y-4">
+        
+
+
+
+
+
+  
+  <div id="chat-stream"
+       class="rounded-xl border-2 border-dashed border-slate-200 p-8
+              flex flex-col items-center text-center gap-3">
+    <wa-icon name="comments" style="font-size:2rem; color:#94a3b8;"></wa-icon>
+    <div class="space-y-1">
+      <p class="font-medium text-slate-700">Inizia la conversazione</p>
+      <p class="text-sm text-slate-500 max-w-md mx-auto">
+        Scrivi la tua richiesta nel campo qui sotto. L'agente userà
+        sia il messaggio sia il <strong>profilo educativo</strong>
+        a sinistra per generare la lezione personalizzata.
+      </p>
+    </div>
+  </div>
+
+
+
+
+
+
+
+
+  
+
+  
+  <input type="file"
+         id="chat-upload-input"
+         name="file"
+         class="hidden"
+         accept=".pdf,.txt,.md,.markdown,application/pdf,text/plain,text/markdown"
+         hx-post="/webui/lesson/57993d71-b96b-4150-84db-22041d5dbda5/upload"
+         hx-encoding="multipart/form-data"
+         hx-trigger="change"
+         hx-target="#chat-attachments"
+         hx-swap="outerHTML"
+         hx-on::after-request="this.value = ''" />
+
+  
+  
+
+<div id="chat-attachments"
+     class="px-1 ">
+  
+</div>
+
+  <form id="chat-input-form"
+        hx-post="/webui/lesson/57993d71-b96b-4150-84db-22041d5dbda5/run"
+        hx-target="#chat-conversation"
+        hx-swap="innerHTML"
+        hx-disabled-elt="find textarea, find button[type=submit]"
+        class="space-y-1">
+
+    <div class="rounded-2xl border border-slate-200 bg-white shadow-sm p-2
+                flex items-end gap-2
+                focus-within:ring-2 focus-within:ring-sky-300/60
+                focus-within:border-sky-300">
+
+      
+      <div class="flex items-center gap-1 pb-0.5">
+        <wa-tooltip content="Allega PDF, TXT o Markdown come contesto per la lezione (max 10 MB)"
+                    placement="top">
+          <button type="button"
+                  aria-label="Allega documento"
+                  class="w-8 h-8 inline-flex items-center justify-center
+                         rounded-md text-slate-500 hover:text-slate-800
+                         hover:bg-slate-100 focus:outline-none
+                         focus-visible:ring-2 focus-visible:ring-sky-300/60
+                         transition-colors"
+                  onclick="document.getElementById('chat-upload-input').click()">
+            <wa-icon name="paperclip" style="font-size:0.95rem;"></wa-icon>
+          </button>
+        </wa-tooltip>
+        <wa-tooltip content="Inserimento diagramma Mermaid — disponibile in una versione successiva"
+                    placement="top">
+          <button type="button" disabled
+                  aria-label="Mermaid"
+                  class="w-8 h-8 inline-flex items-center justify-center
+                         rounded-md text-slate-300 cursor-not-allowed">
+            <wa-icon name="diagram-project" style="font-size:0.95rem;"></wa-icon>
+          </button>
+        </wa-tooltip>
+      </div>
+
+      
+      <textarea
+        name="query"
+        class="flex-1 resize-none border-0 bg-transparent
+               px-2 py-2 text-sm text-slate-800 placeholder-slate-400
+               focus:outline-none"
+        rows="2"
+        required
+        minlength="3"
+        maxlength="2000"
+        placeholder="Es. Crea una lezione di 45 minuti sulla fotosintesi clorofilliana adattata a una classe con 2 studenti DSA…"
+        autofocus
+        onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault(); if(this.value.trim().length>=3){this.form.requestSubmit();}}"
+      ></textarea>
+
+      <div class="pb-0.5">
+        <wa-button type="submit" size="small" variant="brand"
+                   aria-label="Invia messaggio e genera lezione">
+          <wa-icon slot="prefix" name="paper-plane" style="font-size:0.95rem;"></wa-icon>
+          Invia
+        </wa-button>
+      </div>
+
+    </div>
+
+    <p class="text-[11px] text-slate-500 px-3 flex items-center gap-1.5">
+      <wa-icon name="circle-info" style="font-size:0.75rem;"></wa-icon>
+      <span>
+        Premi <kbd class="rounded bg-slate-100 px-1 py-0.5 text-[10px]
+                          border border-slate-200">Invio</kbd>
+        per inviare la richiesta. L'agente userà anche il profilo educativo a
+        sinistra e gli eventuali documenti allegati. Tempo previsto: 60–90 secondi.
+      </span>
+    </p>
+  </form>
+
+
+      </div>
+    </main>
+
+    
+    <div class="order-3 lg:order-3">
+      
+
+
+
+
+
+
+
+
+<aside id="media-panel"
+       
+       class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm space-y-4
+              text-sm sticky top-4">
+
+  
+  <div>
+    <div class="flex items-center justify-between gap-2">
+      <div class="flex items-center gap-2 text-slate-700">
+        <wa-icon name="photo-film"></wa-icon>
+        <strong>Risorse multimediali</strong>
+      </div>
+      <wa-tag size="small" variant="neutral" pill>0</wa-tag>
+    </div>
+    <p class="text-xs text-slate-500 mt-1">
+      Selezionate dal Retriever Agent dal database curato.
+    </p>
+  </div>
+
+  
+    
+    <div class="rounded-lg border-2 border-dashed border-slate-200 p-4
+                text-center text-xs text-slate-500 space-y-2">
+      <wa-icon name="photo-film" style="font-size:1.25rem;color:#cbd5e1;"></wa-icon>
+      <p>Le risorse multimediali appariranno qui dopo che il Retriever
+         Agent avrà interrogato il database.</p>
+    </div>
+  
+
+  <p class="text-[10px] text-slate-400 italic pt-2 border-t border-slate-100">
+    I link aprono in una nuova scheda. Le risorse sono già citate
+    inline nel piano della lezione.
+  </p>
+
+</aside>
+    </div>
+
+  </div>
+
+</section>
+
+  </main>
+
+  <footer class="bg-white border-t border-slate-200">
+    <div class="max-w-6xl mx-auto px-6 py-4 text-xs text-slate-500
+                flex flex-wrap items-center gap-x-2 gap-y-1">
+      <span>Built with</span>
+      <span class="font-mono text-slate-700">FastAPI · htmx · WebAwesome · Tailwind</span>
+      <span class="text-slate-300">·</span>
+      <span>Path C Mirror Stack — ADR-0001</span>
+      <span class="text-slate-300">·</span>
+      <a class="text-slate-500 hover:text-slate-800" href="/docs">API docs</a>
+    </div>
+  </footer>
+
+  
+</body>
+</html>

@@ -1,0 +1,270 @@
+{% extends "_base.html" %}
+
+{#
+  EducationalProfile form (CORE 2 #6.6 P1).
+
+  Fields are flat (form-encoded) and the POST handler reconstructs the nested
+  EducationalProfile via aix.webui.lessons.schemas.form_to_profile_dict.
+
+  Convention for boolean checkboxes (classroom_has_lim, …):
+    - A hidden <input name="<field>_present" value="1"> is emitted alongside
+      the visible checkbox so the server can tell "user said no" (checkbox
+      unchecked, hidden present) from "user didn't see this question"
+      (neither field present). For the form below the hidden field is always
+      emitted, so unchecked = False, checked = True.
+#}
+
+{% set fv = form_values or {} %}
+
+{% block content %}
+<section class="max-w-3xl mx-auto space-y-6">
+
+  <div class="space-y-2">
+    <h1 class="text-3xl font-serif tracking-tight">Nuova lezione</h1>
+    <p class="text-slate-600">
+      Compila il <strong>profilo educativo</strong> della classe e dell'aula.
+      Questi dati vengono passati sia al GraphRAG sia all'agente LangGraph
+      (CORE 1 #2.5) per personalizzare i materiali generati.
+    </p>
+    <wa-callout variant="neutral" appearance="filled outlined" size="small">
+      <wa-icon slot="icon" name="comments"></wa-icon>
+      Dopo aver salvato il profilo verrai portato sulla
+      <strong>chat della lezione</strong>: lì scriverai la tua richiesta
+      specifica e l'agente la userà insieme a questo profilo per generare
+      la lezione.
+    </wa-callout>
+  </div>
+
+  {% if form_errors %}
+    <wa-callout variant="danger" appearance="filled outlined">
+      <wa-icon slot="icon" name="circle-exclamation"></wa-icon>
+      <strong>Controlla i campi del modulo.</strong>
+      <ul class="mt-2 ml-4 list-disc text-sm">
+        {% for err in form_errors %}
+          <li>{{ err }}</li>
+        {% endfor %}
+      </ul>
+    </wa-callout>
+  {% endif %}
+
+  <form method="post" action="/webui/lesson" class="flex flex-col gap-6">
+
+    {# ──────────────────────────────────────────────────────────────────── #}
+    {# General lesson fields                                               #}
+    {# ──────────────────────────────────────────────────────────────────── #}
+    <wa-card>
+      <div slot="header" class="flex items-center gap-2">
+        <wa-icon name="file-pen"></wa-icon>
+        <strong>Lezione</strong>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <wa-input
+          type="text"
+          name="title"
+          label="Titolo (opzionale)"
+          placeholder="Es. Fotosintesi — 3A Liceo"
+          value="{{ fv.get('title', '') }}"
+        ></wa-input>
+
+        <wa-select
+          name="domain"
+          label="Dominio del Knowledge Graph"
+          value="{{ fv.get('domain', 'neuro') }}"
+          required
+        >
+          <wa-option value="neuro">Neuro — Neuroscienze dell'apprendimento</wa-option>
+          <wa-option value="udl">UDL — Universal Design for Learning</wa-option>
+          <wa-option value="all">Tutti i domini</wa-option>
+        </wa-select>
+
+        <wa-input
+          type="text"
+          name="subject_area"
+          label="Materia"
+          placeholder="Es. Scienze, Matematica, Storia"
+          value="{{ fv.get('subject_area', '') }}"
+        ></wa-input>
+
+        <wa-input
+          type="text"
+          name="specific_topic"
+          label="Argomento specifico"
+          placeholder="Es. Fotosintesi clorofilliana"
+          value="{{ fv.get('specific_topic', '') }}"
+        ></wa-input>
+
+        <wa-input
+          type="number"
+          name="time_available_minutes"
+          label="Durata (minuti)"
+          min="15"
+          max="480"
+          step="5"
+          placeholder="60"
+          value="{{ fv.get('time_available_minutes', '') }}"
+          help-text="Tra 15 e 480 minuti."
+        ></wa-input>
+      </div>
+    </wa-card>
+
+    {# ──────────────────────────────────────────────────────────────────── #}
+    {# Educational group (party.models.Party)                              #}
+    {# ──────────────────────────────────────────────────────────────────── #}
+    <wa-card>
+      <div slot="header" class="flex items-center gap-2">
+        <wa-icon name="users"></wa-icon>
+        <strong>Profilo della classe</strong>
+        <wa-tag size="small" variant="neutral" pill>EducationalGroup</wa-tag>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <wa-input
+          type="text"
+          name="group_title"
+          label="Nome della classe"
+          placeholder="Es. 3A Liceo Scientifico"
+          value="{{ fv.get('group_title', '') }}"
+        ></wa-input>
+
+        <wa-input
+          type="number"
+          name="group_students_number"
+          label="Numero di studenti"
+          min="1"
+          max="40"
+          value="{{ fv.get('group_students_number', '') }}"
+          placeholder="20"
+        ></wa-input>
+
+        <wa-select
+          name="group_grade"
+          label="Livello scolastico"
+          value="{{ fv.get('group_grade', '') }}"
+        >
+          <wa-option value="">— Non specificato —</wa-option>
+          {% for code, label in GRADE_LABELS.items() %}
+            <wa-option value="{{ code }}">{{ label }}</wa-option>
+          {% endfor %}
+        </wa-select>
+
+        <div></div>{# spacer to keep two-column rhythm on md+ #}
+
+        <wa-select
+          name="group_disabilities"
+          label="BES (selezione multipla)"
+          multiple
+          help-text="Bisogni Educativi Speciali presenti nella classe."
+          value="{{ fv.get('group_disabilities', []) | tojson }}"
+        >
+          {% for code, label in DISABILITY_LABELS.items() %}
+            <wa-option value="{{ code }}">{{ label }}</wa-option>
+          {% endfor %}
+        </wa-select>
+
+        <wa-select
+          name="group_class_features"
+          label="Caratteristiche della classe (selezione multipla)"
+          multiple
+          value="{{ fv.get('group_class_features', []) | tojson }}"
+        >
+          {% for code, label in CLASS_FEATURE_LABELS.items() %}
+            <wa-option value="{{ code }}">{{ label }}</wa-option>
+          {% endfor %}
+        </wa-select>
+
+        <wa-select
+          name="group_student_attributes"
+          label="Caratteristiche degli studenti (selezione multipla)"
+          multiple
+          class="md:col-span-2"
+          value="{{ fv.get('group_student_attributes', []) | tojson }}"
+        >
+          {% for code, label in STUDENT_ATTR_LABELS.items() %}
+            <wa-option value="{{ code }}">{{ label }}</wa-option>
+          {% endfor %}
+        </wa-select>
+      </div>
+    </wa-card>
+
+    {# ──────────────────────────────────────────────────────────────────── #}
+    {# Classroom environment (classroom.models.Classroom)                  #}
+    {# ──────────────────────────────────────────────────────────────────── #}
+    <wa-card>
+      <div slot="header" class="flex items-center gap-2">
+        <wa-icon name="chalkboard"></wa-icon>
+        <strong>Ambiente d'aula</strong>
+        <wa-tag size="small" variant="neutral" pill>ClassroomEnvironment</wa-tag>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <wa-input
+          type="text"
+          name="classroom_title"
+          label="Nome dell'aula"
+          placeholder="Es. Aula 101"
+          value="{{ fv.get('classroom_title', '') }}"
+        ></wa-input>
+
+        <wa-select
+          name="classroom_forniture_mobility"
+          label="Mobilità dei banchi"
+          value="{{ fv.get('classroom_forniture_mobility', 'NO') }}"
+        >
+          {% for code, label in FORNITURE_MOBILITY_LABELS.items() %}
+            <wa-option value="{{ code }}">{{ label }}</wa-option>
+          {% endfor %}
+        </wa-select>
+
+        <wa-select
+          name="classroom_own_device"
+          label="Dispositivi personali (BYOD)"
+          value="{{ fv.get('classroom_own_device', 'NO') }}"
+          class="md:col-span-2"
+        >
+          {% for code, label in OWN_DEVICE_LABELS.items() %}
+            <wa-option value="{{ code }}">{{ label }}</wa-option>
+          {% endfor %}
+        </wa-select>
+      </div>
+
+      <div class="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
+        {% for fld, lbl in [
+          ('classroom_has_lim',     'LIM'),
+          ('classroom_has_wifi',    'WiFi'),
+          ('classroom_has_suite',   'Suite (Workspace / 365)'),
+          ('classroom_pc_station',  'Postazioni PC'),
+        ] %}
+          <label class="flex items-start gap-2 cursor-pointer text-sm">
+            <input type="hidden" name="{{ fld }}_present" value="1">
+            <wa-checkbox
+              name="{{ fld }}"
+              {% if fv.get(fld) %}checked{% endif %}
+            >{{ lbl }}</wa-checkbox>
+          </label>
+        {% endfor %}
+      </div>
+    </wa-card>
+
+    <div class="flex items-center justify-between gap-3">
+      <a href="/webui/" class="text-sm text-slate-600 hover:text-slate-900">
+        ← Annulla e torna alla home
+      </a>
+      <wa-button type="submit" variant="brand" appearance="filled" size="medium">
+        <wa-icon slot="prefix" name="paper-plane"></wa-icon>
+        Crea lezione
+      </wa-button>
+    </div>
+
+  </form>
+
+  <wa-callout variant="neutral">
+    <wa-icon slot="icon" name="circle-info"></wa-icon>
+    Tutti i campi sono <strong>opzionali</strong> a parte il dominio.
+    Più campi del profilo compilati ⇒ metodologie suggerite più pertinenti
+    e prompt dell'agente più specializzati. La chat con i passaggi
+    dell'agente apparirà subito dopo l'invio.
+  </wa-callout>
+
+</section>
+{% endblock %}

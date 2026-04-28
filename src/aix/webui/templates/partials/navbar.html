@@ -1,0 +1,78 @@
+{#
+  Auth-aware navbar (CORE 2 #6.6 P1).
+
+  Expects context vars:
+    - user   (Optional[User])  — None for anonymous, User instance otherwise
+    - phase  (Optional[str])   — small pill in the right-hand area
+#}
+<header class="bg-white border-b border-slate-200">
+  <div class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between gap-4">
+    <a href="/webui/" class="flex items-baseline gap-2 no-underline">
+      <span class="text-xl font-serif tracking-tight text-slate-900">AixLearning</span>
+      <span class="text-slate-400">·</span>
+      <span class="text-base font-medium text-slate-700">Agentic GraphRAG</span>
+    </a>
+
+    <nav class="flex items-center gap-3">
+      {% if phase %}
+        <wa-tag variant="neutral" size="small" pill>{{ phase }}</wa-tag>
+      {% endif %}
+
+      {% if user %}
+        <a href="/webui/lesson/new" class="no-underline">
+          <wa-button size="small" variant="brand">
+            <wa-icon slot="prefix" name="circle-plus"></wa-icon>
+            Nuova lezione
+          </wa-button>
+        </a>
+
+        {#
+          WebAwesome 3.x dropdown anatomy (different from Shoelace / WA 2):
+            - <wa-dropdown-item> goes DIRECTLY inside <wa-dropdown>
+              (no <wa-menu> wrapper — that element does not exist in WA 3,
+              and our :not(:defined){visibility:hidden} rule would hide
+              the entire panel if we used it).
+            - Trigger button uses `with-caret`, not `caret`.
+            - Items have a `value` attribute; we listen for the `wa-select`
+              event on the dropdown and navigate to that value as a URL.
+              Alpine gives us a one-line @wa-select handler.
+        #}
+        <wa-dropdown placement="bottom-end"
+                     x-data
+                     @wa-select="if ($event.detail.item.value) { window.location.href = $event.detail.item.value }">
+          <wa-button slot="trigger" with-caret size="small" variant="default">
+            <wa-icon slot="prefix" name="user"></wa-icon>
+            {{ user.display_name or user.email }}
+          </wa-button>
+
+          <wa-dropdown-item disabled>
+            <small class="text-slate-500">{{ user.email }}</small>
+          </wa-dropdown-item>
+          <wa-divider></wa-divider>
+          <wa-dropdown-item value="/webui/lesson/new">
+            <wa-icon slot="icon" name="circle-plus"></wa-icon>
+            Nuova lezione
+          </wa-dropdown-item>
+          <wa-divider></wa-divider>
+          <wa-dropdown-item value="/auth/logout" variant="danger">
+            <wa-icon slot="icon" name="right-from-bracket"></wa-icon>
+            Esci
+          </wa-dropdown-item>
+        </wa-dropdown>
+      {% else %}
+        <a href="/auth/login" class="no-underline">
+          <wa-button size="small" variant="default">
+            <wa-icon slot="prefix" name="right-to-bracket"></wa-icon>
+            Accedi
+          </wa-button>
+        </a>
+        <a href="/auth/register" class="no-underline">
+          <wa-button size="small" variant="brand">
+            <wa-icon slot="prefix" name="user-plus"></wa-icon>
+            Registrati
+          </wa-button>
+        </a>
+      {% endif %}
+    </nav>
+  </div>
+</header>

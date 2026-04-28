@@ -1,0 +1,98 @@
+{#
+  Planner Agent card (CORE 2 #6.6 P2 phase 2).
+
+  Rendered after the `plan` LangGraph node finishes. Carries the planner's
+  three signals: detected intent, KG scope, and the search queries it'll
+  hand off to the retriever. The visible chips give the teacher a sense of
+  "what the agent thinks I'm asking" without dumping the full plan dict.
+
+  Required context (set by ``_build_planner_payload`` in ``service.py``):
+    payload = {
+      intent, intent_label,                  # e.g. "lesson_creation" / "Creazione lezione"
+      scope, scope_label, scope_variant,     # e.g. "in_scope" / "Nel KG" / "success"
+      scope_confidence,                      # float 0.0–1.0 (optional)
+      key_concepts: [...], search_queries: [...]
+    }
+#}
+
+{% set p = payload or {} %}
+
+<div class="flex items-start gap-3">
+
+  {# ── Avatar (planner = blue / brain) ──────────────────────────────── #}
+  <div class="flex-shrink-0 w-9 h-9 rounded-full bg-blue-100 text-blue-700
+              flex items-center justify-center ring-2 ring-white shadow-sm">
+    <wa-icon name="brain" style="font-size:1rem;"></wa-icon>
+  </div>
+
+  {# ── Card body ────────────────────────────────────────────────────── #}
+  <div class="flex-1 min-w-0">
+    <article class="rounded-xl border border-blue-200 bg-white shadow-sm overflow-hidden">
+
+      <header class="px-4 py-2 border-b border-blue-100 bg-blue-50/60
+                     flex items-center justify-between gap-2 flex-wrap">
+        <div class="flex items-baseline gap-2">
+          <strong class="text-slate-800">Planner Agent</strong>
+          <span class="text-xs text-slate-500">· pianifica la strategia di ricerca</span>
+        </div>
+        <wa-tag size="small" variant="neutral" pill>plan</wa-tag>
+      </header>
+
+      <div class="px-4 py-3 space-y-3 text-sm">
+
+        {# Detected intent + scope #}
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="text-slate-500">Intento:</span>
+          <wa-tag size="small" variant="brand" pill>{{ p.get('intent_label', '—') }}</wa-tag>
+
+          <span class="text-slate-500 ml-2">Scope:</span>
+          <wa-tag size="small" variant="{{ p.get('scope_variant', 'neutral') }}" pill>
+            {{ p.get('scope_label', '—') }}
+          </wa-tag>
+
+          {% if p.get('scope_confidence') is not none %}
+            <span class="text-xs text-slate-400">
+              ({{ '%.0f' | format((p.scope_confidence or 0) * 100) }}% confidence)
+            </span>
+          {% endif %}
+        </div>
+
+        {# Key concepts the planner will look up #}
+        {% if p.get('key_concepts') %}
+          <div>
+            <div class="text-xs uppercase tracking-wide text-slate-500 mb-1">
+              Concetti chiave individuati
+            </div>
+            <div class="flex flex-wrap gap-1">
+              {% for concept in p.key_concepts %}
+                <wa-tag size="small" variant="neutral" pill>{{ concept }}</wa-tag>
+              {% endfor %}
+            </div>
+          </div>
+        {% endif %}
+
+        {# Search queries — the actual hand-off to the retriever #}
+        {% if p.get('search_queries') %}
+          <details class="text-slate-700">
+            <summary class="cursor-pointer select-none text-xs uppercase
+                            tracking-wide text-slate-500 hover:text-slate-700">
+              {{ p.search_queries | length }} query pianificate per il GraphRAG
+            </summary>
+            <ul class="mt-2 ml-4 list-disc space-y-0.5 text-xs text-slate-600">
+              {% for q in p.search_queries %}
+                <li><code class="text-[11px]">{{ q }}</code></li>
+              {% endfor %}
+            </ul>
+          </details>
+        {% endif %}
+
+      </div>
+
+    </article>
+    <div class="text-[11px] text-slate-400 mt-1 ml-1 flex items-center gap-1">
+      <wa-icon name="brain" style="font-size:0.7rem;"></wa-icon>
+      <span>Planner</span>
+    </div>
+  </div>
+
+</div>

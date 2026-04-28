@@ -1,0 +1,80 @@
+{#
+  Writer Agent — pending placeholder (CORE 2 #6.6 P2 phase 2).
+
+  Rendered immediately after the retriever finishes, BEFORE the writer call
+  starts. Today the writer call is non-streaming (a single, long
+  ``chat.completions.create``); without this placeholder the chat would
+  look frozen for 60–90 seconds. P2 phase 3 swaps in token streaming and
+  this same wrapper becomes the streaming-tokens target.
+
+  The wrapper element carries a unique id ``writer-card-rev{N}`` so the
+  matching ``chat_writer_card.html`` can OOB-replace it with the completed
+  draft. ``revision`` is 1-based.
+
+  Required context:
+    payload = { revision, is_revision, feedback }
+#}
+
+{% set p = payload or {} %}
+{% set rev = p.get('revision', 1) %}
+{% set is_revision = p.get('is_revision', False) %}
+
+<div id="writer-card-rev{{ rev }}" class="flex items-start gap-3">
+
+  {# ── Avatar (writer = emerald / quill) ────────────────────────────── #}
+  <div class="flex-shrink-0 w-9 h-9 rounded-full bg-emerald-100 text-emerald-700
+              flex items-center justify-center ring-2 ring-white shadow-sm">
+    <wa-icon name="pen-nib" style="font-size:1rem;"></wa-icon>
+  </div>
+
+  {# ── Card body ────────────────────────────────────────────────────── #}
+  <div class="flex-1 min-w-0">
+    <article class="rounded-xl border border-emerald-200 bg-white shadow-sm overflow-hidden">
+
+      <header class="px-4 py-2 border-b border-emerald-100 bg-emerald-50/60
+                     flex items-center justify-between gap-2 flex-wrap">
+        <div class="flex items-baseline gap-2">
+          <strong class="text-slate-800">Writer Agent</strong>
+          <span class="text-xs text-slate-500">
+            · {% if is_revision %}revisione {{ rev }}{% else %}sta componendo la lezione{% endif %}
+          </span>
+        </div>
+        <wa-tag size="small" variant="warning" pill>
+          <wa-spinner style="font-size:0.7rem;"></wa-spinner>
+          in scrittura
+        </wa-tag>
+      </header>
+
+      <div class="px-4 py-4 space-y-2 text-sm text-slate-700">
+        {% if is_revision and p.get('feedback') %}
+          <div class="text-xs text-slate-600 bg-amber-50 border border-amber-200
+                      rounded px-3 py-2">
+            <strong class="text-amber-700">Indicazioni di revisione:</strong>
+            <span class="ml-1">{{ p.feedback }}</span>
+          </div>
+        {% endif %}
+
+        {# Skeleton paragraphs that subtly pulse — visual proof we're working #}
+        <div class="space-y-2 animate-pulse">
+          <div class="h-3 bg-slate-100 rounded w-11/12"></div>
+          <div class="h-3 bg-slate-100 rounded w-10/12"></div>
+          <div class="h-3 bg-slate-100 rounded w-9/12"></div>
+          <div class="h-3 bg-slate-100 rounded w-11/12"></div>
+          <div class="h-3 bg-slate-100 rounded w-7/12"></div>
+        </div>
+
+        <p class="text-xs text-slate-500 italic mt-2">
+          La generazione richiede tipicamente 60–90 secondi. Il Writer
+          incorpora i nodi del KG, le strategie pedagogiche e i media
+          curati, applicandoli al profilo educativo della classe.
+        </p>
+      </div>
+
+    </article>
+    <div class="text-[11px] text-slate-400 mt-1 ml-1 flex items-center gap-1">
+      <wa-icon name="pen-nib" style="font-size:0.7rem;"></wa-icon>
+      <span>Writer · pending</span>
+    </div>
+  </div>
+
+</div>

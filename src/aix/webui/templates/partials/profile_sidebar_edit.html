@@ -1,0 +1,181 @@
+{#
+  Profile sidebar — EDIT mode (CORE 2 #6.6 P2 phase 2).
+
+  Compact inline form that replaces the read-only profile_sidebar.html
+  when the user clicks "Aggiorna profilo". Pre-filled with the lesson's
+  current ``educational_profile_json``.
+
+  htmx wiring:
+    - The <form> POSTs to /webui/lesson/{id}/profile.
+      On success the server returns the read-only profile_sidebar.html
+      and htmx swaps it in (outerHTML on #profile-sidebar).
+      On validation error the server returns this same edit form with
+      an error callout at the top.
+    - "Annulla" does hx-get /webui/lesson/{id}/profile → returns the
+      read-only sidebar.
+
+  Required context:
+    lesson           Lesson ORM
+    profile_errors   Optional[list[str]]   — validation error strings
+    GRADE_LABELS / DISABILITY_LABELS / CLASS_FEATURE_LABELS /
+    STUDENT_ATTR_LABELS / FORNITURE_MOBILITY_LABELS / OWN_DEVICE_LABELS
+#}
+
+{% set profile = lesson.educational_profile_json or {} %}
+{% set group   = profile.get('group') or {} %}
+{% set room    = profile.get('classroom') or {} %}
+
+<aside id="profile-sidebar"
+       class="rounded-xl border-2 border-sky-300 bg-white p-4 shadow-md space-y-3
+              text-sm sticky top-4">
+
+  {# ── Header ──────────────────────────────────────────────────────── #}
+  <div class="flex items-center gap-2 text-sky-700">
+    <wa-icon name="pen-to-square"></wa-icon>
+    <strong>Modifica profilo</strong>
+  </div>
+
+  {% if profile_errors %}
+    <wa-callout variant="danger" size="small">
+      <wa-icon slot="icon" name="circle-exclamation"></wa-icon>
+      <ul class="ml-3 list-disc text-xs">
+        {% for e in profile_errors %}
+          <li>{{ e }}</li>
+        {% endfor %}
+      </ul>
+    </wa-callout>
+  {% endif %}
+
+  <form hx-post="/webui/lesson/{{ lesson.id }}/profile"
+        hx-target="#profile-sidebar"
+        hx-swap="outerHTML"
+        class="space-y-3">
+
+    {# ── Lesson framing ────────────────────────────────────────────── #}
+    <fieldset class="space-y-2">
+      <legend class="text-[10px] uppercase tracking-wide text-slate-500">Lezione</legend>
+
+      <wa-input type="text" name="subject_area"
+                label="Materia" size="small"
+                value="{{ profile.get('subject_area') or '' }}"
+                placeholder="Es. Scienze"></wa-input>
+
+      <wa-input type="text" name="specific_topic"
+                label="Argomento" size="small"
+                value="{{ profile.get('specific_topic') or '' }}"
+                placeholder="Es. Fotosintesi"></wa-input>
+
+      <wa-input type="number" name="time_available_minutes"
+                label="Durata (min)" size="small"
+                min="15" max="480" step="5"
+                value="{{ profile.get('time_available_minutes') or '' }}"
+                placeholder="60"></wa-input>
+    </fieldset>
+
+    {# ── Class ─────────────────────────────────────────────────────── #}
+    <fieldset class="space-y-2">
+      <legend class="text-[10px] uppercase tracking-wide text-slate-500">Classe</legend>
+
+      <wa-input type="text" name="group_title"
+                label="Nome" size="small"
+                value="{{ group.get('title') or '' }}"
+                placeholder="Es. 3A Liceo"></wa-input>
+
+      <wa-input type="number" name="group_students_number"
+                label="Studenti" size="small"
+                min="1" max="40"
+                value="{{ group.get('students_number') or '' }}"
+                placeholder="25"></wa-input>
+
+      <wa-select name="group_grade" label="Livello" size="small"
+                 value="{{ group.get('grade') or '' }}">
+        <wa-option value="">— Non specificato —</wa-option>
+        {% for code, label in GRADE_LABELS.items() %}
+          <wa-option value="{{ code }}">{{ label }}</wa-option>
+        {% endfor %}
+      </wa-select>
+
+      <wa-select name="group_disabilities" label="BES" size="small"
+                 multiple
+                 value="{{ group.get('disabilities', []) | tojson }}">
+        {% for code, label in DISABILITY_LABELS.items() %}
+          <wa-option value="{{ code }}">{{ label }}</wa-option>
+        {% endfor %}
+      </wa-select>
+
+      <wa-select name="group_class_features" label="Caratteristiche" size="small"
+                 multiple
+                 value="{{ group.get('class_features', []) | tojson }}">
+        {% for code, label in CLASS_FEATURE_LABELS.items() %}
+          <wa-option value="{{ code }}">{{ label }}</wa-option>
+        {% endfor %}
+      </wa-select>
+
+      <wa-select name="group_student_attributes" label="Studenti" size="small"
+                 multiple
+                 value="{{ group.get('student_attributes', []) | tojson }}">
+        {% for code, label in STUDENT_ATTR_LABELS.items() %}
+          <wa-option value="{{ code }}">{{ label }}</wa-option>
+        {% endfor %}
+      </wa-select>
+    </fieldset>
+
+    {# ── Classroom ─────────────────────────────────────────────────── #}
+    <fieldset class="space-y-2">
+      <legend class="text-[10px] uppercase tracking-wide text-slate-500">Aula</legend>
+
+      <wa-input type="text" name="classroom_title"
+                label="Nome" size="small"
+                value="{{ room.get('title') or '' }}"
+                placeholder="Aula 101"></wa-input>
+
+      <wa-select name="classroom_forniture_mobility"
+                 label="Mobilità" size="small"
+                 value="{{ room.get('forniture_mobility') or 'NO' }}">
+        {% for code, label in FORNITURE_MOBILITY_LABELS.items() %}
+          <wa-option value="{{ code }}">{{ label }}</wa-option>
+        {% endfor %}
+      </wa-select>
+
+      <wa-select name="classroom_own_device"
+                 label="BYOD" size="small"
+                 value="{{ room.get('own_device') or 'NO' }}">
+        {% for code, label in OWN_DEVICE_LABELS.items() %}
+          <wa-option value="{{ code }}">{{ label }}</wa-option>
+        {% endfor %}
+      </wa-select>
+
+      <div class="grid grid-cols-2 gap-2 text-[12px]">
+        {% for fld, lbl, key in [
+          ('classroom_has_lim',    'LIM',   'has_lim'),
+          ('classroom_has_wifi',   'WiFi',  'has_wifi'),
+          ('classroom_has_suite',  'Suite', 'has_suite'),
+          ('classroom_pc_station', 'PC',    'pc_station'),
+        ] %}
+          <label class="flex items-center gap-1.5 cursor-pointer">
+            <input type="hidden" name="{{ fld }}_present" value="1">
+            <wa-checkbox name="{{ fld }}"
+              {% if room.get(key) %}checked{% endif %}
+            >{{ lbl }}</wa-checkbox>
+          </label>
+        {% endfor %}
+      </div>
+    </fieldset>
+
+    {# ── Actions ───────────────────────────────────────────────────── #}
+    <div class="flex items-center gap-2 pt-2 border-t border-slate-200">
+      <wa-button type="button" size="small" variant="default"
+                 hx-get="/webui/lesson/{{ lesson.id }}/profile"
+                 hx-target="#profile-sidebar"
+                 hx-swap="outerHTML">
+        Annulla
+      </wa-button>
+      <wa-button type="submit" size="small" variant="brand" class="flex-1">
+        <wa-icon slot="prefix" name="check"></wa-icon>
+        Salva
+      </wa-button>
+    </div>
+
+  </form>
+
+</aside>

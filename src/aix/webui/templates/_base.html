@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="it" class="wa-theme-default">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ title or "AixLearning · Agentic GraphRAG" }}</title>
+
+  {#
+    P0 loads everything from CDN so the skeleton works with `pip install -e .`
+    and `uvicorn aix.api.main:app` only — no Node/Bun build step required yet.
+    A Tailwind CLI build + locally-served WebAwesome/htmx will replace these
+    in P5 (polish) before any production deploy in P6.
+
+    Mirroring AixLearning native stack (per docs/architecture/Frontend_Platform_Evaluation.md):
+      - WebAwesome 3.x (web components, ex-Shoelace)
+      - htmx 2 (hypermedia)
+      - Tailwind CSS (utility CSS)
+      - Alpine.js (tiny client-side islands)
+  #}
+
+  <link rel="stylesheet"
+        href="https://ka-f.webawesome.com/webawesome@3.5.0/styles/themes/default.css">
+  <script type="module"
+          src="https://ka-f.webawesome.com/webawesome@3.5.0/webawesome.loader.js"></script>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  {#
+    NOTE: htmx.org@2.x ships only the core. The SSE extension was extracted
+    into its own package ``htmx-ext-sse`` (see https://htmx.org/extensions/sse/).
+
+    The legacy bundled path ``htmx.org@2.0.4/dist/ext/sse.js`` still exists on
+    unpkg but it's the htmx-1 extension — its first lines literally
+    ``console.warn("WARNING: You are using an htmx 1 extension with htmx 2…")``.
+    More importantly, that file calls ``api.selectAndSwap(...)`` which was
+    removed from htmx 2 core, so swaps silently fail and ``sse-close`` is not
+    even implemented — so EventSources auto-reconnect forever.
+
+    htmx-ext-sse@2.2.4 is the correct v2 extension: it implements ``sse-close``
+    and uses the v2 ``api.swap`` signature.
+  #}
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <script src="https://cdn.jsdelivr.net/npm/htmx-ext-sse@2.2.4"></script>
+
+  <script defer
+          src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.0/dist/cdn.min.js"></script>
+
+  <style>
+    /* Avoid flash of unstyled content from web-component upgrades. */
+    :not(:defined) { visibility: hidden; }
+    body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+                        Roboto, "Helvetica Neue", Arial, sans-serif; }
+    .font-serif { font-family: "Source Serif Pro", Georgia, serif; }
+
+    /*
+      ── .lesson-prose ────────────────────────────────────────────────
+      Shared typography for any agent-produced markdown rendered to
+      HTML inside a card. Used by partials/chat_lesson_card.html and
+      partials/chat_writer_card.html (P2 phase 2). Sits here rather
+      than in a per-partial <style> block because it's two templates
+      now and almost certainly N templates by P5.
+
+      We're CDN-only on Tailwind today (no plugin loader), so we can't
+      rely on @tailwindcss/typography. These rules cover typical agent
+      output (headings, lists, tables, code, blockquotes). Lifted into
+      a Tailwind preset / first-party stylesheet in P5 polish.
+    */
+    .lesson-prose { line-height: 1.7; color: #1e293b; }
+    .lesson-prose h1 { font-size: 1.5rem; font-weight: 700; margin: 1.25rem 0 0.5rem; }
+    .lesson-prose h2 { font-size: 1.25rem; font-weight: 700; margin: 1.25rem 0 0.5rem; }
+    .lesson-prose h3 { font-size: 1.1rem; font-weight: 600; margin: 1rem 0 0.5rem; }
+    .lesson-prose p  { margin: 0.5rem 0; }
+    .lesson-prose ul, .lesson-prose ol { margin: 0.5rem 0; padding-left: 1.5rem; }
+    .lesson-prose ul { list-style: disc; }
+    .lesson-prose ol { list-style: decimal; }
+    .lesson-prose li { margin: 0.25rem 0; }
+    .lesson-prose strong { font-weight: 600; }
+    .lesson-prose code { background: #f1f5f9; padding: 0.05rem 0.3rem; border-radius: 3px; font-size: 0.9em; }
+    .lesson-prose pre { background: #0f172a; color: #f1f5f9; padding: 0.75rem; border-radius: 6px; overflow-x: auto; }
+    .lesson-prose pre code { background: transparent; color: inherit; padding: 0; }
+    .lesson-prose table { border-collapse: collapse; margin: 0.75rem 0; }
+    .lesson-prose th, .lesson-prose td { border: 1px solid #e2e8f0; padding: 0.4rem 0.6rem; }
+    .lesson-prose th { background: #f8fafc; font-weight: 600; }
+    .lesson-prose blockquote { border-left: 3px solid #cbd5e1; padding-left: 0.75rem; color: #475569; }
+
+    /*
+      Tailwind line-clamp utility shim — used by media-panel titles to
+      keep them to a max of 2 lines without ellipsis-overrun. Tailwind
+      CDN ships @tailwindcss/line-clamp out of the box in v3.x but the
+      explicit fallback keeps the styles deterministic across CDN drift.
+    */
+    .line-clamp-2 {
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+  </style>
+
+  {% block head_extra %}{% endblock %}
+</head>
+<body class="bg-slate-50 text-slate-900 min-h-screen flex flex-col">
+
+  {% include "partials/navbar.html" %}
+
+  {#
+    Width: max-w-7xl is wide enough to host the 3-pane chat workspace
+    (280px profile + chat + 320px media) on lg screens (≥1024px). Forms
+    cap themselves narrower via their own ``max-w-*`` on the inner
+    ``<section>`` so they remain readable.
+  #}
+  <main class="flex-1 max-w-7xl mx-auto w-full px-6 py-8">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="bg-white border-t border-slate-200">
+    <div class="max-w-6xl mx-auto px-6 py-4 text-xs text-slate-500
+                flex flex-wrap items-center gap-x-2 gap-y-1">
+      <span>Built with</span>
+      <span class="font-mono text-slate-700">FastAPI · htmx · WebAwesome · Tailwind</span>
+      <span class="text-slate-300">·</span>
+      <span>Path C Mirror Stack — ADR-0001</span>
+      <span class="text-slate-300">·</span>
+      <a class="text-slate-500 hover:text-slate-800" href="/docs">API docs</a>
+    </div>
+  </footer>
+
+  {% block body_extra %}{% endblock %}
+</body>
+</html>

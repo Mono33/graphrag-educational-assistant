@@ -1,0 +1,231 @@
+{#
+  Bottom chat input — three states (CORE 2 #6.6 P2 phase 2 + P3).
+
+  draft     → ACTIVE first-turn form. Posts ``query`` to /run and the
+              response (rendered chat_conversation.html) is swapped into
+              #chat-conversation. This is the user's first message; on
+              submit it becomes their chat bubble and the agent run starts.
+              The paperclip button (P3) opens a file picker that uploads
+              the file as a chat attachment — text excerpts feed the
+              Writer's prompt as ``teacher_provided_context``. Files are
+              never sent to the Knowledge Graph.
+
+  running   → DISABLED with a "Generazione in corso…" hint. The first
+              turn is in flight and the SSE stream is feeding cards into
+              the chat above.
+
+  complete  → DISABLED multi-turn placeholder. Multi-turn refinement
+              ("Chiedi una modifica…") would re-invoke the LangGraph
+  error       pipeline against an updated state, which today has no
+              persistent thread / checkpointer — that's #10's scope.
+              Tooltip points to the blocking ticket.
+
+  Required context:
+    lesson    Lesson ORM
+#}
+
+{% if lesson.status == "draft" %}
+
+  {# ── ACTIVE first-turn input ──────────────────────────────────────── #}
+
+  {#
+    Free-standing file input (NOT inside the chat-input form — HTML forbids
+    nested <form>s and the browser would silently drop everything after).
+    htmx attributes make the input post itself when the user picks a file:
+    on ``change`` it POSTs the multipart body to /upload and replaces the
+    chat-attachments tray with the response. ``hx-on::after-request``
+    clears the value so a second pick of the same file (after deleting it)
+    re-fires ``change``.
+  #}
+  <input type="file"
+         id="chat-upload-input"
+         name="file"
+         class="hidden"
+         accept=".pdf,.txt,.md,.markdown,application/pdf,text/plain,text/markdown"
+         hx-post="/webui/lesson/{{ lesson.id }}/upload"
+         hx-encoding="multipart/form-data"
+         hx-trigger="change"
+         hx-target="#chat-attachments"
+         hx-swap="outerHTML"
+         hx-on::after-request="this.value = ''" />
+
+  {# Attachment chips tray (P3). Re-rendered by /upload + DELETE responses
+     via the htmx hooks on this same id. Empty when no files are attached. #}
+  {% include "partials/chat_attachments.html" %}
+
+  <form id="chat-input-form"
+        hx-post="/webui/lesson/{{ lesson.id }}/run"
+        hx-target="#chat-conversation"
+        hx-swap="innerHTML"
+        hx-disabled-elt="find textarea, find button[type=submit]"
+        class="space-y-1">
+
+    <div class="rounded-2xl border border-slate-200 bg-white shadow-sm p-2
+                flex items-end gap-2
+                focus-within:ring-2 focus-within:ring-sky-300/60
+                focus-within:border-sky-300">
+
+      {#
+        Action buttons (left) — paperclip triggers the hidden file input
+        declared above; the input handles the htmx round-trip itself.
+
+        Two design rules captured from CORE 2 #6.6 P3 smoke testing
+        (2026-04-26 — see ClickUp doc changelog 10.4 → 10.5):
+
+          1. Use plain <button> + <wa-icon> for icon-only buttons.
+             <wa-button> with only an icon in its default slot was
+             observed to render zero-width even with the doc-recommended
+             ``label="..."`` on the inner <wa-icon>. Labeled buttons
+             (e.g. the "Invia" submit below) can keep using <wa-button>
+             with slot="prefix" — those work fine.
+
+          2. Do NOT wrap form buttons in <wa-tooltip>. The CDN bundle
+             we load (webawesome.com 3.5.0) does not register the
+             <wa-tooltip> custom element, so the global FOUC rule
+             ``:not(:defined) { visibility: hidden }`` in _base.html
+             keeps the entire tooltip subtree (including our slotted
+             plain button) permanently invisible. Native HTML ``title=``
+             gives the same hover-tooltip behaviour, is announced by
+             every screen reader, and has zero JS dependency. We can
+             revisit fancier styled tooltips in P5 polish, gated on a
+             working <wa-tooltip>.
+      #}
+      <div class="flex items-center gap-1 pb-0.5">
+        <button type="button"
+                aria-label="Allega documento"
+                title="Allega PDF, TXT o Markdown come contesto per la lezione (max 10 MB)"
+                class="w-8 h-8 inline-flex items-center justify-center
+                       rounded-md text-slate-500 hover:text-slate-800
+                       hover:bg-slate-100 focus:outline-none
+                       focus-visible:ring-2 focus-visible:ring-sky-300/60
+                       transition-colors"
+                onclick="document.getElementById('chat-upload-input').click()">
+          <wa-icon name="paperclip" style="font-size:0.95rem;"></wa-icon>
+        </button>
+        <button type="button" disabled
+                aria-label="Mermaid"
+                title="Inserimento diagramma Mermaid — disponibile in una versione successiva"
+                class="w-8 h-8 inline-flex items-center justify-center
+                       rounded-md text-slate-300 cursor-not-allowed">
+          <wa-icon name="diagram-project" style="font-size:0.95rem;"></wa-icon>
+        </button>
+      </div>
+
+      {#
+        We use a native <textarea> rather than <wa-textarea> here because
+        WebAwesome's wa-textarea has its own form-association quirks with
+        htmx form submission; native textareas behave deterministically.
+        Keystroke handling: Enter submits, Shift+Enter inserts newline —
+        the standard chat affordance. ``required`` + ``minlength`` give
+        cheap client-side validation; the server re-validates.
+      #}
+      <textarea
+        name="query"
+        class="flex-1 resize-none border-0 bg-transparent
+               px-2 py-2 text-sm text-slate-800 placeholder-slate-400
+               focus:outline-none"
+        rows="2"
+        required
+        minlength="3"
+        maxlength="2000"
+        placeholder="Es. Crea una lezione di 45 minuti sulla fotosintesi clorofilliana adattata a una classe con 2 studenti DSA…"
+        autofocus
+        onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault(); if(this.value.trim().length>=3){this.form.requestSubmit();}}"
+      ></textarea>
+
+      <div class="pb-0.5">
+        <wa-button type="submit" size="small" variant="brand"
+                   aria-label="Invia messaggio e genera lezione">
+          <wa-icon slot="prefix" name="paper-plane" style="font-size:0.95rem;"></wa-icon>
+          Invia
+        </wa-button>
+      </div>
+
+    </div>
+
+    <p class="text-[11px] text-slate-500 px-3 flex items-center gap-1.5">
+      <wa-icon name="circle-info" style="font-size:0.75rem;"></wa-icon>
+      <span>
+        Premi <kbd class="rounded bg-slate-100 px-1 py-0.5 text-[10px]
+                          border border-slate-200">Invio</kbd>
+        per inviare la richiesta. L'agente userà anche il profilo educativo a
+        sinistra e gli eventuali documenti allegati. Tempo previsto: 60–90 secondi.
+      </span>
+    </p>
+  </form>
+
+{% elif lesson.status == "running" %}
+
+  {# ── DISABLED while the agent is generating ──────────────────────── #}
+  <div class="rounded-2xl border border-slate-200 bg-white shadow-sm
+              p-2 flex items-end gap-2 opacity-70" aria-disabled="true">
+    <div class="flex-1 px-3 py-2 text-sm text-slate-500
+                flex items-center gap-2">
+      <wa-spinner style="font-size:0.85rem;"></wa-spinner>
+      <span>Generazione in corso… Attendi il termine prima di inviare un altro messaggio.</span>
+    </div>
+    <button type="button" disabled aria-label="In corso"
+            class="w-8 h-8 inline-flex items-center justify-center
+                   rounded-md bg-sky-300 text-white cursor-not-allowed">
+      <wa-icon name="paper-plane" style="font-size:0.95rem;"></wa-icon>
+    </button>
+  </div>
+
+{% else %}
+
+  {# ── DISABLED multi-turn (complete / error) — parked on #10 ─────── #}
+
+  {# Show the (now read-only) attachment list so the teacher can see
+     which files were used. Deletion is allowed only in draft / complete
+     / error so they can iterate on a fresh run. #}
+  {% include "partials/chat_attachments.html" %}
+
+  <div class="rounded-2xl border border-slate-200 bg-white shadow-sm
+              p-2 flex items-end gap-2 opacity-70" aria-disabled="true">
+
+    <div class="flex items-center gap-1 pb-0.5">
+      <button type="button" disabled
+              aria-label="Allega documento"
+              title="Allegati disponibili nello stato 'bozza'"
+              class="w-8 h-8 inline-flex items-center justify-center
+                     rounded-md text-slate-300 cursor-not-allowed">
+        <wa-icon name="paperclip" style="font-size:0.95rem;"></wa-icon>
+      </button>
+      <button type="button" disabled
+              aria-label="Mermaid"
+              title="Inserimento diagramma Mermaid — disponibile in una versione successiva"
+              class="w-8 h-8 inline-flex items-center justify-center
+                     rounded-md text-slate-300 cursor-not-allowed">
+        <wa-icon name="diagram-project" style="font-size:0.95rem;"></wa-icon>
+      </button>
+    </div>
+
+    <textarea
+      class="flex-1 w-full resize-none rounded-lg border border-slate-200 bg-slate-50
+             px-3 py-2 text-sm text-slate-500 placeholder-slate-400
+             focus:outline-none cursor-not-allowed"
+      rows="1"
+      disabled
+      aria-disabled="true"
+      title="Conversazione multi-turno — sbloccata da #10 Conversation Memory"
+      placeholder="Chiedi una modifica… (disponibile dopo #10 — Memoria conversazionale)"
+    ></textarea>
+
+    <button type="button" disabled
+            aria-label="Invia messaggio"
+            title="Invio messaggio — disponibile dopo #10"
+            class="w-8 h-8 inline-flex items-center justify-center
+                   rounded-md bg-sky-300 text-white cursor-not-allowed">
+      <wa-icon name="paper-plane" style="font-size:0.95rem;"></wa-icon>
+    </button>
+
+  </div>
+
+  <p class="mt-1.5 text-[11px] text-slate-400 text-center">
+    Multi-turno bloccato fino a
+    <a href="/docs/product/ClickUp_Agentic_GraphRAG_Update.md"
+       class="underline hover:text-slate-600">#10 — Memoria conversazionale</a>.
+    Per ora ogni rigenerazione riparte da zero con lo stesso profilo.
+  </p>
+
+{% endif %}

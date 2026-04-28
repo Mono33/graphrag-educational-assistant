@@ -1,0 +1,84 @@
+{#
+  Writer Agent — completed draft card (CORE 2 #6.6 P2 phase 2).
+
+  Rendered after the `write` LangGraph node finishes. OOB-replaces the
+  matching ``writer-card-rev{N}`` placeholder via ``hx-swap-oob="outerHTML"``
+  on the root element — htmx pulls this element out of the SSE payload,
+  finds the existing #writer-card-rev{N}, and swaps it in place.
+
+  We render the writer's draft in collapsed form by default (the FINAL
+  lesson card below carries the polished, post-critic version) — this card
+  is more "this is what the writer produced this round" than "here's your
+  lesson". Keeps the visual hierarchy honest: critic comes next, then the
+  final lesson card is the artifact.
+
+  Required context:
+    payload = { revision }
+    lesson_plan_md = <draft markdown for THIS revision>
+    lesson_plan_html = <pre-rendered HTML, optional — falls back to escaped md>
+#}
+
+{% set p = payload or {} %}
+{% set rev = p.get('revision', 1) %}
+
+<div id="writer-card-rev{{ rev }}"
+     hx-swap-oob="outerHTML"
+     class="flex items-start gap-3">
+
+  {# ── Avatar (writer = emerald / quill, completed) ──────────────────── #}
+  <div class="flex-shrink-0 w-9 h-9 rounded-full bg-emerald-100 text-emerald-700
+              flex items-center justify-center ring-2 ring-white shadow-sm">
+    <wa-icon name="pen-nib" style="font-size:1rem;"></wa-icon>
+  </div>
+
+  {# ── Card body ────────────────────────────────────────────────────── #}
+  <div class="flex-1 min-w-0">
+    <article class="rounded-xl border border-emerald-200 bg-white shadow-sm overflow-hidden">
+
+      <header class="px-4 py-2 border-b border-emerald-100 bg-emerald-50/60
+                     flex items-center justify-between gap-2 flex-wrap">
+        <div class="flex items-baseline gap-2">
+          <strong class="text-slate-800">Writer Agent</strong>
+          <span class="text-xs text-slate-500">
+            · bozza {{ rev }}
+          </span>
+        </div>
+        <wa-tag size="small" variant="success" pill>
+          <wa-icon name="circle-check" style="font-size:0.7rem;"></wa-icon>
+          bozza pronta
+        </wa-tag>
+      </header>
+
+      <div class="px-4 py-3 text-sm text-slate-700">
+
+        {# Compact collapsed-by-default preview of the draft. The polished
+           final version lives in the lesson card at the bottom of the
+           chat — the writer card is mainly a checkpoint that the round
+           completed and a way to inspect the draft if the critic asks
+           for revisions. #}
+        <details>
+          <summary class="cursor-pointer select-none text-sm text-slate-600
+                          hover:text-slate-900 flex items-center gap-1.5">
+            <wa-icon name="file-lines" style="font-size:0.85rem;"></wa-icon>
+            Mostra la bozza ({{ (lesson_plan_md or '') | length }} caratteri)
+          </summary>
+          <article class="lesson-prose mt-3 max-h-[28rem] overflow-y-auto
+                          border border-slate-100 rounded p-3 bg-slate-50/40">
+            {% if lesson_plan_html %}
+              {{ lesson_plan_html | safe }}
+            {% else %}
+              <pre class="whitespace-pre-wrap text-xs leading-relaxed">{{ lesson_plan_md or '' }}</pre>
+            {% endif %}
+          </article>
+        </details>
+
+      </div>
+
+    </article>
+    <div class="text-[11px] text-slate-400 mt-1 ml-1 flex items-center gap-1">
+      <wa-icon name="pen-nib" style="font-size:0.7rem;"></wa-icon>
+      <span>Writer · bozza {{ rev }}</span>
+    </div>
+  </div>
+
+</div>

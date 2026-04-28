@@ -1,9 +1,13 @@
+# =============================================================================
 # Environment variables with secrets
+# =============================================================================
 .env
 .env.local.backup
 .env.aura
 
-# Python
+# =============================================================================
+# Python build / cache
+# =============================================================================
 __pycache__/
 *.py[cod]
 *$py.class
@@ -26,7 +30,9 @@ wheels/
 *.egg
 MANIFEST
 
+# =============================================================================
 # Virtual environments
+# =============================================================================
 .venv/
 venv/
 env/
@@ -34,19 +40,17 @@ ENV/
 venv.bak/
 env.bak/
 
-# Jupyter Notebook
+# =============================================================================
+# Jupyter / IDE / OS
+# =============================================================================
 .ipynb_checkpoints
 *.ipynb
-
-# IDEs
 .vscode/
 .idea/
 *.swp
 *.swo
 *.swn
 .cursor/
-
-# OS
 .DS_Store
 .DS_Store?
 ._*
@@ -56,75 +60,101 @@ ehthumbs.db
 Thumbs.db
 desktop.ini
 
-# Logs
+# =============================================================================
+# Logs (Phase 3B: logs/ folder is the canonical location, kept gitignored)
+# =============================================================================
 *.log
 logs/
 ingestion_log_*.txt
 
+# =============================================================================
 # Testing
+# =============================================================================
 .pytest_cache/
 .coverage
 htmlcov/
 *.cover
 .hypothesis/
 
-# Temporary files
+# =============================================================================
+# Temporary / lock files
+# =============================================================================
 *.tmp
 *.temp
 *.bak
 *.orig
+~$*
 
-# Large model files - DECISION: Push for now (3 MB acceptable)
-# Uncomment these lines if models grow >10 MB or when using Git LFS:
-# models/*.npz
-# models/*.pkl
-
-# Note: Current model files (~3 MB total):
-# - models/neuro_node2vec_model.pkl (~2 MB)
-# - models/neuro_node2vec_embeddings.npz (~600 KB)
-# - models/neuro_node2vec_config.json (~5 KB)
-# These are small enough to commit directly.
-# When adding 5+ domains, migrate to Git LFS.
-
+# =============================================================================
 # Gradio temporary files
+# =============================================================================
 .gradio/
 flagged/
 
+# =============================================================================
 # Agent generated outputs (lesson plans, activities)
+# =============================================================================
 lesson_plan_*.md
 activity_*.md
 
-# Embeddings cache (auto-regenerated)
-# models/embeddings_cache/
-
+# =============================================================================
 # Neo4j data (if running locally)
+# =============================================================================
 neo4j_data/
 .neo4j/
 
+# =============================================================================
 # Old/backup directories
+# =============================================================================
 OLD/
 backup/
-archive/
+# Note: archive/ is now TRACKED (Phase 3B) for documenting deprecated modules.
+# Only backup/* is ignored.
 
+# =============================================================================
 # HF Space directory (managed separately)
+# =============================================================================
 hf-space-graphrag-educational-assistant/
 ../hf-space-graphrag-educational-assistant/
 
-# Non-mandatory files folder (not to be pushed)
+# =============================================================================
+# Local-only folders (not committed)
+# =============================================================================
 NOTPUSHED/
 NeuroData/
+UDLdata/
 KG_NEURO_Transformed.xlsx
 *_Transformed.xlsx
-kg_neuro_neo4j.json
-*_neo4j.json
 
-# Test output files
+# =============================================================================
+# KG transient backups (Phase 3B: now in data/kg/backups/)
+# Core KG data IS tracked under data/kg/{domain}/ (Phase 2).
+# Phase 3B: also ignore data/kg/backups/ contents (rolling backups).
+# =============================================================================
+data/kg/backups/*.json
+kg_neuro_neo4j_backup_*.json
+kg_udl_neo4j_backup_*.json
+*_neo4j_backup_*.json
+
+# =============================================================================
+# Test output / comparison artefacts
+# =============================================================================
 *_test_output.json
 *_comparison_results.json
 educational_graph_audit_report.json
 relationship_validation_report.json
 
-# Temporary analysis/report files (not needed for deployment)
+# =============================================================================
+# Personal/draft documents (kept LOCAL ONLY — not committed)
+# =============================================================================
+AI_Strategy_Next_Steps.md
+docs/AI_Team_Work_Method_Proposal.md
+docs/email_response_diego*.md
+docs/email_response_diego*.docx
+
+# =============================================================================
+# Temporary analysis/report files (kept LOCAL ONLY — not for deployment)
+# =============================================================================
 AUDIT_SCRIPTS_ANALYSIS.md
 COMPARISON_REPORT.md
 INGESTION_IMPROVEMENTS.md
@@ -134,48 +164,42 @@ GIT_DEPLOYMENT_GUIDE.md
 FILES_TO_PUSH_CHECKLIST.md
 PUSH_TO_GITHUB_NOW.md
 EXCLUSION_EXPLANATIONS.md
-neuro_audit_report.md
-neuro_audit_report.json
+MIGRATION_TO_FEM_GUIDE.md
 query_metrics.csv
 *_metrics_*.csv
-
-# Generated images (DALL-E outputs, auto-regenerated)
-generated_images/
-
-# Test data files
-kg_neuro_media_mapping_test.json
-
-# One-off test scripts
-test_phase1_media.py
-test_phase2_writer.py
-test_phase3_media_ui.py
-test_resource_lookup.py
-test_resource_lookup_simple.py
-
-# Verification scripts (temporary utilities)
-verify_ingestion.py
-verify_alignment.py
-test_new_embeddings.py
-test_hybrid_translation.py
-generate_connectivity_recommendations.py
-check_*.py
-
-# Migration scripts (local utilities, not for repo)
-export_neo4j_data.py
-import_neo4j_data.py
-check_new_labels.py
-MIGRATION_TO_FEM_GUIDE.md
 *_export.json
 
-# Migrations and scripts (not needed for deployment)
+# =============================================================================
+# Generated DALL-E / image outputs (auto-regenerated, can be large)
+# Phase 3B: artifacts/generated_images/ is the canonical location.
+# =============================================================================
+generated_images/
+artifacts/generated_images/
+
+# =============================================================================
+# Migrations (Phase 3B: kept local only — DEV-managed deployment artifact)
+# =============================================================================
 neo4j_migrations/
-scripts/
 
-# Scripts output (if scripts folder is enabled)
-# scripts/output/
-# scripts/*.log
+# =============================================================================
+# scripts/ subfolders for local-only output (Phase 2)
+# =============================================================================
+scripts/local/
+scripts/output/
+scripts/*.log
 
-# Shell scripts (optional - uncomment if you don't need them)
+# =============================================================================
+# Optional shell scripts (uncomment if not needed)
+# =============================================================================
 # setup_neo4j.sh
 # update-hf-space.sh
 
+# =============================================================================
+# WebUI runtime data (CORE 2 #6.6 P1)
+# SQLite DB for users + lessons. Generated on first uvicorn start.
+# Never commit user data; deploy uses managed Postgres in CORE 6.
+# =============================================================================
+data/webui/*.db
+data/webui/*.db-journal
+data/webui/*.db-wal
+data/webui/*.db-shm

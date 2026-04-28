@@ -1,0 +1,72 @@
+{% extends "_base.html" %}
+
+{% block content %}
+<section class="max-w-md mx-auto space-y-6">
+
+  <div class="space-y-2">
+    <h1 class="text-3xl font-serif tracking-tight">Registrati</h1>
+    <p class="text-slate-600">
+      Crea un account per salvare le lezioni e accedere alla pipeline agentica.
+    </p>
+  </div>
+
+  {% if form_errors %}
+    <wa-callout variant="danger" appearance="filled outlined">
+      <wa-icon slot="icon" name="circle-exclamation"></wa-icon>
+      <strong>Registrazione non riuscita.</strong>
+      <ul class="mt-2 ml-4 list-disc text-sm">
+        {% for err in form_errors %}
+          <li>{{ err }}</li>
+        {% endfor %}
+      </ul>
+    </wa-callout>
+  {% endif %}
+
+  <wa-card>
+    <form method="post" action="/auth/register" class="flex flex-col gap-4">
+      <input type="hidden" name="next" value="{{ next }}">
+
+      <wa-input
+        type="email"
+        name="email"
+        label="Email"
+        required
+        autocomplete="email"
+        autofocus
+        value="{{ form_values.get('email', '') }}"
+      ></wa-input>
+
+      <wa-input
+        type="text"
+        name="display_name"
+        label="Nome visualizzato (opzionale)"
+        autocomplete="name"
+        value="{{ form_values.get('display_name', '') }}"
+        help-text="Mostrato nella barra di navigazione (es. Prof.ssa Rossi). Se vuoto si usa l'email."
+      ></wa-input>
+
+      <wa-input
+        type="password"
+        name="password"
+        label="Password"
+        required
+        autocomplete="new-password"
+        password-toggle
+        help-text="Almeno 8 caratteri. Suggerita una passphrase memorabile."
+      ></wa-input>
+
+      <div class="flex items-center justify-between gap-3 pt-2">
+        <a href="/auth/login{% if next and next != '/webui/' %}?next={{ next }}{% endif %}"
+           class="text-sm text-slate-600 hover:text-slate-900">
+          Hai già un account? Accedi
+        </a>
+        <wa-button type="submit" variant="brand" appearance="filled">
+          <wa-icon slot="prefix" name="user-plus"></wa-icon>
+          Crea account
+        </wa-button>
+      </div>
+    </form>
+  </wa-card>
+
+</section>
+{% endblock %}
