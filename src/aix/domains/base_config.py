@@ -204,20 +204,23 @@ class BaseDomainConfig(ABC):
     def get_system_prompt(self) -> str:
         """
         Return domain-specific system prompt for LLM response generation.
-        Defines the LLM's role, expertise, pedagogical framework, and principles.
-        
-        This is the "identity" of the LLM for this domain — it tells the model
-        WHO it is, WHAT it knows, and HOW it should think.
-        
-        Returns:
-            str: System prompt in Italian
-            
-        Example:
-            '''Sei un'Esperta di Neurodidattica e progettazione didattica evidence-based.
-            Integra neuroscienze cognitive, psicologia dell'apprendimento...'''
+        Used by the legacy GraphRAG mode (llm_chain.py) as the standalone system prompt.
+        Fetched from Langfuse at runtime (prompt name: ``{domain}.system_prompt``).
         """
         pass
-    
+
+    @abstractmethod
+    def get_writer_prompt(self) -> str:
+        """
+        Return the domain expertise block for the agent-mode writer.
+        Appended to the base writer prompt in domain_prompts.get_domain_extension().
+        Fetched from Langfuse at runtime (prompt name: ``{domain}.writer_prompt``).
+
+        Starts with the same text as get_system_prompt() but can diverge independently
+        in Langfuse to tune agent-specific behaviour without affecting legacy mode.
+        """
+        pass
+
     def get_response_template(self) -> str:
         """
         Return domain-specific response formatting instructions.
