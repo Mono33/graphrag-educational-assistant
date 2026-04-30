@@ -7,6 +7,7 @@ Determines what to search in the knowledge graph.
 
 import json
 import logging
+import re
 from typing import Optional, Dict, Any, List
 from dataclasses import dataclass
 
@@ -16,6 +17,36 @@ from aix.core.config import config as app_config, extract_response_content
 from aix.agent.prompts.planner_prompt import PLANNER_SYSTEM_PROMPT, PLANNER_USER_TEMPLATE
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_json(content: str) -> dict:
+    """Multi-strategy JSON extractor for LLM responses that may wrap JSON in markdown."""
+    content = content.strip()
+
+    # Strategy 1: direct parse
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        pass
+
+    # Strategy 2: strip ```json ... ``` fences
+    stripped = re.sub(r"^```(?:json)?\s*", "", content, flags=re.MULTILINE)
+    stripped = re.sub(r"\s*```\s*$", "", stripped, flags=re.MULTILINE).strip()
+    try:
+        return json.loads(stripped)
+    except json.JSONDecodeError:
+        pass
+
+    # Strategy 3: extract first complete {...} block
+    start = content.find("{")
+    end = content.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        try:
+            return json.loads(content[start : end + 1])
+        except json.JSONDecodeError:
+            pass
+
+    raise json.JSONDecodeError("No valid JSON found in LLM response", content, 0)
 
 
 @dataclass
@@ -112,7 +143,6 @@ class PlannerAgent:
             completion_kwargs = app_config.openai.build_completion_kwargs(
                 temperature=0.3,
                 max_tokens=2000,
-                json_mode=True,
             )
             response = await client.chat.completions.create(
                 messages=[
@@ -124,7 +154,7 @@ class PlannerAgent:
 
             # Parse JSON response (extract_response_content also logs thinking tokens)
             content = extract_response_content(response, logger)
-            plan_data = json.loads(content)
+            plan_data = _extract_json(content)
             
             # Extract query intent (with fallback for backward compatibility)
             query_intent = plan_data.get("query_intent", "lesson_creation")
@@ -167,15 +197,17 @@ class PlannerAgent:
             return plan
             
         except json.JSONDecodeError as e:
-            logger.error(f"[PlannerAgent] Failed to parse JSON response: {e}")
-            # Fallback plan - default to lesson_creation for backward compatibility
+            logger.error(
+                "[PlannerAgent] Failed to parse JSON response: %s — raw content (first 300 chars): %r",
+                e, content[:300] if "content" in dir() else "<not set>",
+            )
             return RetrievalPlan(
                 query_intent="lesson_creation",
                 key_concepts=[],
                 search_queries=[query],
                 lesson_type="full_lesson",
                 intent_confidence="LOW",
-                reasoning="Fallback plan due to parsing error"
+                reasoning="Fallback plan due to JSON parsing error"
             )
         except Exception as e:
             logger.error(f"[PlannerAgent] Planning failed: {e}")

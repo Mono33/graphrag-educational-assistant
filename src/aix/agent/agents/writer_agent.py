@@ -77,6 +77,7 @@ class WriterAgent:
         external_resources: Optional[Dict[str, Any]] = None,  # Phase A: External resources
         domain: str = "neuro",  # Phase B: Domain for extensions
         teacher_provided_context: Optional[str] = None,  # WebUI #6.6 P3: chat uploads
+        educational_profile: Optional[Dict[str, Any]] = None,  # Teacher's lesson profile
     ) -> str:
         """
         Generate content based on the detected intent and retrieved context.
@@ -126,7 +127,28 @@ class WriterAgent:
         
         # NEW Phase 2: Format curated media if available
         media_text = self._format_media(curated_media) if has_media else ""
-        
+
+        # Build educational profile section for lesson template
+        edu_profile_section = ""
+        if educational_profile:
+            ep = educational_profile
+            lines = ["\n## Teacher's Educational Profile"]
+            if ep.get("specific_topic"):
+                lines.append(f"- Topic: {ep['specific_topic']}")
+            if ep.get("subject_area"):
+                lines.append(f"- Subject: {ep['subject_area']}")
+            if ep.get("group", {}).get("grade"):
+                lines.append(f"- Grade level: {ep['group']['grade']}")
+            if ep.get("disabilities"):
+                disabilities = ep["disabilities"]
+                if isinstance(disabilities, list):
+                    disabilities = ", ".join(disabilities)
+                lines.append(f"- Learner needs: {disabilities}")
+            if ep.get("lesson_duration"):
+                lines.append(f"- Duration: {ep['lesson_duration']} minutes")
+            if len(lines) > 1:
+                edu_profile_section = "\n".join(lines) + "\n"
+
         # NEW Phase A: Handle HYBRID mode (out-of-scope with external resources)
         if is_hybrid and intent in ("lesson_creation", "activity_design"):
             wikipedia_content, papers_content, oer_content = format_external_resources(external_resources)
@@ -150,6 +172,7 @@ class WriterAgent:
         elif intent in ("lesson_creation", "activity_design"):
             user_prompt = user_template.format(
                 teacher_query=teacher_query,
+                educational_profile_section=edu_profile_section,
                 key_concepts=key_concepts_text,
                 recommendations=recommendations_text,
                 retrieved_nodes=nodes_text,

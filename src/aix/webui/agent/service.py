@@ -174,6 +174,20 @@ class StreamEvent:
 # Internal helpers — query synthesis + payload builders
 # ---------------------------------------------------------------------------
 
+_ITALIAN_INDICATORS = {
+    "come", "cosa", "quali", "che", "per", "con", "gli", "delle", "nella",
+    "posso", "sono", "può", "hanno", "studenti", "lezione", "crea", "crea",
+    "obiettivi", "classe", "metodologie", "strategie", "apprendimento",
+    "una", "del", "dei", "dal", "nel", "sul", "agli", "agli",
+}
+
+
+def _detect_language(query: str) -> str:
+    """Detect response language from teacher query. Returns 'it' or 'en'."""
+    words = set(query.lower().split())
+    return "it" if words & _ITALIAN_INDICATORS else "en"
+
+
 def _query_from_lesson(lesson: Any) -> str:
     """
     Build the natural-language teacher query the agent expects when the
@@ -424,11 +438,11 @@ async def run_agent_stream(
             lesson.teacher_query = query
 
         # Domain comes from the form ("neuro" / "udl" — captured at submit
-        # time in P1). Language is hard-coded "it" until the form exposes a
-        # switch.
+        # time in P1). Language is inferred from the teacher's query so that
+        # English queries get English lessons.
         orchestrator = AgentOrchestrator(
             domain=lesson.domain or "neuro",
-            language="it",
+            language=_detect_language(query),
         )
         pipeline = orchestrator._get_pipeline()  # noqa: SLF001 — intentional seam
         graph = pipeline._get_graph()  # noqa: SLF001

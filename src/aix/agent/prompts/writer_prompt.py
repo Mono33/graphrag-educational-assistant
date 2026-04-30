@@ -386,7 +386,7 @@ WRITER_USER_TEMPLATE_LESSON = """Create a lesson plan based on the following:
 
 ## Teacher's Original Request
 {teacher_query}
-
+{educational_profile_section}
 ## Retrieved Educational Context
 
 ### Key Concepts Retrieved
@@ -405,7 +405,7 @@ WRITER_USER_TEMPLATE_LESSON = """Create a lesson plan based on the following:
 - Special Needs to Address: {special_needs}
 - Language: {language}
 
-Create a complete, practical lesson plan that incorporates the retrieved educational concepts and methodologies. Make sure every recommendation is grounded in the provided context.
+Create a complete, practical lesson plan that incorporates the retrieved educational concepts and methodologies. Use the specific subject, topic, grade level and learner profile provided above — do NOT use generic placeholders like [TOPIC] or [SUBJECT]. Make sure every recommendation is grounded in the provided context.
 """
 
 WRITER_USER_TEMPLATE_DEFINITION = """Provide a clear definition and explanation for the following:

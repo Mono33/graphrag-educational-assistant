@@ -224,6 +224,7 @@ async def lesson_card_fragment(
     large lesson plans when sent as SSE event data.
     """
     if user is None:
+        logger.warning("[card-fragment] 401 — unauthenticated request for lesson_id=%s", lesson_id)
         raise HTTPException(status_code=401)
 
     result = await session.execute(
@@ -231,8 +232,13 @@ async def lesson_card_fragment(
     )
     lesson = result.scalar_one_or_none()
     if lesson is None:
+        logger.warning("[card-fragment] 404 lesson_id=%s user_id=%s", lesson_id, user.id)
         raise HTTPException(status_code=404, detail="Lezione non trovata")
 
+    logger.info(
+        "[card-fragment] rendering lesson_id=%s status=%s plan_len=%s",
+        lesson_id, lesson.status, len(lesson.lesson_plan_md or ""),
+    )
     return templates.TemplateResponse(
         "partials/chat_lesson_card.html",
         {

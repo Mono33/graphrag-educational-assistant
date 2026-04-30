@@ -6,6 +6,7 @@ Reviews lesson plans for quality and provides feedback.
 
 import json
 import logging
+import re
 from typing import Optional, Dict, Any
 from dataclasses import dataclass
 
@@ -29,6 +30,33 @@ except ImportError:
     get_domain_extension = lambda d, a: ""  # Fallback: no extension
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_json(content: str) -> dict:
+    """Multi-strategy JSON extractor for LLM responses that may wrap JSON in markdown."""
+    content = content.strip()
+
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        pass
+
+    stripped = re.sub(r"^```(?:json)?\s*", "", content, flags=re.MULTILINE)
+    stripped = re.sub(r"\s*```\s*$", "", stripped, flags=re.MULTILINE).strip()
+    try:
+        return json.loads(stripped)
+    except json.JSONDecodeError:
+        pass
+
+    start = content.find("{")
+    end = content.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        try:
+            return json.loads(content[start : end + 1])
+        except json.JSONDecodeError:
+            pass
+
+    raise json.JSONDecodeError("No valid JSON found in LLM response", content, 0)
 
 
 @dataclass
@@ -163,7 +191,6 @@ class CriticAgent:
             completion_kwargs = app_config.openai.build_completion_kwargs(
                 temperature=0.3,
                 max_tokens=2000,
-                json_mode=True,
             )
             response = await client.chat.completions.create(
                 messages=[
@@ -174,7 +201,7 @@ class CriticAgent:
             )
 
             content = extract_response_content(response, logger)
-            critique_data = json.loads(content)
+            critique_data = _extract_json(content)
             
             result = CritiqueResult(
                 scores=critique_data.get("scores", {}),
@@ -194,8 +221,10 @@ class CriticAgent:
             return result
             
         except json.JSONDecodeError as e:
-            logger.error(f"[CriticAgent] Failed to parse JSON response: {e}")
-            # Fallback: approve
+            logger.error(
+                "[CriticAgent] Failed to parse JSON response: %s — raw content (first 300 chars): %r",
+                e, content[:300] if "content" in dir() else "<not set>",
+            )
             return CritiqueResult(
                 scores={},
                 average_score=3.5,

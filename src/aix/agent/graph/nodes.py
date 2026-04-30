@@ -284,6 +284,7 @@ async def write_node(state: AgentState) -> Dict[str, Any]:
                 # NEW Phase B: Pass domain for extensions
                 domain=state.get("domain", "neuro"),
                 teacher_provided_context=state.get("teacher_provided_context"),
+                educational_profile=state.get("educational_profile"),
             )
         
         return {
