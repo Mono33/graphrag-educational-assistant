@@ -3,6 +3,22 @@ Lesson Planner Graph
 
 LangGraph state machine that orchestrates the multi-agent pipeline.
 This is the main graph that connects all agents together.
+
+Compilation modes
+-----------------
+``build_lesson_planner_graph()`` (sync) compiles WITHOUT a checkpointer —
+preserved for backward compatibility with any caller that doesn't need
+multi-turn memory (legacy CLI test harness, smoke scripts, etc.).
+
+``build_lesson_planner_graph_async()`` (async) compiles WITH the
+``AsyncSqliteSaver`` singleton when available, falling back to the sync
+path on graceful degradation. Anything that wants multi-turn behaviour
+(webui SSE, public JSON+SSE API, MCP server) should use this. Callers
+must then pass ``config={"configurable": {"thread_id": str(...)}}`` on
+every ``ainvoke`` / ``astream`` — see ``aix.agent.graph.checkpointer.thread_config``.
+
+Both paths return the *same* runnable shape; the only difference is the
+presence of a checkpointer attached to the compiled graph.
 """
 
 import logging
@@ -22,21 +38,13 @@ from aix.agent.graph.nodes import (
 logger = logging.getLogger(__name__)
 
 
-def build_lesson_planner_graph() -> Any:
+def _build_workflow() -> StateGraph:
     """
-    Build the lesson planner state machine.
+    Construct the agent ``StateGraph`` (nodes + edges) without compiling.
 
-    Pipeline:
-        START → Plan → Retrieve → Write → Critique → [Revise/END]
-                                           ↑    ↓
-                                           └────┘ (revision loop)
-
-    Returns:
-        Compiled LangGraph runnable
+    Factored out so the sync and async ``build_*`` entry points can share
+    the topology and only differ in the ``compile(checkpointer=...)`` call.
     """
-    logger.info("[LessonPlannerGraph] Building graph...")
-
-    # Create the graph with AgentState
     workflow = StateGraph(AgentState)
 
     # Add nodes
@@ -49,7 +57,7 @@ def build_lesson_planner_graph() -> Any:
     workflow.add_edge("plan", "retrieve")
     workflow.add_edge("retrieve", "write")
     workflow.add_edge("write", "critique")
-    
+
     # Add conditional edge for revision loop
     workflow.add_conditional_edges(
         "critique",
@@ -60,12 +68,72 @@ def build_lesson_planner_graph() -> Any:
             "error": END          # End on error
         }
     )
-    
-    # Compile the graph
-    compiled = workflow.compile()
-    
-    logger.info("[LessonPlannerGraph] Graph compiled successfully")
-    
+    return workflow
+
+
+def build_lesson_planner_graph() -> Any:
+    """
+    Build the lesson planner state machine *without* a checkpointer.
+
+    Preserved for backward compatibility with sync callers (CLI test
+    harness, smoke scripts). Returns a compiled graph that can be
+    invoked WITHOUT a ``thread_id`` config — every invocation is a
+    fresh, ephemeral run.
+
+    For multi-turn memory, use :func:`build_lesson_planner_graph_async`.
+
+    Pipeline:
+        START → Plan → Retrieve → Write → Critique → [Revise/END]
+                                           ↑    ↓
+                                           └────┘ (revision loop)
+
+    Returns:
+        Compiled LangGraph runnable (no checkpointer attached).
+    """
+    logger.info("[LessonPlannerGraph] Building graph (no checkpointer)...")
+    compiled = _build_workflow().compile()
+    logger.info("[LessonPlannerGraph] Graph compiled successfully (no checkpointer)")
+    return compiled
+
+
+async def build_lesson_planner_graph_async() -> Any:
+    """
+    Build the lesson planner state machine *with* a checkpointer when
+    available (CORE 2 #10.2).
+
+    Looks up the process-singleton ``AsyncSqliteSaver`` (or ``None`` if
+    ``langgraph-checkpoint-sqlite`` is not installed), and compiles the
+    graph with it attached. Falls back to the no-checkpointer path on
+    graceful degradation.
+
+    Callers MUST pass ``config={"configurable": {"thread_id": str(...)}}``
+    on every ``ainvoke`` / ``astream`` when the returned graph has a
+    checkpointer attached, otherwise LangGraph raises ``ValueError``.
+    Use :func:`aix.agent.graph.checkpointer.thread_config` as the
+    canonical builder for that dict.
+
+    Returns:
+        Compiled LangGraph runnable (checkpointer attached when possible).
+    """
+    # Local import — avoids a hard module-level dependency when the
+    # checkpointer module is unavailable in degraded environments.
+    from aix.agent.graph.checkpointer import get_checkpointer
+
+    saver = await get_checkpointer()
+    workflow = _build_workflow()
+
+    if saver is not None:
+        logger.info("[LessonPlannerGraph] Building graph with AsyncSqliteSaver checkpointer...")
+        compiled = workflow.compile(checkpointer=saver)
+        logger.info(
+            "[LessonPlannerGraph] Graph compiled successfully (multi-turn memory: ENABLED)"
+        )
+    else:
+        logger.info("[LessonPlannerGraph] Building graph without checkpointer (degraded)...")
+        compiled = workflow.compile()
+        logger.info(
+            "[LessonPlannerGraph] Graph compiled successfully (multi-turn memory: DISABLED)"
+        )
     return compiled
 
 
@@ -98,9 +166,31 @@ class LessonPlannerPipeline:
         self._graph: Optional[Any] = None
 
     def _get_graph(self) -> Any:
-        """Lazy initialization of the compiled graph."""
+        """
+        Lazy initialisation of the compiled graph (sync, no checkpointer).
+
+        Kept for backward compatibility with legacy callers that don't
+        need multi-turn memory. The webui SSE service and the public
+        JSON+SSE API both use ``_get_graph_async()`` instead so they
+        benefit from CORE 2 #10's multi-turn checkpointer.
+        """
         if self._graph is None:
             self._graph = build_lesson_planner_graph()
+        return self._graph
+
+    async def _get_graph_async(self) -> Any:
+        """
+        Lazy initialisation of the compiled graph WITH the LangGraph
+        checkpointer attached when available (CORE 2 #10.2).
+
+        Caches on ``self._graph`` like the sync sibling — first caller
+        wins; subsequent callers receive the same compiled instance.
+        Calling this on a pipeline whose ``self._graph`` was already
+        populated by ``_get_graph()`` will re-use the no-checkpointer
+        graph; in practice this only happens in tests.
+        """
+        if self._graph is None:
+            self._graph = await build_lesson_planner_graph_async()
         return self._graph
 
     async def run(
@@ -145,13 +235,24 @@ class LessonPlannerPipeline:
             max_revisions=self.max_revisions,
             educational_profile=profile_dict,
         )
-        
-        # Get compiled graph
-        graph = self._get_graph()
-        
+
+        # Get compiled graph (with checkpointer when available — CORE 2 #10.2).
+        # The async path is the canonical one; the sync ``_get_graph()`` is
+        # kept as a backward-compat seam for legacy callers only.
+        graph = await self._get_graph_async()
+
+        # When a checkpointer is attached we MUST pass a thread_id config,
+        # otherwise LangGraph raises. Generate a per-invocation UUID when
+        # the caller didn't supply ``session_id`` so ephemeral runs still
+        # work (no cross-thread state — each run is its own thread).
+        from aix.agent.graph.checkpointer import thread_config
+        import uuid as _uuid
+        effective_thread_id = session_id or f"ephemeral-{_uuid.uuid4()}"
+        run_config = thread_config(effective_thread_id)
+
         # Run the pipeline
         try:
-            final_state = await graph.ainvoke(initial_state)
+            final_state = await graph.ainvoke(initial_state, config=run_config)
             
             # Extract results
             result = {

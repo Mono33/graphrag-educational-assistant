@@ -56,6 +56,22 @@ class AgentState(TypedDict, total=False):
     # WebUI #6.6 P3 — joined text from teacher file uploads. Used by the Writer
     # only as additional context; never sent to the GraphRAG / KG retriever.
     teacher_provided_context: Optional[str]
+    # CORE 2 #10.3 — multi-turn conversation history for follow-up turns.
+    # List of {"role": "user"|"assistant", "content": <markdown>} dicts in
+    # chronological order, EXCLUDING the current turn's user message
+    # (which is already in `teacher_query`). Empty/None on the first turn —
+    # writer prompt renders identically to the pre-#10 single-turn behaviour.
+    # On follow-up turns, the writer is shown the prior exchange so it
+    # can adapt its output (e.g., "now adapt for ADHD"). Populated by the
+    # service layer from the persisted `lesson_message` table.
+    # Will be summary-buffered in #10.4 once threads exceed N tokens.
+    conversation_history: Optional[List[Dict[str, str]]]
+    # CORE 2 #10.4 — summary of the oldest turns when the window is
+    # exceeded. None on short threads. Populated by the service layer
+    # before invoking the graph. Writer prompt prepends this before
+    # `conversation_history` so the agent has continuity even when older
+    # turns are summarised.
+    conversation_summary: Optional[str]
 
     # ========================================
     # PLANNER OUTPUT
@@ -125,6 +141,8 @@ def create_initial_state(
     max_revisions: int = 2,
     educational_profile: Optional[Dict[str, Any]] = None,
     teacher_provided_context: Optional[str] = None,
+    conversation_history: Optional[List[Dict[str, str]]] = None,
+    conversation_summary: Optional[str] = None,
 ) -> AgentState:
     """
     Create initial state for a new lesson planning request.
@@ -143,6 +161,17 @@ def create_initial_state(
             uploaded by the teacher in the WebUI chat (CORE 2 #6.6 P3). Passed
             into the Writer prompt only; the Planner / Retriever stay KG-only,
             and nothing here is ingested into the shared Knowledge Graph.
+        conversation_history: Optional list of prior turns for multi-turn
+            follow-up (CORE 2 #10.3). Each item is
+            ``{"role": "user"|"assistant", "content": <markdown>}``. None or
+            empty list → first turn (preserves single-turn behaviour). The
+            list excludes the current turn's user query (which is in
+            ``query`` / ``teacher_query``). The Writer prompt renders this
+            as a "Conversation history" section only when non-empty.
+        conversation_summary: Optional summary of the oldest turns when the
+            thread exceeds the windowing threshold (CORE 2 #10.4). Prepended
+            to ``conversation_history`` in the Writer prompt to preserve
+            continuity. None on short threads.
 
     Returns:
         Initialized AgentState
@@ -155,6 +184,8 @@ def create_initial_state(
         session_id=session_id,
         educational_profile=educational_profile,
         teacher_provided_context=teacher_provided_context,
+        conversation_history=conversation_history,
+        conversation_summary=conversation_summary,
 
         # Planner (empty)
         plan=None,

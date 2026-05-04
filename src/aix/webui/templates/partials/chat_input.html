@@ -1,5 +1,5 @@
 {#
-  Bottom chat input — three states (CORE 2 #6.6 P2 phase 2 + P3).
+  Bottom chat input — three states (CORE 2 #6.6 P2 phase 2 + P3 + #10.1).
 
   draft     → ACTIVE first-turn form. Posts ``query`` to /run and the
               response (rendered chat_conversation.html) is swapped into
@@ -14,15 +14,33 @@
               turn is in flight and the SSE stream is feeding cards into
               the chat above.
 
-  complete  → DISABLED multi-turn placeholder. Multi-turn refinement
-              ("Chiedi una modifica…") would re-invoke the LangGraph
-  error       pipeline against an updated state, which today has no
-              persistent thread / checkpointer — that's #10's scope.
-              Tooltip points to the blocking ticket.
+  complete  → ACTIVE new-request input. The teacher can submit a brand-new
+  error       query (or, post-#10.3, a follow-up turn). Re-rendered live by
+              the SSE ``done`` / ``error`` events via the OOB-swap mechanism
+              below — no page reload required.
+
+  ── OOB swap mechanism (CORE 2 #10.1) ─────────────────────────────────────
+  The whole partial is wrapped in a STABLE id (``chat-input-wrapper``) so
+  the SSE ``done`` / ``error`` events can re-render the partial at the
+  end of an agent run and replace the disabled ``running`` state with the
+  ACTIVE ``complete`` / ``error`` state, removing the dead-end UX where
+  the input would otherwise stay frozen until a full page reload.
+
+  When ``_oob`` is True (set by ``_stream_event_to_sse`` in routes.py
+  for terminal SSE events), the wrapper carries ``hx-swap-oob="outerHTML"``
+  so htmx extracts it from the SSE payload and uses it to replace the
+  matching ``#chat-input-wrapper`` element on the page, leaving the rest
+  of the SSE event (the placeholder lesson card or error card) to flow
+  through the normal ``beforeend`` swap on ``#chat-cards``.
 
   Required context:
     lesson    Lesson ORM
+    _oob      bool, optional. When True, mark the wrapper for OOB swap.
+              Default: False (regular include path — wrapper renders inert).
 #}
+
+<div id="chat-input-wrapper"{% if _oob %} hx-swap-oob="outerHTML"{% endif %}>
+
 
 {% if lesson.status == "draft" %}
 
@@ -173,12 +191,22 @@
 
 {% else %}
 
-  {# ── ACTIVE new-request input (complete / error) ──────────────────── #}
+  {# ── ACTIVE follow-up input (complete / error) ────────────────────── #}
   {#
-    The lesson run completed (or errored). The teacher can now send a
-    brand-new query. POST /run already handles any status except "running":
-    it resets lesson_plan_md, flips to running, and returns the SSE pane.
-    The educational profile is unchanged — only the query is new.
+    CORE 2 #10.3 — multi-turn semantics. The teacher continues the
+    conversation against the persisted thread (LangGraph checkpointer
+    keyed on lesson.id, plus the lesson_message CQRS log used to render
+    the chat history). POST /run auto-detects ``mode=follow_up`` from
+    ``lesson.status`` in {complete, error} and appends a new turn rather
+    than replacing the previous lesson.
+
+    Backward compat: lessons created BEFORE #10.3 land have no
+    lesson_message rows; the service layer backfills turn 1 from
+    lesson.teacher_query / lesson.lesson_plan_md on the first follow-up,
+    so the chat history stays consistent.
+
+    Educational profile is unchanged — only the new query and (optionally)
+    new attachments influence this turn.
   #}
 
   <input type="file"
@@ -237,15 +265,15 @@
         required
         minlength="3"
         maxlength="2000"
-        placeholder="Fai una nuova richiesta… il profilo educativo verrà riutilizzato."
+        placeholder="Continua la conversazione… (es. «adatta per studenti DSA», «aggiungi un'attività di gruppo»)"
         onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault(); if(this.value.trim().length>=3){this.form.requestSubmit();}}"
       ></textarea>
 
       <div class="pb-0.5">
         <wa-button type="submit" size="small" variant="brand"
-                   aria-label="Invia nuova richiesta">
-          <wa-icon slot="prefix" name="rotate" style="font-size:0.95rem;"></wa-icon>
-          Nuova
+                   aria-label="Invia messaggio di follow-up">
+          <wa-icon slot="prefix" name="paper-plane" style="font-size:0.95rem;"></wa-icon>
+          Invia
         </wa-button>
       </div>
 
@@ -256,10 +284,13 @@
       <span>
         Premi <kbd class="rounded bg-slate-100 px-1 py-0.5 text-[10px]
                           border border-slate-200">Invio</kbd>
-        per una nuova generazione. Il profilo educativo rimane invariato;
-        la lezione precedente verrà sostituita.
+        per continuare la conversazione. La lezione precedente resta
+        visibile sopra; la nuova risposta verrà aggiunta al thread.
       </span>
     </p>
   </form>
 
 {% endif %}
+
+</div>
+{# /chat-input-wrapper — see partial header for the OOB-swap rationale (#10.1) #}

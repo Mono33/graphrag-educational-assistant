@@ -223,9 +223,16 @@ class WriterAgent:
                 logger.info(f"[WriterAgent] Applied domain extension for '{domain}'")
         
         try:
+            # max_tokens=8000: Italian markdown lessons with structured sections
+            # (I DO / WE DO / YOU DO / Conclusione / Riferimenti) routinely run
+            # 12-20K characters. With Anthropic's tokenizer averaging ~3 chars
+            # per token on heavily-formatted markdown, a 4K cap was clipping
+            # full lessons mid-sentence (observed: 11292-char output stopping
+            # at "Cosa la r"). 8K covers ~24K chars with comfortable headroom
+            # while staying well below Claude Sonnet 4.6's 64K output ceiling.
             completion_kwargs = app_config.openai.build_completion_kwargs(
                 temperature=0.7,
-                max_tokens=4000,
+                max_tokens=8000,
             )
             response = await client.chat.completions.create(
                 messages=[
@@ -236,7 +243,21 @@ class WriterAgent:
             )
 
             content = extract_response_content(response, logger)
-            
+
+            # Detect likely max_tokens truncation up-front so it surfaces in
+            # logs (the writer's content moves on to the critic regardless).
+            finish_reason = None
+            try:
+                finish_reason = response.choices[0].finish_reason
+            except (AttributeError, IndexError):
+                pass
+            if finish_reason in ("length", "max_tokens"):
+                logger.warning(
+                    "[WriterAgent] LLM stopped due to max_tokens (finish_reason=%s, "
+                    "%d chars). Lesson may be truncated — consider raising max_tokens.",
+                    finish_reason, len(content),
+                )
+
             logger.info(
                 f"[WriterAgent] Generated {intent} content "
                 f"({len(content)} characters)"
@@ -287,9 +308,13 @@ class WriterAgent:
         )
         
         try:
+            # max_tokens=8000: same rationale as ``write()`` — revisions can
+            # be just as long as initial drafts (especially "expand activity X"
+            # critiques that GROW the content). Keep the two paths in sync so
+            # we don't truncate the revised version and pass quality regression.
             completion_kwargs = app_config.openai.build_completion_kwargs(
                 temperature=0.5,
-                max_tokens=4000,
+                max_tokens=8000,
             )
             response = await client.chat.completions.create(
                 messages=[
@@ -300,7 +325,19 @@ class WriterAgent:
             )
 
             revised_content = extract_response_content(response, logger)
-            
+
+            finish_reason = None
+            try:
+                finish_reason = response.choices[0].finish_reason
+            except (AttributeError, IndexError):
+                pass
+            if finish_reason in ("length", "max_tokens"):
+                logger.warning(
+                    "[WriterAgent] Revision stopped due to max_tokens "
+                    "(finish_reason=%s, %d chars). Output may be truncated.",
+                    finish_reason, len(revised_content),
+                )
+
             logger.info(
                 f"[WriterAgent] Revised content "
                 f"({len(revised_content)} characters)"

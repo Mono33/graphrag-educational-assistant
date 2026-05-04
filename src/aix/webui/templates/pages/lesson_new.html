@@ -137,51 +137,48 @@
           placeholder="20"
         ></wa-input>
 
-        <wa-select
-          name="group_grade"
-          label="Livello scolastico"
-          value="{{ fv.get('group_grade', '') }}"
-        >
-          <wa-option value="">— Non specificato —</wa-option>
+        {% set _grade = fv.get('group_grade', '') %}
+        <wa-select name="group_grade" label="Livello scolastico">
+          <wa-option value="" {% if not _grade %}selected{% endif %}>— Non specificato —</wa-option>
           {% for code, label in GRADE_LABELS.items() %}
-            <wa-option value="{{ code }}">{{ label }}</wa-option>
+            <wa-option value="{{ code }}" {% if code == _grade %}selected{% endif %}>{{ label }}</wa-option>
           {% endfor %}
         </wa-select>
 
         <div></div>{# spacer to keep two-column rhythm on md+ #}
 
+        {% set _disabilities = fv.get('group_disabilities', []) %}
         <wa-select
           name="group_disabilities"
           label="BES (selezione multipla)"
           multiple
           help-text="Bisogni Educativi Speciali presenti nella classe."
-          value="{{ fv.get('group_disabilities', []) | tojson }}"
         >
           {% for code, label in DISABILITY_LABELS.items() %}
-            <wa-option value="{{ code }}">{{ label }}</wa-option>
+            <wa-option value="{{ code }}" {% if code in _disabilities %}selected{% endif %}>{{ label }}</wa-option>
           {% endfor %}
         </wa-select>
 
+        {% set _class_features = fv.get('group_class_features', []) %}
         <wa-select
           name="group_class_features"
           label="Caratteristiche della classe (selezione multipla)"
           multiple
-          value="{{ fv.get('group_class_features', []) | tojson }}"
         >
           {% for code, label in CLASS_FEATURE_LABELS.items() %}
-            <wa-option value="{{ code }}">{{ label }}</wa-option>
+            <wa-option value="{{ code }}" {% if code in _class_features %}selected{% endif %}>{{ label }}</wa-option>
           {% endfor %}
         </wa-select>
 
+        {% set _student_attrs = fv.get('group_student_attributes', []) %}
         <wa-select
           name="group_student_attributes"
           label="Caratteristiche degli studenti (selezione multipla)"
           multiple
           class="md:col-span-2"
-          value="{{ fv.get('group_student_attributes', []) | tojson }}"
         >
           {% for code, label in STUDENT_ATTR_LABELS.items() %}
-            <wa-option value="{{ code }}">{{ label }}</wa-option>
+            <wa-option value="{{ code }}" {% if code in _student_attrs %}selected{% endif %}>{{ label }}</wa-option>
           {% endfor %}
         </wa-select>
       </div>
@@ -206,24 +203,21 @@
           value="{{ fv.get('classroom_title', '') }}"
         ></wa-input>
 
-        <wa-select
-          name="classroom_forniture_mobility"
-          label="Mobilità dei banchi"
-          value="{{ fv.get('classroom_forniture_mobility', 'NO') }}"
-        >
+        {% set _mobility = fv.get('classroom_forniture_mobility', 'NO') %}
+        <wa-select name="classroom_forniture_mobility" label="Mobilità dei banchi">
           {% for code, label in FORNITURE_MOBILITY_LABELS.items() %}
-            <wa-option value="{{ code }}">{{ label }}</wa-option>
+            <wa-option value="{{ code }}" {% if code == _mobility %}selected{% endif %}>{{ label }}</wa-option>
           {% endfor %}
         </wa-select>
 
+        {% set _byod = fv.get('classroom_own_device', 'NO') %}
         <wa-select
           name="classroom_own_device"
           label="Dispositivi personali (BYOD)"
-          value="{{ fv.get('classroom_own_device', 'NO') }}"
           class="md:col-span-2"
         >
           {% for code, label in OWN_DEVICE_LABELS.items() %}
-            <wa-option value="{{ code }}">{{ label }}</wa-option>
+            <wa-option value="{{ code }}" {% if code == _byod %}selected{% endif %}>{{ label }}</wa-option>
           {% endfor %}
         </wa-select>
       </div>

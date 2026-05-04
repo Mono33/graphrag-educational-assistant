@@ -101,7 +101,8 @@ async def _print_listing() -> None:
         desc = (tool.description or "").splitlines()[0] if tool.description else ""
         if len(desc) > 100:
             desc = desc[:97] + "..."
-        print(f"  - {tool.name:<22} | {desc}")
+        line = f"  - {tool.name:<22} | {desc}"
+        print(line.encode(sys.stdout.encoding or "utf-8", errors="replace").decode(sys.stdout.encoding or "utf-8", errors="replace"))
 
     try:
         resources = await mcp.list_resources()

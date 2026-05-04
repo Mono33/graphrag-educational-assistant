@@ -57,6 +57,15 @@ reportlab>=4.0.0
 # Agentic Layer (Multi-Agent Pipeline)
 langgraph==0.5.4
 
+# CORE 2 #10.2 — Conversation memory checkpointer (dev: SQLite; prod #15: Postgres).
+# Persists every LangGraph thread's full message history + AgentState snapshots
+# under data/agent_threads.db so multi-turn refinement (follow-up / regenerate
+# / time-travel) survives page reloads and process restarts. Migration to
+# AsyncPostgresSaver (CORE 4 #15) is a 1-line saver-class swap because LangGraph's
+# BaseCheckpointSaver protocol is backend-agnostic. Pinning <3.0 to opt in to
+# the 2.x stable API without auto-jumping to a future major.
+langgraph-checkpoint-sqlite>=2.0,<3.0
+
 # Error Monitoring (GlitchTip — Sentry-compatible)
 sentry-sdk[fastapi]>=2.0.0
 
@@ -74,3 +83,12 @@ fastmcp>=3.0.0,<4.0.0
 # Prompt management — domain prompts (system_prompt, writer_prompt, response_template)
 # are stored in Langfuse and fetched at runtime (cache_ttl_seconds=60).
 langfuse>=2.0.0
+
+# CORE 2 #10 follow-up — Point (a): statistical language detection (L2).
+# `lingua-language-detector` is a pure-Python n-gram + character-trigram
+# detector that handles short text, mixed-content, and acronyms far better
+# than the prior stop-word heuristic. We use it as the L2 SEED for the
+# Planner's L1 LLM-driven detection (the LLM is the canonical source of
+# truth — see RetrievalPlan.has_confident_language). Falls back gracefully
+# to default "it" if the package isn't installed (see service._detect_language).
+lingua-language-detector>=2.0.0

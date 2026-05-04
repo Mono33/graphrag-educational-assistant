@@ -1,30 +1,62 @@
 {#
-  Conversation column body (CORE 2 #6.6 P2 phase 2).
+  Conversation column body (CORE 2 #6.6 P2 phase 2 + #10.3d).
 
-  Renders everything inside ``#chat-conversation``: optional user bubble +
-  state-driven chat content (empty hint, live SSE pane, final lesson card,
-  or error card) + the chat input.
+  Renders everything inside ``#chat-conversation``: chat history (when
+  multi-turn rows exist) + state-driven chat content (empty hint, live SSE
+  pane, final lesson card, or error card) + the chat input.
 
   This partial is included in two places:
     1. ``pages/lesson_show.html`` — full page render.
     2. The response body of POST ``/webui/lesson/{id}/run`` — htmx swaps it
-       into ``#chat-conversation`` (innerHTML) so the user's just-typed
-       query appears as a bubble AND the SSE pane lights up in one tick.
+       into ``#chat-conversation`` (innerHTML) so the just-persisted user
+       turn appears in the history AND the SSE pane lights up in one tick.
 
-  State matrix:
+  Multi-turn rendering (#10.3d):
+    When ``messages`` is non-empty (= post-#10.3 lesson with at least one
+    persisted turn, OR a pre-#10.3 lesson that's been backfilled on its
+    first follow-up), we render the full chronological transcript via
+    ``chat_history.html``. Otherwise we fall back to the legacy
+    single-bubble + single-card layout for unchanged backward compat.
+
+    The state-specific block below (running → SSE pane, error → error
+    card, complete + legacy → lesson card) is overlaid on top of the
+    history. In multi-turn mode it represents the IN-FLIGHT or LATEST
+    turn; in legacy mode it's the only render path.
+
+  State matrix (pre-#10.3 / legacy fallback when ``messages`` is empty):
     draft     empty-state hint + chat input (first turn) + attachments tray.
     running   user bubble + chat_pane (SSE). chat input disabled.
-    complete  user bubble + final lesson card. chat input parked on #10.
-    error     user bubble + error card. chat input parked on #10.
+    complete  user bubble + final lesson card. chat input active follow-up.
+    error     user bubble + error card. chat input active retry.
+
+  State matrix (post-#10.3 multi-turn when ``messages`` is non-empty):
+    draft     should not happen here (no rows yet) — fall through to legacy.
+    running   history (incl. just-persisted user turn) + chat_pane (SSE).
+    complete  history (last assistant turn already rendered) + chat input.
+    error     history + error card (current turn failed) + retry input.
 
   Required context:
     lesson           Lesson ORM
-    lesson_plan_html Optional[str]  rendered final markdown for replay
-    meta             Optional[dict] meta for the lesson card (replay path)
+    messages         Optional[list[dict]] pre-shaped chat history rows
+                     (see chat_history.html docstring). Empty list / None
+                     triggers the legacy single-bubble fallback.
+    lesson_plan_html Optional[str]  rendered final markdown for legacy replay
+    meta             Optional[dict] meta for the lesson card (legacy replay)
     user             Optional[User] for the user bubble avatar
 #}
 
-{% if lesson.teacher_query %}
+{% set has_history = messages is not none and (messages | length) > 0 %}
+
+{% if has_history %}
+  {# Multi-turn transcript — every persisted turn (incl. the in-progress
+     user message just submitted by /run). The state-specific block below
+     overlays the IN-FLIGHT or terminal-state content. #}
+  <div id="chat-history" class="space-y-4">
+    {% include "partials/chat_history.html" with context %}
+  </div>
+{% elif lesson.teacher_query %}
+  {# Legacy single-bubble fallback for pre-#10.3 lessons or first turn
+     of a draft lesson where the route hasn't persisted a row yet. #}
   {% include "partials/chat_user_message.html" with context %}
 {% endif %}
 
@@ -52,15 +84,22 @@
 
 {% elif lesson.status == "complete" %}
 
-  {# Replay path — final lesson card only (per-agent cards are not
-     persisted today; that's P4 follow-up). #}
-  <div id="chat-stream" class="space-y-4">
-    {% include "partials/chat_lesson_card.html" with context %}
-  </div>
+  {# Legacy fallback ONLY: when there's no multi-turn history, render the
+     single lesson card from lesson.lesson_plan_md. With multi-turn
+     history, the latest assistant turn is already in ``chat_history.html``
+     above — adding another card here would duplicate it. #}
+  {% if not has_history %}
+    <div id="chat-stream" class="space-y-4">
+      {% include "partials/chat_lesson_card.html" with context %}
+    </div>
+  {% endif %}
 
 {% elif lesson.status == "error" %}
 
-  {# Replay path — persisted error_message rendered by chat_error.html. #}
+  {# Error card always renders on error state — even with multi-turn
+     history, the error represents the IN-FLIGHT turn that just failed
+     (no assistant row was persisted because the agent didn't reach
+     ``done``). The chat input below offers retry. #}
   <div id="chat-stream" class="space-y-4">
     {% set error = lesson.error_message or "Errore sconosciuto" %}
     {% include "partials/chat_error.html" with context %}
@@ -78,7 +117,8 @@
 {% endif %}
 
 {# Chat input — state-driven inside the partial. Sits below the stream
-   so it's the natural "next thing to do" on draft, and disabled
-   afterwards. Including it here means /run's response carries the
-   updated input (active → disabled spinner) in the same swap. #}
+   so it's the natural "next thing to do" on draft / complete / error,
+   and disabled during running. Including it here means /run's response
+   carries the updated input (active → disabled spinner → re-active via
+   #10.1 OOB swap) in the same swap. #}
 {% include "partials/chat_input.html" with context %}
