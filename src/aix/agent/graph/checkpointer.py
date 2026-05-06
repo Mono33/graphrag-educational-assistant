@@ -177,7 +177,7 @@ async def get_checkpointer() -> Optional[Any]:
             logger.warning(
                 "[checkpointer] langgraph-checkpoint-sqlite not installed (%s); "
                 "agent runs will not persist conversation state. "
-                "Install with: pip install 'langgraph-checkpoint-sqlite>=2.0,<3.0'",
+                "Install with: pip install 'langgraph-checkpoint-sqlite>=3.0,<4.0'",
                 exc,
             )
             return None

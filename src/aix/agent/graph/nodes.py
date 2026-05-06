@@ -14,6 +14,35 @@ from aix.agent.agents.retriever_agent import RetrieverAgent
 from aix.agent.agents.writer_agent import WriterAgent
 from aix.agent.agents.critic_agent import CriticAgent
 
+
+def _sanitize(obj: Any) -> Any:
+    """Recursively convert numpy scalar/array types to plain Python types.
+
+    LangGraph's SQLite checkpointer uses msgpack which cannot serialize
+    numpy.float64, numpy.int64, etc.  These values come from Neo4j node
+    properties (node2vec embeddings, sklearn similarity scores stored as
+    numpy scalars).  We normalise them here, once, before the retriever
+    output enters AgentState — keeping the rest of the pipeline clean.
+    """
+    try:
+        import numpy as np
+        if isinstance(obj, np.floating):
+            return float(obj)
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.bool_):
+            return bool(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+    except ImportError:
+        pass  # numpy not installed — nothing to sanitize
+
+    if isinstance(obj, dict):
+        return {k: _sanitize(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_sanitize(v) for v in obj]
+    return obj
+
 logger = logging.getLogger(__name__)
 
 # Initialize agents (lazy loading)
@@ -230,20 +259,22 @@ async def retrieve_node(state: AgentState) -> Dict[str, Any]:
         # Log hybrid retrieval if applicable
         if result.is_hybrid:
             logger.info(f"[Node: Retrieve] ⚠️ HYBRID mode: KG pedagogy + external resources")
-        
+
+        # Sanitize before storing in AgentState — msgpack (LangGraph checkpointer)
+        # cannot serialize numpy scalar types that Neo4j / sklearn may return.
         return {
-            "graphrag_results": [
+            "graphrag_results": _sanitize([
                 {"nodes": r.nodes, "relationships": r.relationships}
                 for r in result.search_results
-            ],
-            "retrieved_nodes": result.nodes,
-            "retrieved_relationships": result.relationships,
-            "recommendations": result.recommendations,
+            ]),
+            "retrieved_nodes": _sanitize(result.nodes),
+            "retrieved_relationships": _sanitize(result.relationships),
+            "recommendations": _sanitize(result.recommendations),
             "retrieval_confidence": result.confidence,
             # NEW Phase 1: Curated media from sidecar JSON
-            "curated_media": result.curated_media if result.curated_media else None,
+            "curated_media": _sanitize(result.curated_media) if result.curated_media else None,
             # NEW Phase A: External resources for out-of-scope queries
-            "external_resources": result.external_resources if result.external_resources else None,
+            "external_resources": _sanitize(result.external_resources) if result.external_resources else None,
             "current_step": "retrieve_complete"
         }
         
