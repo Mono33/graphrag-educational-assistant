@@ -14,6 +14,35 @@ from aix.agent.agents.retriever_agent import RetrieverAgent
 from aix.agent.agents.writer_agent import WriterAgent
 from aix.agent.agents.critic_agent import CriticAgent
 
+
+def _sanitize(obj: Any) -> Any:
+    """Recursively convert numpy scalar/array types to plain Python types.
+
+    LangGraph's SQLite checkpointer uses msgpack which cannot serialize
+    numpy.float64, numpy.int64, etc.  These values come from Neo4j node
+    properties (node2vec embeddings, sklearn similarity scores stored as
+    numpy scalars).  We normalise them here, once, before the retriever
+    output enters AgentState — keeping the rest of the pipeline clean.
+    """
+    try:
+        import numpy as np
+        if isinstance(obj, np.floating):
+            return float(obj)
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.bool_):
+            return bool(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+    except ImportError:
+        pass  # numpy not installed — nothing to sanitize
+
+    if isinstance(obj, dict):
+        return {k: _sanitize(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_sanitize(v) for v in obj]
+    return obj
+
 logger = logging.getLogger(__name__)
 
 # Initialize agents (lazy loading)
@@ -58,19 +87,55 @@ async def plan_node(state: AgentState) -> Dict[str, Any]:
     Analyzes the teacher query, detects intent, and creates a retrieval plan.
     
     Input: teacher_query, domain, language
-    Output: plan, query_intent, lesson_type, key_concepts, search_queries
+    Output: plan, query_intent, lesson_type, key_concepts, search_queries,
+            language (possibly overridden by LLM-driven detection — Point (a))
     """
     logger.info("[Node: Plan] Starting planning phase...")
     
     planner = get_planner()
-    
+    seed_language = state.get("language", "it")
+
     try:
         plan = await planner.plan(
             query=state["teacher_query"],
             domain=state.get("domain", "neuro"),
-            language=state.get("language", "it")
+            language=seed_language,
         )
-        
+
+        # Point (a): the Planner LLM is the canonical L1 language detector.
+        # The service layer pre-seeds state["language"] with a statistical
+        # L2 (lingua-py) or L3 (default "it") guess so the Planner has a
+        # reasonable starting hint, but the Planner sees the actual query
+        # text and can correct mistakes (e.g., a follow-up "adatta per
+        # studenti con DSA" that the L2 detector might mis-identify because
+        # of the all-caps acronym + short length). When the Planner is
+        # confident, we OVERRIDE state["language"] for the rest of the
+        # pipeline so writer + critic both reply in the correct language.
+        effective_language = seed_language
+        language_overridden = False
+        if plan.has_confident_language and plan.response_language != seed_language:
+            effective_language = plan.response_language
+            language_overridden = True
+            logger.info(
+                "[Node: Plan] 🌐 Language override: seed=%r → planner=%r "
+                "(confidence=%s) — writer/critic will reply in %r",
+                seed_language, plan.response_language,
+                plan.language_confidence, plan.response_language,
+            )
+        elif plan.response_language:
+            logger.info(
+                "[Node: Plan] Language confirmed: %r (planner_conf=%s, seed=%r)",
+                effective_language, plan.language_confidence, seed_language,
+            )
+        else:
+            # Planner didn't emit response_language (legacy prompt / older
+            # model output) — keep the seed silently.
+            logger.debug(
+                "[Node: Plan] Planner did not emit response_language; "
+                "keeping seed language %r",
+                seed_language,
+            )
+
         # Enhanced logging with scope status
         scope_emoji = {"in_scope": "✅", "partial_scope": "⚠️", "out_of_scope": "❌"}.get(plan.scope_status, "❓")
         logger.info(
@@ -78,7 +143,7 @@ async def plan_node(state: AgentState) -> Dict[str, Any]:
             f"scope: {scope_emoji} {plan.scope_status} ({plan.scope_confidence:.0%})"
         )
         
-        return {
+        updates: Dict[str, Any] = {
             "plan": {
                 "query_intent": plan.query_intent,
                 "intent_confidence": plan.intent_confidence,
@@ -93,7 +158,13 @@ async def plan_node(state: AgentState) -> Dict[str, Any]:
                 "scope_status": plan.scope_status,
                 "scope_confidence": plan.scope_confidence,
                 "subject_concepts": plan.subject_concepts,
-                "pedagogy_concepts": plan.pedagogy_concepts
+                "pedagogy_concepts": plan.pedagogy_concepts,
+                # Point (a): Surface the planner's language verdict in the
+                # plan dict so the chat-card (Planner Agent UI) and any
+                # downstream observability can see what the LLM decided.
+                "response_language": plan.response_language,
+                "language_confidence": plan.language_confidence,
+                "language_overridden": language_overridden,
             },
             "query_intent": plan.query_intent,
             "lesson_type": plan.lesson_type,
@@ -105,8 +176,14 @@ async def plan_node(state: AgentState) -> Dict[str, Any]:
             "scope_confidence": plan.scope_confidence,
             "subject_concepts": plan.subject_concepts,
             "pedagogy_concepts": plan.pedagogy_concepts,
-            "current_step": "plan_complete"
+            "current_step": "plan_complete",
         }
+        # Only emit a language update when we're actually changing it —
+        # avoids a no-op state mutation and keeps LangGraph's checkpoint
+        # diffs minimal on the common (seed-confirmed) path.
+        if language_overridden:
+            updates["language"] = effective_language
+        return updates
         
     except Exception as e:
         logger.error(f"[Node: Plan] Error: {e}")
@@ -156,25 +233,48 @@ async def retrieve_node(state: AgentState) -> Dict[str, Any]:
             pedagogy_concepts=plan_data.get("pedagogy_concepts")
         )
         
+        # Enrich plan.search_queries with educational profile terms
+        ep = state.get("educational_profile") or {}
+        profile_terms: list = []
+        if ep.get("specific_topic"):
+            profile_terms.append(ep["specific_topic"])
+        if ep.get("subject_area") and ep["subject_area"] != ep.get("specific_topic"):
+            profile_terms.append(ep["subject_area"])
+        for d in (ep.get("group") or {}).get("disabilities") or []:
+            if d:
+                profile_terms.append(d)
+        if profile_terms:
+            existing_lower = {q.lower() for q in plan.search_queries}
+            for pt in profile_terms:
+                if pt.lower() not in existing_lower:
+                    plan.search_queries.append(pt)
+                    existing_lower.add(pt.lower())
+            logger.info(
+                "[Node: Retrieve] Profile enrichment added %d terms: %s",
+                len(profile_terms), profile_terms
+            )
+
         result = await retriever.retrieve(plan)
-        
+
         # Log hybrid retrieval if applicable
         if result.is_hybrid:
             logger.info(f"[Node: Retrieve] ⚠️ HYBRID mode: KG pedagogy + external resources")
-        
+
+        # Sanitize before storing in AgentState — msgpack (LangGraph checkpointer)
+        # cannot serialize numpy scalar types that Neo4j / sklearn may return.
         return {
-            "graphrag_results": [
+            "graphrag_results": _sanitize([
                 {"nodes": r.nodes, "relationships": r.relationships}
                 for r in result.search_results
-            ],
-            "retrieved_nodes": result.nodes,
-            "retrieved_relationships": result.relationships,
-            "recommendations": result.recommendations,
+            ]),
+            "retrieved_nodes": _sanitize(result.nodes),
+            "retrieved_relationships": _sanitize(result.relationships),
+            "recommendations": _sanitize(result.recommendations),
             "retrieval_confidence": result.confidence,
             # NEW Phase 1: Curated media from sidecar JSON
-            "curated_media": result.curated_media if result.curated_media else None,
+            "curated_media": _sanitize(result.curated_media) if result.curated_media else None,
             # NEW Phase A: External resources for out-of-scope queries
-            "external_resources": result.external_resources if result.external_resources else None,
+            "external_resources": _sanitize(result.external_resources) if result.external_resources else None,
             "current_step": "retrieve_complete"
         }
         
@@ -263,6 +363,7 @@ async def write_node(state: AgentState) -> Dict[str, Any]:
                 # NEW Phase B: Pass domain for extensions
                 domain=state.get("domain", "neuro"),
                 teacher_provided_context=state.get("teacher_provided_context"),
+                educational_profile=state.get("educational_profile"),
             )
         
         return {

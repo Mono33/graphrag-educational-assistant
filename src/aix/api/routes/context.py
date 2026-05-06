@@ -416,19 +416,50 @@ def _get_domain_title(domain: str, language: str = "it") -> str:
     return lang_titles.get(domain, domain.upper())
 
 
-def _format_prompt_section(context: ContextData, language: str = "it", domain: str = "neuro") -> str:
+def _format_prompt_section(
+    context: ContextData,
+    language: str = "it",
+    domain: str = "neuro",
+    triples: list | None = None,
+) -> str:
     """
     Generate a domain-aware pre-formatted prompt section for direct injection.
-    
+
     DEV team can use this directly in their prompts or build their own
     from the structured `context` data.
-    
+
     When no KG data is found (0 methodologies), generates a transparent
     fallback message that instructs the LLM to use system_prompt principles
     instead of faking data. This is dynamic and works for any out-of-scope topic.
+
+    triples: raw (src, rel, tgt) tuples from retrieval_result. When provided,
+    enriches the output with KG relationship paths and NO_SUGGESTS avoidance hints.
+    Both neuro and UDL domains benefit from this enrichment.
     """
     domain_title = _get_domain_title(domain, language)
     has_data = bool(context.primary_methodologies)
+
+    # Build a methodology-name → KG paths index and collect approaches to avoid
+    _SKIP_RELS = {"VECTOR_SIMILAR", "SEMANTIC_SIMILAR", "EMBEDDING_SIMILAR"}
+    method_paths: dict[str, list[tuple[str, str, str]]] = {}
+    avoid_entries: list[str] = []
+    if triples:
+        for triple in triples:
+            if len(triple) != 3:
+                continue
+            src, rel, tgt = triple
+            if rel in _SKIP_RELS:
+                continue
+            if rel == "NO_SUGGESTS":
+                avoid_entries.append(tgt)
+            else:
+                # All real KG relationships (SUGGESTS, MITIGATED_BY, SUPPORTS,
+                # ENHANCES, FACILITATES, CAN_SHIFT_TO, LEADS_TO, RELATED_TO, etc.)
+                # Index only by target so we show "X →[REL]→ this_methodology"
+                # (not the reverse direction, which is semantically confusing)
+                method_paths.setdefault(tgt, []).append((src, rel, tgt))
+    # Deduplicate avoid_entries preserving first-seen order
+    avoid_entries = list(dict.fromkeys(avoid_entries))
     
     if language in ("it", "italian"):
         lines = [
@@ -494,6 +525,7 @@ def _format_prompt_section(context: ContextData, language: str = "it", domain: s
             lines.append(f"\n{i}. **{method.name}** ({method.category})")
             lines.append(f"   - Rilevanza: {method.relevance_score:.2f}")
             lines.append(f"   - Confidenza: {method.confidence.value}")
+            lines.append(f"   - Tipo di evidenza: {method.evidence_type}")
             lines.append(f"   - Implementazione: {method.implementation_guidance}")
             if method.classroom_applications:
                 lines.append(f"   - Applicazioni in classe:")
@@ -503,12 +535,38 @@ def _format_prompt_section(context: ContextData, language: str = "it", domain: s
                 lines.append(f"   - Considerazioni speciali:")
                 for consideration in method.special_considerations:
                     lines.append(f"     - {consideration}")
-        
+            paths = method_paths.get(method.name, [])[:2]
+            if paths:
+                lines.append(f"   - Percorsi KG:")
+                for (s, r, t) in paths:
+                    lines.append(f"     - {s} →[{r}]→ {t}")
+
         if context.supporting_methodologies:
             lines.append("")
             lines.append("### Metodologie di Supporto")
             for method in context.supporting_methodologies:
-                lines.append(f"- **{method.name}** ({method.category}) - Rilevanza: {method.relevance_score:.2f}")
+                lines.append(f"\n- **{method.name}** ({method.category})")
+                lines.append(f"  - Rilevanza: {method.relevance_score:.2f} | Evidenza: {method.evidence_type}")
+                if method.implementation_guidance:
+                    lines.append(f"  - Implementazione: {method.implementation_guidance}")
+                if method.classroom_applications:
+                    lines.append(f"  - Applicazioni in classe:")
+                    for app in method.classroom_applications[:2]:
+                        lines.append(f"    - {app}")
+                if method.special_considerations:
+                    lines.append(f"  - Considerazioni speciali:")
+                    for consideration in method.special_considerations[:2]:
+                        lines.append(f"    - {consideration}")
+                paths = method_paths.get(method.name, [])[:1]
+                if paths:
+                    s, r, t = paths[0]
+                    lines.append(f"  - Percorso KG: {s} →[{r}]→ {t}")
+
+        if avoid_entries:
+            lines.append("")
+            lines.append("### Approcci da Evitare (sconsigliati dal Knowledge Graph)")
+            for entry in avoid_entries:
+                lines.append(f"- {entry}")
         
         lines.append("")
         lines.append("### Evidenza e Basi Teoriche")
@@ -598,39 +656,87 @@ def _format_prompt_section(context: ContextData, language: str = "it", domain: s
             lines.append(f"\n{i}. **{method.name}** ({method.category})")
             lines.append(f"   - Relevance: {method.relevance_score:.2f}")
             lines.append(f"   - Confidence: {method.confidence.value}")
+            lines.append(f"   - Evidence type: {method.evidence_type}")
             lines.append(f"   - Implementation: {method.implementation_guidance}")
             if method.classroom_applications:
                 lines.append(f"   - Applications:")
                 for app in method.classroom_applications:
                     lines.append(f"     - {app}")
-        
+            if method.special_considerations:
+                lines.append(f"   - Special considerations:")
+                for consideration in method.special_considerations:
+                    lines.append(f"     - {consideration}")
+            paths = method_paths.get(method.name, [])[:2]
+            if paths:
+                lines.append(f"   - KG Paths:")
+                for (s, r, t) in paths:
+                    lines.append(f"     - {s} →[{r}]→ {t}")
+
+        if context.supporting_methodologies:
+            lines.append("")
+            lines.append("### Supporting Methodologies")
+            for method in context.supporting_methodologies:
+                lines.append(f"\n- **{method.name}** ({method.category})")
+                lines.append(f"  - Relevance: {method.relevance_score:.2f} | Evidence: {method.evidence_type}")
+                if method.implementation_guidance:
+                    lines.append(f"  - Implementation: {method.implementation_guidance}")
+                if method.classroom_applications:
+                    lines.append(f"  - Applications:")
+                    for app in method.classroom_applications[:2]:
+                        lines.append(f"    - {app}")
+                if method.special_considerations:
+                    lines.append(f"  - Special considerations:")
+                    for consideration in method.special_considerations[:2]:
+                        lines.append(f"    - {consideration}")
+                paths = method_paths.get(method.name, [])[:1]
+                if paths:
+                    s, r, t = paths[0]
+                    lines.append(f"  - KG Path: {s} →[{r}]→ {t}")
+
+        if avoid_entries:
+            lines.append("")
+            lines.append("### Approaches to Avoid (discouraged by Knowledge Graph)")
+            for entry in avoid_entries:
+                lines.append(f"- {entry}")
+
         lines.append("")
         lines.append("### Evidence and Theoretical Basis")
         lines.append(context.evidence_summary)
-        
+
         lines.append("")
         lines.append(f"### Confidence Level: {context.confidence_level.value.upper()}")
-        
+
+        if context.confidence_level.value in ['low', 'very_low']:
+            lines.append("")
+            lines.append("**Note**: Confidence is low. Consider consulting a specialist for personalized recommendations.")
+
+        if context.fallback_strategies:
+            lines.append("")
+            lines.append("### Alternative Strategies")
+            for strategy in context.fallback_strategies:
+                lines.append(f"- {strategy}")
+
         return "\n".join(lines)
 
 
 def _build_domain_prompt_context(
     context: ContextData,
     domain: str,
-    language: str = "it"
+    language: str = "it",
+    triples: list | None = None,
 ) -> DomainPromptContext:
     """
     Build domain-specific prompt context for production integration (Option B).
-    
+
     Returns the domain's system prompt, response template, and KG data
     formatted in a domain-specific structure.
-    
+
     Scalable: automatically uses whichever domain config is registered.
     When a new domain is added (e.g., UDL, Math), it just needs to implement
     get_system_prompt() and get_response_template() in its domain config.
     """
     domain_config = get_domain_config(domain)
-    
+
     if domain_config:
         system_prompt = domain_config.get_system_prompt()
         response_template = domain_config.get_response_template()
@@ -640,9 +746,9 @@ def _build_domain_prompt_context(
         system_prompt = "Sei un esperto consulente educativo italiano."
         response_template = "Genera una risposta pedagogica strutturata e pratica."
         display_name = domain.upper()
-    
+
     # Build KG context formatted for this domain
-    kg_context_formatted = _format_prompt_section(context, language, domain)
+    kg_context_formatted = _format_prompt_section(context, language, domain, triples=triples)
     
     return DomainPromptContext(
         domain=domain,
@@ -938,7 +1044,10 @@ async def get_context(
         
         # Build domain-aware prompt context (Option B for production integration)
         domain_prompt_ctx = _build_domain_prompt_context(
-            context_data, domain, detected_language
+            context_data,
+            domain,
+            detected_language,
+            triples=retrieval_result.triples if retrieval_result and hasattr(retrieval_result, "triples") else None,
         )
 
         # Build response
@@ -958,7 +1067,12 @@ async def get_context(
                 kg_data_available=kg_data_available,
                 processing_time_ms=processing_time
             ),
-            formatted_prompt_section=_format_prompt_section(context_data, detected_language, domain),
+            formatted_prompt_section=_format_prompt_section(
+                context_data,
+                detected_language,
+                domain,
+                triples=retrieval_result.triples if retrieval_result and hasattr(retrieval_result, "triples") else None,
+            ),
             domain_prompt_context=domain_prompt_ctx,
             explainability_summary=explainability_summary,
             concept_graph=concept_graph,

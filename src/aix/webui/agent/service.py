@@ -58,10 +58,12 @@ Reentrancy / concurrency:
 from __future__ import annotations
 
 import logging
+import os
 import time
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterator, Dict, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
 
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
@@ -174,6 +176,145 @@ class StreamEvent:
 # Internal helpers — query synthesis + payload builders
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Language detection — 3-layer architecture (CORE 2 #10 follow-up, Point (a))
+# ---------------------------------------------------------------------------
+#
+# The OLD detector here was a hard-coded Italian stop-word list:
+#
+#     _ITALIAN_INDICATORS = {"come", "cosa", "per", "con", ...}
+#     "it" if words & _ITALIAN_INDICATORS else "en"
+#
+# It misclassified perfectly normal queries:
+#   * "differenza tra motivazione intrinseca ed estrinseca" → "en"
+#     (the connective "tra" wasn't in the set, "intrinseca" looks foreign)
+#   * "elenca i tipi di memoria" → "en" (no overlap with the seed words)
+#   * "DSA per studenti dislessici" → could go either way
+#
+# The new architecture has THREE layers:
+#   L1 — Planner LLM (canonical, see RetrievalPlan.response_language /
+#        plan_node language override). The Planner sees the FULL augmented
+#        query (incl. multi-turn context) and emits a confidence-weighted
+#        response_language that overrides the seed.
+#   L2 — Statistical detector (lingua-language-detector). Pure-Python
+#        n-gram + character-trigram model that handles short text, mixed
+#        content, and acronyms much better than a stop-word list. Runs
+#        BEFORE the Planner to seed state["language"] (the Planner needs a
+#        language hint, even if it can later override it).
+#   L3 — Default "it". Final safety net. Rationale: the platform's primary
+#        user base is Italian teachers; defaulting to "it" minimizes the
+#        L1-mismatch risk on edge cases (very short queries, pure
+#        terminology, acronyms-only).
+#
+# This module owns L2 + L3. L1 lives in planner_agent.py + nodes.plan_node.
+
+_DEFAULT_LANGUAGE = "it"
+_SUPPORTED_LANGUAGES = {"it", "en", "es", "fr"}
+
+# Lazy-init singleton for lingua. We only instantiate the detector once per
+# process because building the n-gram models eats ~50ms and a few MB. The
+# bool sentinel ``_lingua_unavailable`` short-circuits subsequent calls when
+# the package is missing so we don't pay the import-failure cost on every
+# query.
+_lingua_detector: Any = None
+_lingua_unavailable: bool = False
+
+
+def _get_lingua_detector() -> Any:
+    """
+    Return a cached ``lingua.LanguageDetector`` configured for the four
+    languages we actively support, or ``None`` if the package is unavailable.
+
+    Building the detector with ``with_low_accuracy_mode()`` skips the heaviest
+    n-gram models — perfectly fine for our short-query use case (teacher
+    prompts are typically 1-3 sentences) and shaves ~5x off init time.
+    """
+    global _lingua_detector, _lingua_unavailable
+
+    if _lingua_unavailable:
+        return None
+    if _lingua_detector is not None:
+        return _lingua_detector
+
+    try:
+        from lingua import Language, LanguageDetectorBuilder
+
+        languages = [
+            Language.ITALIAN,
+            Language.ENGLISH,
+            Language.SPANISH,
+            Language.FRENCH,
+        ]
+        _lingua_detector = (
+            LanguageDetectorBuilder
+            .from_languages(*languages)
+            .with_low_accuracy_mode()
+            .build()
+        )
+        logger.info(
+            "[language] lingua-language-detector initialized (4 languages, "
+            "low-accuracy mode)"
+        )
+        return _lingua_detector
+    except Exception as exc:  # ImportError, runtime errors, etc.
+        _lingua_unavailable = True
+        logger.warning(
+            "[language] lingua-language-detector unavailable (%s) — "
+            "falling back to default %r. To enable statistical detection: "
+            "pip install lingua-language-detector",
+            exc, _DEFAULT_LANGUAGE,
+        )
+        return None
+
+
+def _detect_language(query: str) -> str:
+    """
+    Statistical-or-default seed language for the agent (L2 / L3).
+
+    This is the SEED that's passed to the Planner. The Planner then sees
+    the actual query text and may OVERRIDE this with its own LLM-driven
+    detection (L1) when confident — see ``aix.agent.graph.nodes.plan_node``.
+
+    Returns:
+        ISO 2-letter code, one of ``it`` / ``en`` / ``es`` / ``fr``. Falls
+        back to ``"it"`` (the platform's primary user language) on:
+          * empty / whitespace-only / very short queries (< 4 chars),
+          * lingua-language-detector not installed (graceful degradation),
+          * detector returning ``None`` (= no confident match).
+    """
+    text = (query or "").strip()
+    if len(text) < 4:
+        # Too short to detect reliably (e.g., "DSA", "ADHD", "ok").
+        # Keep the platform default rather than risk a wrong override.
+        return _DEFAULT_LANGUAGE
+
+    detector = _get_lingua_detector()
+    if detector is None:
+        return _DEFAULT_LANGUAGE
+
+    try:
+        match = detector.detect_language_of(text)
+    except Exception as exc:
+        # Defensive: detector should be pure-python and side-effect-free,
+        # but we don't want a language-detection blip to crash the run.
+        logger.warning(
+            "[language] lingua detection failed for query (len=%d): %s — "
+            "defaulting to %r",
+            len(text), exc, _DEFAULT_LANGUAGE,
+        )
+        return _DEFAULT_LANGUAGE
+
+    if match is None:
+        return _DEFAULT_LANGUAGE
+
+    # lingua's Language enum exposes ``iso_code_639_1`` as a typed enum
+    # member; we want the lowercase 2-letter string ("it"/"en"/"es"/"fr").
+    code = getattr(match.iso_code_639_1, "name", "").lower()
+    if code in _SUPPORTED_LANGUAGES:
+        return code
+    return _DEFAULT_LANGUAGE
+
+
 def _query_from_lesson(lesson: Any) -> str:
     """
     Build the natural-language teacher query the agent expects when the
@@ -272,6 +413,408 @@ def _teacher_upload_context(lesson: Any) -> Optional[str]:
         return None
     joined = "\n\n".join(parts)
     return joined[:48000] if len(joined) > 48000 else joined
+
+
+# ---------------------------------------------------------------------------
+# Multi-turn conversation history (CORE 2 #10.3).
+#
+# We persist each turn as a pair of ``LessonMessage`` rows (user + assistant)
+# alongside the LangGraph checkpointer's msgpack thread store. The pair
+# (CQRS pattern) gives us:
+#   • a SQL-queryable transcript for the chat-pane render path,
+#   • a direct write-after-success hook for the assistant's turn,
+#   • a stable, dialect-agnostic source of truth that survives a checkpointer
+#     wipe, schema upgrade, or storage backend swap (#15 Postgres).
+#
+# The agent layer doesn't read these tables directly — the service composes
+# a flat ``conversation_history`` list and injects it as an augmented
+# ``teacher_query`` so EVERY agent in the pipeline (Planner / Retriever /
+# Writer / Critic) sees the prior context without bespoke prompt edits.
+# Per-agent prompt-level integration is a follow-up; the service-layer
+# augmentation is sufficient for V1 multi-turn UX.
+# ---------------------------------------------------------------------------
+
+# Truncation for prior assistant messages when they're folded into the
+# augmented query. 2000 chars per assistant turn keeps the prompt bounded
+# at ~10 turns × 2000 = 20K chars (≈5K tokens) without #10.4's summary
+# buffer kicking in. The summary buffer (#10.4) runs BEFORE this and
+# replaces older turns wholesale, so this cap only hits the in-window turns.
+_HISTORY_ASSISTANT_EXCERPT_CHARS = 2000
+
+# Truncation cap on user messages when folded into the augmented query.
+# Conservative: user turns are usually short ("now adapt for ADHD") but
+# we hard-cap at 1500 chars so a teacher who pasted a long doc into the
+# chat doesn't blow the prompt size budget.
+_HISTORY_USER_EXCERPT_CHARS = 1500
+
+
+async def _load_conversation_history(
+    session: AsyncSession,
+    lesson_id: Any,
+) -> List[Dict[str, str]]:
+    """
+    Load the prior-turn ``LessonMessage`` rows (excluding the current
+    in-progress turn) and shape them into the
+    ``[{"role": "user"|"assistant", "content": str}, ...]`` form expected
+    by the augmenter and by ``AgentState.conversation_history``.
+
+    Filter rule: include all rows with ``turn_index`` strictly less than
+    the latest turn_index for this lesson. The latest turn_index is the
+    user message we're about to run (just persisted by the route layer);
+    its assistant reply doesn't exist yet. Earlier turns are guaranteed
+    to have BOTH user + assistant rows by construction (assistant write
+    is gated on agent success in run_agent_stream below).
+    """
+    # Imported here to keep this module free of cross-package import
+    # cycles during cold-collection (e.g., test runners that import
+    # ``aix.webui.agent.service`` without webui's full DB stack).
+    from aix.webui.lessons.models import LessonMessage
+
+    latest_turn = await session.scalar(
+        select(func.max(LessonMessage.turn_index))
+        .where(LessonMessage.lesson_id == lesson_id)
+    )
+    if not latest_turn or latest_turn < 2:
+        # Either no rows (legacy lesson with backfill skipped, or the
+        # very first turn) or only the current in-progress turn exists.
+        # Either way: no prior context to inject.
+        return []
+
+    rows_result = await session.execute(
+        select(LessonMessage)
+        .where(LessonMessage.lesson_id == lesson_id)
+        .where(LessonMessage.turn_index < latest_turn)
+        .order_by(LessonMessage.turn_index, LessonMessage.created_at)
+    )
+    history: List[Dict[str, str]] = []
+    for msg in rows_result.scalars().all():
+        if msg.role not in ("user", "assistant"):
+            # Reserved roles (``system`` for #10.4 summary buffer) are
+            # carried via separate AgentState fields, not the inline list.
+            continue
+        history.append({"role": msg.role, "content": msg.content_md or ""})
+    return history
+
+
+def _augment_query_with_history(
+    raw_query: str,
+    history: List[Dict[str, str]],
+    summary: Optional[str],
+    language: str,
+) -> str:
+    """
+    Compose an augmented teacher query that includes prior conversation
+    context, a summary of older turns (when present), and the current
+    request — in that order.
+
+    Returns ``raw_query`` unchanged when there's no history AND no
+    summary (= first turn) so the single-turn path is byte-identical to
+    the pre-#10 behaviour. This makes the history-injection feature
+    fully backward-compatible for first turns and degraded-mode runs.
+
+    Format (Italian by default; English when ``language == 'en'``):
+
+        ## Conversazione precedente
+
+        ### Sintesi dei turni più vecchi    (only when summary present)
+        {summary}
+
+        ### Turno 1 — Docente
+        {prior_user_1}
+
+        ### Turno 1 — Risposta dell'assistente
+        {prior_assistant_1_excerpt}
+
+        … (one block per prior turn) …
+
+        ## Nuova richiesta del docente
+        {raw_query}
+    """
+    if not history and not (summary and summary.strip()):
+        return raw_query
+
+    is_it = (language or "it").lower().startswith("it")
+
+    history_label  = "Conversazione precedente"        if is_it else "Previous conversation"
+    summary_label  = "Sintesi dei turni più vecchi"    if is_it else "Summary of older turns"
+    turn_label     = "Turno"                            if is_it else "Turn"
+    user_label     = "Docente"                          if is_it else "Teacher"
+    asst_label     = "Risposta dell'assistente"         if is_it else "Assistant reply"
+    request_label  = "Nuova richiesta del docente"     if is_it else "New request from the teacher"
+
+    parts: List[str] = [f"## {history_label}", ""]
+
+    if summary and summary.strip():
+        parts.append(f"### {summary_label}")
+        parts.append(summary.strip())
+        parts.append("")
+
+    # Group consecutive (user, assistant) pairs into turns. We're trusting
+    # the upstream invariant that history is well-formed (no orphans), so
+    # we walk linearly and bump the turn counter on each user message.
+    turn_idx = 0
+    for msg in history:
+        role = msg.get("role")
+        content = (msg.get("content") or "").strip()
+        if not content:
+            continue
+        if role == "user":
+            turn_idx += 1
+            excerpt = content[:_HISTORY_USER_EXCERPT_CHARS]
+            if len(content) > _HISTORY_USER_EXCERPT_CHARS:
+                excerpt = excerpt + "…"
+            parts.append(f"### {turn_label} {turn_idx} — {user_label}")
+            parts.append(excerpt)
+            parts.append("")
+        elif role == "assistant":
+            excerpt = content[:_HISTORY_ASSISTANT_EXCERPT_CHARS]
+            if len(content) > _HISTORY_ASSISTANT_EXCERPT_CHARS:
+                excerpt = excerpt + "…"
+            parts.append(f"### {turn_label} {turn_idx} — {asst_label}")
+            parts.append(excerpt)
+            parts.append("")
+
+    parts.append(f"## {request_label}")
+    parts.append(raw_query)
+
+    return "\n".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# Summary-buffer windowing (CORE 2 #10.4).
+#
+# Long conversations would eventually overflow the model's context window
+# (Claude Sonnet 4.6 is generous at 200k, but our augmented prompt also
+# carries the educational profile, the retriever's KG context, and the
+# Writer's instruction template — call it ~30k of prompt budget). Even
+# well within the limit, every extra historical turn pays a per-token cost
+# on every subsequent call.
+#
+# Strategy (keep it simple; revisit if it doesn't fit reality):
+#   • Keep the last ``WINDOW_TURNS`` turns verbatim — short-term memory.
+#   • Summarise everything older — long-term memory.
+#   • The summary lives in ``AgentState.conversation_summary`` and is
+#     rendered as a "Sintesi dei turni più vecchi" block in the augmented
+#     query (see ``_augment_query_with_history``).
+#
+# Tunable via the ``AIX_CONVERSATION_WINDOW_TURNS`` env var (default 4 →
+# 4 user/assistant pairs ≈ 8 messages ≈ ~10–20K chars retained verbatim).
+# Setting it to 0 effectively disables verbatim retention (everything is
+# summarised); a high value (e.g. 50) effectively disables windowing.
+# ---------------------------------------------------------------------------
+
+_DEFAULT_WINDOW_TURNS = 4
+
+
+def _window_turns_from_env() -> int:
+    """Resolve the configured window size, with a safe default + clamp."""
+    try:
+        raw = int(os.getenv("AIX_CONVERSATION_WINDOW_TURNS", str(_DEFAULT_WINDOW_TURNS)))
+    except (ValueError, TypeError):
+        return _DEFAULT_WINDOW_TURNS
+    # Clamp: 0 ≤ N ≤ 50. Below 0 makes no sense; above 50 is "effectively
+    # disabled" and we'd rather be obvious about it than silently allow
+    # 10000.
+    return max(0, min(50, raw))
+
+
+async def _maybe_window_history(
+    history: List[Dict[str, str]],
+    language: str,
+) -> Tuple[Optional[str], List[Dict[str, str]]]:
+    """
+    Apply summary-buffer windowing to ``history`` when it exceeds the
+    configured window size.
+
+    Returns ``(summary, retained_history)``:
+        • If ``history`` fits within the window → ``(None, history)``
+          unchanged. Identical to single-turn behaviour.
+        • If ``history`` exceeds the window → summarise the oldest
+          turns into a single string, return that summary plus the most
+          recent ``WINDOW_TURNS`` turns kept verbatim.
+
+    Failure handling: if the summarisation LLM call fails (network,
+    rate limit, parser error), we log + return ``(None, history)`` so
+    the run continues with the full untrimmed history. The downstream
+    augmenter and Writer will likely succeed with the longer prompt
+    even if it's wasteful — better than crashing the run.
+    """
+    window_turns = _window_turns_from_env()
+    window_messages = window_turns * 2  # each turn = user + assistant pair
+
+    if len(history) <= window_messages:
+        return None, history
+
+    older = history[:-window_messages] if window_messages else history
+    recent = history[-window_messages:] if window_messages else []
+
+    try:
+        summary = await _summarise_history(older, language)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[webui.agent] history summarisation failed: %s; "
+            "passing full history without windowing", exc,
+        )
+        return None, history
+
+    if not summary or not summary.strip():
+        # LLM returned empty — fall back to no windowing rather than
+        # silently dropping context.
+        logger.warning(
+            "[webui.agent] history summarisation returned empty; "
+            "passing full history without windowing"
+        )
+        return None, history
+
+    logger.info(
+        "[webui.agent] windowing applied: summarised %s older messages "
+        "into %s chars; kept %s recent messages verbatim",
+        len(older), len(summary), len(recent),
+    )
+    return summary.strip(), recent
+
+
+async def _summarise_history(
+    older_messages: List[Dict[str, str]],
+    language: str,
+) -> str:
+    """
+    Concise LLM-driven summary of the oldest portion of the conversation.
+
+    Uses the same OpenAI/OpenRouter client as the agents — no new API key
+    or model selection. Temperature is low (0.2) because we want
+    deterministic, fact-preserving compression, not creative paraphrase.
+
+    Token budget for the summary itself is capped at 600 tokens via
+    ``max_tokens`` so a runaway model can't burn budget on a 5000-token
+    summary that defeats the windowing's purpose.
+    """
+    # Local import to avoid pulling the OpenAI stack into the module's
+    # cold import path (test collection, etc.). Mirrors the pattern in
+    # ``run_agent_stream``.
+    from aix.core.config import config as app_config, extract_response_content
+
+    if not older_messages:
+        return ""
+
+    # Format the older messages as a compact transcript. Truncate each
+    # individual message at 1200 chars so a single long lesson plan can't
+    # blow the summariser's input budget.
+    transcript_lines: List[str] = []
+    for m in older_messages:
+        role = (m.get("role") or "").strip().lower()
+        content = (m.get("content") or "").strip()
+        if not content:
+            continue
+        excerpt = content[:1200] + ("…" if len(content) > 1200 else "")
+        if role == "user":
+            transcript_lines.append(f"### Docente\n{excerpt}")
+        elif role == "assistant":
+            transcript_lines.append(f"### Assistente\n{excerpt}")
+        else:
+            transcript_lines.append(f"### {role.title()}\n{excerpt}")
+    transcript = "\n\n".join(transcript_lines)
+
+    is_it = (language or "it").lower().startswith("it")
+    if is_it:
+        system_prompt = (
+            "Sei un assistente che riassume in modo conciso e fedele "
+            "conversazioni didattiche tra un docente e un assistente "
+            "educativo. Mantieni TUTTI i fatti rilevanti per continuare "
+            "la conversazione: argomento della lezione, livello scolastico, "
+            "vincoli temporali, bisogni educativi speciali, scelte già "
+            "fatte, decisioni concordate. Usa elenchi puntati (max 8 punti). "
+            "Non aggiungere commenti, scrivi solo il riassunto."
+        )
+        user_prompt = (
+            "Riassumi la seguente conversazione (turni più vecchi) in "
+            "italiano:\n\n" + transcript
+        )
+    else:
+        system_prompt = (
+            "You summarise teacher–assistant educational conversations "
+            "concisely and faithfully. Preserve ALL facts relevant to "
+            "continuing the conversation: lesson topic, grade level, "
+            "time constraints, special educational needs, choices already "
+            "made, agreed decisions. Use bullet points (max 8). No "
+            "commentary — output only the summary."
+        )
+        user_prompt = (
+            "Summarise the following conversation (older turns) in "
+            "English:\n\n" + transcript
+        )
+
+    client = app_config.openai.get_async_client()
+    completion_kwargs = app_config.openai.build_completion_kwargs(
+        temperature=0.2,
+        max_tokens=600,
+    )
+    response = await client.chat.completions.create(
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        **completion_kwargs,
+    )
+    return extract_response_content(response, logger)
+
+
+async def _persist_assistant_turn(
+    session: AsyncSession,
+    lesson_id: Any,
+    content_md: str,
+    meta: Dict[str, Any],
+) -> None:
+    """
+    Append the assistant's response for the current turn to the
+    ``lesson_message`` log.
+
+    Turn index discovery:
+        We use ``MAX(turn_index)`` for this lesson's user messages. The
+        route layer persisted the user message at this turn_index BEFORE
+        invoking the service; the assistant's reply shares it. This keeps
+        (user, assistant) pairs aligned without explicit threading of
+        ``turn_index`` through the service signature.
+
+    Failure handling:
+        We log + swallow on persistence failure. The lesson row's
+        ``status="complete"`` and ``lesson_plan_md`` writes are the
+        load-bearing persistence; the lesson_message row is the
+        history-render index, important but not run-critical. Skipping
+        it on a transient DB error is preferable to failing the whole
+        run.
+    """
+    from aix.webui.lessons.models import LessonMessage
+
+    try:
+        latest_turn = await session.scalar(
+            select(func.max(LessonMessage.turn_index))
+            .where(LessonMessage.lesson_id == lesson_id)
+            .where(LessonMessage.role == "user")
+        ) or 1
+
+        session.add(LessonMessage(
+            lesson_id=lesson_id,
+            role="assistant",
+            content_md=content_md,
+            turn_index=int(latest_turn),
+            agent_kind="writer",
+            meta_json=meta or None,
+        ))
+        await session.commit()
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "[webui.agent] failed to persist assistant LessonMessage lesson_id=%s; "
+            "lesson row state is authoritative",
+            lesson_id,
+        )
+        # Roll back the open transaction so subsequent writes (e.g., the
+        # lesson.status flip on a downstream error) don't ride on a
+        # poisoned session.
+        try:
+            await session.rollback()
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def _build_planner_payload(state: Dict[str, Any]) -> Dict[str, Any]:
@@ -418,20 +961,65 @@ async def run_agent_stream(
         # form; otherwise synthesize from the profile and *write it back*
         # so the user's first chat bubble survives reloads.
         if getattr(lesson, "teacher_query", None) and lesson.teacher_query.strip():
-            query = lesson.teacher_query.strip()
+            raw_query = lesson.teacher_query.strip()
         else:
-            query = _query_from_lesson(lesson)
-            lesson.teacher_query = query
+            raw_query = _query_from_lesson(lesson)
+            lesson.teacher_query = raw_query
+
+        # ── Multi-turn history loading (#10.3) ───────────────────────
+        # Load all PRIOR turns from the lesson_messages CQRS log and shape
+        # them into the AgentState.conversation_history form. On the very
+        # first turn this returns []; on follow-ups it carries the past
+        # exchanges (post-backfill for legacy lessons).
+        full_history = await _load_conversation_history(session, lesson.id)
+
+        # ── Summary-buffer windowing (#10.4) ─────────────────────────
+        # If the conversation has more than WINDOW_TURNS prior turns,
+        # summarise the older ones and keep only the recent window
+        # verbatim. Short conversations short-circuit cleanly with
+        # ``(None, full_history)`` so single-turn / few-turn behaviour
+        # is identical to pre-#10.4. Failures fall back to the full
+        # untrimmed history with a logged warning.
+        conversation_summary, conversation_history = await _maybe_window_history(
+            history=full_history,
+            language=_detect_language(raw_query),
+        )
+
+        # Compose the augmented query. When history is empty AND no summary
+        # is set (= first turn), this returns raw_query unchanged — single
+        # turn behaviour is byte-identical to pre-#10.
+        query = _augment_query_with_history(
+            raw_query=raw_query,
+            history=conversation_history,
+            summary=conversation_summary,
+            language=_detect_language(raw_query),
+        )
 
         # Domain comes from the form ("neuro" / "udl" — captured at submit
-        # time in P1). Language is hard-coded "it" until the form exposes a
-        # switch.
+        # time in P1). Language is inferred from the teacher's RAW query
+        # (not the history-augmented one) so the prompt block we just
+        # appended doesn't accidentally override the teacher's true
+        # language preference.
         orchestrator = AgentOrchestrator(
             domain=lesson.domain or "neuro",
-            language="it",
+            language=_detect_language(raw_query),
         )
         pipeline = orchestrator._get_pipeline()  # noqa: SLF001 — intentional seam
-        graph = pipeline._get_graph()  # noqa: SLF001
+
+        # CORE 2 #10.2 — compile the graph with the AsyncSqliteSaver
+        # checkpointer when available. Falls back to the no-checkpointer
+        # path on graceful degradation (langgraph-checkpoint-sqlite missing,
+        # disk write error, etc.) so single-turn behaviour is preserved
+        # in degraded environments.
+        graph = await pipeline._get_graph_async()  # noqa: SLF001
+
+        # Thread config — required by LangGraph whenever a checkpointer
+        # is attached. ``str(lesson.id)`` is the canonical thread_id so
+        # follow-up turns on the same lesson share state (multi-turn —
+        # see #10.3 which adds the user-facing follow_up / regenerate
+        # / new modes on top of this plumbing).
+        from aix.agent.graph.checkpointer import thread_config
+        run_config = thread_config(str(lesson.id))
 
         teacher_ctx = _teacher_upload_context(lesson)
 
@@ -443,13 +1031,19 @@ async def run_agent_stream(
             max_revisions=pipeline.max_revisions,
             educational_profile=profile_dict,
             teacher_provided_context=teacher_ctx,
+            conversation_history=conversation_history or None,
+            conversation_summary=conversation_summary,
         )
 
         logger.info(
             "[webui.agent] starting run lesson_id=%s domain=%s query=%r "
-            "uploads=%s",
-            lesson.id, lesson.domain, query[:80],
+            "uploads=%s thread_id=%s history_turns=%s",
+            lesson.id, lesson.domain, raw_query[:80],
             len(getattr(lesson, "uploaded_files_json", None) or []),
+            run_config["configurable"]["thread_id"],
+            # Number of completed prior turns (= half of history length,
+            # since each turn contributes a user + assistant pair).
+            len(conversation_history) // 2,
         )
 
         # ── Mark RUNNING ─────────────────────────────────────────────
@@ -475,7 +1069,9 @@ async def run_agent_stream(
         return
 
     try:
-        async for chunk in graph.astream(initial_state, stream_mode="updates"):
+        async for chunk in graph.astream(
+            initial_state, config=run_config, stream_mode="updates",
+        ):
             # ``chunk`` is ``{node_name: partial_state_update}``. In normal
             # operation a chunk has exactly one key — the node that just
             # finished. We tolerate the multi-key shape defensively.
@@ -558,10 +1154,24 @@ async def run_agent_stream(
         lesson.lesson_plan_md = lesson_plan_md
         await session.commit()
 
+        # ── Multi-turn persistence (#10.3) ───────────────────────────
+        # Append the assistant turn to lesson_messages so the chat pane
+        # renders the full transcript on reload + the next follow-up's
+        # history-loader picks it up. Failures are logged + swallowed —
+        # the lesson row is the load-bearing persistence; the message
+        # log is the render index.
+        await _persist_assistant_turn(
+            session=session,
+            lesson_id=lesson.id,
+            content_md=lesson_plan_md,
+            meta=meta,
+        )
+
         logger.info(
             "[webui.agent] run complete lesson_id=%s duration=%.1fs "
-            "approved=%s revisions=%s",
+            "approved=%s revisions=%s thread_id=%s",
             lesson.id, elapsed, meta["approved"], meta["revision_count"],
+            run_config["configurable"]["thread_id"],
         )
 
         yield StreamEvent(
@@ -657,12 +1267,22 @@ async def stream_agent_events(
     # key / import error / etc. surfaces as a clean ``error`` event
     # instead of a 500 from the route layer.
     try:
+        import uuid as _uuid
+
+        from aix.agent.graph.checkpointer import thread_config
         from aix.agent.graph.state import create_initial_state
         from aix.agent.orchestrator import AgentOrchestrator
 
         orchestrator = AgentOrchestrator(domain=domain, language=language)
         pipeline = orchestrator._get_pipeline()  # noqa: SLF001 — same seam as webui
-        graph = pipeline._get_graph()  # noqa: SLF001
+
+        # CORE 2 #10.2 — checkpointed graph. Public-API callers that pass
+        # a stable ``session_id`` get multi-turn memory across requests;
+        # callers that don't get an ephemeral per-call thread (functionally
+        # identical to the pre-#10 behaviour — single-turn, no shared state).
+        graph = await pipeline._get_graph_async()  # noqa: SLF001
+        effective_thread_id = session_id or f"ephemeral-{_uuid.uuid4()}"
+        run_config = thread_config(effective_thread_id)
 
         effective_max_revisions = (
             max_revisions if max_revisions is not None else pipeline.max_revisions
@@ -679,9 +1299,10 @@ async def stream_agent_events(
         )
 
         logger.info(
-            "[api.agent] starting run session_id=%s domain=%s query=%r "
+            "[api.agent] starting run session_id=%s thread_id=%s domain=%s query=%r "
             "max_revisions=%s profile=%s teacher_ctx_chars=%s",
-            session_id, domain, query[:80], effective_max_revisions,
+            session_id, effective_thread_id, domain, query[:80],
+            effective_max_revisions,
             "yes" if educational_profile else "no",
             len(teacher_provided_context or ""),
         )
@@ -693,7 +1314,9 @@ async def stream_agent_events(
         return
 
     try:
-        async for chunk in graph.astream(initial_state, stream_mode="updates"):
+        async for chunk in graph.astream(
+            initial_state, config=run_config, stream_mode="updates",
+        ):
             for node_name, state_diff in chunk.items():
                 if node_name not in PHASE_LABELS:
                     continue
@@ -760,9 +1383,10 @@ async def stream_agent_events(
             )
 
         logger.info(
-            "[api.agent] run complete session_id=%s duration=%.1fs "
+            "[api.agent] run complete session_id=%s thread_id=%s duration=%.1fs "
             "approved=%s revisions=%s",
-            session_id, elapsed, meta["approved"], meta["revision_count"],
+            session_id, effective_thread_id, elapsed,
+            meta["approved"], meta["revision_count"],
         )
 
         yield StreamEvent(

@@ -1,0 +1,138 @@
+{#
+  Lesson history page — lists all lessons for the current user.
+  Route: GET /webui/lessons
+
+  Required context:
+    user      User ORM
+    lessons   list[Lesson] — ordered by created_at DESC
+#}
+{% extends "_base.html" %}
+
+{% block content %}
+<section class="max-w-5xl mx-auto space-y-6">
+
+  {# ── Header ─────────────────────────────────────────────────────── #}
+  <div class="flex items-center justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-semibold text-slate-900">Le mie lezioni</h1>
+      <p class="text-sm text-slate-500 mt-1">
+        {{ lessons | length }} lezione{% if lessons | length != 1 %}i{% endif %} generate
+      </p>
+    </div>
+    <a href="/webui/lesson/new" class="no-underline">
+      <wa-button variant="brand" size="small">
+        <wa-icon slot="prefix" name="circle-plus"></wa-icon>
+        Nuova lezione
+      </wa-button>
+    </a>
+  </div>
+
+  {# ── Empty state ─────────────────────────────────────────────────── #}
+  {% if not lessons %}
+    <div class="rounded-xl border border-dashed border-slate-300 bg-white
+                p-12 text-center space-y-4">
+      <wa-icon name="book-open" style="font-size:3rem; color:#94a3b8;"></wa-icon>
+      <p class="text-slate-500">Non hai ancora generato nessuna lezione.</p>
+      <a href="/webui/lesson/new" class="no-underline">
+        <wa-button variant="brand">
+          <wa-icon slot="prefix" name="circle-plus"></wa-icon>
+          Crea la tua prima lezione
+        </wa-button>
+      </a>
+    </div>
+
+  {% else %}
+    {# ── Lesson grid ──────────────────────────────────────────────── #}
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      {% for lesson in lessons %}
+        {% set profile = lesson.educational_profile_json or {} %}
+        <div class="relative group/card">
+        <a href="/webui/lesson/{{ lesson.id }}" class="no-underline group">
+          <article class="rounded-xl border border-slate-200 bg-white shadow-sm
+                          hover:shadow-md hover:border-slate-300
+                          transition-all duration-150 h-full flex flex-col overflow-hidden">
+
+            {# Status colour strip #}
+            <div class="h-1 w-full
+              {% if lesson.status == 'complete' %}bg-emerald-400
+              {% elif lesson.status == 'running' %}bg-amber-400 animate-pulse
+              {% elif lesson.status == 'error' %}bg-red-400
+              {% else %}bg-slate-200{% endif %}">
+            </div>
+
+            <div class="p-4 flex flex-col gap-2 flex-1">
+
+              {# Title #}
+              <div class="flex items-start justify-between gap-2">
+                <h2 class="text-sm font-semibold text-slate-800 group-hover:text-sky-700
+                            line-clamp-2 leading-snug">
+                  {{ lesson.title or 'Lezione senza titolo' }}
+                </h2>
+                <wa-tag size="small" variant="neutral" pill class="shrink-0">
+                  {{ lesson.domain }}
+                </wa-tag>
+              </div>
+
+              {# Subject / topic #}
+              {% if profile.get('subject_area') or profile.get('specific_topic') %}
+                <p class="text-xs text-slate-500 line-clamp-2">
+                  {% if profile.get('subject_area') %}
+                    <strong>{{ profile.get('subject_area') }}</strong>
+                  {% endif %}
+                  {% if profile.get('specific_topic') %}
+                    — {{ profile.get('specific_topic') }}
+                  {% endif %}
+                </p>
+              {% endif %}
+
+              {# Class info #}
+              {% set group = profile.get('group') or {} %}
+              {% if group.get('title') %}
+                <p class="text-xs text-slate-400">
+                  <wa-icon name="users" style="font-size:0.65rem;"></wa-icon>
+                  {{ group.get('title') }}
+                  {% if group.get('students_number') %} · {{ group.get('students_number') }} studenti{% endif %}
+                </p>
+              {% endif %}
+
+              <div class="flex-1"></div>
+
+              {# Footer: status + date #}
+              <div class="flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
+                <wa-tag size="small" pill
+                  variant="{% if lesson.status == 'complete' %}success{% elif lesson.status == 'error' %}danger{% elif lesson.status == 'running' %}warning{% else %}neutral{% endif %}">
+                  {{ lesson.status }}
+                </wa-tag>
+                <span class="text-[11px] text-slate-400">
+                  {% if lesson.created_at %}
+                    {{ lesson.created_at.strftime('%d/%m/%Y %H:%M') }}
+                  {% endif %}
+                </span>
+              </div>
+
+            </div>
+          </article>
+        </a>
+
+        {# Delete button — appears on hover, positioned top-right of the card #}
+        <button
+          type="button"
+          class="absolute top-2 right-2 w-7 h-7 rounded-full bg-white border border-slate-200
+                 shadow flex items-center justify-center text-rose-500 text-xs
+                 opacity-0 group-hover/card:opacity-100 transition-opacity duration-150
+                 cursor-pointer z-10"
+          hx-delete="/webui/lesson/{{ lesson.id }}"
+          hx-confirm="Eliminare questa lezione? L'operazione non è reversibile."
+          hx-target="closest .relative"
+          hx-swap="outerHTML"
+          title="Elimina lezione">
+          <wa-icon name="trash"></wa-icon>
+        </button>
+
+        </div>{# end relative group/card #}
+      {% endfor %}
+    </div>
+  {% endif %}
+
+</section>
+{% endblock %}

@@ -33,11 +33,11 @@ markdown>=3.5.0
 pypdf>=5.0.0
 
 # Core dependencies
-langchain>=0.1.0
-langchain-openai>=0.0.5
-langchain-community>=0.0.10
-langchain-core>=0.1.0
-openai>=1.0.0
+langchain>=1.0.0,<2.0.0
+langchain-openai>=1.0.0,<2.0.0
+langchain-community>=0.4.0,<1.0.0
+langchain-core>=1.0.0,<2.0.0
+openai>=2.0.0
 neo4j>=5.0.0
 python-dotenv>=1.0.0
 
@@ -55,7 +55,16 @@ openpyxl>=3.1.0
 reportlab>=4.0.0
 
 # Agentic Layer (Multi-Agent Pipeline)
-langgraph==0.5.4
+langgraph>=1.0.0,<2.0.0
+
+# CORE 2 #10.2 — Conversation memory checkpointer (dev: SQLite; prod #15: Postgres).
+# Persists every LangGraph thread's full message history + AgentState snapshots
+# under data/agent_threads.db so multi-turn refinement (follow-up / regenerate
+# / time-travel) survives page reloads and process restarts. Migration to
+# AsyncPostgresSaver (CORE 4 #15) is a 1-line saver-class swap because LangGraph's
+# BaseCheckpointSaver protocol is backend-agnostic. Using 3.x: 2.0.11 (last 2.x)
+# calls aiosqlite Connection.is_alive() which was removed in aiosqlite 0.20+.
+langgraph-checkpoint-sqlite>=3.0,<4.0
 
 # Error Monitoring (GlitchTip — Sentry-compatible)
 sentry-sdk[fastapi]>=2.0.0
@@ -70,3 +79,16 @@ sentry-sdk[fastapi]>=2.0.0
 # Pinning <4.0 to opt in to FastMCP 3.x's stable Provider/Transform architecture
 # without auto-jumping to a future major (4.x) that may break decorators.
 fastmcp>=3.0.0,<4.0.0
+
+# Prompt management — domain prompts (system_prompt, writer_prompt, response_template)
+# are stored in Langfuse and fetched at runtime (cache_ttl_seconds=60).
+langfuse>=2.0.0
+
+# CORE 2 #10 follow-up — Point (a): statistical language detection (L2).
+# `lingua-language-detector` is a pure-Python n-gram + character-trigram
+# detector that handles short text, mixed-content, and acronyms far better
+# than the prior stop-word heuristic. We use it as the L2 SEED for the
+# Planner's L1 LLM-driven detection (the LLM is the canonical source of
+# truth — see RetrievalPlan.has_confident_language). Falls back gracefully
+# to default "it" if the package isn't installed (see service._detect_language).
+lingua-language-detector>=2.0.0

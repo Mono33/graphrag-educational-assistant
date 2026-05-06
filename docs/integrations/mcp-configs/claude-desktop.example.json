@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "aix-graphrag": {
+      "command": "<VENV>/python.exe",
+      "args": ["-m", "aix.mcp.stdio_main"],
+      "cwd": "<REPO>/graphaixlearning",
+      "env": {
+        "PYTHONPATH": "<REPO>/graphaixlearning/src",
+        "AIX_MCP_LOG_LEVEL": "INFO"
+      }
+    }
+  }
+}

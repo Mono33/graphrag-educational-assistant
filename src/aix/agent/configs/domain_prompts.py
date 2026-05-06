@@ -243,7 +243,7 @@ def get_domain_extension(domain: str, agent: str) -> str:
             if cfg is not None:
                 return (
                     f"\n\n## Domain Expert Knowledge ({domain.upper()})\n\n"
-                    f"{cfg.get_system_prompt()}"
+                    f"{cfg.get_writer_prompt()}"
                 )
         except Exception as e:
             logger.warning(

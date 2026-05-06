@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "aix-graphrag": {
+      "url": "https://<HOST>/mcp/",
+      "headers": {
+        "Authorization": "Bearer <JWT_TOKEN_FROM_POST_/auth/jwt/login>"
+      }
+    }
+  }
+}

@@ -112,21 +112,49 @@
 
       {# Footer actions #}
       <footer class="px-4 py-3 border-t border-slate-200 bg-slate-50
-                     flex flex-wrap items-center justify-end gap-2">
-        <a href="/webui/lesson/new" class="no-underline">
-          <wa-button size="small" variant="default">
-            <wa-icon slot="prefix" name="circle-plus"></wa-icon>
-            Nuova lezione
+                     flex flex-wrap items-center justify-between gap-2">
+
+        {# ── Download actions ── #}
+        <div class="flex items-center gap-1.5">
+          <span class="text-xs text-slate-400 mr-0.5">Scarica:</span>
+          <a href="/webui/lesson/{{ lesson.id }}/export?format=md" download class="no-underline">
+            <wa-button size="small" variant="default">
+              <wa-icon slot="prefix" name="file-arrow-down"></wa-icon>
+              MD
+            </wa-button>
+          </a>
+          <a href="/webui/lesson/{{ lesson.id }}/export?format=txt" download class="no-underline">
+            <wa-button size="small" variant="default">
+              <wa-icon slot="prefix" name="file-lines"></wa-icon>
+              TXT
+            </wa-button>
+          </a>
+          <a href="/webui/lesson/{{ lesson.id }}/print" target="_blank" class="no-underline">
+            <wa-button size="small" variant="default">
+              <wa-icon slot="prefix" name="print"></wa-icon>
+              PDF
+            </wa-button>
+          </a>
+        </div>
+
+        {# ── Navigation actions ── #}
+        <div class="flex items-center gap-2">
+          <a href="/webui/lesson/new" class="no-underline">
+            <wa-button size="small" variant="default">
+              <wa-icon slot="prefix" name="circle-plus"></wa-icon>
+              Nuova lezione
+            </wa-button>
+          </a>
+          <wa-button size="small"
+                     variant="brand"
+                     hx-post="/webui/lesson/{{ lesson.id }}/run"
+                     hx-target="#chat-conversation"
+                     hx-swap="innerHTML">
+            <wa-icon slot="prefix" name="rotate"></wa-icon>
+            Rigenera
           </wa-button>
-        </a>
-        <wa-button size="small"
-                   variant="brand"
-                   hx-post="/webui/lesson/{{ lesson.id }}/run"
-                   hx-target="#chat-conversation"
-                   hx-swap="innerHTML">
-          <wa-icon slot="prefix" name="rotate"></wa-icon>
-          Rigenera
-        </wa-button>
+        </div>
+
       </footer>
 
     </article>

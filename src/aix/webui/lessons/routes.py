@@ -74,6 +74,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
 
+from sqlalchemy import func
+
 from aix.api.schemas.educational_profile import (
     CLASS_FEATURE_LABELS,
     DISABILITY_LABELS,
@@ -86,7 +88,7 @@ from aix.webui.agent import run_agent_stream
 from aix.webui.auth.dependencies import optional_current_user
 from aix.webui.auth.models import User
 from aix.webui.db import get_async_session
-from aix.webui.lessons.models import Lesson
+from aix.webui.lessons.models import Lesson, LessonMessage
 from aix.webui.lessons.schemas import form_to_profile_dict
 from aix.webui.lessons.uploads import delete_upload, save_upload
 
@@ -129,10 +131,235 @@ def _label_dicts() -> dict[str, dict[str, str]]:
     }
 
 
+async def _load_chat_messages(
+    session: AsyncSession, lesson_id: uuid.UUID,
+) -> list[dict[str, Any]]:
+    """
+    Load all ``LessonMessage`` rows for a lesson and shape them into the
+    template-friendly form expected by ``chat_history.html``.
+
+    Returns rows ordered by ``(turn_index, created_at)`` ASC. Each row is
+    flattened to a plain dict with markdown pre-rendered to HTML for
+    assistant turns (Jinja can't call markdown.markdown directly without
+    a registered filter). User turns keep ``content_html=None`` — their
+    content is rendered as plain text inside the bubble.
+
+    Returns an empty list when the lesson has no messages yet (legacy
+    pre-#10.3 lessons or fresh draft lessons that haven't run a turn).
+    The template falls back to the legacy single-bubble layout in that
+    case — no breaking change for existing rows.
+    """
+    result = await session.execute(
+        select(LessonMessage)
+        .where(LessonMessage.lesson_id == lesson_id)
+        .order_by(LessonMessage.turn_index, LessonMessage.created_at)
+    )
+    out: list[dict[str, Any]] = []
+    for msg in result.scalars().all():
+        out.append({
+            "id": msg.id,
+            "role": msg.role,
+            "content_md": msg.content_md or "",
+            # Pre-render assistant markdown — Jinja sees ready-to-paint HTML.
+            # User messages render as plain text inside the bubble (no
+            # markdown — teacher's typed query, escape-safe via Jinja's
+            # default autoescape).
+            "content_html": (
+                _markdown_to_html(msg.content_md or "")
+                if msg.role == "assistant" else None
+            ),
+            "turn_index": msg.turn_index,
+            "agent_kind": msg.agent_kind,
+            "meta_json": msg.meta_json or {},
+            "created_at": msg.created_at,
+        })
+    return out
+
+
 def _bounce_to_login(target_path: str) -> RedirectResponse:
     """Redirect anonymous users to /auth/login with ?next= so they come back."""
     return RedirectResponse(
         f"/auth/login?next={target_path}", status_code=303
+    )
+
+
+# ----------------------------------------------------------------------------
+# GET /webui/lessons — lesson history list
+# ----------------------------------------------------------------------------
+
+@router.get(
+    "/lessons",
+    response_class=HTMLResponse,
+    name="webui_lessons_list",
+)
+async def lesson_list(
+    request: Request,
+    user: Optional[User] = Depends(optional_current_user),
+    session: AsyncSession = Depends(get_async_session),
+) -> Response:
+    """List all lessons for the current user, newest first."""
+    if user is None:
+        return _bounce_to_login("/webui/lessons")
+
+    result = await session.execute(
+        select(Lesson)
+        .where(Lesson.owner_id == user.id)
+        .order_by(Lesson.created_at.desc())
+    )
+    lessons = result.scalars().all()
+
+    return templates.TemplateResponse(
+        "pages/lesson_list.html",
+        {"request": request, "user": user, "lessons": lessons},
+    )
+
+
+# ----------------------------------------------------------------------------
+# DELETE /webui/lesson/{id} — delete a lesson
+# ----------------------------------------------------------------------------
+
+@router.delete(
+    "/lesson/{lesson_id}",
+    name="webui_lesson_delete",
+)
+async def lesson_delete(
+    lesson_id: uuid.UUID,
+    session: AsyncSession = Depends(get_async_session),
+    user: Optional[User] = Depends(optional_current_user),
+) -> Response:
+    """Permanently delete a lesson owned by the current user."""
+    if user is None:
+        raise HTTPException(status_code=401)
+
+    result = await session.execute(
+        select(Lesson).where(Lesson.id == lesson_id, Lesson.owner_id == user.id)
+    )
+    lesson = result.scalar_one_or_none()
+    if lesson is None:
+        raise HTTPException(status_code=404, detail="Lezione non trovata")
+
+    await session.delete(lesson)
+    await session.commit()
+
+    return Response(
+        status_code=204,
+        headers={"HX-Redirect": "/webui/lessons"},
+    )
+
+
+# ----------------------------------------------------------------------------
+# GET /webui/lesson/{id}/card-fragment — full lesson card (non-SSE)
+# ----------------------------------------------------------------------------
+
+@router.get(
+    "/lesson/{lesson_id}/card-fragment",
+    response_class=HTMLResponse,
+    name="webui_lesson_card_fragment",
+)
+async def lesson_card_fragment(
+    request: Request,
+    lesson_id: uuid.UUID,
+    session: AsyncSession = Depends(get_async_session),
+    user: Optional[User] = Depends(optional_current_user),
+) -> Response:
+    """
+    Return the full lesson card HTML via a regular GET (no SSE).
+
+    Called by the htmx:sseClose handler in chat_pane.html to replace the small
+    'done' placeholder with the complete lesson card fetched from the DB.
+    This sidesteps the htmx-ext-sse single-line buffer limit that truncates
+    large lesson plans when sent as SSE event data.
+    """
+    if user is None:
+        logger.warning("[card-fragment] 401 — unauthenticated request for lesson_id=%s", lesson_id)
+        raise HTTPException(status_code=401)
+
+    result = await session.execute(
+        select(Lesson).where(Lesson.id == lesson_id, Lesson.owner_id == user.id)
+    )
+    lesson = result.scalar_one_or_none()
+    if lesson is None:
+        logger.warning("[card-fragment] 404 lesson_id=%s user_id=%s", lesson_id, user.id)
+        raise HTTPException(status_code=404, detail="Lezione non trovata")
+
+    logger.info(
+        "[card-fragment] rendering lesson_id=%s status=%s plan_len=%s",
+        lesson_id, lesson.status, len(lesson.lesson_plan_md or ""),
+    )
+    return templates.TemplateResponse(
+        "partials/chat_lesson_card.html",
+        {
+            "request": request,
+            "lesson": lesson,
+            "lesson_plan_html": _markdown_to_html(lesson.lesson_plan_md or ""),
+            "meta": {"approved": lesson.status == "complete", "revision_count": 0},
+        },
+    )
+
+
+# ----------------------------------------------------------------------------
+# GET /webui/lesson/{id}/chat-input-fragment — chat input partial (state-driven)
+# ----------------------------------------------------------------------------
+
+@router.get(
+    "/lesson/{lesson_id}/chat-input-fragment",
+    response_class=HTMLResponse,
+    name="webui_lesson_chat_input_fragment",
+)
+async def lesson_chat_input_fragment(
+    request: Request,
+    lesson_id: uuid.UUID,
+    session: AsyncSession = Depends(get_async_session),
+    user: Optional[User] = Depends(optional_current_user),
+) -> Response:
+    """
+    Return just the chat-input partial for ``lesson_id`` rendered in its
+    current state ("draft" / "running" / "complete" / "error").
+
+    Called by chat_pane.html's htmx:sseClose handler as a defensive backup
+    to the OOB chat_input swap that the kind="done" / kind="error" SSE
+    events also emit. On follow-up turns the OOB swap can silently lose
+    the race against /run's innerHTML swap that just rebuilt the
+    #chat-input-wrapper element, leaving the user stuck on the disabled
+    "Generazione in corso..." state. This endpoint is the safety net:
+    after the lesson card is fetched, the JS handler re-fetches the input
+    here so it always lands on the correct active follow-up state.
+
+    Idempotent — if OOB already succeeded this is a same-content
+    outerHTML re-swap (no user-visible difference, ~1KB roundtrip).
+    """
+    if user is None:
+        logger.warning(
+            "[chat-input-fragment] 401 — unauthenticated request for lesson_id=%s",
+            lesson_id,
+        )
+        raise HTTPException(status_code=401)
+
+    result = await session.execute(
+        select(Lesson).where(Lesson.id == lesson_id, Lesson.owner_id == user.id)
+    )
+    lesson = result.scalar_one_or_none()
+    if lesson is None:
+        logger.warning(
+            "[chat-input-fragment] 404 lesson_id=%s user_id=%s", lesson_id, user.id
+        )
+        raise HTTPException(status_code=404, detail="Lezione non trovata")
+
+    logger.info(
+        "[chat-input-fragment] rendering lesson_id=%s status=%s",
+        lesson_id, lesson.status,
+    )
+    return templates.TemplateResponse(
+        "partials/chat_input.html",
+        {
+            "request": request,
+            "lesson": lesson,
+            # _oob=False because this response is targeted explicitly via
+            # htmx.ajax(target: '#chat-input-wrapper', swap: 'outerHTML') —
+            # we don't want the duplicate hx-swap-oob attribute that would
+            # turn the JS-driven swap into an OOB fallback.
+            "_oob": False,
+        },
     )
 
 
@@ -328,6 +555,11 @@ async def lesson_show(
         else {}
     )
 
+    # Multi-turn history for the chat transcript (#10.3d). Returns []
+    # for legacy / fresh lessons → templates fall back to the legacy
+    # single-bubble layout (chat_user_message.html + state-driven block).
+    messages = await _load_chat_messages(session, lesson.id)
+
     return templates.TemplateResponse(
         "pages/lesson_show.html",
         {
@@ -336,6 +568,7 @@ async def lesson_show(
             "phase": "P3 — Chat workspace + allegati",
             "user": user,
             "lesson": lesson,
+            "messages": messages,
             "lesson_plan_html": lesson_plan_html,
             "meta": meta_for_replay,
             "media": None,  # not persisted yet — empty placeholder on reload
@@ -362,18 +595,38 @@ async def lesson_run(
     """
     Open a new agent run for ``lesson_id``.
 
-    The actual graph execution happens inside the SSE generator; this
-    endpoint just persists the (optional) new ``query``, then returns the
-    chat conversation partial which embeds the SSE pane and immediately
-    starts streaming planner / retriever / writer / critic cards.
+    Multi-turn semantics (CORE 2 #10.3c):
+        ``mode`` is auto-detected from ``lesson.status``:
+            draft              → mode="new"        (first turn)
+            complete | error   → mode="follow_up"  (continuation)
+            running            → 409 (already in progress)
+
+        Each turn writes a ``LessonMessage(role="user", turn_index=N)``
+        on entry; the service layer writes the matching
+        ``LessonMessage(role="assistant", turn_index=N)`` on success.
+        The chat history is rendered from these rows (CQRS pattern with
+        the LangGraph checkpointer — see lessons/models.py docstring).
+
+    Backward compat for pre-#10.3 lessons:
+        Lessons created BEFORE this code lands have no ``LessonMessage``
+        rows but DO have ``lesson.teacher_query`` + ``lesson.lesson_plan_md``
+        from the legacy single-turn flow. On the first follow-up we backfill
+        turn 1 from those legacy fields so the rendered chat history is
+        contiguous and the agent's history-injection logic sees the prior
+        exchange. One-time, idempotent.
 
     Form data:
-        query   Optional[str] — the teacher's first-turn query, or a
-                                rerun-without-edit ping (no body) which
-                                reuses the persisted ``teacher_query``.
+        query   Optional[str] — the teacher's new query for this turn.
+                Required for the first turn (``draft`` lesson). Optional
+                for follow-ups when implicitly re-using the latest query
+                (post-#10.3 the chat input always submits a non-empty
+                query, so this fallback is purely a safety net for the
+                legacy "Rigenera" / "Riprova" buttons).
 
     Returns ``partials/chat_conversation.html`` so htmx swaps the running
-    pane (input → spinner + SSE stream) into ``#chat-conversation``.
+    pane (input → spinner + SSE stream) into ``#chat-conversation``. The
+    response includes the just-persisted user bubble at the bottom of the
+    history so the teacher sees their message immediately.
     """
     if user is None:
         # POSTs from htmx don't follow redirects sensibly; return a small
@@ -392,10 +645,7 @@ async def lesson_run(
     if lesson is None:
         raise HTTPException(status_code=404, detail="Lezione non trovata")
 
-    # Capture the user's first-turn query if present. The chat-input form
-    # always posts a non-empty ``query`` (client-side ``required`` +
-    # ``minlength=3``); the regenerate/retry buttons post no body and we
-    # reuse the persisted ``teacher_query``.
+    # Capture the user's new query if present.
     form = await request.form()
     query_raw = form.get("query")
     new_query = (
@@ -446,21 +696,108 @@ async def lesson_run(
             status_code=409,
         )
 
+    # ── Multi-turn mode detection (#10.3c) ────────────────────────────
+    is_follow_up = lesson.status in ("complete", "error")
+    mode = "follow_up" if is_follow_up else "new"
+
+    # Backfill turn 1 from legacy fields if this is a follow-up on a
+    # pre-#10.3 lesson. One-time, idempotent — guarded by a count probe
+    # so subsequent follow-ups skip cleanly.
+    if is_follow_up:
+        existing_msg_count = await session.scalar(
+            select(func.count(LessonMessage.id))
+            .where(LessonMessage.lesson_id == lesson.id)
+        )
+        if (
+            (existing_msg_count or 0) == 0
+            and (lesson.teacher_query or "").strip()
+            and (lesson.lesson_plan_md or "").strip()
+        ):
+            logger.info(
+                "[lesson_run] backfilling turn 1 from legacy fields lesson_id=%s",
+                lesson.id,
+            )
+            # NOTE: we use the OLD lesson.teacher_query for the backfilled
+            # user message, NOT the freshly submitted new_query. The new
+            # query is the CURRENT turn — the backfill represents a PRIOR
+            # turn that we never persisted to lesson_messages.
+            #
+            # Tricky bit: by this point ``lesson.teacher_query`` may already
+            # have been overwritten with ``new_query`` above. We undo that
+            # for the backfill window only — see the assignment guard below.
+            backfill_user_query = (
+                new_query is None and lesson.teacher_query
+                or _legacy_query_for_backfill(lesson, new_query)
+            )
+            session.add(LessonMessage(
+                lesson_id=lesson.id,
+                role="user",
+                content_md=backfill_user_query,
+                turn_index=1,
+            ))
+            session.add(LessonMessage(
+                lesson_id=lesson.id,
+                role="assistant",
+                content_md=lesson.lesson_plan_md,
+                turn_index=1,
+                agent_kind="writer",
+                meta_json={"approved": True, "backfilled": True},
+            ))
+            await session.flush()
+
+    # ── Compute the next turn_index for the user message we're about to
+    # persist. MAX(turn_index) + 1 keeps the ordering invariant. For a
+    # brand-new lesson with no rows yet, MAX returns NULL → 0 + 1 = 1.
+    latest_turn = await session.scalar(
+        select(func.max(LessonMessage.turn_index))
+        .where(LessonMessage.lesson_id == lesson.id)
+    ) or 0
+    new_turn_index = latest_turn + 1
+
+    # The query we persist for THIS turn. ``new_query`` is preferred (the
+    # user just typed it); we fall back to lesson.teacher_query only as a
+    # safety net for legacy buttons that POST with no body. The validation
+    # above already guarantees at least one is non-empty.
+    user_msg_content = new_query or lesson.teacher_query
+
+    session.add(LessonMessage(
+        lesson_id=lesson.id,
+        role="user",
+        content_md=user_msg_content,
+        turn_index=new_turn_index,
+    ))
+
     # Flip status optimistically so the chat conversation partial we
     # return immediately renders the live SSE pane (rather than the input
     # form). The service layer's setup phase commits this again — that's
     # idempotent and cheaper than a second roundtrip.
+    #
+    # We DO NOT clear lesson.lesson_plan_md anymore (#10.3): for follow-up
+    # turns the previous lesson stays visible in the chat history (rendered
+    # via lesson_messages — see chat_conversation.html post-#10.3d). For
+    # mode=new this is the first turn so lesson_plan_md is None already.
     lesson.status = "running"
     lesson.error_message = None
-    lesson.lesson_plan_md = None
+    if mode == "new":
+        # First turn — keep the existing semantics (clear stale state
+        # from any aborted previous attempt on a draft lesson).
+        lesson.lesson_plan_md = None
     await session.commit()
     await session.refresh(lesson)
 
     logger.info(
-        "▶️  Lesson run accepted: id=%s owner=%s has_new_query=%s uploads=%s",
-        lesson.id, user.id, bool(new_query),
+        "▶️  Lesson run accepted: id=%s owner=%s mode=%s turn=%s "
+        "has_new_query=%s uploads=%s",
+        lesson.id, user.id, mode, new_turn_index, bool(new_query),
         len(lesson.uploaded_files_json or []),
     )
+
+    # Reload the chat transcript so the response includes the just-persisted
+    # user turn (and any backfilled prior turn) at the bottom of the
+    # history. The chat_pane below (running state) will append per-agent
+    # cards live as the SSE stream fires; the final assistant message is
+    # written by the service on success.
+    messages = await _load_chat_messages(session, lesson.id)
 
     return templates.TemplateResponse(
         "partials/chat_conversation.html",
@@ -468,11 +805,31 @@ async def lesson_run(
             "request": request,
             "lesson": lesson,
             "user": user,
+            "messages": messages,
             "lesson_plan_html": None,
             "meta": {},
             "media": None,
         },
     )
+
+
+def _legacy_query_for_backfill(lesson: Lesson, new_query: Optional[str]) -> str:
+    """
+    Recover the previous turn's user query for the backfill path when
+    ``lesson.teacher_query`` has already been overwritten by the route's
+    new-query write-through.
+
+    Returns the best available recovery string. Pre-#10.3 lessons that
+    DO have a ``lesson_plan_md`` but somehow lost their ``teacher_query``
+    fall back to a synthesized "richiesta precedente" placeholder so the
+    backfill row stays non-empty (NOT NULL constraint).
+    """
+    # If the route has overwritten lesson.teacher_query with new_query,
+    # we can't recover the original. Fall back to a documented placeholder
+    # — better than a NULL row that breaks the rendering invariant.
+    if new_query and (lesson.teacher_query or "").strip() == new_query.strip():
+        return "[richiesta precedente non persistita]"
+    return (lesson.teacher_query or "[richiesta precedente non persistita]").strip()
 
 
 # ----------------------------------------------------------------------------
@@ -655,15 +1012,20 @@ async def lesson_stream(
 
         # ── REPLAY paths ─────────────────────────────────────────────
         if lesson.status == "complete":
+            # Send the same small placeholder used by the live run path.
+            # chat_pane.html's htmx:sseClose handler fetches the full card
+            # via GET /card-fragment after the stream closes.
+            lid = str(lesson.id)
             yield {
                 "event": "final",
-                "data": _render_partial(
-                    request, "partials/chat_lesson_card.html",
-                    {
-                        "lesson": lesson,
-                        "lesson_plan_html": _markdown_to_html(lesson.lesson_plan_md or ""),
-                        "meta": {"approved": True, "revision_count": 0},
-                    },
+                "data": (
+                    f'<div id="lesson-card-loading" class="flex items-start gap-3">'
+                    f'<div class="flex-shrink-0 w-9 h-9 rounded-full bg-slate-800 text-white'
+                    f' flex items-center justify-center ring-2 ring-white shadow-sm">'
+                    f'<wa-icon name="book-open" style="font-size:1rem;"></wa-icon></div>'
+                    f'<div class="flex-1 min-w-0"><div class="rounded-xl border border-slate-200'
+                    f' bg-white shadow-sm px-4 py-3 text-sm text-slate-500 animate-pulse">'
+                    f'Caricamento lezione…</div></div></div>'
                 ),
             }
             yield terminal_marker
@@ -863,17 +1225,114 @@ async def lesson_profile_save(
         )
 
     lesson.educational_profile_json = profile_dict
+
+    new_domain = str(form.get("domain", lesson.domain) or lesson.domain).strip()
+    if new_domain in {"neuro", "udl", "all"}:
+        lesson.domain = new_domain
+
+    lesson_title = str(form.get("lesson_title", "") or "").strip()
+    lesson.title = lesson_title or None
+
     await session.commit()
     await session.refresh(lesson)
 
     logger.info(
-        "✏️  Profile updated inline: lesson_id=%s owner=%s",
-        lesson.id, user.id,
+        "✏️  Profile updated inline: lesson_id=%s owner=%s domain=%s title=%r",
+        lesson.id, user.id, lesson.domain, lesson.title,
     )
 
     return templates.TemplateResponse(
         "partials/profile_sidebar.html",
         {"request": request, "lesson": lesson, **_label_dicts()},
+    )
+
+
+# ----------------------------------------------------------------------------
+# GET /webui/lesson/{id}/export — download lesson as MD or TXT
+# GET /webui/lesson/{id}/print  — print-friendly page (browser → PDF)
+# ----------------------------------------------------------------------------
+
+@router.get(
+    "/lesson/{lesson_id}/export",
+    name="webui_lesson_export",
+)
+async def lesson_export(
+    lesson_id: uuid.UUID,
+    format: str = "md",
+    session: AsyncSession = Depends(get_async_session),
+    user: Optional[User] = Depends(optional_current_user),
+) -> Response:
+    """Download the lesson plan as markdown or plain text."""
+    if user is None:
+        raise HTTPException(status_code=401)
+
+    result = await session.execute(
+        select(Lesson).where(Lesson.id == lesson_id, Lesson.owner_id == user.id)
+    )
+    lesson = result.scalar_one_or_none()
+    if lesson is None:
+        raise HTTPException(status_code=404, detail="Lezione non trovata")
+    if not lesson.lesson_plan_md:
+        raise HTTPException(status_code=404, detail="Nessun contenuto disponibile")
+
+    slug = (lesson.title or f"lezione-{lesson.id}").lower()
+    slug = "".join(c if c.isalnum() or c in "-_" else "-" for c in slug).strip("-")[:60]
+
+    if format == "md":
+        return Response(
+            content=lesson.lesson_plan_md,
+            media_type="text/markdown; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{slug}.md"'},
+        )
+
+    if format == "txt":
+        import re
+        text = lesson.lesson_plan_md
+        text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)  # links
+        text = re.sub(r"!\[[^\]]*\]\([^)]+\)", "", text)       # images
+        text = re.sub(r"#{1,6}\s*", "", text)                   # headings
+        text = re.sub(r"\*{1,3}([^*]+)\*{1,3}", r"\1", text)   # bold/italic
+        text = re.sub(r"`{1,3}[^`]*`{1,3}", lambda m: m.group().strip("`"), text)  # code
+        text = re.sub(r"_{1,2}([^_]+)_{1,2}", r"\1", text)     # underscores
+        text = re.sub(r"^\s*[-*+]\s+", "• ", text, flags=re.MULTILINE)  # bullets
+        return Response(
+            content=text,
+            media_type="text/plain; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{slug}.txt"'},
+        )
+
+    raise HTTPException(status_code=400, detail="Formato non supportato. Usa ?format=md o ?format=txt")
+
+
+@router.get(
+    "/lesson/{lesson_id}/print",
+    response_class=HTMLResponse,
+    name="webui_lesson_print",
+)
+async def lesson_print(
+    request: Request,
+    lesson_id: uuid.UUID,
+    session: AsyncSession = Depends(get_async_session),
+    user: Optional[User] = Depends(optional_current_user),
+) -> Response:
+    """Print-friendly page — the browser's Print → Save as PDF handles PDF export."""
+    if user is None:
+        return _bounce_to_login(f"/webui/lesson/{lesson_id}/print")
+
+    result = await session.execute(
+        select(Lesson).where(Lesson.id == lesson_id, Lesson.owner_id == user.id)
+    )
+    lesson = result.scalar_one_or_none()
+    if lesson is None:
+        raise HTTPException(status_code=404, detail="Lezione non trovata")
+
+    return templates.TemplateResponse(
+        "pages/lesson_print.html",
+        {
+            "request": request,
+            "lesson": lesson,
+            "lesson_plan_html": _markdown_to_html(lesson.lesson_plan_md or ""),
+        },
     )
 
 
@@ -966,25 +1425,50 @@ def _stream_event_to_sse(
         }
 
     if event.kind == "done":
+        # Send a small placeholder; chat_pane.html's htmx:sseClose handler
+        # fetches the full lesson card via GET /card-fragment (no SSE size limit).
+        #
+        # CORE 2 #10.1 — also append an OOB-marked re-render of chat_input
+        # so the input switches from the disabled "running" state to the
+        # active "complete" state without a page reload. ``lesson.status``
+        # has already been mutated to "complete" by run_agent_stream BEFORE
+        # this event was yielded (see service.run_agent_stream lifecycle
+        # contract), so the partial renders the right state inside the OOB
+        # wrapper.
+        placeholder = (
+            f'<div id="lesson-card-loading" class="flex items-start gap-3">'
+            f'<div class="flex-shrink-0 w-9 h-9 rounded-full bg-slate-800 text-white'
+            f' flex items-center justify-center ring-2 ring-white shadow-sm">'
+            f'<wa-icon name="book-open" style="font-size:1rem;"></wa-icon></div>'
+            f'<div class="flex-1 min-w-0"><div class="rounded-xl border border-slate-200'
+            f' bg-white shadow-sm px-4 py-3 text-sm text-slate-500 animate-pulse">'
+            f'Caricamento lezione finalizzata…</div></div></div>'
+        )
+        oob_input = _render_partial(
+            request, "partials/chat_input.html",
+            {"lesson": lesson, "_oob": True},
+        )
         return {
             "event": "final",
-            "data": _render_partial(
-                request, "partials/chat_lesson_card.html",
-                {
-                    "lesson": lesson,
-                    "lesson_plan_html": _markdown_to_html(event.lesson_plan_md or ""),
-                    "meta": event.meta or {},
-                },
-            ),
+            "data": placeholder + oob_input,
         }
 
     if event.kind == "error":
+        # CORE 2 #10.1 — same OOB rationale as the ``done`` branch: the
+        # error path mutates ``lesson.status = "error"`` BEFORE yielding,
+        # so re-rendering the input now lands the user back on the active
+        # "Riprova" affordance.
+        error_card = _render_partial(
+            request, "partials/chat_error.html",
+            {"lesson": lesson, "error": event.error or "Errore sconosciuto"},
+        )
+        oob_input = _render_partial(
+            request, "partials/chat_input.html",
+            {"lesson": lesson, "_oob": True},
+        )
         return {
             "event": "error",
-            "data": _render_partial(
-                request, "partials/chat_error.html",
-                {"lesson": lesson, "error": event.error or "Errore sconosciuto"},
-            ),
+            "data": error_card + oob_input,
         }
 
     # Unknown kind — log and skip rather than 500-ing the stream.

@@ -27,7 +27,7 @@
 
 <aside id="profile-sidebar"
        class="rounded-xl border-2 border-sky-300 bg-white p-4 shadow-md space-y-3
-              text-sm sticky top-4">
+              text-sm sticky top-4 overflow-y-auto max-h-[calc(100vh-5rem)]">
 
   {# ── Header ──────────────────────────────────────────────────────── #}
   <div class="flex items-center gap-2 text-sky-700">
@@ -51,9 +51,25 @@
         hx-swap="outerHTML"
         class="space-y-3">
 
+    {# ── Lesson title ──────────────────────────────────────────────── #}
+    <fieldset class="space-y-2">
+      <legend class="text-[10px] uppercase tracking-wide text-slate-500">Titolo</legend>
+      <wa-input type="text" name="lesson_title"
+                label="Titolo lezione" size="small"
+                value="{{ lesson.title or '' }}"
+                placeholder="Es. Motivazione 3A"></wa-input>
+    </fieldset>
+
     {# ── Lesson framing ────────────────────────────────────────────── #}
     <fieldset class="space-y-2">
       <legend class="text-[10px] uppercase tracking-wide text-slate-500">Lezione</legend>
+
+      {% set _domain = lesson.domain or 'neuro' %}
+      <wa-select name="domain" label="Dominio" size="small">
+        <wa-option value="neuro" {% if _domain == 'neuro' %}selected{% endif %}>🧠 Neuro</wa-option>
+        <wa-option value="udl" {% if _domain == 'udl' %}selected{% endif %}>🎯 UDL</wa-option>
+        <wa-option value="all" {% if _domain == 'all' %}selected{% endif %}>🌐 Tutti</wa-option>
+      </wa-select>
 
       <wa-input type="text" name="subject_area"
                 label="Materia" size="small"
@@ -87,35 +103,32 @@
                 value="{{ group.get('students_number') or '' }}"
                 placeholder="25"></wa-input>
 
-      <wa-select name="group_grade" label="Livello" size="small"
-                 value="{{ group.get('grade') or '' }}">
-        <wa-option value="">— Non specificato —</wa-option>
+      {% set _grade = group.get('grade') or '' %}
+      <wa-select name="group_grade" label="Livello" size="small">
+        <wa-option value="" {% if not _grade %}selected{% endif %}>— Non specificato —</wa-option>
         {% for code, label in GRADE_LABELS.items() %}
-          <wa-option value="{{ code }}">{{ label }}</wa-option>
+          <wa-option value="{{ code }}" {% if code == _grade %}selected{% endif %}>{{ label }}</wa-option>
         {% endfor %}
       </wa-select>
 
-      <wa-select name="group_disabilities" label="BES" size="small"
-                 multiple
-                 value="{{ group.get('disabilities', []) | tojson }}">
+      {% set _disabilities = group.get('disabilities') or [] %}
+      <wa-select name="group_disabilities" label="BES" size="small" multiple>
         {% for code, label in DISABILITY_LABELS.items() %}
-          <wa-option value="{{ code }}">{{ label }}</wa-option>
+          <wa-option value="{{ code }}" {% if code in _disabilities %}selected{% endif %}>{{ label }}</wa-option>
         {% endfor %}
       </wa-select>
 
-      <wa-select name="group_class_features" label="Caratteristiche" size="small"
-                 multiple
-                 value="{{ group.get('class_features', []) | tojson }}">
+      {% set _class_features = group.get('class_features') or [] %}
+      <wa-select name="group_class_features" label="Caratteristiche" size="small" multiple>
         {% for code, label in CLASS_FEATURE_LABELS.items() %}
-          <wa-option value="{{ code }}">{{ label }}</wa-option>
+          <wa-option value="{{ code }}" {% if code in _class_features %}selected{% endif %}>{{ label }}</wa-option>
         {% endfor %}
       </wa-select>
 
-      <wa-select name="group_student_attributes" label="Studenti" size="small"
-                 multiple
-                 value="{{ group.get('student_attributes', []) | tojson }}">
+      {% set _student_attrs = group.get('student_attributes') or [] %}
+      <wa-select name="group_student_attributes" label="Studenti" size="small" multiple>
         {% for code, label in STUDENT_ATTR_LABELS.items() %}
-          <wa-option value="{{ code }}">{{ label }}</wa-option>
+          <wa-option value="{{ code }}" {% if code in _student_attrs %}selected{% endif %}>{{ label }}</wa-option>
         {% endfor %}
       </wa-select>
     </fieldset>
@@ -129,19 +142,17 @@
                 value="{{ room.get('title') or '' }}"
                 placeholder="Aula 101"></wa-input>
 
-      <wa-select name="classroom_forniture_mobility"
-                 label="Mobilità" size="small"
-                 value="{{ room.get('forniture_mobility') or 'NO' }}">
+      {% set _mobility = room.get('forniture_mobility') or 'NO' %}
+      <wa-select name="classroom_forniture_mobility" label="Mobilità" size="small">
         {% for code, label in FORNITURE_MOBILITY_LABELS.items() %}
-          <wa-option value="{{ code }}">{{ label }}</wa-option>
+          <wa-option value="{{ code }}" {% if code == _mobility %}selected{% endif %}>{{ label }}</wa-option>
         {% endfor %}
       </wa-select>
 
-      <wa-select name="classroom_own_device"
-                 label="BYOD" size="small"
-                 value="{{ room.get('own_device') or 'NO' }}">
+      {% set _byod = room.get('own_device') or 'NO' %}
+      <wa-select name="classroom_own_device" label="BYOD" size="small">
         {% for code, label in OWN_DEVICE_LABELS.items() %}
-          <wa-option value="{{ code }}">{{ label }}</wa-option>
+          <wa-option value="{{ code }}" {% if code == _byod %}selected{% endif %}>{{ label }}</wa-option>
         {% endfor %}
       </wa-select>
 

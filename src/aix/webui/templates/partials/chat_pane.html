@@ -47,9 +47,82 @@
 
   {# Subtle "agent pipeline running" status line. Kept tiny and quiet
      because the cards themselves carry the active-state signal. #}
-  <div class="text-xs text-slate-400 flex items-center gap-2 pl-12">
+  <div id="chat-spinner" class="text-xs text-slate-400 flex items-center gap-2 pl-12">
     <wa-spinner style="font-size:0.85rem;"></wa-spinner>
     <span>L'agente sta lavorando — i passaggi si aggiungono qui sopra man mano che procedono.</span>
   </div>
 
 </div>
+
+<script>
+(function () {
+  var lessonId = '{{ lesson.id }}';
+  var fired = false;
+
+  // Why no { once: true } here:
+  //   On a follow-up turn, POST /run innerHTML-swaps a fresh chat_conversation
+  //   into #chat-conversation, which destroys the previous chat_pane and its
+  //   EventSource. htmx-sse fires htmx:sseClose for that teardown, and that
+  //   event bubbles to `document` AROUND THE SAME TIME this new IIFE registers
+  //   its listener. With { once: true }, the new listener can catch that
+  //   spurious old close and immediately auto-remove itself — leaving turn 2's
+  //   actual close with NO handler attached, which is why the loading
+  //   placeholder stayed forever and the chat input never re-enabled.
+  //
+  // Instead we keep the listener attached and gate its body on:
+  //   (1) `fired` — make this listener idempotent across multiple firings
+  //   (2) #lesson-card-loading must exist — that placeholder is only inserted
+  //       by the kind="done" / kind="error" SSE events, so its presence is
+  //       proof that THIS chat_pane's run actually finished. Spurious closes
+  //       from prior chat_pane teardowns will fail this check and no-op.
+  function onSseClose() {
+    if (fired) return;
+
+    var placeholder = document.getElementById('lesson-card-loading');
+    if (!placeholder) {
+      // Spurious close (e.g., prior turn's chat_pane being unmounted by
+      // /run's innerHTML swap). Wait for the real one — the actual done /
+      // error event ALWAYS lands its placeholder before sse-close="end"
+      // tears the EventSource down.
+      return;
+    }
+    fired = true;
+    document.removeEventListener('htmx:sseClose', onSseClose);
+
+    // Remove the "agent is working" spinner so the post-run UI is clean.
+    var sp = document.getElementById('chat-spinner');
+    if (sp) sp.remove();
+
+    // Give the browser one tick to finish painting the placeholder swap
+    // before we replace it (SSE swaps are async at the DOM-mutation level).
+    setTimeout(function () {
+      // 1) Replace the loading placeholder with the full final lesson card.
+      //    Uses GET /card-fragment (no SSE size limit) to read the persisted
+      //    lesson_plan_md from the DB.
+      htmx.ajax('GET', '/webui/lesson/' + lessonId + '/card-fragment', {
+        target: '#lesson-card-loading',
+        swap: 'outerHTML'
+      });
+
+      // 2) Defensive chat-input refresh (#10.3d follow-up — fixes the
+      //    "Generazione in corso..." stuck-disabled symptom on follow-up
+      //    turns). The kind="done" / kind="error" SSE events ALSO emit an
+      //    OOB-marked chat_input fragment (#10.1), but the OOB swap can
+      //    silently lose the race against /run's parent innerHTML swap that
+      //    just rebuilt #chat-input-wrapper milliseconds earlier. We re-fetch
+      //    the input here as belt+suspenders: if OOB worked, this is an
+      //    idempotent no-visible-change re-render; if OOB failed, this is
+      //    what unsticks the user.
+      var inputWrapper = document.getElementById('chat-input-wrapper');
+      if (inputWrapper) {
+        htmx.ajax('GET', '/webui/lesson/' + lessonId + '/chat-input-fragment', {
+          target: '#chat-input-wrapper',
+          swap: 'outerHTML'
+        });
+      }
+    }, 50);
+  }
+
+  document.addEventListener('htmx:sseClose', onSseClose);
+})();
+</script>

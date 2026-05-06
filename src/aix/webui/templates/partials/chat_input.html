@@ -1,5 +1,5 @@
 {#
-  Bottom chat input — three states (CORE 2 #6.6 P2 phase 2 + P3).
+  Bottom chat input — three states (CORE 2 #6.6 P2 phase 2 + P3 + #10.1).
 
   draft     → ACTIVE first-turn form. Posts ``query`` to /run and the
               response (rendered chat_conversation.html) is swapped into
@@ -14,15 +14,33 @@
               turn is in flight and the SSE stream is feeding cards into
               the chat above.
 
-  complete  → DISABLED multi-turn placeholder. Multi-turn refinement
-              ("Chiedi una modifica…") would re-invoke the LangGraph
-  error       pipeline against an updated state, which today has no
-              persistent thread / checkpointer — that's #10's scope.
-              Tooltip points to the blocking ticket.
+  complete  → ACTIVE new-request input. The teacher can submit a brand-new
+  error       query (or, post-#10.3, a follow-up turn). Re-rendered live by
+              the SSE ``done`` / ``error`` events via the OOB-swap mechanism
+              below — no page reload required.
+
+  ── OOB swap mechanism (CORE 2 #10.1) ─────────────────────────────────────
+  The whole partial is wrapped in a STABLE id (``chat-input-wrapper``) so
+  the SSE ``done`` / ``error`` events can re-render the partial at the
+  end of an agent run and replace the disabled ``running`` state with the
+  ACTIVE ``complete`` / ``error`` state, removing the dead-end UX where
+  the input would otherwise stay frozen until a full page reload.
+
+  When ``_oob`` is True (set by ``_stream_event_to_sse`` in routes.py
+  for terminal SSE events), the wrapper carries ``hx-swap-oob="outerHTML"``
+  so htmx extracts it from the SSE payload and uses it to replace the
+  matching ``#chat-input-wrapper`` element on the page, leaving the rest
+  of the SSE event (the placeholder lesson card or error card) to flow
+  through the normal ``beforeend`` swap on ``#chat-cards``.
 
   Required context:
     lesson    Lesson ORM
+    _oob      bool, optional. When True, mark the wrapper for OOB swap.
+              Default: False (regular include path — wrapper renders inert).
 #}
+
+<div id="chat-input-wrapper"{% if _oob %} hx-swap-oob="outerHTML"{% endif %}>
+
 
 {% if lesson.status == "draft" %}
 
@@ -173,59 +191,106 @@
 
 {% else %}
 
-  {# ── DISABLED multi-turn (complete / error) — parked on #10 ─────── #}
+  {# ── ACTIVE follow-up input (complete / error) ────────────────────── #}
+  {#
+    CORE 2 #10.3 — multi-turn semantics. The teacher continues the
+    conversation against the persisted thread (LangGraph checkpointer
+    keyed on lesson.id, plus the lesson_message CQRS log used to render
+    the chat history). POST /run auto-detects ``mode=follow_up`` from
+    ``lesson.status`` in {complete, error} and appends a new turn rather
+    than replacing the previous lesson.
 
-  {# Show the (now read-only) attachment list so the teacher can see
-     which files were used. Deletion is allowed only in draft / complete
-     / error so they can iterate on a fresh run. #}
+    Backward compat: lessons created BEFORE #10.3 land have no
+    lesson_message rows; the service layer backfills turn 1 from
+    lesson.teacher_query / lesson.lesson_plan_md on the first follow-up,
+    so the chat history stays consistent.
+
+    Educational profile is unchanged — only the new query and (optionally)
+    new attachments influence this turn.
+  #}
+
+  <input type="file"
+         id="chat-upload-input"
+         name="file"
+         class="hidden"
+         accept=".pdf,.txt,.md,.markdown,application/pdf,text/plain,text/markdown"
+         hx-post="/webui/lesson/{{ lesson.id }}/upload"
+         hx-encoding="multipart/form-data"
+         hx-trigger="change"
+         hx-target="#chat-attachments"
+         hx-swap="outerHTML"
+         hx-on::after-request="this.value = ''" />
+
   {% include "partials/chat_attachments.html" %}
 
-  <div class="rounded-2xl border border-slate-200 bg-white shadow-sm
-              p-2 flex items-end gap-2 opacity-70" aria-disabled="true">
+  <form id="chat-input-form"
+        hx-post="/webui/lesson/{{ lesson.id }}/run"
+        hx-target="#chat-conversation"
+        hx-swap="innerHTML"
+        hx-disabled-elt="find textarea, find button[type=submit]"
+        class="space-y-1">
 
-    <div class="flex items-center gap-1 pb-0.5">
-      <button type="button" disabled
-              aria-label="Allega documento"
-              title="Allegati disponibili nello stato 'bozza'"
-              class="w-8 h-8 inline-flex items-center justify-center
-                     rounded-md text-slate-300 cursor-not-allowed">
-        <wa-icon name="paperclip" style="font-size:0.95rem;"></wa-icon>
-      </button>
-      <button type="button" disabled
-              aria-label="Mermaid"
-              title="Inserimento diagramma Mermaid — disponibile in una versione successiva"
-              class="w-8 h-8 inline-flex items-center justify-center
-                     rounded-md text-slate-300 cursor-not-allowed">
-        <wa-icon name="diagram-project" style="font-size:0.95rem;"></wa-icon>
-      </button>
+    <div class="rounded-2xl border border-slate-200 bg-white shadow-sm p-2
+                flex items-end gap-2
+                focus-within:ring-2 focus-within:ring-sky-300/60
+                focus-within:border-sky-300">
+
+      <div class="flex items-center gap-1 pb-0.5">
+        <button type="button"
+                aria-label="Allega documento"
+                title="Allega PDF, TXT o Markdown come contesto per la lezione (max 10 MB)"
+                class="w-8 h-8 inline-flex items-center justify-center
+                       rounded-md text-slate-500 hover:text-slate-800
+                       hover:bg-slate-100 focus:outline-none
+                       focus-visible:ring-2 focus-visible:ring-sky-300/60
+                       transition-colors"
+                onclick="document.getElementById('chat-upload-input').click()">
+          <wa-icon name="paperclip" style="font-size:0.95rem;"></wa-icon>
+        </button>
+        <button type="button" disabled
+                aria-label="Mermaid"
+                title="Inserimento diagramma Mermaid — disponibile in una versione successiva"
+                class="w-8 h-8 inline-flex items-center justify-center
+                       rounded-md text-slate-300 cursor-not-allowed">
+          <wa-icon name="diagram-project" style="font-size:0.95rem;"></wa-icon>
+        </button>
+      </div>
+
+      <textarea
+        name="query"
+        class="flex-1 resize-none border-0 bg-transparent
+               px-2 py-2 text-sm text-slate-800 placeholder-slate-400
+               focus:outline-none"
+        rows="2"
+        required
+        minlength="3"
+        maxlength="2000"
+        placeholder="Continua la conversazione… (es. «adatta per studenti DSA», «aggiungi un'attività di gruppo»)"
+        onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault(); if(this.value.trim().length>=3){this.form.requestSubmit();}}"
+      ></textarea>
+
+      <div class="pb-0.5">
+        <wa-button type="submit" size="small" variant="brand"
+                   aria-label="Invia messaggio di follow-up">
+          <wa-icon slot="prefix" name="paper-plane" style="font-size:0.95rem;"></wa-icon>
+          Invia
+        </wa-button>
+      </div>
+
     </div>
 
-    <textarea
-      class="flex-1 w-full resize-none rounded-lg border border-slate-200 bg-slate-50
-             px-3 py-2 text-sm text-slate-500 placeholder-slate-400
-             focus:outline-none cursor-not-allowed"
-      rows="1"
-      disabled
-      aria-disabled="true"
-      title="Conversazione multi-turno — sbloccata da #10 Conversation Memory"
-      placeholder="Chiedi una modifica… (disponibile dopo #10 — Memoria conversazionale)"
-    ></textarea>
-
-    <button type="button" disabled
-            aria-label="Invia messaggio"
-            title="Invio messaggio — disponibile dopo #10"
-            class="w-8 h-8 inline-flex items-center justify-center
-                   rounded-md bg-sky-300 text-white cursor-not-allowed">
-      <wa-icon name="paper-plane" style="font-size:0.95rem;"></wa-icon>
-    </button>
-
-  </div>
-
-  <p class="mt-1.5 text-[11px] text-slate-400 text-center">
-    Multi-turno bloccato fino a
-    <a href="/docs/product/ClickUp_Agentic_GraphRAG_Update.md"
-       class="underline hover:text-slate-600">#10 — Memoria conversazionale</a>.
-    Per ora ogni rigenerazione riparte da zero con lo stesso profilo.
-  </p>
+    <p class="text-[11px] text-slate-500 px-3 flex items-center gap-1.5">
+      <wa-icon name="circle-info" style="font-size:0.75rem;"></wa-icon>
+      <span>
+        Premi <kbd class="rounded bg-slate-100 px-1 py-0.5 text-[10px]
+                          border border-slate-200">Invio</kbd>
+        per continuare la conversazione. La lezione precedente resta
+        visibile sopra; la nuova risposta verrà aggiunta al thread.
+      </span>
+    </p>
+  </form>
 
 {% endif %}
+
+</div>
+{# /chat-input-wrapper — see partial header for the OOB-swap rationale (#10.1) #}
