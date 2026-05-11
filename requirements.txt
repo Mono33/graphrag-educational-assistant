@@ -92,3 +92,6 @@ langfuse>=2.0.0
 # truth — see RetrievalPlan.has_confident_language). Falls back gracefully
 # to default "it" if the package isn't installed (see service._detect_language).
 lingua-language-detector>=2.0.0
+
+# Media pool scripts (scripts/media_pool/) — offline YouTube search without API key/quota
+yt-dlp>=2026.1.0
