@@ -1,5 +1,5 @@
 {#
-  Critic Agent card (CORE 2 #6.6 P2 phase 2).
+  Critic Agent card (CORE 2 #6.6 P2 phase 2 / re-skin P5.4).
 
   Rendered after the `critique` LangGraph node finishes. Surfaces the
   three critic signals that matter to the user:
@@ -20,54 +20,57 @@
 {% set rev_count = p.get('revision_count', 0) %}
 {% set max_rev = p.get('max_revisions', 2) %}
 
-<div class="flex items-start gap-3">
+{# Score threshold → bar fill variant #}
+{% set score_pct = p.get('score_pct') %}
+{% if score_pct is not none %}
+  {% if score_pct >= 80 %}
+    {% set _score_class = 'aix-score-bar-fill--high' %}
+  {% elif score_pct >= 60 %}
+    {% set _score_class = 'aix-score-bar-fill--mid' %}
+  {% else %}
+    {% set _score_class = 'aix-score-bar-fill--low' %}
+  {% endif %}
+{% endif %}
 
-  {# ── Avatar (critic = amber / shield-check) ───────────────────────── #}
-  <div class="flex-shrink-0 w-9 h-9 rounded-full bg-amber-100 text-amber-700
-              flex items-center justify-center ring-2 ring-white shadow-sm">
-    <wa-icon name="shield-check" style="font-size:1rem;"></wa-icon>
+<div class="aix-agent-shell">
+
+  <div class="aix-agent-avatar aix-agent-avatar--critic">
+    <wa-icon name="shield-check"></wa-icon>
   </div>
 
-  {# ── Card body ────────────────────────────────────────────────────── #}
-  <div class="flex-1 min-w-0">
-    <article class="rounded-xl border border-amber-200 bg-white shadow-sm overflow-hidden">
+  <div class="aix-agent-body">
+    <article class="aix-agent-card aix-agent-card--critic aix-card-stripe-critic">
 
-      <header class="px-4 py-2 border-b border-amber-100 bg-amber-50/60
-                     flex items-center justify-between gap-2 flex-wrap">
-        <div class="flex items-baseline gap-2">
-          <strong class="text-slate-800">Critic Agent</strong>
-          <span class="text-xs text-slate-500">
-            · revisione {{ rev_count }}/{{ max_rev }}
-          </span>
+      <header class="aix-agent-card-header aix-agent-card-header--critic">
+        <div class="aix-agent-card-title">
+          <strong>Critic Agent</strong>
+          <span class="aix-agent-card-role">· revisione {{ rev_count }}/{{ max_rev }}</span>
         </div>
         {% if approved %}
-          <wa-tag size="small" variant="success" pill>
+          <span class="aix-pill aix-pill-success">
             <wa-icon name="circle-check" style="font-size:0.7rem;"></wa-icon>
             approvata
-          </wa-tag>
+          </span>
         {% else %}
-          <wa-tag size="small" variant="warning" pill>
+          <span class="aix-pill aix-pill-warning">
             <wa-icon name="rotate" style="font-size:0.7rem;"></wa-icon>
             revisione richiesta
-          </wa-tag>
+          </span>
         {% endif %}
       </header>
 
-      <div class="px-4 py-3 space-y-3 text-sm">
+      <div class="aix-agent-card-body" style="display:flex; flex-direction:column; gap:12px;">
 
         {# Score visualization #}
-        {% if p.get('score_pct') is not none %}
-          <div class="space-y-1">
-            <div class="flex items-center justify-between text-xs">
-              <span class="text-slate-500">Punteggio qualità</span>
-              <span class="font-semibold text-slate-800">{{ p.score_pct }}%</span>
+        {% if score_pct is not none %}
+          <div style="display:flex; flex-direction:column; gap:4px;">
+            <div style="display:flex; align-items:center; justify-content:space-between;
+                        font-size:12px;">
+              <span style="color:var(--aix-text-tertiary);">Punteggio qualità</span>
+              <span style="font-weight:600; color:var(--aix-text-primary);">{{ score_pct }}%</span>
             </div>
-            <div class="h-2 rounded-full bg-slate-100 overflow-hidden">
-              <div class="h-full rounded-full
-                          {% if p.score_pct >= 80 %}bg-emerald-500
-                          {% elif p.score_pct >= 60 %}bg-amber-500
-                          {% else %}bg-rose-500{% endif %}"
-                   style="width: {{ p.score_pct }}%;"></div>
+            <div class="aix-score-bar">
+              <div class="aix-score-bar-fill {{ _score_class }}" style="width: {{ score_pct }}%;"></div>
             </div>
           </div>
         {% endif %}
@@ -75,11 +78,11 @@
         {# Critic's narrative feedback #}
         {% if p.get('critique') %}
           <details>
-            <summary class="cursor-pointer select-none text-xs uppercase
-                            tracking-wide text-slate-500 hover:text-slate-700">
+            <summary class="aix-section-label" style="cursor:pointer; user-select:none;">
               Mostra la valutazione completa
             </summary>
-            <p class="mt-2 text-slate-700 whitespace-pre-wrap text-[13px] leading-relaxed">
+            <p style="margin:8px 0 0; font-size:13px; line-height:1.6;
+                      color:var(--aix-text-primary); white-space:pre-wrap;">
               {{ p.critique }}
             </p>
           </details>
@@ -87,19 +90,22 @@
 
         {# Revision instructions (if not approved) #}
         {% if not approved and p.get('revision_instructions') %}
-          <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
-            <div class="text-xs uppercase tracking-wide text-amber-700 mb-1">
+          <div style="border:1px solid rgba(212,164,90,0.32);
+                      background:var(--aix-amber-soft);
+                      border-radius:var(--aix-radius-sm); padding:8px 12px;">
+            <div class="aix-section-label" style="color:var(--aix-amber-hover);">
               <wa-icon name="lightbulb" style="font-size:0.7rem;"></wa-icon>
               Istruzioni di revisione passate al Writer
             </div>
-            <p class="text-[13px] text-slate-700 whitespace-pre-wrap">
+            <p style="margin:4px 0 0; font-size:13px; color:var(--aix-text-primary);
+                      white-space:pre-wrap;">
               {{ p.revision_instructions }}
             </p>
           </div>
         {% endif %}
 
         {% if not approved and rev_count >= max_rev %}
-          <p class="text-xs text-slate-500 italic">
+          <p style="font-size:12px; font-style:italic; color:var(--aix-text-tertiary); margin:0;">
             Limite revisioni raggiunto: l'ultima bozza viene presentata
             comunque come risultato finale.
           </p>
@@ -108,8 +114,8 @@
       </div>
 
     </article>
-    <div class="text-[11px] text-slate-400 mt-1 ml-1 flex items-center gap-1">
-      <wa-icon name="shield-check" style="font-size:0.7rem;"></wa-icon>
+    <div class="aix-agent-footer-label">
+      <wa-icon name="shield-check" style="font-size:0.75rem;"></wa-icon>
       <span>Critic · {% if approved %}approvata{% else %}revisione {{ rev_count }}{% endif %}</span>
     </div>
   </div>

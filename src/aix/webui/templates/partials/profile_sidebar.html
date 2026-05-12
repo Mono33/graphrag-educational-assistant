@@ -1,6 +1,6 @@
 {#
   Profile sidebar — left column of the chat workspace
-  (CORE 2 #6.6 P2 phase 2).
+  (CORE 2 #6.6 P2 phase 2 / re-skin P5.4).
 
   Compact summary of the EducationalProfile snapshot the lesson was created
   with. We re-use the label dictionaries the form passes in so codes like
@@ -10,6 +10,11 @@
   (``profile_sidebar_edit.html``) via htmx. The edit form POSTs to
   ``/webui/lesson/{id}/profile`` and swaps the read-only sidebar back
   once the validation succeeds. No page reload, no lost conversation.
+
+  PRESERVED FOR HTMX:
+    - id="profile-sidebar"  ← required by ``hx-target="#profile-sidebar"`` on the
+                              "Aggiorna profilo" button + on the edit form's
+                              POST/Annulla responses.
 
   Required context:
     lesson                           ORM Lesson (we read educational_profile_json)
@@ -21,33 +26,31 @@
 {% set group   = profile.get('group') or {} %}
 {% set room    = profile.get('classroom') or {} %}
 
-<aside id="profile-sidebar"
-       class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm space-y-4
-              text-sm sticky top-4 overflow-y-auto max-h-[calc(100vh-5rem)]">
+<aside id="profile-sidebar" class="aix-side-pane">
 
   {# ── Header ───────────────────────────────────────────────────────── #}
   <div>
-    <div class="flex items-center gap-2 text-slate-700">
-      <wa-icon name="user-graduate"></wa-icon>
-      <strong>Profilo educativo</strong>
+    <div class="aix-side-pane-title">
+      <wa-icon name="user-graduate" style="color:var(--aix-teal);"></wa-icon>
+      <span>Profilo educativo</span>
     </div>
-    <p class="text-xs text-slate-500 mt-1">
+    <p class="aix-side-pane-subtitle">
       Snapshot al momento della creazione della lezione.
     </p>
   </div>
 
   {# ── Lesson framing ──────────────────────────────────────────────── #}
-  <div>
-    <h3 class="text-[10px] uppercase tracking-wide text-slate-500 mb-1">Lezione</h3>
-    <dl class="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[13px]">
-      <dt class="text-slate-500">Dominio</dt>
-      <dd class="text-slate-800 truncate">{{ lesson.domain }}</dd>
-      <dt class="text-slate-500">Materia</dt>
-      <dd class="text-slate-800 truncate">{{ profile.get('subject_area') or '—' }}</dd>
-      <dt class="text-slate-500">Argomento</dt>
-      <dd class="text-slate-800 truncate">{{ profile.get('specific_topic') or '—' }}</dd>
-      <dt class="text-slate-500">Durata</dt>
-      <dd class="text-slate-800">
+  <div class="aix-side-pane-section">
+    <div class="aix-section-label">Lezione</div>
+    <dl class="aix-profile-kv">
+      <dt>Dominio</dt>
+      <dd class="truncate">{{ lesson.domain }}</dd>
+      <dt>Materia</dt>
+      <dd class="truncate">{{ profile.get('subject_area') or '—' }}</dd>
+      <dt>Argomento</dt>
+      <dd class="truncate">{{ profile.get('specific_topic') or '—' }}</dd>
+      <dt>Durata</dt>
+      <dd>
         {% if profile.get('time_available_minutes') %}
           {{ profile.get('time_available_minutes') }} min
         {% else %}—{% endif %}
@@ -56,54 +59,54 @@
   </div>
 
   {# ── Class profile ───────────────────────────────────────────────── #}
-  <div>
-    <h3 class="text-[10px] uppercase tracking-wide text-slate-500 mb-1">Classe</h3>
-    <dl class="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[13px]">
-      <dt class="text-slate-500">Nome</dt>
-      <dd class="text-slate-800 truncate">{{ group.get('title') or '—' }}</dd>
-      <dt class="text-slate-500">Studenti</dt>
-      <dd class="text-slate-800">{{ group.get('students_number') or '—' }}</dd>
-      <dt class="text-slate-500">Livello</dt>
-      <dd class="text-slate-800 truncate">
+  <div class="aix-side-pane-section">
+    <div class="aix-section-label">Classe</div>
+    <dl class="aix-profile-kv">
+      <dt>Nome</dt>
+      <dd class="truncate">{{ group.get('title') or '—' }}</dd>
+      <dt>Studenti</dt>
+      <dd>{{ group.get('students_number') or '—' }}</dd>
+      <dt>Livello</dt>
+      <dd class="truncate">
         {% set g = group.get('grade') %}
         {{ GRADE_LABELS.get(g, g) if g else '—' }}
       </dd>
     </dl>
 
     {% if group.get('disabilities') %}
-      <div class="mt-2">
-        <span class="text-[10px] uppercase tracking-wide text-slate-500">BES</span>
-        <div class="flex flex-wrap gap-1 mt-1">
+      <div style="margin-top:10px;">
+        <span class="aix-section-label">BES</span>
+        <div class="aix-chip-row">
           {% for code in group.get('disabilities', []) %}
-            <wa-tag size="small" variant="warning" pill>
+            <span class="aix-pill aix-pill-warning">
               {{ DISABILITY_LABELS.get(code, code) }}
-            </wa-tag>
+            </span>
           {% endfor %}
         </div>
       </div>
     {% endif %}
 
     {% if group.get('class_features') %}
-      <div class="mt-2">
-        <span class="text-[10px] uppercase tracking-wide text-slate-500">Caratteristiche</span>
-        <div class="flex flex-wrap gap-1 mt-1">
+      <div style="margin-top:10px;">
+        <span class="aix-section-label">Caratteristiche</span>
+        <div class="aix-chip-row">
           {% for code in group.get('class_features', []) %}
-            <wa-tag size="small" variant="neutral" pill>
+            <span class="aix-pill aix-pill-neutral">
               {{ CLASS_FEATURE_LABELS.get(code, code) }}
-            </wa-tag>
+            </span>
           {% endfor %}
         </div>
       </div>
     {% endif %}
 
     {% if group.get('student_attributes') %}
-      <div class="mt-2">
-        <span class="text-[10px] uppercase tracking-wide text-slate-500">Studenti</span>
-        <div class="flex flex-wrap gap-1 mt-1">
+      <div style="margin-top:10px;">
+        <span class="aix-section-label">Studenti</span>
+        <div class="aix-chip-row">
           {% for code in group.get('student_attributes', []) %}
-            <wa-tag size="small" variant="neutral" pill>
+            <span class="aix-pill aix-pill-neutral">
               {{ STUDENT_ATTR_LABELS.get(code, code) }}
-            </wa-tag>
+            </span>
           {% endfor %}
         </div>
       </div>
@@ -111,48 +114,54 @@
   </div>
 
   {# ── Classroom environment ──────────────────────────────────────── #}
-  <div>
-    <h3 class="text-[10px] uppercase tracking-wide text-slate-500 mb-1">Aula</h3>
-    <dl class="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[13px]">
-      <dt class="text-slate-500">Nome</dt>
-      <dd class="text-slate-800 truncate">{{ room.get('title') or '—' }}</dd>
-      <dt class="text-slate-500">Mobilità</dt>
-      <dd class="text-slate-800 truncate">
+  <div class="aix-side-pane-section">
+    <div class="aix-section-label">Aula</div>
+    <dl class="aix-profile-kv">
+      <dt>Nome</dt>
+      <dd class="truncate">{{ room.get('title') or '—' }}</dd>
+      <dt>Mobilità</dt>
+      <dd class="truncate">
         {% set fm = room.get('forniture_mobility') %}
         {{ FORNITURE_MOBILITY_LABELS.get(fm, fm) if fm else '—' }}
       </dd>
-      <dt class="text-slate-500">BYOD</dt>
-      <dd class="text-slate-800 truncate">
+      <dt>BYOD</dt>
+      <dd class="truncate">
         {% set od = room.get('own_device') %}
         {{ OWN_DEVICE_LABELS.get(od, od) if od else '—' }}
       </dd>
     </dl>
-    <div class="mt-2 flex flex-wrap gap-1 text-[11px] text-slate-600">
-      {% if room.get('has_lim') %}<wa-tag size="small" variant="success" pill>LIM</wa-tag>{% endif %}
-      {% if room.get('has_wifi') %}<wa-tag size="small" variant="success" pill>WiFi</wa-tag>{% endif %}
-      {% if room.get('has_suite') %}<wa-tag size="small" variant="success" pill>Suite</wa-tag>{% endif %}
-      {% if room.get('pc_station') %}<wa-tag size="small" variant="success" pill>PC postazioni</wa-tag>{% endif %}
-    </div>
+    {% set has_any = room.get('has_lim') or room.get('has_wifi') or room.get('has_suite') or room.get('pc_station') %}
+    {% if has_any %}
+      <div class="aix-chip-row" style="margin-top:10px;">
+        {% if room.get('has_lim') %}<span class="aix-pill aix-pill-success">LIM</span>{% endif %}
+        {% if room.get('has_wifi') %}<span class="aix-pill aix-pill-success">WiFi</span>{% endif %}
+        {% if room.get('has_suite') %}<span class="aix-pill aix-pill-success">Suite</span>{% endif %}
+        {% if room.get('pc_station') %}<span class="aix-pill aix-pill-success">PC postazioni</span>{% endif %}
+      </div>
+    {% endif %}
   </div>
 
   {# ── Action: inline profile editing ──────────────────────────────── #}
-  <div class="pt-2 border-t border-slate-200">
-    <wa-button size="small" variant="default" class="w-full"
-               hx-get="/webui/lesson/{{ lesson.id }}/profile/edit"
-               hx-target="#profile-sidebar"
-               hx-swap="outerHTML">
-      <wa-icon slot="prefix" name="pen-to-square"></wa-icon>
+  <div class="aix-side-pane-section">
+    <button type="button"
+            class="aix-btn aix-btn-outline-amber aix-btn-sm"
+            style="width:100%;"
+            hx-get="/webui/lesson/{{ lesson.id }}/profile/edit"
+            hx-target="#profile-sidebar"
+            hx-swap="outerHTML">
+      <wa-icon name="pen-to-square" style="font-size:0.85rem;"></wa-icon>
       Aggiorna profilo
-    </wa-button>
+    </button>
   </div>
 
   {# ── Raw JSON debug pane ────────────────────────────────────────── #}
-  <details class="text-[11px] text-slate-500">
-    <summary class="cursor-pointer select-none hover:text-slate-700">
+  <details style="font-size:11px; color:var(--aix-text-tertiary); margin-top:8px;">
+    <summary style="cursor:pointer; user-select:none;">
       Mostra payload JSON
     </summary>
-    <pre class="mt-2 p-2 bg-slate-900 text-slate-100 rounded text-[10px]
-                overflow-x-auto leading-tight"
+    <pre style="margin-top:6px; padding:8px; background:var(--aix-ink-navy);
+                color:#e6e6e6; border-radius:var(--aix-radius-sm);
+                font-size:10.5px; overflow-x:auto; line-height:1.3;"
 >{{ profile | tojson(indent=2) }}</pre>
   </details>
 

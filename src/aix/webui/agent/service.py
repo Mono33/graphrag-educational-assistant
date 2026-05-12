@@ -85,6 +85,13 @@ PHASE_ORDER: tuple[str, ...] = ("plan", "retrieve", "write", "critique")
 PHASE_LABELS: dict[str, str] = {
     "plan": "Pianificazione della lezione",
     "retrieve": "Recupero contesto dal Knowledge Graph",
+    # CORE 2 #9 — Corrective RAG. The ``grade_retrieval`` node is added
+    # to the workflow only when ``AIX_CORRECTIVE_RAG_ENABLED=true``; we
+    # whitelist it here so its state diffs are applied to ``final_state``
+    # in the SSE loop (otherwise the grade fields would never reach the
+    # closing meta event). When the flag is OFF, the node is absent from
+    # the topology and this label is unused — pre-#9 behaviour preserved.
+    "grade_retrieval": "Valutazione qualità del recupero (Corrective RAG)",
     "write": "Scrittura della lezione",
     "critique": "Revisione e valutazione qualità",
 }
@@ -836,12 +843,128 @@ def _build_planner_payload(state: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _is_corrective_rag_enabled() -> bool:
+    """CORE 2 #9 — match the graph builder's flag check exactly so the
+    SSE loop's behaviour stays in sync with the topology actually built
+    by ``build_lesson_planner_graph_async``. Imported here lazily to
+    avoid a circular import on cold start (service → nodes → service)."""
+    from aix.agent.graph.nodes import _corrective_rag_enabled
+    return _corrective_rag_enabled()
+
+
+def _resolve_max_attempts() -> int:
+    """Resolve ``AIX_CORRECTIVE_RAG_MAX_ATTEMPTS`` with the same defaults
+    and clamping that :func:`aix.agent.graph.nodes._corrective_rag_max_attempts`
+    uses. Single source of truth for the SSE layer (consumed by both
+    :func:`_grader_will_retry` and :func:`_build_retriever_payload`).
+    """
+    raw = os.getenv("AIX_CORRECTIVE_RAG_MAX_ATTEMPTS", "2")
+    try:
+        return max(1, min(int(raw), 4))
+    except ValueError:
+        return 2
+
+
+def _grader_will_retry(state: Dict[str, Any]) -> bool:
+    """Mirror the routing logic of :func:`should_retry_retrieval` in
+    ``nodes.py``. Returns True iff the corrective-RAG router will send
+    the run BACK to the retriever instead of forward to the writer.
+
+    Kept as a module-private helper rather than importing the router
+    function directly because the router takes ``AgentState`` (TypedDict)
+    and we only have the loose ``final_state`` dict here. Logic is
+    intentionally simple and well-covered by the agent-side tests.
+    """
+    grade = state.get("retrieval_grade", "relevant")
+    if grade == "relevant":
+        return False
+    attempts = int(state.get("retrieval_attempts") or 0)
+    return attempts < _resolve_max_attempts()
+
+
+# CORE 2 #9.UX-3 — sentinel prefix used by ``grade_retrieval_node`` to
+# mark a defensive fallback after the grader LLM threw. The node returns
+# ``grade=relevant`` in that case (so the loop never blocks the writer)
+# but stamps the reason with this prefix so the UI layer can distinguish
+# "real green light" from "we couldn't grade, defaulted green". See
+# ``nodes.grade_retrieval_node``'s ``except Exception`` branch.
+_GRADER_EXCEPTION_REASON_PREFIX = "Grader exception:"
+
+
+def _compute_retrieval_outcome(
+    state: Dict[str, Any],
+    media_counts: Dict[str, int],
+) -> str:
+    """CORE 2 #9.UX-3 — derive the single ``retrieval_outcome`` token that
+    drives the chat card's color, headline, and explanatory copy.
+
+    Four mutually exclusive outcomes:
+
+      ``"success"``               — grade=relevant (or grading didn't run).
+                                    Green ✅. Existing behaviour, unchanged.
+      ``"adapted_with_hybrid"``   — grade=ambiguous|irrelevant AFTER all
+                                    attempts AND external/hybrid resources
+                                    populated the gap. Blue ℹ️. The KG was
+                                    out-of-scope for the disciplinary
+                                    content, but Wikipedia + papers + OER
+                                    filled in. The lesson is still useful.
+      ``"limited_kg_only"``       — grade=ambiguous|irrelevant AFTER all
+                                    attempts AND no external resources
+                                    landed. Amber ⚠️. The lesson should
+                                    be reviewed manually.
+      ``"grader_error"``          — the grader LLM threw and the node
+                                    fell back to ``grade=relevant`` with
+                                    the sentinel reason prefix. Red ❌.
+                                    Only legitimate red — distinct from
+                                    "irrelevant" which is a routine
+                                    out-of-scope signal, not an error.
+
+    When the corrective-RAG flag is OFF (``grade is None``), this returns
+    ``"success"`` for consistency, but the template's outer guard
+    (``{% if p.get('retrieval_grade') %}``) skips the row entirely, so
+    the rendered card is byte-identical to pre-#9.
+    """
+    grade = state.get("retrieval_grade")
+    reason = (state.get("retrieval_grade_reason") or "")
+
+    if reason.startswith(_GRADER_EXCEPTION_REASON_PREFIX):
+        return "grader_error"
+
+    if grade in (None, "relevant"):
+        return "success"
+
+    # grade is "ambiguous" or "irrelevant" — choose blue vs amber based
+    # on whether the hybrid retrieval path landed any external content.
+    external = state.get("external_resources")
+    has_external = False
+    if isinstance(external, dict):
+        # Truthy if any sub-bucket has content (Wikipedia, OER, S2 papers…).
+        has_external = any(bool(v) for v in external.values())
+    elif external:  # list, scalar — be permissive
+        has_external = True
+
+    # Hybrid retrieval lands papers in ``citations`` and OER in
+    # ``resources`` / ``open_textbooks`` (= ``oer`` bucket of media_counts).
+    # Videos may be KG-curated too, so we DON'T count them as a
+    # hybrid signal here — we want a clean "external content arrived"
+    # indicator.
+    has_hybrid_media = (
+        int(media_counts.get("articles") or 0)
+        + int(media_counts.get("oer") or 0)
+    ) > 0
+
+    if has_external or has_hybrid_media:
+        return "adapted_with_hybrid"
+    return "limited_kg_only"
+
+
 def _build_retriever_payload(state: Dict[str, Any]) -> Dict[str, Any]:
     """Shape the post-retrieve state into the retriever card's context."""
     nodes = state.get("retrieved_nodes") or []
     rels = state.get("retrieved_relationships") or []
     recs = state.get("recommendations") or []
     media = state.get("curated_media") or {}
+    media_counts = _count_media(media)
 
     # Best-effort top-N concept titles. Different code paths populate
     # different keys (``title`` vs ``name`` vs ``id``); we walk them all.
@@ -853,14 +976,55 @@ def _build_retriever_payload(state: Dict[str, Any]) -> Dict[str, Any]:
         if title:
             top_concepts.append(str(title))
 
+    # CORE 2 #9 — Corrective RAG (Retrieval Grading). When the feature
+    # flag is off, the grade fields are None and the retriever card
+    # template skips the grading row, so the rendered card is identical
+    # to pre-#9. When ON, we surface a 1-row "Grading" line (grade icon +
+    # rationale + attempts) on the existing retriever card without adding
+    # a new card or stream-event kind. Adding fields to an existing
+    # payload is the smallest possible UI change to keep #9 visible.
+    grade = state.get("retrieval_grade")
+    grade_label_map = {
+        "relevant": "Rilevante",
+        "ambiguous": "Ambiguo",
+        "irrelevant": "Non rilevante",
+    }
+    grade_emoji_map = {
+        "relevant": "✅",
+        "ambiguous": "⚠️",
+        "irrelevant": "❌",
+    }
+
+    # CORE 2 #9.UX-3 — outcome is the single token the template branches
+    # on (success / adapted_with_hybrid / limited_kg_only / grader_error).
+    # Computed defensively (always returns one of the four valid values).
+    outcome = _compute_retrieval_outcome(state, media_counts)
+
     return {
         "nodes_count": len(nodes),
         "relationships_count": len(rels),
         "recommendations_count": len(recs),
-        "media_counts": _count_media(media),
+        "media_counts": media_counts,
         "media": media,  # full payload for the right sidebar
         "top_concepts": top_concepts,
         "retrieval_confidence": state.get("retrieval_confidence"),
+        # Corrective-RAG fields. All None when feature flag is off; the
+        # template's ``{% if payload.retrieval_grade %}`` guard keeps the
+        # markup unchanged in that case.
+        "retrieval_grade": grade,
+        "retrieval_grade_label": grade_label_map.get(grade) if grade else None,
+        "retrieval_grade_emoji": grade_emoji_map.get(grade) if grade else None,
+        "retrieval_grade_reason": (state.get("retrieval_grade_reason") or "").strip() or None,
+        "retrieval_attempts": state.get("retrieval_attempts"),
+        # CORE 2 #9.UX-2 — paired with ``retrieval_attempts`` so the chat
+        # card can render a ``Tentativi: N/M`` badge. Always populated
+        # (resolved from env at request time) so the template doesn't
+        # need to know about env vars.
+        "retrieval_attempts_max": _resolve_max_attempts(),
+        # CORE 2 #9.UX-3 — outcome token; see ``_compute_retrieval_outcome``.
+        "retrieval_outcome": outcome,
+        "retrieval_warning": bool(state.get("retrieval_warning")),
+        "retrieval_rewritten_query": state.get("retrieval_rewritten_query"),
     }
 
 
@@ -1033,6 +1197,10 @@ async def run_agent_stream(
             teacher_provided_context=teacher_ctx,
             conversation_history=conversation_history or None,
             conversation_summary=conversation_summary,
+            # CORE 2 #12b.3 — preserve the un-augmented current turn so
+            # plan_node can apply user-vs-history precedence on duration
+            # (and any other profile-vs-history conflicts in future).
+            raw_user_turn=raw_query,
         )
 
         logger.info(
@@ -1090,22 +1258,63 @@ async def run_agent_stream(
                     )
 
                 elif node_name == "retrieve":
-                    yield StreamEvent(
-                        kind="retriever",
-                        payload=_build_retriever_payload(final_state),
-                    )
-                    # Writer is about to start. Emit a synthetic pending
-                    # card NOW so the chat doesn't look frozen for the
-                    # 60-90s the writer call typically takes.
-                    write_revision_idx += 1
-                    yield StreamEvent(
-                        kind="writer_pending",
-                        payload={
-                            "revision": write_revision_idx,
-                            "is_revision": False,
-                            "feedback": "",
-                        },
-                    )
+                    # CORE 2 #9.UX-1 — when corrective-RAG is ENABLED, the
+                    # ``grade_retrieval`` node will run next and become the
+                    # sole emitter of ``kind=retriever`` (with the grading
+                    # verdict already populated in the payload). We skip
+                    # the emit here to avoid producing TWO retriever cards
+                    # per turn, because ``#chat-cards`` uses
+                    # ``hx-swap=beforeend`` (i.e. append, not replace).
+                    #
+                    # When the flag is OFF, ``grade_retrieval`` is not in
+                    # the LangGraph topology at all, so this branch keeps
+                    # its pre-#9 responsibility: emit the retriever card
+                    # AND ``writer_pending``. Backward-compatible.
+                    if not _is_corrective_rag_enabled():
+                        yield StreamEvent(
+                            kind="retriever",
+                            payload=_build_retriever_payload(final_state),
+                        )
+                        write_revision_idx += 1
+                        yield StreamEvent(
+                            kind="writer_pending",
+                            payload={
+                                "revision": write_revision_idx,
+                                "is_revision": False,
+                                "feedback": "",
+                            },
+                        )
+
+                elif node_name == "grade_retrieval":
+                    # CORE 2 #9 + #9.UX-1 + #9.UX-2 — when corrective-RAG
+                    # is ON, this is the SOLE place we emit
+                    # ``kind=retriever`` for the turn. The grade_retrieval
+                    # node may run MULTIPLE times in a turn (once per
+                    # attempt) when the grader requests a retry. Without
+                    # gating we'd emit one card per attempt and
+                    # ``hx-swap=beforeend`` would stack them in the chat.
+                    # The fix (#9.UX-2): only emit on the FINAL iteration
+                    # (when the router decided NOT to retry) — i.e. either
+                    # the grade is relevant, or the attempt budget is
+                    # exhausted. The retriever card therefore appears
+                    # once, with the final ``retrieval_attempts`` already
+                    # settled (e.g. "Tentativi: 2/2"). The payload's
+                    # ``retrieval_outcome`` token (#9.UX-3) drives the
+                    # card's color and copy.
+                    if not _grader_will_retry(final_state):
+                        yield StreamEvent(
+                            kind="retriever",
+                            payload=_build_retriever_payload(final_state),
+                        )
+                        write_revision_idx += 1
+                        yield StreamEvent(
+                            kind="writer_pending",
+                            payload={
+                                "revision": write_revision_idx,
+                                "is_revision": False,
+                                "feedback": "",
+                            },
+                        )
 
                 elif node_name == "write":
                     yield StreamEvent(
@@ -1296,6 +1505,12 @@ async def stream_agent_events(
             max_revisions=effective_max_revisions,
             educational_profile=educational_profile,
             teacher_provided_context=teacher_provided_context,
+            # CORE 2 #12b.3 — public-API callers don't augment with history
+            # at this layer (the caller may pre-augment, but the contract
+            # treats ``query`` as the current turn), so ``query`` is also
+            # the raw user turn here. Passing it explicitly keeps plan_node's
+            # precedence rule consistent across both entry points.
+            raw_user_turn=query,
         )
 
         logger.info(
@@ -1330,19 +1545,46 @@ async def stream_agent_events(
                     )
 
                 elif node_name == "retrieve":
-                    yield StreamEvent(
-                        kind="retriever",
-                        payload=_build_retriever_payload(final_state),
-                    )
-                    write_revision_idx += 1
-                    yield StreamEvent(
-                        kind="writer_pending",
-                        payload={
-                            "revision": write_revision_idx,
-                            "is_revision": False,
-                            "feedback": "",
-                        },
-                    )
+                    # CORE 2 #9.UX-1 — see first SSE loop above for the
+                    # symmetric reasoning. When corrective-RAG is ON we
+                    # defer the retriever emit to the ``grade_retrieval``
+                    # branch so the chat shows ONE card per turn. When
+                    # OFF, behaviour is unchanged from pre-#9.
+                    if not _is_corrective_rag_enabled():
+                        yield StreamEvent(
+                            kind="retriever",
+                            payload=_build_retriever_payload(final_state),
+                        )
+                        write_revision_idx += 1
+                        yield StreamEvent(
+                            kind="writer_pending",
+                            payload={
+                                "revision": write_revision_idx,
+                                "is_revision": False,
+                                "feedback": "",
+                            },
+                        )
+
+                elif node_name == "grade_retrieval":
+                    # CORE 2 #9.UX-2 — see the symmetric branch in
+                    # ``run_agent_stream`` above for the full rationale.
+                    # Gate the emit on ``_grader_will_retry`` so a turn
+                    # with N attempts produces ONE retriever card with
+                    # ``retrieval_attempts == N`` rather than N cards.
+                    if not _grader_will_retry(final_state):
+                        yield StreamEvent(
+                            kind="retriever",
+                            payload=_build_retriever_payload(final_state),
+                        )
+                        write_revision_idx += 1
+                        yield StreamEvent(
+                            kind="writer_pending",
+                            payload={
+                                "revision": write_revision_idx,
+                                "is_revision": False,
+                                "feedback": "",
+                            },
+                        )
 
                 elif node_name == "write":
                     yield StreamEvent(

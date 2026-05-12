@@ -1,88 +1,116 @@
 {#
-  Auth-aware navbar (CORE 2 #6.6 P1).
+  Auth-aware top navigation (CORE 2 #6.6 P5 — warm-academic brand pass).
 
-  Expects context vars:
-    - user   (Optional[User])  — None for anonymous, User instance otherwise
-    - phase  (Optional[str])   — small pill in the right-hand area
+  Visual language:
+    - Ink-navy bar (var(--aix-ink-navy)), white text, full-bleed
+    - Brand wordmark (Crimson Pro) + tiny "Agentic GraphRAG" subtitle
+    - Top-level links: Dashboard · Le mie lezioni · Crea lezione · Risorse
+    - Visual-only search pill (no backend yet — placeholder for future ⌘K)
+    - User avatar circle + dropdown menu (logout, profile placeholder)
+
+  Context vars consumed:
+    - user      (Optional[User])  — None for anonymous, User instance otherwise
+    - active_nav (Optional[str])  — one of "dashboard" | "lessons" | "new" | "resources"
+                                    used to underline the matching top-level link.
+                                    All existing pages still work with active_nav=None
+                                    (no link gets underlined → safe default).
+    - phase     (Optional[str])   — legacy; consumed silently (no longer rendered).
+                                    Existing route handlers still pass it; we ignore
+                                    so they don't break.
+
+  Auth-related affordances are unchanged: every href points at the same
+  routes the previous skeleton navbar pointed at. This is a pure visual
+  refresh — no functional change.
 #}
-<header class="bg-white border-b border-slate-200">
-  <div class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between gap-4">
-    <a href="/webui/" class="flex items-baseline gap-2 no-underline">
-      <span class="text-xl font-serif tracking-tight text-slate-900">AixLearning</span>
-      <span class="text-slate-400">·</span>
-      <span class="text-base font-medium text-slate-700">Agentic GraphRAG</span>
+{% set nav_active = active_nav or '' %}
+
+<header class="aix-nav">
+  <div class="aix-nav-inner">
+
+    {# Brand wordmark — links to the homepage / dashboard #}
+    <a href="/webui/" class="aix-nav-brand">
+      <span class="aix-nav-brand-mark">AixLearning</span>
+      <span class="aix-nav-brand-sub">Agentic GraphRAG</span>
     </a>
 
-    <nav class="flex items-center gap-3">
-      {% if phase %}
-        <wa-tag variant="neutral" size="small" pill>{{ phase }}</wa-tag>
-      {% endif %}
-
-      {% if user %}
-        <a href="/webui/lessons" class="no-underline">
-          <wa-button size="small" variant="default">
-            <wa-icon slot="prefix" name="books"></wa-icon>
-            Le mie lezioni
-          </wa-button>
-        </a>
-        <a href="/webui/lesson/new" class="no-underline">
-          <wa-button size="small" variant="brand">
-            <wa-icon slot="prefix" name="circle-plus"></wa-icon>
-            Nuova lezione
-          </wa-button>
-        </a>
-
-        {#
-          WebAwesome 3.x dropdown anatomy (different from Shoelace / WA 2):
-            - <wa-dropdown-item> goes DIRECTLY inside <wa-dropdown>
-              (no <wa-menu> wrapper — that element does not exist in WA 3,
-              and our :not(:defined){visibility:hidden} rule would hide
-              the entire panel if we used it).
-            - Trigger button uses `with-caret`, not `caret`.
-            - Items have a `value` attribute; we listen for the `wa-select`
-              event on the dropdown and navigate to that value as a URL.
-              Alpine gives us a one-line @wa-select handler.
-        #}
-        <wa-dropdown placement="bottom-end"
-                     x-data
-                     @wa-select="if ($event.detail.item.value) { window.location.href = $event.detail.item.value }">
-          <wa-button slot="trigger" with-caret size="small" variant="default">
-            <wa-icon slot="prefix" name="user"></wa-icon>
-            {{ user.display_name or user.email }}
-          </wa-button>
-
-          <wa-dropdown-item disabled>
-            <small class="text-slate-500">{{ user.email }}</small>
-          </wa-dropdown-item>
-          <wa-divider></wa-divider>
-          <wa-dropdown-item value="/webui/lessons">
-            <wa-icon slot="icon" name="books"></wa-icon>
-            Le mie lezioni
-          </wa-dropdown-item>
-          <wa-dropdown-item value="/webui/lesson/new">
-            <wa-icon slot="icon" name="circle-plus"></wa-icon>
-            Nuova lezione
-          </wa-dropdown-item>
-          <wa-divider></wa-divider>
-          <wa-dropdown-item value="/auth/logout" variant="danger">
-            <wa-icon slot="icon" name="right-from-bracket"></wa-icon>
-            Esci
-          </wa-dropdown-item>
-        </wa-dropdown>
-      {% else %}
-        <a href="/auth/login" class="no-underline">
-          <wa-button size="small" variant="default">
-            <wa-icon slot="prefix" name="right-to-bracket"></wa-icon>
-            Accedi
-          </wa-button>
-        </a>
-        <a href="/auth/register" class="no-underline">
-          <wa-button size="small" variant="brand">
-            <wa-icon slot="prefix" name="user-plus"></wa-icon>
-            Registrati
-          </wa-button>
-        </a>
-      {% endif %}
+    {# Top-level navigation. Anonymous users still see the labels (so they
+       know what's behind the login wall) but every authenticated route
+       still bounces to /auth/login on click for them. #}
+    <nav class="aix-nav-links flex-1">
+      <a href="/webui/"
+         class="aix-nav-link {% if nav_active == 'dashboard' %}is-active{% endif %}">
+        Dashboard
+      </a>
+      <a href="/webui/lessons"
+         class="aix-nav-link {% if nav_active == 'lessons' %}is-active{% endif %}">
+        Le mie lezioni
+      </a>
+      <a href="/webui/lesson/new"
+         class="aix-nav-link {% if nav_active == 'new' %}is-active{% endif %}">
+        Crea lezione
+      </a>
+      <a href="/docs"
+         class="aix-nav-link {% if nav_active == 'resources' %}is-active{% endif %}">
+        Risorse
+      </a>
     </nav>
+
+    {# Search pill — visual placeholder for future ⌘K command palette.
+       Wraps a real <input> so keyboard focus works (no JS yet). When we
+       wire global search this becomes an htmx hx-get to a /search endpoint;
+       for now Enter just submits the disabled form (no-op). #}
+    <form action="#" method="get" class="aix-nav-search hidden md:flex"
+          onsubmit="event.preventDefault();">
+      <wa-icon name="magnifying-glass" style="font-size:13px;"></wa-icon>
+      <input type="search" placeholder="Cerca…"
+             aria-label="Cerca"
+             style="background:transparent; border:0; outline:none;
+                    color:var(--aix-text-on-dark); width:100%; font-size:13px;">
+      <kbd style="font-size:10px; opacity:0.7; padding:1px 5px;
+                  border:1px solid var(--aix-border-on-dark);
+                  border-radius:4px;">⌘K</kbd>
+    </form>
+
+    {# User affordance: avatar + dropdown for authenticated users, login /
+       register links for anonymous. The WebAwesome dropdown anatomy is
+       unchanged from the previous navbar — only the visual skin around it
+       differs, so the existing Alpine handler keeps working. #}
+    {% if user %}
+      {% set initials = (user.display_name or user.email or 'U')[:1] | upper %}
+      <wa-dropdown placement="bottom-end"
+                   x-data
+                   @wa-select="if ($event.detail.item.value) { window.location.href = $event.detail.item.value }">
+        <button slot="trigger" type="button" class="aix-nav-avatar">
+          <span class="aix-nav-avatar-circle">{{ initials }}</span>
+          <wa-icon name="chevron-down" style="font-size:11px; opacity:0.7;"></wa-icon>
+        </button>
+
+        <wa-dropdown-item disabled>
+          <small class="text-slate-500">{{ user.email }}</small>
+        </wa-dropdown-item>
+        <wa-divider></wa-divider>
+        <wa-dropdown-item value="/webui/lessons">
+          <wa-icon slot="icon" name="books"></wa-icon>
+          Le mie lezioni
+        </wa-dropdown-item>
+        <wa-dropdown-item value="/webui/lesson/new">
+          <wa-icon slot="icon" name="circle-plus"></wa-icon>
+          Nuova lezione
+        </wa-dropdown-item>
+        <wa-divider></wa-divider>
+        <wa-dropdown-item value="/auth/logout" variant="danger">
+          <wa-icon slot="icon" name="right-from-bracket"></wa-icon>
+          Esci
+        </wa-dropdown-item>
+      </wa-dropdown>
+    {% else %}
+      <a href="/auth/login" class="aix-btn aix-btn-outline aix-btn-sm"
+         style="border-color:var(--aix-border-on-dark); color:var(--aix-text-on-dark);">
+        Accedi
+      </a>
+      <a href="/auth/register" class="aix-btn aix-btn-primary aix-btn-sm">
+        Registrati
+      </a>
+    {% endif %}
   </div>
 </header>

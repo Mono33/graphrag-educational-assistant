@@ -1,138 +1,449 @@
 {#
-  Lesson history page — lists all lessons for the current user.
-  Route: GET /webui/lessons
+  Library page — /webui/lessons (CORE 2 #6.6 P5 — warm-academic brand pass).
 
-  Required context:
-    user      User ORM
-    lessons   list[Lesson] — ordered by created_at DESC
+  Replaces the P0 skeleton card-grid with the production library:
+    - Page header with serif title + one-liner stats + amber CTA
+    - Left filter sidebar (Stato / Materie / Classi / Tag e BES)
+    - Toolbar (search + sort + view toggle)
+    - 3-column brand card grid with coloured status stripes (no graph thumbnails)
+    - Empty / no-match states
+    - Footer count
+
+  Data contract (from aix.webui.lessons.routes.lesson_list):
+    rows      : list of row dicts (from display.lesson_to_row)
+    stats     : dict — total / draft / running / complete / error counts
+    filters   : dict — distinct {subjects, classes, disabilities}
+    active_nav: 'lessons' (highlights navbar)
+
+  Filtering & search are CLIENT-SIDE via Alpine.js:
+    - State lives on the page wrapper (search q, status, subject, class_, tag)
+    - Each card carries data-* attributes; the x-show expression on each
+      <article> reads them via $el.dataset.X. No backend roundtrip.
+    - Visible-count is tracked in a top-level counter and rendered at the
+      bottom of the grid ("Mostra N di M lezioni").
+
+  htmx delete semantics are PRESERVED verbatim:
+    hx-delete="/webui/lesson/{{ id }}"
+    hx-confirm="…"
+    hx-target="closest .relative"
+    hx-swap="outerHTML"
+
+  Wider main wrapper — same trick as the Dashboard — so the 3-column grid
+  doesn't get squeezed by the default max-w-7xl.
 #}
 {% extends "_base.html" %}
+{% set main_container_class = "max-w-screen-xl mx-auto w-full px-6 py-8" %}
 
 {% block content %}
-<section class="max-w-5xl mx-auto space-y-6">
+<div
+  x-data="{
+    q: '',
+    status_f: 'all',
+    subject_f: 'all',
+    class_f: 'all',
+    disability_f: 'all',
+    visibleCount: {{ stats.total }},
+    matches(el) {
+      if (this.status_f !== 'all' && el.dataset.status !== this.status_f) return false;
+      if (this.subject_f !== 'all' && el.dataset.subject !== this.subject_f.toLowerCase()) return false;
+      if (this.class_f !== 'all' && el.dataset.class !== this.class_f.toLowerCase()) return false;
+      if (this.disability_f !== 'all'
+          && !(el.dataset.disabilities || '').split('|').includes(this.disability_f)) return false;
+      if (this.q.trim() !== '') {
+        const q = this.q.trim().toLowerCase();
+        const hay = (el.dataset.title || '') + ' '
+                  + (el.dataset.subject || '') + ' '
+                  + (el.dataset.topic || '') + ' '
+                  + (el.dataset.class || '');
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    },
+    hasActiveFilter() {
+      return this.q.trim() !== '' || this.status_f !== 'all'
+          || this.subject_f !== 'all' || this.class_f !== 'all'
+          || this.disability_f !== 'all';
+    },
+    recount() {
+      this.visibleCount = [...this.$root.querySelectorAll('article[data-status]')]
+                            .filter(el => this.matches(el)).length;
+    },
+    reset() { this.q=''; this.status_f='all'; this.subject_f='all';
+              this.class_f='all'; this.disability_f='all'; },
+  }"
+  x-init="$nextTick(() => recount())"
+  x-effect="
+    // Re-run whenever any filter state changes.
+    // Reading these makes Alpine track them as deps:
+    void this.q; void this.status_f; void this.subject_f;
+    void this.class_f; void this.disability_f;
+    this.recount();
+  "
+>
 
-  {# ── Header ─────────────────────────────────────────────────────── #}
-  <div class="flex items-center justify-between gap-4">
+  {# ── PAGE HEADER ─────────────────────────────────────────────────────── #}
+  <div class="aix-page-header mb-6">
     <div>
-      <h1 class="text-2xl font-semibold text-slate-900">Le mie lezioni</h1>
-      <p class="text-sm text-slate-500 mt-1">
-        {{ lessons | length }} lezione{% if lessons | length != 1 %}i{% endif %} generate
-      </p>
+      <h1 class="aix-page-title">Le mie lezioni</h1>
+      {% if stats.total > 0 %}
+        <p class="aix-text-muted mt-2">
+          {{ stats.total }} lezion{{ 'i' if stats.total != 1 else 'e' }}
+          {% if stats.draft %} · {{ stats.draft }} bozz{{ 'e' if stats.draft != 1 else 'a' }}{% endif %}
+          {% if stats.complete %} · {{ stats.complete }} completat{{ 'e' if stats.complete != 1 else 'a' }}{% endif %}
+          {% if stats.running %} · {{ stats.running }} in corso{% endif %}
+          {% if stats.error %} · {{ stats.error }} con error{{ 'i' if stats.error != 1 else 'e' }}{% endif %}
+        </p>
+      {% else %}
+        <p class="aix-text-muted mt-2">Nessuna lezione ancora.</p>
+      {% endif %}
     </div>
-    <a href="/webui/lesson/new" class="no-underline">
-      <wa-button variant="brand" size="small">
-        <wa-icon slot="prefix" name="circle-plus"></wa-icon>
-        Nuova lezione
-      </wa-button>
+    <a href="/webui/lesson/new" class="aix-btn aix-btn-primary">
+      <wa-icon name="circle-plus"></wa-icon>
+      Nuova lezione
     </a>
   </div>
 
-  {# ── Empty state ─────────────────────────────────────────────────── #}
-  {% if not lessons %}
-    <div class="rounded-xl border border-dashed border-slate-300 bg-white
-                p-12 text-center space-y-4">
-      <wa-icon name="book-open" style="font-size:3rem; color:#94a3b8;"></wa-icon>
-      <p class="text-slate-500">Non hai ancora generato nessuna lezione.</p>
-      <a href="/webui/lesson/new" class="no-underline">
-        <wa-button variant="brand">
-          <wa-icon slot="prefix" name="circle-plus"></wa-icon>
-          Crea la tua prima lezione
-        </wa-button>
+  {# ── EMPTY STATE (no lessons at all) ─────────────────────────────────── #}
+  {% if not rows %}
+    <div class="aix-card p-12 text-center">
+      <wa-icon name="book-open"
+               style="font-size:3rem; color:var(--aix-text-tertiary);"></wa-icon>
+      <p class="aix-text-muted mt-4 mb-6">
+        Non hai ancora generato nessuna lezione.
+      </p>
+      <a href="/webui/lesson/new" class="aix-btn aix-btn-primary">
+        <wa-icon name="circle-plus"></wa-icon>
+        Crea la tua prima lezione
       </a>
     </div>
 
   {% else %}
-    {# ── Lesson grid ──────────────────────────────────────────────── #}
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-      {% for lesson in lessons %}
-        {% set profile = lesson.educational_profile_json or {} %}
-        <div class="relative group/card">
-        <a href="/webui/lesson/{{ lesson.id }}" class="no-underline group">
-          <article class="rounded-xl border border-slate-200 bg-white shadow-sm
-                          hover:shadow-md hover:border-slate-300
-                          transition-all duration-150 h-full flex flex-col overflow-hidden">
 
-            {# Status colour strip #}
-            <div class="h-1 w-full
-              {% if lesson.status == 'complete' %}bg-emerald-400
-              {% elif lesson.status == 'running' %}bg-amber-400 animate-pulse
-              {% elif lesson.status == 'error' %}bg-red-400
-              {% else %}bg-slate-200{% endif %}">
+    {# ── TWO-COLUMN LAYOUT: sidebar + main ─────────────────────────────── #}
+    <div class="grid grid-cols-1 md:grid-cols-[220px_1fr] gap-6 items-start">
+
+      {# ════════════════════════ LEFT SIDEBAR ════════════════════════ #}
+      <aside class="aix-card p-5 sticky top-4">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="aix-section-label">FILTRI</h2>
+          <button type="button" @click="reset()"
+                  class="aix-link" style="font-size:12px; background:transparent; border:0; cursor:pointer; padding:0;">
+            Azzera
+          </button>
+        </div>
+
+        {# Stato — radio-style (single select via x-model) #}
+        <div class="mb-5">
+          <h3 class="aix-section-label mb-2" style="text-transform:capitalize;">Stato</h3>
+          <label class="flex items-center gap-2 py-1 cursor-pointer text-sm">
+            <input type="radio" name="status_f" value="all" x-model="status_f"
+                   style="accent-color:var(--aix-teal);">
+            <span>Tutte le lezioni</span>
+          </label>
+          <label class="flex items-center gap-2 py-1 cursor-pointer text-sm">
+            <input type="radio" name="status_f" value="draft" x-model="status_f"
+                   style="accent-color:var(--aix-teal);">
+            <span>Bozze ({{ stats.draft }})</span>
+          </label>
+          <label class="flex items-center gap-2 py-1 cursor-pointer text-sm">
+            <input type="radio" name="status_f" value="complete" x-model="status_f"
+                   style="accent-color:var(--aix-teal);">
+            <span>Completate ({{ stats.complete }})</span>
+          </label>
+          {% if stats.running %}
+            <label class="flex items-center gap-2 py-1 cursor-pointer text-sm">
+              <input type="radio" name="status_f" value="running" x-model="status_f"
+                     style="accent-color:var(--aix-teal);">
+              <span>In corso ({{ stats.running }})</span>
+            </label>
+          {% endif %}
+          {% if stats.error %}
+            <label class="flex items-center gap-2 py-1 cursor-pointer text-sm">
+              <input type="radio" name="status_f" value="error" x-model="status_f"
+                     style="accent-color:var(--aix-teal);">
+              <span>Con errore ({{ stats.error }})</span>
+            </label>
+          {% endif %}
+        </div>
+
+        {# Materie — radio-style #}
+        {% if filters.subjects %}
+          <div class="mb-5">
+            <h3 class="aix-section-label mb-2" style="text-transform:capitalize;">Materie</h3>
+            <label class="flex items-center gap-2 py-1 cursor-pointer text-sm">
+              <input type="radio" name="subject_f" value="all" x-model="subject_f"
+                     style="accent-color:var(--aix-teal);">
+              <span>Tutte le materie</span>
+            </label>
+            {% for s in filters.subjects %}
+              <label class="flex items-center gap-2 py-1 cursor-pointer text-sm">
+                <input type="radio" name="subject_f" value="{{ s }}" x-model="subject_f"
+                       style="accent-color:var(--aix-teal);">
+                <span>{{ s }}</span>
+              </label>
+            {% endfor %}
+          </div>
+        {% endif %}
+
+        {# Classi — radio-style #}
+        {% if filters.classes %}
+          <div class="mb-5">
+            <h3 class="aix-section-label mb-2" style="text-transform:capitalize;">Classi</h3>
+            <label class="flex items-center gap-2 py-1 cursor-pointer text-sm">
+              <input type="radio" name="class_f" value="all" x-model="class_f"
+                     style="accent-color:var(--aix-teal);">
+              <span>Tutte le classi</span>
+            </label>
+            {% for c in filters.classes %}
+              <label class="flex items-center gap-2 py-1 cursor-pointer text-sm">
+                <input type="radio" name="class_f" value="{{ c }}" x-model="class_f"
+                       style="accent-color:var(--aix-teal);">
+                <span class="truncate">{{ c }}</span>
+              </label>
+            {% endfor %}
+          </div>
+        {% endif %}
+
+        {# Tag e bisogni educativi — chip-style single select #}
+        {% if filters.disabilities %}
+          <div>
+            <h3 class="aix-section-label mb-2" style="text-transform:capitalize;">
+              Tag e bisogni educativi
+            </h3>
+            <div class="flex flex-wrap gap-1.5">
+              <button type="button"
+                      @click="disability_f = 'all'"
+                      :class="disability_f === 'all' ? 'aix-badge-teal' : 'aix-badge-neutral'"
+                      class="aix-badge"
+                      style="cursor:pointer; background:transparent;">
+                Tutti
+              </button>
+              {% for d in filters.disabilities %}
+                <button type="button"
+                        @click="disability_f = '{{ d }}'"
+                        :class="disability_f === '{{ d }}' ? 'aix-badge-teal' : 'aix-badge-neutral'"
+                        class="aix-badge"
+                        style="cursor:pointer; background:transparent;">
+                  {{ d }}
+                </button>
+              {% endfor %}
             </div>
+          </div>
+        {% endif %}
+      </aside>
 
-            <div class="p-4 flex flex-col gap-2 flex-1">
+      {# ════════════════════════ MAIN CONTENT ════════════════════════ #}
+      <main>
 
-              {# Title #}
-              <div class="flex items-start justify-between gap-2">
-                <h2 class="text-sm font-semibold text-slate-800 group-hover:text-sky-700
-                            line-clamp-2 leading-snug">
-                  {{ lesson.title or 'Lezione senza titolo' }}
-                </h2>
-                <wa-tag size="small" variant="neutral" pill class="shrink-0">
-                  {{ lesson.domain }}
-                </wa-tag>
+        {# ── TOOLBAR ───────────────────────────────────────────────── #}
+        <div class="aix-card p-4 mb-4 flex flex-wrap items-center gap-3">
+          {# Search input #}
+          <div class="flex items-center gap-2 flex-1 min-w-[240px]"
+               style="background:var(--aix-cream); border:1px solid var(--aix-border-soft);
+                      border-radius:var(--aix-radius-pill); padding:8px 14px;">
+            <wa-icon name="magnifying-glass"
+                     style="font-size:14px; color:var(--aix-text-tertiary);"></wa-icon>
+            <input type="search" x-model="q"
+                   placeholder="Cerca per titolo, materia o classe…"
+                   aria-label="Cerca lezioni"
+                   style="background:transparent; border:0; outline:none;
+                          flex:1; font-size:14px; color:var(--aix-text-primary);">
+            <button type="button" x-show="q !== ''" @click="q=''"
+                    style="background:transparent; border:0; cursor:pointer;
+                           color:var(--aix-text-tertiary); padding:0; font-size:12px;">
+              ×
+            </button>
+          </div>
+
+          {# Sort dropdown (visual placeholder — single option until backend
+             supports configurable sort) #}
+          <div class="flex items-center gap-2" style="font-size:13px;">
+            <span class="aix-text-subtle">Ordina:</span>
+            <select class="aix-select" disabled
+                    style="padding:6px 28px 6px 10px; font-size:13px; cursor:not-allowed;
+                           background:var(--aix-paper);">
+              <option>Più recenti</option>
+            </select>
+          </div>
+
+          {# View toggle — grid active, list reserved for future #}
+          <div class="flex items-center gap-1" style="border:1px solid var(--aix-border-soft);
+                                                       border-radius:var(--aix-radius-sm);
+                                                       padding:2px;">
+            <button type="button" title="Griglia"
+                    style="background:var(--aix-cream); border:0; padding:6px 10px;
+                           border-radius:4px; cursor:default; color:var(--aix-text-primary);">
+              <wa-icon name="grid" style="font-size:14px;"></wa-icon>
+            </button>
+            <button type="button" title="Lista (presto)"
+                    disabled
+                    style="background:transparent; border:0; padding:6px 10px;
+                           border-radius:4px; cursor:not-allowed; color:var(--aix-text-tertiary);">
+              <wa-icon name="list" style="font-size:14px;"></wa-icon>
+            </button>
+          </div>
+        </div>
+
+        {# ── CARD GRID ─────────────────────────────────────────────── #}
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+
+          {% for row in rows %}
+            {# Map status → coloured stripe class #}
+            {% if row.status == 'complete' %}
+              {% set stripe_cls = 'aix-card-stripe-success' %}
+            {% elif row.status == 'running' %}
+              {% set stripe_cls = 'aix-card-stripe-info' %}
+            {% elif row.status == 'error' %}
+              {% set stripe_cls = 'aix-card-stripe-error' %}
+            {% else %}
+              {% set stripe_cls = 'aix-card-stripe-warning' %}
+            {% endif %}
+
+            {# data-* attributes drive Alpine filtering on $el.dataset.* #}
+            <article
+              class="aix-card {{ stripe_cls }} relative group/card flex flex-col"
+              data-status="{{ row.status }}"
+              data-subject="{{ (row.subject or '') | lower }}"
+              data-topic="{{ (row.topic or '') | lower }}"
+              data-class="{{ (row.group_title or '') | lower }}"
+              data-title="{{ row.title | lower }}"
+              data-disabilities="{{ row.disabilities | join('|') }}"
+              x-show="matches($el)"
+              style="transition:box-shadow 120ms, transform 120ms;"
+              x-on:mouseenter="$el.style.boxShadow='var(--aix-shadow-medium)'"
+              x-on:mouseleave="$el.style.boxShadow=''"
+            >
+              {# Make the whole card clickable except for the delete button.
+                 We use a stretched-link <a> at the bottom instead of wrapping
+                 everything so the delete button stays interactive on hover. #}
+              <div class="p-4 flex flex-col gap-2 flex-1">
+
+                {# Top row: domain + BES badges (right-aligned) #}
+                <div class="flex items-start justify-between gap-2">
+                  <h2 class="aix-card-title flex-1"
+                      style="font-size:17px; line-height:1.3;">
+                    {{ row.title }}
+                  </h2>
+                  <div class="flex items-center gap-1 flex-shrink-0">
+                    {% if row.domain == 'neuro' %}
+                      <span class="aix-badge aix-badge-planner">neuro</span>
+                    {% elif row.domain == 'udl' %}
+                      <span class="aix-badge aix-badge-teal">udl</span>
+                    {% elif row.domain == 'all' %}
+                      <span class="aix-badge aix-badge-planner">neuro</span>
+                      <span class="aix-badge aix-badge-teal">udl</span>
+                    {% elif row.domain %}
+                      <span class="aix-badge aix-badge-neutral">{{ row.domain }}</span>
+                    {% endif %}
+                  </div>
+                </div>
+
+                {# BES tags (separate row, only if present) #}
+                {% if row.disabilities %}
+                  <div class="flex flex-wrap gap-1">
+                    {% for d in row.disabilities %}
+                      <span class="aix-badge aix-badge-warning">{{ d }}</span>
+                    {% endfor %}
+                  </div>
+                {% endif %}
+
+                {# Subject · topic #}
+                {% if row.subject or row.topic %}
+                  <p class="aix-lesson-row-meta truncate">
+                    {% if row.subject %}{{ row.subject }}{% endif %}
+                    {% if row.subject and row.topic %} · {% endif %}
+                    {% if row.topic %}{{ row.topic }}{% endif %}
+                  </p>
+                {% endif %}
+
+                {# Class · students #}
+                {% if row.group_title %}
+                  <p class="aix-lesson-row-meta truncate">
+                    <wa-icon name="users" style="font-size:11px;"></wa-icon>
+                    {{ row.group_title }}{% if row.students_number %} · {{ row.students_number }} studenti{% endif %}
+                  </p>
+                {% endif %}
+
+                {# Duration · date #}
+                <p class="aix-text-subtle truncate" style="font-size:12px;">
+                  <wa-icon name="clock" style="font-size:11px;"></wa-icon>
+                  {% if row.duration_min %}{{ row.duration_min }} min · {% endif %}
+                  {{ row.updated_full }}
+                </p>
+
+                {# Spacer pushes the footer to the bottom #}
+                <div class="flex-1"></div>
+
+                {# Footer: status pill + open link + 3-dot menu #}
+                <div class="flex items-center justify-between gap-2 pt-3"
+                     style="border-top:1px solid var(--aix-border-soft);">
+                  <span class="aix-pill {{ row.pill_class }}">
+                    {{ row.status_label }}
+                  </span>
+                  <a href="/webui/lesson/{{ row.id }}" class="aix-link"
+                     style="font-size:13px;">
+                    Apri lezione →
+                  </a>
+                </div>
               </div>
 
-              {# Subject / topic #}
-              {% if profile.get('subject_area') or profile.get('specific_topic') %}
-                <p class="text-xs text-slate-500 line-clamp-2">
-                  {% if profile.get('subject_area') %}
-                    <strong>{{ profile.get('subject_area') }}</strong>
-                  {% endif %}
-                  {% if profile.get('specific_topic') %}
-                    — {{ profile.get('specific_topic') }}
-                  {% endif %}
-                </p>
-              {% endif %}
+              {#
+                Hover-revealed delete button.
+                PRESERVES the exact htmx contract from the previous template:
+                  hx-delete="/webui/lesson/{id}"
+                  hx-confirm="…"
+                  hx-target="closest .relative"  ← MUST keep .relative wrapper
+                  hx-swap="outerHTML"
+                ``.relative`` IS present on the <article> wrapper above, so
+                the closest-match resolves correctly. Server already handles
+                204 + HX-Redirect when the user is on the lessons page.
+              #}
+              <button
+                type="button"
+                title="Elimina lezione"
+                class="absolute top-2 right-2 w-7 h-7 rounded-full
+                       opacity-0 group-hover/card:opacity-100 transition-opacity z-10"
+                style="background:var(--aix-paper);
+                       border:1px solid var(--aix-border-soft);
+                       box-shadow:var(--aix-shadow-soft);
+                       color:var(--aix-status-error); cursor:pointer;
+                       display:flex; align-items:center; justify-content:center;
+                       font-size:11px;"
+                hx-delete="/webui/lesson/{{ row.id }}"
+                hx-confirm="Eliminare questa lezione? L'operazione non è reversibile."
+                hx-target="closest .relative"
+                hx-swap="outerHTML"
+              >
+                <wa-icon name="trash"></wa-icon>
+              </button>
+            </article>
+          {% endfor %}
+        </div>
 
-              {# Class info #}
-              {% set group = profile.get('group') or {} %}
-              {% if group.get('title') %}
-                <p class="text-xs text-slate-400">
-                  <wa-icon name="users" style="font-size:0.65rem;"></wa-icon>
-                  {{ group.get('title') }}
-                  {% if group.get('students_number') %} · {{ group.get('students_number') }} studenti{% endif %}
-                </p>
-              {% endif %}
+        {# ── NO-MATCH FALLBACK ────────────────────────────────────── #}
+        <div x-show="visibleCount === 0 && hasActiveFilter()"
+             x-cloak
+             class="aix-card p-8 text-center mt-4">
+          <wa-icon name="magnifying-glass"
+                   style="font-size:2rem; color:var(--aix-text-tertiary);"></wa-icon>
+          <p class="aix-text-muted mt-3">
+            Nessuna lezione corrisponde ai filtri impostati.
+          </p>
+          <button type="button" @click="reset()"
+                  class="aix-btn aix-btn-outline aix-btn-sm mt-3"
+                  style="cursor:pointer;">
+            Azzera filtri
+          </button>
+        </div>
 
-              <div class="flex-1"></div>
+        {# ── FOOTER COUNT ─────────────────────────────────────────── #}
+        <div class="text-center mt-6 aix-text-subtle" style="font-size:13px;">
+          Mostra <span x-text="visibleCount"></span> di {{ stats.total }} lezion{{ 'i' if stats.total != 1 else 'e' }}
+        </div>
 
-              {# Footer: status + date #}
-              <div class="flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
-                <wa-tag size="small" pill
-                  variant="{% if lesson.status == 'complete' %}success{% elif lesson.status == 'error' %}danger{% elif lesson.status == 'running' %}warning{% else %}neutral{% endif %}">
-                  {{ lesson.status }}
-                </wa-tag>
-                <span class="text-[11px] text-slate-400">
-                  {% if lesson.created_at %}
-                    {{ lesson.created_at.strftime('%d/%m/%Y %H:%M') }}
-                  {% endif %}
-                </span>
-              </div>
-
-            </div>
-          </article>
-        </a>
-
-        {# Delete button — appears on hover, positioned top-right of the card #}
-        <button
-          type="button"
-          class="absolute top-2 right-2 w-7 h-7 rounded-full bg-white border border-slate-200
-                 shadow flex items-center justify-center text-rose-500 text-xs
-                 opacity-0 group-hover/card:opacity-100 transition-opacity duration-150
-                 cursor-pointer z-10"
-          hx-delete="/webui/lesson/{{ lesson.id }}"
-          hx-confirm="Eliminare questa lezione? L'operazione non è reversibile."
-          hx-target="closest .relative"
-          hx-swap="outerHTML"
-          title="Elimina lezione">
-          <wa-icon name="trash"></wa-icon>
-        </button>
-
-        </div>{# end relative group/card #}
-      {% endfor %}
+      </main>
     </div>
   {% endif %}
 
-</section>
+</div>
 {% endblock %}

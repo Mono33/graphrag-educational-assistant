@@ -78,6 +78,15 @@ class WriterAgent:
         domain: str = "neuro",  # Phase B: Domain for extensions
         teacher_provided_context: Optional[str] = None,  # WebUI #6.6 P3: chat uploads
         educational_profile: Optional[Dict[str, Any]] = None,  # Teacher's lesson profile
+        # CORE 2 #9 — Corrective RAG. When the grader exhausted its retry
+        # budget without reaching ``relevant``, the node sets
+        # ``state.retrieval_warning=True`` and we receive it here. The
+        # Writer then prepends a short "low-confidence caveat" instruction
+        # to the user prompt so the lesson carries an explicit flag for
+        # the teacher rather than silently authoring on weak evidence.
+        # ``None`` / ``False`` = no caveat, output identical to pre-#9.
+        retrieval_warning: Optional[bool] = None,
+        retrieval_grade_reason: Optional[str] = None,
     ) -> str:
         """
         Generate content based on the detected intent and retrieved context.
@@ -128,24 +137,31 @@ class WriterAgent:
         # NEW Phase 2: Format curated media if available
         media_text = self._format_media(curated_media) if has_media else ""
 
-        # Build educational profile section for lesson template
+        # Build educational profile section for lesson template.
+        # NOTE: Field paths must match the canonical EducationalProfile schema
+        # (see src/aix/api/schemas/educational_profile.py): the duration lives
+        # at top-level ``time_available_minutes`` and disabilities live under
+        # ``group.disabilities``. We keep ``ep.get("lesson_duration")`` and
+        # ``ep.get("disabilities")`` as legacy fallbacks for any older payloads.
         edu_profile_section = ""
         if educational_profile:
             ep = educational_profile
+            group = ep.get("group") or {}
             lines = ["\n## Teacher's Educational Profile"]
             if ep.get("specific_topic"):
                 lines.append(f"- Topic: {ep['specific_topic']}")
             if ep.get("subject_area"):
                 lines.append(f"- Subject: {ep['subject_area']}")
-            if ep.get("group", {}).get("grade"):
-                lines.append(f"- Grade level: {ep['group']['grade']}")
-            if ep.get("disabilities"):
-                disabilities = ep["disabilities"]
+            if group.get("grade"):
+                lines.append(f"- Grade level: {group['grade']}")
+            disabilities = group.get("disabilities") or ep.get("disabilities")
+            if disabilities:
                 if isinstance(disabilities, list):
                     disabilities = ", ".join(disabilities)
                 lines.append(f"- Learner needs: {disabilities}")
-            if ep.get("lesson_duration"):
-                lines.append(f"- Duration: {ep['lesson_duration']} minutes")
+            duration = ep.get("time_available_minutes") or ep.get("lesson_duration")
+            if duration:
+                lines.append(f"- Duration: {duration} minutes")
             if len(lines) > 1:
                 edu_profile_section = "\n".join(lines) + "\n"
 
@@ -155,6 +171,7 @@ class WriterAgent:
             
             user_prompt = WRITER_USER_TEMPLATE_HYBRID.format(
                 teacher_query=teacher_query,
+                educational_profile_section=edu_profile_section,
                 wikipedia_content=wikipedia_content,
                 papers_content=papers_content,
                 oer_content=oer_content,
@@ -208,6 +225,45 @@ class WriterAgent:
         # NEW Phase 2: Append media context if available
         if media_text:
             user_prompt += media_text
+
+        # CORE 2 #9 — Corrective RAG low-confidence caveat (additive).
+        # Only fires when ``retrieval_warning=True`` (i.e., the grader's
+        # retry budget was exhausted with grade != "relevant"). The
+        # snippet asks the writer to add a single short note at the top of
+        # the lesson telling the teacher that the KG match was weak — it
+        # does NOT change the rest of the prompt. With the corrective-RAG
+        # feature flag off this branch is dead code (the flag never
+        # populates ``retrieval_warning``).
+        if retrieval_warning:
+            reason_clause = ""
+            if retrieval_grade_reason:
+                reason_clause = f' (grader rationale: "{retrieval_grade_reason.strip()}")'
+            if language == "it":
+                user_prompt += (
+                    "\n\n## ⚠️ Avviso di bassa confidenza sul Knowledge Graph"
+                    f"{reason_clause}\n"
+                    "Il recupero dal Knowledge Graph non ha trovato concetti pienamente "
+                    "allineati alla query. Procedi comunque a comporre la lezione, ma "
+                    "aggiungi UNA breve nota ESPLICITA in cima al documento (1-2 righe, in "
+                    "italiano, formato callout/blockquote) che avverte il docente che il KG "
+                    "è risultato a bassa confidenza per questo argomento e che le fonti "
+                    "richiamate potrebbero essere parziali. Non inventare contenuti che non "
+                    "siano supportati dai concetti recuperati."
+                )
+            else:
+                user_prompt += (
+                    "\n\n## ⚠️ Knowledge-Graph low-confidence notice"
+                    f"{reason_clause}\n"
+                    "The Knowledge-Graph retrieval did not surface concepts that fully "
+                    "match the query. Proceed to draft the lesson, but ADD a single "
+                    "short note at the very top of the document (1-2 lines, blockquote/"
+                    "callout) telling the teacher that the KG was low-confidence on this "
+                    "topic and that the cited sources may be partial. Do not invent "
+                    "content that the retrieved concepts do not support."
+                )
+            logger.info(
+                "[WriterAgent] retrieval_warning=True → appended low-confidence caveat to user prompt"
+            )
         
         # Format system prompt with language
         system_prompt = system_prompt.replace(

@@ -53,6 +53,13 @@ Every lesson plan should include:
 - Include timing for each section
 - Provide differentiation options
 
+### Mandatory Constraints
+- If the Teacher's Educational Profile specifies a **Duration**, the total lesson length MUST equal that value exactly. This is a HARD constraint that overrides any default heuristic.
+- Sum every section's timing so it adds up to the specified Duration (e.g., if Duration is 60 minutes, the lesson must fit exactly in 60 minutes).
+- Similarly, if **Time Constraints** in Requirements specifies a value, the lesson MUST respect it.
+- When both Duration (from Profile) and Time Constraints (from Requirements) are present, use the one from Time Constraints as it reflects explicit query intent.
+- Apply the Duration silently. Do NOT echo this constraint as parenthetical or explanatory text in the rendered lesson (e.g. avoid wording like "(vincolo rigido — somma esatta di tutte le fasi)" or "(come da profilo docente — vincolo rigido)" after the **Durata** line). Just produce a lesson whose section timings sum to the specified Duration; that is sufficient.
+
 ### Language
 Write in {language}:
 - "it" = Italian (formal educational register)
@@ -551,6 +558,12 @@ Mark with: `[✅ Da Knowledge Graph]` or `[✅ Strategia basata su neuroscienze]
 - Make activities practical and classroom-ready
 - ALWAYS include the footer disclaimer
 
+## Mandatory Constraints
+- If the Teacher's Educational Profile specifies a **Duration**, the total lesson length MUST equal that value exactly. This is a HARD constraint that overrides any default heuristic.
+- Sum every section's timing so it adds up to the specified Duration.
+- Similarly, if **Time Constraints** in Requirements specifies a value, the lesson MUST respect it.
+- Apply the Duration silently. Do NOT echo this constraint as parenthetical or explanatory text in the rendered lesson (e.g. avoid wording like "(vincolo rigido — somma esatta di tutte le fasi)" or "(come da profilo docente — vincolo rigido)" after the **Durata** line). Just produce a lesson whose section timings sum to the specified Duration; that is sufficient.
+
 ## Footer Disclaimer (REQUIRED)
 At the end of EVERY response, include:
 
@@ -567,7 +580,7 @@ WRITER_USER_TEMPLATE_HYBRID = """Create a lesson plan for a topic OUTSIDE the Kn
 
 ## Teacher's Request
 {teacher_query}
-
+{educational_profile_section}
 ## Subject Content (FROM EXTERNAL SOURCES)
 Use this external information for the lesson CONTENT:
 

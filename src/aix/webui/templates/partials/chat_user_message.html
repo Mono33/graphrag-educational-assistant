@@ -1,5 +1,5 @@
 {#
-  User message bubble (CORE 2 #6.6 P2 phase 2).
+  User message bubble (CORE 2 #6.6 P2 phase 2 / re-skin P5.4).
 
   Renders the teacher's question as a chat message — right-aligned, colored,
   with a small avatar circle. The text source is ``lesson.teacher_query``
@@ -15,24 +15,16 @@
 {% set initials = (user.email[0] | upper) if user and user.email else "T" %}
 {% set query_text = lesson.teacher_query or lesson.title or "Crea una lezione." %}
 
-<div class="flex flex-row-reverse items-start gap-3">
+<div class="aix-msg-row-user">
 
   {# ── Avatar circle (teacher) ───────────────────────────────────────── #}
-  <div class="flex-shrink-0 w-9 h-9 rounded-full bg-sky-500 text-white
-              flex items-center justify-center font-semibold text-sm
-              ring-2 ring-white shadow-sm">
-    {{ initials }}
-  </div>
+  <div class="aix-agent-avatar aix-agent-avatar--user">{{ initials }}</div>
 
   {# ── Bubble ────────────────────────────────────────────────────────── #}
-  <div class="max-w-[85%] flex flex-col items-end gap-1">
-    <div class="rounded-2xl rounded-tr-sm bg-sky-500 text-white px-4 py-3
-                shadow-sm whitespace-pre-wrap break-words">
-      {{ query_text }}
-    </div>
-    <div class="text-[11px] text-slate-400 mr-1 flex items-center gap-1">
-      <wa-icon name="user" style="font-size:0.7rem;"></wa-icon>
-      <span>Tu · {{ lesson.created_at.strftime('%H:%M') }}</span>
+  <div style="display:flex; flex-direction:column; align-items:flex-end; gap:2px; min-width:0;">
+    <div class="aix-msg-bubble-user">{{ query_text }}</div>
+    <div class="aix-msg-user-meta">
+      Tu · {{ lesson.created_at.strftime('%H:%M') }}
     </div>
   </div>
 

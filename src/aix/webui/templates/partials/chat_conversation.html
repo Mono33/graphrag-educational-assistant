@@ -63,18 +63,16 @@
 {% if lesson.status == "draft" %}
 
   {# Empty state — chat input below is the affordance. #}
-  <div id="chat-stream"
-       class="rounded-xl border-2 border-dashed border-slate-200 p-8
-              flex flex-col items-center text-center gap-3">
-    <wa-icon name="comments" style="font-size:2rem; color:#94a3b8;"></wa-icon>
-    <div class="space-y-1">
-      <p class="font-medium text-slate-700">Inizia la conversazione</p>
-      <p class="text-sm text-slate-500 max-w-md mx-auto">
-        Scrivi la tua richiesta nel campo qui sotto. L'agente userà
-        sia il messaggio sia il <strong>profilo educativo</strong>
-        a sinistra per generare la lezione personalizzata.
-      </p>
+  <div id="chat-stream" class="aix-empty-state">
+    <div class="aix-empty-state-icon">
+      <wa-icon name="comments"></wa-icon>
     </div>
+    <p class="aix-empty-state-title">Inizia la conversazione</p>
+    <p class="aix-empty-state-body">
+      Scrivi la tua richiesta nel campo qui sotto. L'agente userà
+      sia il messaggio sia il <strong>profilo educativo</strong>
+      a sinistra per generare la lezione personalizzata.
+    </p>
   </div>
 
 {% elif lesson.status == "running" %}
@@ -108,10 +106,10 @@
 {% else %}
 
   {# Defensive default — unknown status. Should never happen. #}
-  <div id="chat-stream"
-       class="rounded-xl border-2 border-dashed border-slate-200 p-6
-              text-sm text-slate-500 text-center">
-    Stato lezione sconosciuto: <code>{{ lesson.status }}</code>
+  <div id="chat-stream" class="aix-empty-state" style="padding:18px;">
+    <p style="margin:0; font-size:13px;">
+      Stato lezione sconosciuto: <code>{{ lesson.status }}</code>
+    </p>
   </div>
 
 {% endif %}

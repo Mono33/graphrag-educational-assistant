@@ -29,18 +29,101 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from aix.webui.auth import router as auth_router
 from aix.webui.auth.dependencies import optional_current_user
 from aix.webui.auth.models import User
+from aix.webui.db import get_async_session
 from aix.webui.lessons import router as lessons_router
+from aix.webui.lessons.display import (
+    activity_event_for_lesson,
+    lesson_to_row,
+    today_label_it,
+)
+from aix.webui.lessons.models import Lesson
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Dashboard helpers (CORE 2 #6.6 P5 — warm-academic brand pass)
+#
+# The lesson-row / status-display / time-formatting helpers live in
+# ``aix.webui.lessons.display`` so they can be reused by the Library and
+# Workspace pages without circular imports. This file keeps only the
+# *dashboard-shaped* aggregation logic.
+#
+# All queries below are read-only derivations from the existing ``lesson``
+# table — no new endpoints, no schema changes, no agent / SSE touches.
+# ---------------------------------------------------------------------------
+
+async def _build_dashboard_context(
+    session: AsyncSession, user: Optional[User]
+) -> dict[str, Any]:
+    """
+    Assemble the dashboard's per-section context.
+
+    Anonymous visitors get an empty-ish context (template renders the
+    sign-in CTA instead of the personalised dashboard). Authenticated
+    users get four real, read-only derivations:
+
+        - lesson_count   : total lessons owned
+        - resume_lesson  : most-recently-touched draft (if any)
+        - recent_lessons : last 3 lessons by updated_at (any status)
+        - activity       : last 5 activity events derived from updated_at
+    """
+    empty: dict[str, Any] = {
+        "lesson_count":   0,
+        "resume_lesson":  None,
+        "recent_lessons": [],
+        "activity":       [],
+        "today_label":    today_label_it(),
+    }
+    if user is None:
+        return empty
+
+    total = await session.scalar(
+        select(func.count(Lesson.id)).where(Lesson.owner_id == user.id)
+    ) or 0
+
+    resume_q = await session.execute(
+        select(Lesson)
+        .where(Lesson.owner_id == user.id, Lesson.status == "draft")
+        .order_by(Lesson.updated_at.desc())
+        .limit(1)
+    )
+    resume = resume_q.scalar_one_or_none()
+
+    recent_q = await session.execute(
+        select(Lesson)
+        .where(Lesson.owner_id == user.id)
+        .order_by(Lesson.updated_at.desc())
+        .limit(3)
+    )
+    recent = list(recent_q.scalars().all())
+
+    activity_q = await session.execute(
+        select(Lesson)
+        .where(Lesson.owner_id == user.id)
+        .order_by(Lesson.updated_at.desc())
+        .limit(5)
+    )
+    activity_rows = list(activity_q.scalars().all())
+
+    return {
+        "lesson_count":   int(total),
+        "resume_lesson":  lesson_to_row(resume) if resume is not None else None,
+        "recent_lessons": [lesson_to_row(l) for l in recent],
+        "activity":       [activity_event_for_lesson(l) for l in activity_rows],
+        "today_label":    today_label_it(),
+    }
 
 # Resolve template + static directories relative to this package, so the webui
 # works regardless of where uvicorn is launched from.
@@ -62,15 +145,26 @@ _pages_router = APIRouter(prefix="/webui")
 async def home(
     request: Request,
     user: Optional[User] = Depends(optional_current_user),
+    session: AsyncSession = Depends(get_async_session),
 ) -> HTMLResponse:
-    """Landing page — Path C webui skeleton, now auth-aware (P1)."""
+    """
+    Teacher-facing dashboard (CORE 2 #6.6 P5 — warm-academic brand pass).
+
+    Surfaces a small, read-only derivation of the user's lessons (count,
+    most-recent draft to resume, last 3 lessons, last 5 activity events).
+    No backend logic / agent / SSE / route changes — the dashboard simply
+    queries the existing ``lesson`` table and renders it. Anonymous visitors
+    see a sign-in CTA instead of the personalised dashboard.
+    """
+    dashboard = await _build_dashboard_context(session, user)
     return templates.TemplateResponse(
         "pages/home.html",
         {
             "request": request,
             "title": "AixLearning · Agentic GraphRAG",
-            "phase": "P1 — Auth + Form",
             "user": user,
+            "active_nav": "dashboard",
+            "dashboard": dashboard,
         },
     )
 

@@ -1,5 +1,5 @@
 {#
-  Writer Agent — pending placeholder (CORE 2 #6.6 P2 phase 2).
+  Writer Agent — pending placeholder (CORE 2 #6.6 P2 phase 2 / re-skin P5.4).
 
   Rendered immediately after the retriever finishes, BEFORE the writer call
   starts. Today the writer call is non-streaming (a single, long
@@ -11,6 +11,9 @@
   matching ``chat_writer_card.html`` can OOB-replace it with the completed
   draft. ``revision`` is 1-based.
 
+  PRESERVED FOR HTMX:
+    - id="writer-card-rev{N}"   ← target of the writer-card OOB swap
+
   Required context:
     payload = { revision, is_revision, feedback }
 #}
@@ -19,51 +22,48 @@
 {% set rev = p.get('revision', 1) %}
 {% set is_revision = p.get('is_revision', False) %}
 
-<div id="writer-card-rev{{ rev }}" class="flex items-start gap-3">
+<div id="writer-card-rev{{ rev }}" class="aix-agent-shell">
 
-  {# ── Avatar (writer = emerald / quill) ────────────────────────────── #}
-  <div class="flex-shrink-0 w-9 h-9 rounded-full bg-emerald-100 text-emerald-700
-              flex items-center justify-center ring-2 ring-white shadow-sm">
-    <wa-icon name="pen-nib" style="font-size:1rem;"></wa-icon>
+  <div class="aix-agent-avatar aix-agent-avatar--writer">
+    <wa-icon name="pen-nib"></wa-icon>
   </div>
 
-  {# ── Card body ────────────────────────────────────────────────────── #}
-  <div class="flex-1 min-w-0">
-    <article class="rounded-xl border border-emerald-200 bg-white shadow-sm overflow-hidden">
+  <div class="aix-agent-body">
+    <article class="aix-agent-card aix-agent-card--writer aix-card-stripe-writer">
 
-      <header class="px-4 py-2 border-b border-emerald-100 bg-emerald-50/60
-                     flex items-center justify-between gap-2 flex-wrap">
-        <div class="flex items-baseline gap-2">
-          <strong class="text-slate-800">Writer Agent</strong>
-          <span class="text-xs text-slate-500">
+      <header class="aix-agent-card-header aix-agent-card-header--writer">
+        <div class="aix-agent-card-title">
+          <strong>Writer Agent</strong>
+          <span class="aix-agent-card-role">
             · {% if is_revision %}revisione {{ rev }}{% else %}sta componendo la lezione{% endif %}
           </span>
         </div>
-        <wa-tag size="small" variant="warning" pill>
+        <span class="aix-pill aix-pill-warning">
           <wa-spinner style="font-size:0.7rem;"></wa-spinner>
           in scrittura
-        </wa-tag>
+        </span>
       </header>
 
-      <div class="px-4 py-4 space-y-2 text-sm text-slate-700">
+      <div class="aix-agent-card-body" style="display:flex; flex-direction:column; gap:10px;">
         {% if is_revision and p.get('feedback') %}
-          <div class="text-xs text-slate-600 bg-amber-50 border border-amber-200
-                      rounded px-3 py-2">
-            <strong class="text-amber-700">Indicazioni di revisione:</strong>
-            <span class="ml-1">{{ p.feedback }}</span>
+          <div style="font-size:12px; color:var(--aix-text-secondary);
+                      background:var(--aix-amber-soft); border:1px solid rgba(212,164,90,0.32);
+                      border-radius:var(--aix-radius-sm); padding:8px 12px;">
+            <strong style="color:var(--aix-amber-hover);">Indicazioni di revisione:</strong>
+            <span style="margin-left:4px;">{{ p.feedback }}</span>
           </div>
         {% endif %}
 
         {# Skeleton paragraphs that subtly pulse — visual proof we're working #}
-        <div class="space-y-2 animate-pulse">
-          <div class="h-3 bg-slate-100 rounded w-11/12"></div>
-          <div class="h-3 bg-slate-100 rounded w-10/12"></div>
-          <div class="h-3 bg-slate-100 rounded w-9/12"></div>
-          <div class="h-3 bg-slate-100 rounded w-11/12"></div>
-          <div class="h-3 bg-slate-100 rounded w-7/12"></div>
+        <div class="aix-skeleton-stack">
+          <div class="aix-skeleton-line" style="width:92%;"></div>
+          <div class="aix-skeleton-line" style="width:84%;"></div>
+          <div class="aix-skeleton-line" style="width:76%;"></div>
+          <div class="aix-skeleton-line" style="width:91%;"></div>
+          <div class="aix-skeleton-line" style="width:60%;"></div>
         </div>
 
-        <p class="text-xs text-slate-500 italic mt-2">
+        <p style="font-size:12px; font-style:italic; color:var(--aix-text-tertiary); margin:0;">
           La generazione richiede tipicamente 60–90 secondi. Il Writer
           incorpora i nodi del KG, le strategie pedagogiche e i media
           curati, applicandoli al profilo educativo della classe.
@@ -71,8 +71,8 @@
       </div>
 
     </article>
-    <div class="text-[11px] text-slate-400 mt-1 ml-1 flex items-center gap-1">
-      <wa-icon name="pen-nib" style="font-size:0.7rem;"></wa-icon>
+    <div class="aix-agent-footer-label">
+      <wa-icon name="pen-nib" style="font-size:0.75rem;"></wa-icon>
       <span>Writer · pending</span>
     </div>
   </div>

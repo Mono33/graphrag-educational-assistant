@@ -1,65 +1,66 @@
 {#
-  Error card (CORE 2 #6.6 P2 phase 2).
+  Error card (CORE 2 #6.6 P2 phase 2 / re-skin P5.4).
 
   Rendered:
     - On the SSE 'error' event, appended to the chat as the run's last card.
     - On a fresh GET to /webui/lesson/{id} when ``lesson.status == "error"``
       (replay path — error_message persisted on disk).
 
+  PRESERVED FOR HTMX:
+    - hx-post /webui/lesson/{id}/run + target #chat-conversation on Riprova
+
   Required context:
     lesson    ORM Lesson (for the rerun POST URL)
     error     str — short human-readable message
 #}
 
-<div class="flex items-start gap-3">
+<div class="aix-agent-shell">
 
-  {# ── Avatar (error = rose / circle-x) ─────────────────────────────── #}
-  <div class="flex-shrink-0 w-9 h-9 rounded-full bg-rose-100 text-rose-700
-              flex items-center justify-center ring-2 ring-white shadow-sm">
-    <wa-icon name="circle-exclamation" style="font-size:1rem;"></wa-icon>
+  <div class="aix-agent-avatar aix-agent-avatar--error">
+    <wa-icon name="circle-exclamation"></wa-icon>
   </div>
 
-  <div class="flex-1 min-w-0">
-    <article class="rounded-xl border border-rose-200 bg-rose-50/50 shadow-sm overflow-hidden">
+  <div class="aix-agent-body">
+    <article class="aix-agent-card aix-agent-card--error aix-card-stripe-error">
 
-      <header class="px-4 py-2 border-b border-rose-200 bg-rose-100/50
-                     flex items-center justify-between gap-2 flex-wrap">
-        <div class="flex items-baseline gap-2">
-          <strong class="text-rose-900">Errore durante la generazione</strong>
+      <header class="aix-agent-card-header aix-agent-card-header--error">
+        <div class="aix-agent-card-title" style="color:var(--aix-status-error);">
+          <strong>Errore durante la generazione</strong>
         </div>
-        <wa-tag size="small" variant="danger" pill>error</wa-tag>
+        <span class="aix-pill aix-pill-error">error</span>
       </header>
 
-      <div class="px-4 py-3 space-y-3 text-sm text-slate-700">
-        <p class="whitespace-pre-wrap">{{ error or "Errore sconosciuto." }}</p>
+      <div class="aix-agent-card-body" style="display:flex; flex-direction:column; gap:10px;">
+        <p style="margin:0; font-size:14px; white-space:pre-wrap; color:var(--aix-text-primary);">
+          {{ error or "Errore sconosciuto." }}
+        </p>
 
-        <p class="text-xs text-slate-500 italic">
-          Suggerimento: controlla la connessione, le chiavi API in ``.env``,
+        <p style="margin:0; font-size:12px; font-style:italic; color:var(--aix-text-tertiary);">
+          Suggerimento: controlla la connessione, le chiavi API in <code>.env</code>,
           e i log del server. Se l'errore persiste, allega il messaggio
           quando segnali il problema.
         </p>
 
-        <div class="flex flex-wrap items-center justify-end gap-2 pt-1">
-          <a href="/webui/lesson/new" class="no-underline">
-            <wa-button size="small" variant="default">
-              <wa-icon slot="prefix" name="circle-plus"></wa-icon>
-              Nuova lezione
-            </wa-button>
+        <div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end;
+                    gap:8px; padding-top:6px;">
+          <a href="/webui/lesson/new" class="aix-btn aix-btn-outline aix-btn-sm">
+            <wa-icon name="circle-plus" style="font-size:0.85rem;"></wa-icon>
+            Nuova lezione
           </a>
-          <wa-button size="small"
-                     variant="brand"
-                     hx-post="/webui/lesson/{{ lesson.id }}/run"
-                     hx-target="#chat-conversation"
-                     hx-swap="innerHTML">
-            <wa-icon slot="prefix" name="rotate"></wa-icon>
+          <button type="button"
+                  class="aix-btn aix-btn-primary aix-btn-sm"
+                  hx-post="/webui/lesson/{{ lesson.id }}/run"
+                  hx-target="#chat-conversation"
+                  hx-swap="innerHTML">
+            <wa-icon name="rotate" style="font-size:0.85rem;"></wa-icon>
             Riprova
-          </wa-button>
+          </button>
         </div>
       </div>
 
     </article>
-    <div class="text-[11px] text-slate-400 mt-1 ml-1 flex items-center gap-1">
-      <wa-icon name="circle-exclamation" style="font-size:0.7rem;"></wa-icon>
+    <div class="aix-agent-footer-label">
+      <wa-icon name="circle-exclamation" style="font-size:0.75rem;"></wa-icon>
       <span>Sistema · errore</span>
     </div>
   </div>
