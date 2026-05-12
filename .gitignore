@@ -203,3 +203,21 @@ data/webui/*.db
 data/webui/*.db-journal
 data/webui/*.db-wal
 data/webui/*.db-shm
+
+# =============================================================================
+# LangGraph session checkpoints (personal conversation history)
+# SQLite DB created by langgraph-checkpoint-sqlite on first agent run.
+# Contains user session data — never commit.
+# =============================================================================
+data/agent_threads.db
+data/agent_threads.db-shm
+data/agent_threads.db-wal
+
+# =============================================================================
+# Media pool agent — local runtime state (not deployment artifacts)
+# Checkpoints are machine-specific resume state; pool JSONs are committed
+# only when intentionally updated (run 02_verify_pool.py first).
+# =============================================================================
+data/media/checkpoint_*.json
+data/media/kg_*_media_mapping*.json
+data/media/kg_*_resources.json
