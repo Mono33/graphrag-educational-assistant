@@ -1338,6 +1338,56 @@ body.aix-body {
 .aix-outcome-callout--info .aix-outcome-callout-conclusion { color: var(--aix-status-info); }
 
 /* -----------------------------------------------------------------------------
+   Coverage banner — CORE 2 #9.UX-5 (Corrective-RAG-OFF teacher explainability)
+   -----------------------------------------------------------------------------
+   Parallel structure to ``.aix-outcome-callout`` but with friendlier
+   (non-uppercase) typography because this banner is the PRIMARY
+   explainability for teachers when Corrective RAG is disabled — it's the
+   first (and only) narrative the teacher reads about what the KG actually
+   returned. Three tiers:
+
+       --healthy       (≥5 KG nodes)   sage    "Ricerca completata sulla base..."
+       --limited       (1-4 KG nodes)  amber   "Copertura parziale..."
+       --out-of-scope  (0 KG nodes)    info    "Questo argomento non è presente..."
+
+   Reuses the existing status-* tokens so the colors stay coherent with
+   the rest of the chat workspace. Mutually exclusive with the CR-ON
+   ``.aix-outcome-callout`` block — the template gates them on
+   ``payload.retrieval_grade`` so only one block ever renders per turn.
+   ----------------------------------------------------------------------------- */
+.aix-coverage-banner {
+  border: 1px solid var(--aix-border-soft);
+  border-radius: var(--aix-radius-sm);
+  padding: 12px 14px;
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.aix-coverage-banner--healthy      { background: var(--aix-status-success-soft); border-color: rgba(47, 143, 106, 0.22); }
+.aix-coverage-banner--limited      { background: var(--aix-status-warning-soft); border-color: rgba(212, 164, 90, 0.32); }
+.aix-coverage-banner--out-of-scope { background: var(--aix-status-info-soft);    border-color: rgba(59, 111, 168, 0.22); }
+
+.aix-coverage-banner-headline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 13.5px;
+  line-height: 1.3;
+}
+.aix-coverage-banner--healthy      .aix-coverage-banner-headline { color: var(--aix-status-success); }
+.aix-coverage-banner--limited      .aix-coverage-banner-headline { color: #8c6a23; }
+.aix-coverage-banner--out-of-scope .aix-coverage-banner-headline { color: var(--aix-status-info); }
+
+.aix-coverage-banner-body {
+  margin: 0;
+  line-height: 1.5;
+  color: var(--aix-text-secondary);
+  font-size: 12.5px;
+}
+
+/* -----------------------------------------------------------------------------
    Score bar (critic)
    ----------------------------------------------------------------------------- */
 .aix-score-bar {

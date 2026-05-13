@@ -882,6 +882,87 @@ def _grader_will_retry(state: Dict[str, Any]) -> bool:
     return attempts < _resolve_max_attempts()
 
 
+# ---------------------------------------------------------------------------
+# CORE 2 #9.UX-5 — domain-aware teacher-friendly retriever copy (CR OFF only).
+#
+# When Corrective RAG is disabled (the production default in ``.env``), the
+# ``grade_retrieval`` node never runs, so the entire ``aix-outcome-callout``
+# block in ``chat_retriever_card.html`` is skipped — leaving the retriever
+# card with no explainability layer at all. The teacher sees raw counts
+# (nodes_count / recommendations_count / media) but no narrative about
+# what they MEAN for the lesson.
+#
+# #9.UX-5 fills that gap with a 3-tier static banner derived purely from
+# ``nodes_count``:
+#
+#   tier="healthy"      ≥5 nodes   sage    "Ricerca completata sulla base {D}: ..."
+#   tier="limited"      1-4 nodes  amber   "Copertura parziale ... La lezione sarà integrata ..."
+#   tier="out_of_scope" 0 nodes    info    "Questo argomento non è presente nella base {D}: ..."
+#
+# Domain labels are short/long parallel forms — short for tier 1/2 headlines
+# and the footer ("UDL"/"Neuro"), long for tier 0 where the explanatory
+# parenthetical ("(pedagogia inclusiva)") improves teacher comprehension.
+#
+# Scope: CR OFF only. CR ON (``aix-outcome-callout``) is untouched — it
+# already provides its own explainability via the four ``retrieval_outcome``
+# branches. When CR is re-enabled (post #LAT-7), this same tier logic can
+# be lifted into the outcome branches without coordination — they're
+# mutually exclusive (the template's outer guards see to that).
+# ---------------------------------------------------------------------------
+
+_DOMAIN_LABELS: Dict[str, Dict[str, str]] = {
+    "udl":   {"short": "UDL",   "long": "UDL (pedagogia inclusiva)"},
+    "neuro": {"short": "Neuro", "long": "Neuro"},
+}
+
+# Tier classifier threshold. The 5-node cutoff is empirical: under 5 the
+# Writer materially leans on general didactic knowledge to compose the
+# lesson, so we owe the teacher a visible "expect lighter KG anchoring"
+# signal. Configurable via ``AIX_COVERAGE_HEALTHY_THRESHOLD`` for ops
+# tuning without a template touch.
+_COVERAGE_HEALTHY_DEFAULT = 5
+
+
+def _coverage_healthy_threshold() -> int:
+    """Resolve the ``nodes_count`` floor for the ``healthy`` tier with a
+    safe default. Clamped to a sane range so a typo (``999``) doesn't
+    silently turn every lesson into ``limited``."""
+    raw = os.getenv("AIX_COVERAGE_HEALTHY_THRESHOLD", str(_COVERAGE_HEALTHY_DEFAULT))
+    try:
+        return max(1, min(int(raw), 50))
+    except ValueError:
+        return _COVERAGE_HEALTHY_DEFAULT
+
+
+def _resolve_domain_labels(domain: Optional[str]) -> Dict[str, str]:
+    """Return the ``{short, long}`` label pair for ``domain``.
+
+    Unknown domains fall back to the raw value as both short and long
+    forms — so a future ``"stem"`` domain renders ``"stem"`` until we
+    register a proper label, never crashing on the KeyError path.
+    """
+    key = (domain or "").lower().strip()
+    if key in _DOMAIN_LABELS:
+        return _DOMAIN_LABELS[key]
+    safe = key or "il dominio attivo"
+    return {"short": safe, "long": safe}
+
+
+def _classify_coverage_tier(nodes_count: int) -> str:
+    """Pure tier classifier — no env reads, no state, no domain logic.
+
+    Returns one of ``"healthy"`` / ``"limited"`` / ``"out_of_scope"``.
+    Kept as a free function so the unit test can lock the boundaries
+    (0 → out_of_scope, 1..N-1 → limited, ≥N → healthy) without standing
+    up a full ``_state()`` fixture.
+    """
+    if nodes_count <= 0:
+        return "out_of_scope"
+    if nodes_count < _coverage_healthy_threshold():
+        return "limited"
+    return "healthy"
+
+
 # CORE 2 #9.UX-3 — sentinel prefix used by ``grade_retrieval_node`` to
 # mark a defensive fallback after the grader LLM threw. The node returns
 # ``grade=relevant`` in that case (so the loop never blocks the writer)
@@ -1000,11 +1081,27 @@ def _build_retriever_payload(state: Dict[str, Any]) -> Dict[str, Any]:
     # Computed defensively (always returns one of the four valid values).
     outcome = _compute_retrieval_outcome(state, media_counts)
 
+    # CORE 2 #9.UX-5 — domain-aware coverage tier for the CR-OFF banner.
+    # Computed unconditionally (cheap pure functions); the template only
+    # renders the banner block when ``retrieval_grade`` is None, so these
+    # fields are inert on the CR-ON path. Bundling them with the rest of
+    # the payload keeps the SSE event shape stable across flag states.
+    domain_raw = state.get("domain")
+    domain_labels = _resolve_domain_labels(domain_raw)
+    nodes_count = len(nodes)
+    coverage_tier = _classify_coverage_tier(nodes_count)
+    media_total = (
+        int(media_counts.get("videos") or 0)
+        + int(media_counts.get("articles") or 0)
+        + int(media_counts.get("oer") or 0)
+    )
+
     return {
-        "nodes_count": len(nodes),
+        "nodes_count": nodes_count,
         "relationships_count": len(rels),
         "recommendations_count": len(recs),
         "media_counts": media_counts,
+        "media_total": media_total,
         "media": media,  # full payload for the right sidebar
         "top_concepts": top_concepts,
         "retrieval_confidence": state.get("retrieval_confidence"),
@@ -1025,6 +1122,14 @@ def _build_retriever_payload(state: Dict[str, Any]) -> Dict[str, Any]:
         "retrieval_outcome": outcome,
         "retrieval_warning": bool(state.get("retrieval_warning")),
         "retrieval_rewritten_query": state.get("retrieval_rewritten_query"),
+        # CORE 2 #9.UX-5 — domain-aware fields for the CR-OFF banner and
+        # the (domain-aware) bottom footer label. ``domain`` is the raw
+        # value from state; the two label forms are pre-rendered so the
+        # template never sees a dictionary lookup or a hardcoded label.
+        "domain": (domain_raw or "").lower() or None,
+        "domain_label_short": domain_labels["short"],
+        "domain_label_long":  domain_labels["long"],
+        "coverage_tier": coverage_tier,
     }
 
 
@@ -1202,6 +1307,14 @@ async def run_agent_stream(
             # (and any other profile-vs-history conflicts in future).
             raw_user_turn=raw_query,
         )
+
+        # CORE 2 #9.UX-5 hotfix — pre-seed final_state with initial_state so
+        # static fields (notably ``domain``) that no node ever overwrites are
+        # visible to the post-stream payload builders. LangGraph state_diff
+        # chunks only carry fields the graph actually mutated, so without this
+        # seed ``final_state.get("domain")`` returns None and the coverage
+        # banner falls back to the generic "il dominio attivo" label.
+        final_state.update(initial_state)
 
         logger.info(
             "[webui.agent] starting run lesson_id=%s domain=%s query=%r "
@@ -1512,6 +1625,12 @@ async def stream_agent_events(
             # precedence rule consistent across both entry points.
             raw_user_turn=query,
         )
+
+        # CORE 2 #9.UX-5 hotfix — pre-seed final_state with initial_state so
+        # static fields (notably ``domain``) that no node ever overwrites are
+        # visible to the post-stream payload builders. See run_agent_stream
+        # for the full rationale.
+        final_state.update(initial_state)
 
         logger.info(
             "[api.agent] starting run session_id=%s thread_id=%s domain=%s query=%r "

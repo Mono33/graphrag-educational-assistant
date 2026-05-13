@@ -35,6 +35,7 @@
     payload = {
       nodes_count, relationships_count, recommendations_count,
       media_counts: {videos, articles, oer},
+      media_total,               # CORE 2 #9.UX-5 — sum of the three buckets
       top_concepts: [...],
       retrieval_confidence,
       # CORE 2 #9 — Corrective RAG (optional, only set when
@@ -53,12 +54,27 @@
                                  #   "limited_kg_only"     → amber ⚠️
                                  #   "grader_error"        → red ❌
       retrieval_warning,         # True iff max attempts ended non-relevant
-      retrieval_rewritten_query  # rewrite the grader proposed (if any)
+      retrieval_rewritten_query, # rewrite the grader proposed (if any)
+      # CORE 2 #9.UX-5 — domain-aware teacher copy for the CR-OFF banner
+      # and the (always-on) bottom footer. Three tiers based on nodes_count:
+      #   "healthy"      ≥5 nodes  → sage banner with counts narrative
+      #   "limited"      1-4 nodes → amber banner with integration note
+      #   "out_of_scope" 0 nodes   → slate-blue banner with fallback note
+      domain,                    # "udl" | "neuro" | None
+      domain_label_short,        # "UDL" / "Neuro" — used in tier 1/2 + footer
+      domain_label_long,         # "UDL (pedagogia inclusiva)" / "Neuro" — tier 0
+      coverage_tier              # "healthy" | "limited" | "out_of_scope"
     }
 
   Backward-compat: when corrective-RAG is OFF, ``retrieval_grade`` is None
-  and the entire grading block is skipped — the card renders bit-for-bit
-  identically to pre-#9.
+  and the CR-ON ``aix-outcome-callout`` block is skipped. The new CORE 2
+  #9.UX-5 ``aix-coverage-banner`` block then renders in its place (also
+  gated on ``not p.retrieval_grade``) so the two blocks are mutually
+  exclusive — only one ever renders per turn.
+
+  Pre-#9.UX-5 backward-compat: when ``coverage_tier`` is absent (legacy
+  state diffs), the banner block's outer guard ``{% if p.coverage_tier %}``
+  silently skips it — the card renders identically to pre-#9.UX-5.
 #}
 
 {% set p = payload or {} %}
@@ -124,6 +140,88 @@
                 <span class="aix-pill aix-pill-neutral">{{ c }}</span>
               {% endfor %}
             </div>
+          </div>
+        {% endif %}
+
+        {# ── CORE 2 #9.UX-5 — Coverage banner (Corrective-RAG-OFF only) ─
+           Renders ONLY when corrective-RAG is OFF (i.e.
+           ``payload.retrieval_grade`` is None). This is the teacher's
+           PRIMARY explainability layer in the CR-OFF production default:
+           the CR-ON ``aix-outcome-callout`` block below is skipped, and
+           the raw stat-grid alone doesn't tell the teacher what the
+           numbers MEAN for the lesson. The banner closes that gap with
+           a 3-tier domain-aware narrative.
+
+           Three tiers driven by ``payload.coverage_tier``:
+             * "healthy"      (≥5 nodes)  sage    — full KG anchoring
+             * "limited"      (1-4 nodes) amber   — partial, will blend
+             * "out_of_scope" (0 nodes)   info    — fallback to general
+                                                     didactic knowledge
+                                                     adapted to the
+                                                     class profile
+
+           Domain labels come from ``_resolve_domain_labels`` in
+           service.py — UDL gets the explanatory "(pedagogia inclusiva)"
+           parenthetical in tier 0; neuro stays short ("Neuro") because
+           the user-facing convention for the neuro domain is the bare
+           word.
+
+           Mutually exclusive with the CR-ON callout below — both blocks
+           gate on ``payload.retrieval_grade`` (one with ``if``, the
+           other with ``if not``), so exactly one renders per turn.
+        #}
+        {% if (not p.get('retrieval_grade')) and p.get('coverage_tier') %}
+          {% set _tier = p.get('coverage_tier') %}
+          {% set _dom_short = p.get('domain_label_short') or 'il dominio attivo' %}
+          {% set _dom_long  = p.get('domain_label_long')  or _dom_short %}
+
+          {% if _tier == 'healthy' %}
+            {% set _tier_class = 'aix-coverage-banner--healthy' %}
+            {% set _dot_class = 'aix-dot-success' %}
+          {% elif _tier == 'limited' %}
+            {% set _tier_class = 'aix-coverage-banner--limited' %}
+            {% set _dot_class = 'aix-dot-warning' %}
+          {% else %}
+            {% set _tier_class = 'aix-coverage-banner--out-of-scope' %}
+            {% set _dot_class = 'aix-dot-info' %}
+          {% endif %}
+
+          <div class="aix-coverage-banner {{ _tier_class }}">
+
+            {% if _tier == 'healthy' %}
+              <span class="aix-coverage-banner-headline">
+                <span class="aix-dot {{ _dot_class }}"></span>
+                <span>Ricerca completata sulla base {{ _dom_short }}</span>
+              </span>
+              <p class="aix-coverage-banner-body">
+                {{ p.get('recommendations_count', 0) }} strategie selezionate da
+                {{ p.get('nodes_count', 0) }} concetti correlati, con
+                {{ p.get('media_total', 0) }} risorse multimediali già pronte
+                all'uso.
+              </p>
+
+            {% elif _tier == 'limited' %}
+              <span class="aix-coverage-banner-headline">
+                <span class="aix-dot {{ _dot_class }}"></span>
+                <span>Copertura parziale per questo argomento nella base {{ _dom_short }}</span>
+              </span>
+              <p class="aix-coverage-banner-body">
+                Trovate {{ p.get('recommendations_count', 0) }} strategie
+                specifiche. La lezione sarà integrata con strategie didattiche
+                generali per restare completa e coerente.
+              </p>
+
+            {% else %}{# out_of_scope #}
+              <span class="aix-coverage-banner-headline">
+                <span class="aix-dot {{ _dot_class }}"></span>
+                <span>Questo argomento non è presente nella base {{ _dom_long }}</span>
+              </span>
+              <p class="aix-coverage-banner-body">
+                La lezione si baserà su conoscenze didattiche generali del nostro
+                assistente e fonti esterne verificate ed integrate.
+              </p>
+            {% endif %}
+
           </div>
         {% endif %}
 
@@ -301,9 +399,21 @@
       </div>
 
     </article>
+    {# CORE 2 #9.UX-5 — domain-aware footer. Pre-skin label was the
+       internal ``"Retriever · GraphRAG + curated media"`` (technical).
+       New label surfaces the actual data source the lesson rests on,
+       parameterized by the active domain. The verb "Knowledge graph"
+       is intentional (teacher decision, see ClickUp #9.UX-5) — may be
+       revisited in a future polish pass. Falls back to the legacy
+       generic label when ``domain_label_short`` is unknown so legacy
+       state diffs render identically to pre-#9.UX-5. #}
     <div class="aix-agent-footer-label">
       <wa-icon name="diagram-project" style="font-size:0.75rem;"></wa-icon>
-      <span>Retriever · GraphRAG + curated media</span>
+      {% if p.get('domain_label_short') %}
+        <span>Fonte: Knowledge graph della didattica {{ p.domain_label_short }} + risorse multimediali curate</span>
+      {% else %}
+        <span>Retriever · GraphRAG + curated media</span>
+      {% endif %}
     </div>
   </div>
 
