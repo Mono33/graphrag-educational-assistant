@@ -8,6 +8,7 @@ Enhanced with Media Lookup (Phase 1) for multimodal content support.
 Media lookup is optional and fails gracefully for backward compatibility.
 """
 
+import asyncio
 import logging
 from typing import Optional, List, Dict, Any
 from dataclasses import dataclass, field
@@ -285,38 +286,43 @@ class RetrieverAgent:
         
         tool = self._get_tool()
         result = RetrievalResult()
-        
-        # Execute each search query
-        for query in plan.search_queries:
+
+        # Execute all search queries in parallel (asyncio.gather replaces the
+        # sequential for-loop; saves N-1 round-trips worth of latency when
+        # the plan contains multiple queries).
+        async def _search_one(query: str):
             try:
-                search_result = await tool.search(query)
-                result.search_results.append(search_result)
-                
-                # Combine nodes (deduplicate by name)
-                existing_names = {n.get('name') for n in result.nodes}
-                for node in search_result.nodes:
-                    if node.get('name') not in existing_names:
-                        result.nodes.append(node)
-                        existing_names.add(node.get('name'))
-                
-                # Combine relationships
-                result.relationships.extend(search_result.relationships)
-                
-                # Combine recommendations
-                existing_recs = {r.get('name') for r in result.recommendations}
-                for rec in search_result.recommendations:
-                    if rec.get('name') not in existing_recs:
-                        result.recommendations.append(rec)
-                        existing_recs.add(rec.get('name'))
-                
+                sr = await tool.search(query)
                 logger.info(
                     f"[RetrieverAgent] Query '{query[:30]}...' returned "
-                    f"{len(search_result.nodes)} nodes"
+                    f"{len(sr.nodes)} nodes"
                 )
-                
+                return sr
             except Exception as e:
                 logger.error(f"[RetrieverAgent] Search failed for '{query}': {e}")
+                return None
+
+        raw_results = await asyncio.gather(*[_search_one(q) for q in plan.search_queries])
+
+        # Merge results — same dedup logic as before, now applied post-gather.
+        existing_names: set = set()
+        existing_recs: set = set()
+        for search_result in raw_results:
+            if search_result is None:
                 continue
+            result.search_results.append(search_result)
+
+            for node in search_result.nodes:
+                if node.get('name') not in existing_names:
+                    result.nodes.append(node)
+                    existing_names.add(node.get('name'))
+
+            result.relationships.extend(search_result.relationships)
+
+            for rec in search_result.recommendations:
+                if rec.get('name') not in existing_recs:
+                    result.recommendations.append(rec)
+                    existing_recs.add(rec.get('name'))
         
         # Determine overall confidence
         confidences = [r.confidence for r in result.search_results if r.confidence]
@@ -515,56 +521,66 @@ class RetrieverAgent:
         }
         
         try:
-            # Fetch Wikipedia summaries for subject concepts
-            for concept in subject_concepts[:3]:  # Limit to 3 concepts
-                try:
-                    wiki = await external_api.get_wikipedia_summary(concept, language="it")
-                    if wiki:
-                        resources['wikipedia'].append({
-                            'title': wiki.title,
-                            'summary': wiki.summary[:500],  # Truncate for context
-                            'url': wiki.url,
-                            'thumbnail_url': wiki.thumbnail_url,
-                            'concept': concept
-                        })
-                        logger.info(f"[RetrieverAgent] Wikipedia found: {wiki.title}")
-                except Exception as e:
-                    logger.debug(f"[RetrieverAgent] Wikipedia failed for '{concept}': {e}")
-            
-            # Fetch academic papers from Semantic Scholar
-            for concept in subject_concepts[:2]:  # Limit to 2 concepts
-                try:
-                    papers = await external_api.search_semantic_scholar(
-                        query=f"{concept} education teaching",
-                        max_results=3,
-                        open_access_only=True
-                    )
+            # Fetch all external sources in parallel across concepts.
+            # Each concept triggers 3 API calls (Wikipedia, Scholar, OER)
+            # simultaneously instead of sequentially — saves ~(N-1)×slowest_api.
+            async def _fetch_for_concept(concept: str):
+                wiki_task = external_api.get_wikipedia_summary(concept, language="it")
+                scholar_task = external_api.search_openalex(
+                    query=f"{concept} education teaching",
+                    max_results=3,
+                )
+                oer_task = external_api.search_oer_textbooks(
+                    query=f"{concept} education",
+                    max_results=3,
+                )
+                wiki, papers, textbooks = await asyncio.gather(
+                    wiki_task, scholar_task, oer_task, return_exceptions=True
+                )
+                return concept, wiki, papers, textbooks
+
+            concept_results = await asyncio.gather(
+                *[_fetch_for_concept(c) for c in subject_concepts[:3]],
+                return_exceptions=True,
+            )
+
+            for item in concept_results:
+                if isinstance(item, Exception):
+                    logger.debug(f"[RetrieverAgent] Concept fetch raised: {item}")
+                    continue
+                concept, wiki, papers, textbooks = item
+
+                # Wikipedia
+                if wiki and not isinstance(wiki, Exception):
+                    resources['wikipedia'].append({
+                        'title': wiki.title,
+                        'summary': wiki.summary[:500],
+                        'url': wiki.url,
+                        'thumbnail_url': wiki.thumbnail_url,
+                        'concept': concept
+                    })
+                    logger.info(f"[RetrieverAgent] Wikipedia found: {wiki.title}")
+                elif isinstance(wiki, Exception):
+                    logger.debug(f"[RetrieverAgent] Wikipedia failed for '{concept}': {wiki}")
+
+                # Semantic Scholar
+                if papers and not isinstance(papers, Exception):
                     for paper in papers:
                         resources['papers'].append({
                             'title': paper.title,
-                            'authors': paper.authors[:3],  # First 3 authors
+                            'authors': paper.authors[:3],
                             'year': paper.year,
                             'abstract': (paper.abstract or '')[:300],
                             'url': paper.url,
                             'citation_count': paper.citation_count,
                             'concept': concept
                         })
-                    if papers:
-                        logger.info(f"[RetrieverAgent] Semantic Scholar found: {len(papers)} papers for '{concept}'")
-                except Exception as e:
-                    logger.debug(f"[RetrieverAgent] Semantic Scholar failed for '{concept}': {e}")
-            
-            # =========================================================
-            # NEW: Fetch OER Textbooks (Domain Expert Trusted Sources)
-            # =========================================================
-            # These are from DOAB, Open Textbook Library, BC Campus
-            # Approved by domain experts as copyright-safe sources
-            for concept in subject_concepts[:2]:  # Limit to 2 concepts
-                try:
-                    textbooks = await external_api.search_oer_textbooks(
-                        query=f"{concept} education",
-                        max_results=3
-                    )
+                    logger.info(f"[RetrieverAgent] Semantic Scholar found: {len(papers)} papers for '{concept}'")
+                elif isinstance(papers, Exception):
+                    logger.debug(f"[RetrieverAgent] Semantic Scholar failed for '{concept}': {papers}")
+
+                # OER Textbooks
+                if textbooks and not isinstance(textbooks, Exception):
                     for textbook in textbooks:
                         resources['oer_textbooks'].append({
                             'title': textbook.title,
@@ -577,10 +593,9 @@ class RetrieverAgent:
                             'relevance_note': textbook.relevance_note,
                             'concept': concept
                         })
-                    if textbooks:
-                        logger.info(f"[RetrieverAgent] OER Textbooks found: {len(textbooks)} for '{concept}'")
-                except Exception as e:
-                    logger.debug(f"[RetrieverAgent] OER search failed for '{concept}': {e}")
+                    logger.info(f"[RetrieverAgent] OER Textbooks found: {len(textbooks)} for '{concept}'")
+                elif isinstance(textbooks, Exception):
+                    logger.debug(f"[RetrieverAgent] OER search failed for '{concept}': {textbooks}")
             
             logger.info(
                 f"[RetrieverAgent] External resources: "

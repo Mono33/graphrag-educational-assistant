@@ -109,8 +109,8 @@ class AgentRunRequest(BaseModel):
         le=4,
         description=(
             "Cap on critic revision loops. ``None`` defers to the agent "
-            "pipeline default (currently 2). Setting 0 disables critic "
-            "revisions for fast smoke testing."
+            "pipeline default (AIX_MAX_REVISIONS env var, default 1). "
+            "Setting 0 disables critic revisions for fast smoke testing."
         ),
     )
 

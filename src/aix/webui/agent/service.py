@@ -57,6 +57,7 @@ Reentrancy / concurrency:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import time
@@ -167,6 +168,11 @@ class StreamEvent:
             meta = { duration_seconds, approved, revision_count,
                      scores, nodes_count, recommendations_count,
                      media_counts, search_queries_count }
+
+        kind=="writer_chunk"
+            payload = { token: "<raw text delta from streaming Writer LLM>" }
+            Emitted many times during write_node — one per LLM output token.
+            The webUI JS appends each token to #writer-stream-{lesson_id}.
 
         kind=="error"
             error = "<short message, ≤ 480 chars>"
@@ -1150,7 +1156,7 @@ def _build_critic_payload(state: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "approved": bool(state.get("approved", False)),
         "revision_count": int(state.get("revision_count", 0)),
-        "max_revisions": int(state.get("max_revisions", 2)),
+        "max_revisions": int(state.get("max_revisions", 1)),
         "score": score,
         "score_pct": score_pct,
         "critique": (state.get("critique") or "").strip(),
@@ -1349,17 +1355,15 @@ async def run_agent_stream(
         yield StreamEvent(kind="error", error=short_msg)
         return
 
+    # ── Run the graph ───────────────────────────────────────────────────────
+    from aix.agent.graph import write_stream as _write_stream  # lazy — avoids circular at module level
+    _write_stream.register(str(lesson.id))
     try:
         async for chunk in graph.astream(
             initial_state, config=run_config, stream_mode="updates",
         ):
-            # ``chunk`` is ``{node_name: partial_state_update}``. In normal
-            # operation a chunk has exactly one key — the node that just
-            # finished. We tolerate the multi-key shape defensively.
             for node_name, state_diff in chunk.items():
                 if node_name not in PHASE_LABELS:
-                    # START / END pseudo-nodes, or any future internal node
-                    # we don't have a label for — silently ignore.
                     continue
                 if isinstance(state_diff, dict):
                     final_state.update(state_diff)
@@ -1369,20 +1373,10 @@ async def run_agent_stream(
                         kind="planner",
                         payload=_build_planner_payload(final_state),
                     )
+                    yield StreamEvent(kind="retriever_pending", payload={})
 
                 elif node_name == "retrieve":
-                    # CORE 2 #9.UX-1 — when corrective-RAG is ENABLED, the
-                    # ``grade_retrieval`` node will run next and become the
-                    # sole emitter of ``kind=retriever`` (with the grading
-                    # verdict already populated in the payload). We skip
-                    # the emit here to avoid producing TWO retriever cards
-                    # per turn, because ``#chat-cards`` uses
-                    # ``hx-swap=beforeend`` (i.e. append, not replace).
-                    #
-                    # When the flag is OFF, ``grade_retrieval`` is not in
-                    # the LangGraph topology at all, so this branch keeps
-                    # its pre-#9 responsibility: emit the retriever card
-                    # AND ``writer_pending``. Backward-compatible.
+                    # CORE 2 #9.UX-1 — symmetric with stream_agent_events.
                     if not _is_corrective_rag_enabled():
                         yield StreamEvent(
                             kind="retriever",
@@ -1399,21 +1393,7 @@ async def run_agent_stream(
                         )
 
                 elif node_name == "grade_retrieval":
-                    # CORE 2 #9 + #9.UX-1 + #9.UX-2 — when corrective-RAG
-                    # is ON, this is the SOLE place we emit
-                    # ``kind=retriever`` for the turn. The grade_retrieval
-                    # node may run MULTIPLE times in a turn (once per
-                    # attempt) when the grader requests a retry. Without
-                    # gating we'd emit one card per attempt and
-                    # ``hx-swap=beforeend`` would stack them in the chat.
-                    # The fix (#9.UX-2): only emit on the FINAL iteration
-                    # (when the router decided NOT to retry) — i.e. either
-                    # the grade is relevant, or the attempt budget is
-                    # exhausted. The retriever card therefore appears
-                    # once, with the final ``retrieval_attempts`` already
-                    # settled (e.g. "Tentativi: 2/2"). The payload's
-                    # ``retrieval_outcome`` token (#9.UX-3) drives the
-                    # card's color and copy.
+                    # CORE 2 #9.UX-2 — emit once on final attempt.
                     if not _grader_will_retry(final_state):
                         yield StreamEvent(
                             kind="retriever",
@@ -1435,18 +1415,21 @@ async def run_agent_stream(
                         payload={"revision": write_revision_idx},
                         lesson_plan_md=final_state.get("lesson_plan_draft") or "",
                     )
+                    yield StreamEvent(
+                        kind="critic_pending",
+                        payload={"write_revision": write_revision_idx},
+                    )
 
                 elif node_name == "critique":
+                    _critic_pl = _build_critic_payload(final_state)
+                    _critic_pl["write_revision"] = write_revision_idx
                     yield StreamEvent(
                         kind="critic",
-                        payload=_build_critic_payload(final_state),
+                        payload=_critic_pl,
                     )
-                    # Will the graph loop back into write? Mirror the
-                    # routing in ``build_lesson_planner_graph``: revise
-                    # while not approved AND under max_revisions.
                     approved = final_state.get("approved", False)
                     rev_count = int(final_state.get("revision_count", 0))
-                    max_rev = int(final_state.get("max_revisions", 2))
+                    max_rev = int(final_state.get("max_revisions", 1))
                     if (not approved) and rev_count < max_rev:
                         write_revision_idx += 1
                         yield StreamEvent(
@@ -1454,18 +1437,18 @@ async def run_agent_stream(
                             payload={
                                 "revision": write_revision_idx,
                                 "is_revision": True,
-                                "feedback": (final_state.get("revision_instructions") or "").strip(),
+                                "feedback": (
+                                    final_state.get("revision_instructions") or ""
+                                ).strip(),
                             },
                         )
 
-        # ── Run finished cleanly ─────────────────────────────────────────
+        # ── Run finished cleanly ─────────────────────────────────────────────
         elapsed = time.monotonic() - started_at
         lesson_plan_md = _extract_lesson_plan_md(final_state)
         meta = _extract_meta(final_state)
         meta["duration_seconds"] = round(elapsed, 1)
 
-        # If the writer never produced anything, the run technically didn't
-        # crash but it's still useless to the user — surface as error.
         if not lesson_plan_md.strip():
             raise RuntimeError(
                 "L'agente ha terminato senza produrre una lezione "
@@ -1476,12 +1459,6 @@ async def run_agent_stream(
         lesson.lesson_plan_md = lesson_plan_md
         await session.commit()
 
-        # ── Multi-turn persistence (#10.3) ───────────────────────────
-        # Append the assistant turn to lesson_messages so the chat pane
-        # renders the full transcript on reload + the next follow-up's
-        # history-loader picks it up. Failures are logged + swallowed —
-        # the lesson row is the load-bearing persistence; the message
-        # log is the render index.
         await _persist_assistant_turn(
             session=session,
             lesson_id=lesson.id,
@@ -1502,28 +1479,25 @@ async def run_agent_stream(
             meta=meta,
         )
 
-    except Exception as exc:  # noqa: BLE001 — we *do* want every failure
+    except Exception as exc:  # noqa: BLE001
         logger.exception(
             "[webui.agent] run FAILED lesson_id=%s after %.1fs",
             lesson.id, time.monotonic() - started_at,
         )
         msg = str(exc) or exc.__class__.__name__
-        # Truncate to the model column width (500). Hard slice so a giant
-        # traceback string doesn't blow the row.
         short_msg = msg[:480] + ("…" if len(msg) > 480 else "")
-
         try:
             lesson.status = "error"
             lesson.error_message = short_msg
             await session.commit()
         except Exception:  # noqa: BLE001
-            # Don't let a secondary commit failure mask the original error.
             logger.exception(
                 "[webui.agent] failed to persist error state for lesson_id=%s",
                 lesson.id,
             )
-
         yield StreamEvent(kind="error", error=short_msg)
+    finally:
+        _write_stream.deregister(str(lesson.id))
 
 
 # ---------------------------------------------------------------------------
@@ -1719,7 +1693,7 @@ async def stream_agent_events(
                     )
                     approved = final_state.get("approved", False)
                     rev_count = int(final_state.get("revision_count", 0))
-                    max_rev = int(final_state.get("max_revisions", 2))
+                    max_rev = int(final_state.get("max_revisions", 1))
                     if (not approved) and rev_count < max_rev:
                         write_revision_idx += 1
                         yield StreamEvent(

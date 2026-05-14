@@ -1,0 +1,105 @@
+{#
+  Retriever Agent — pending placeholder.
+
+  Emitted immediately after the planner card, before retrieve_node starts.
+  The retrieval phase (parallel GraphRAG queries + embedding + neighbor
+  expansion) takes 10–30 seconds; this card keeps the chat active and
+  shows teachers what the retriever is doing under the hood.
+
+  OOB replacement: id="retriever-card-pending" matches the root id added
+  to chat_retriever_card.html so htmx swaps this card out when the
+  retrieval completes.
+#}
+
+<div id="retriever-card-pending" class="aix-agent-shell">
+
+  <div class="aix-agent-avatar aix-agent-avatar--retriever">
+    <wa-icon name="diagram-project"></wa-icon>
+  </div>
+
+  <div class="aix-agent-body">
+    <article class="aix-agent-card aix-agent-card--retriever aix-card-stripe-retriever">
+
+      <header class="aix-agent-card-header aix-agent-card-header--retriever">
+        <div class="aix-agent-card-title">
+          <strong>Retriever Agent</strong>
+          <span class="aix-agent-card-role">· interroga il Knowledge Graph</span>
+        </div>
+        <span class="aix-pill aix-pill-warning">
+          <wa-spinner style="font-size:0.7rem;"></wa-spinner>
+          ricerca
+        </span>
+      </header>
+
+      <div class="aix-agent-card-body" style="display:flex; flex-direction:column; gap:10px;">
+
+        <p style="font-size:12px; color:var(--aix-text-secondary); margin:0;">
+          Sto interrogando il Knowledge Graph su più dimensioni in parallelo:
+        </p>
+
+        <div style="display:flex; flex-direction:column; gap:6px;">
+
+          <div class="retriever-pending-item" style="animation-delay:0s;">
+            <span class="retriever-pending-dot"></span>
+            <span>Query semantiche sul grafo della conoscenza (Text2Cypher)</span>
+          </div>
+          <div class="retriever-pending-item" style="animation-delay:2s; opacity:0;">
+            <span class="retriever-pending-dot"></span>
+            <span>Espansione dei nodi: concetti correlati e prerequisiti</span>
+          </div>
+          <div class="retriever-pending-item" style="animation-delay:4s; opacity:0;">
+            <span class="retriever-pending-dot"></span>
+            <span>Embedding ibrido: Node2Vec + semantica multilingue</span>
+          </div>
+          <div class="retriever-pending-item" style="animation-delay:6s; opacity:0;">
+            <span class="retriever-pending-dot"></span>
+            <span>Strategie pedagogiche e raccomandazioni UDL</span>
+          </div>
+          <div class="retriever-pending-item" style="animation-delay:8s; opacity:0;">
+            <span class="retriever-pending-dot"></span>
+            <span>Selezione dei media curati (video, articoli, OER)</span>
+          </div>
+
+        </div>
+
+        <p style="font-size:11px; font-style:italic; color:var(--aix-text-tertiary); margin:0;">
+          La ricerca richiede tipicamente 10–30 secondi.
+        </p>
+
+      </div>
+
+    </article>
+    <div class="aix-agent-footer-label">
+      <wa-icon name="diagram-project" style="font-size:0.75rem;"></wa-icon>
+      <span>Retriever · pending</span>
+    </div>
+  </div>
+
+</div>
+
+<style>
+.retriever-pending-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--aix-text-secondary);
+  animation: retriever-item-appear 0.4s ease forwards;
+}
+.retriever-pending-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--aix-teal, #3a8fa0);
+  flex-shrink: 0;
+  animation: retriever-dot-pulse 1.4s ease-in-out infinite;
+}
+@keyframes retriever-item-appear {
+  from { opacity: 0; transform: translateX(-6px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes retriever-dot-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.35; transform: scale(0.6); }
+}
+</style>

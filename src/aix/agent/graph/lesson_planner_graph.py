@@ -22,6 +22,7 @@ presence of a checkpointer attached to the compiled graph.
 """
 
 import logging
+import os
 from typing import Any, Dict, Optional
 
 from langgraph.graph import END, StateGraph
@@ -202,7 +203,7 @@ class LessonPlannerPipeline:
         self,
         domain: str = "neuro",
         language: str = "it",
-        max_revisions: int = 2
+        max_revisions: int = int(os.getenv("AIX_MAX_REVISIONS", "1")),
     ):
         """
         Initialize the lesson planner pipeline.

@@ -165,6 +165,25 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"⚠️ Schema cache warm-up scheduling failed: {e}")
 
+    # Pre-warm GraphRAGTool for both domains so the first lesson request
+    # doesn't pay the lazy-init cost (EnhancedMultilingualText2Cypher import
+    # + Node2Vec model load + Neo4j driver creation ≈ 2-5 s).
+    def _warm_graphrag_tool(domain: str) -> None:
+        try:
+            from aix.agent.tools.graphrag_tool import GraphRAGTool
+            GraphRAGTool(domain=domain)._ensure_initialized()
+            logger.info(f"🔥 GraphRAGTool warm for domain='{domain}'")
+        except Exception as e:
+            logger.warning(f"⚠️ GraphRAGTool warm-up failed for domain='{domain}': {e}")
+
+    try:
+        loop = asyncio.get_event_loop()
+        for _domain in ["neuro", "udl"]:
+            loop.run_in_executor(None, _warm_graphrag_tool, _domain)
+        logger.info("🔥 GraphRAGTool warm-up started for: neuro, udl")
+    except Exception as e:
+        logger.warning(f"⚠️ GraphRAGTool warm-up scheduling failed: {e}")
+
     # Path C webui — initialise the SQLite (or Postgres in CORE 6) schema
     # used by /webui auth + lessons. Idempotent: create_all is a no-op if
     # tables already exist. Wrapped so a webui DB problem never blocks the

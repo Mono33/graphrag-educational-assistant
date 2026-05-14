@@ -80,7 +80,7 @@
 {% set p = payload or {} %}
 {% set mc = p.get('media_counts') or {} %}
 
-<div class="aix-agent-shell">
+<div id="retriever-card-pending" hx-swap-oob="outerHTML" class="aix-agent-shell">
 
   <div class="aix-agent-avatar aix-agent-avatar--retriever">
     <wa-icon name="diagram-project"></wa-icon>

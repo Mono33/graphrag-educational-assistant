@@ -59,6 +59,9 @@ Every lesson plan should include:
 - Similarly, if **Time Constraints** in Requirements specifies a value, the lesson MUST respect it.
 - When both Duration (from Profile) and Time Constraints (from Requirements) are present, use the one from Time Constraints as it reflects explicit query intent.
 - Apply the Duration silently. Do NOT echo this constraint as parenthetical or explanatory text in the rendered lesson (e.g. avoid wording like "(vincolo rigido — somma esatta di tutte le fasi)" or "(come da profilo docente — vincolo rigido)" after the **Durata** line). Just produce a lesson whose section timings sum to the specified Duration; that is sufficient.
+- **Output Length**: Write concisely — target **max 1 600 words** (approximately 8 000 characters). Each section must be actionable and classroom-ready, not exhaustive. Prefer structured bullet points and markdown over long prose paragraphs for activity descriptions.
+- **Inline markers**: Do NOT insert `[✅ ...]`, `[📌 ...]`, or similar annotation brackets anywhere in the lesson body. Reference the Knowledge Graph and external sources only in the `*Fonti:*` footer.
+- **Output order (strict)**: Generate sections in this exact sequence: Title → Objectives → Materials → Introduction → Activities → Assessment → Differentiation → `*Fonti:*` footer. If you are near the token limit, shorten Activities and Differentiation rather than omitting the `*Fonti:*` footer.
 
 ### Language
 Write in {language}:
@@ -538,19 +541,10 @@ you must:
 2. Apply **pedagogical strategies** from the Knowledge Graph for HOW to teach
 3. **Clearly mark sources** so teachers know what's verified vs external
 
-## Source Attribution Requirements
+## Source Attribution
 
-### External Content (Subject Matter)
-Mark with: `[📌 Da fonte esterna]` or `[📌 Wikipedia]` or `[📌 Ricerca accademica]`
-- Facts, definitions, historical information about the subject
-- Scientific explanations from external sources
-- Any content NOT from the Knowledge Graph
-
-### Knowledge Graph Content (Pedagogy)
-Mark with: `[✅ Da Knowledge Graph]` or `[✅ Strategia basata su neuroscienze]`
-- Teaching strategies (scaffolding, chunking, etc.)
-- Cognitive principles (working memory, attention, etc.)
-- Evidence-based pedagogical approaches
+Keep lesson prose clean — do NOT add inline markers like `[✅ ...]` or `[📌 ...]` in the lesson body.
+Cite all sources (Knowledge Graph methodologies + external content) in the `*Fonti:*` footer only.
 
 ## Quality Standards
 - Keep subject content factual and accurate (from external sources)
@@ -563,6 +557,9 @@ Mark with: `[✅ Da Knowledge Graph]` or `[✅ Strategia basata su neuroscienze]
 - Sum every section's timing so it adds up to the specified Duration.
 - Similarly, if **Time Constraints** in Requirements specifies a value, the lesson MUST respect it.
 - Apply the Duration silently. Do NOT echo this constraint as parenthetical or explanatory text in the rendered lesson (e.g. avoid wording like "(vincolo rigido — somma esatta di tutte le fasi)" or "(come da profilo docente — vincolo rigido)" after the **Durata** line). Just produce a lesson whose section timings sum to the specified Duration; that is sufficient.
+- **Output Length**: Write concisely — target **max 1 600 words** (approximately 8 000 characters). Each section must be actionable and classroom-ready, not exhaustive. Prefer structured bullet points and markdown over long prose paragraphs for activity descriptions.
+- **Inline markers**: Do NOT insert `[✅ ...]`, `[📌 ...]`, or similar annotation brackets anywhere in the lesson body. Cite sources only in the `*Fonti:*` footer.
+- **Output order (strict)**: Generate sections in this exact sequence: Title → Objectives → Materials → Introduction → Activities → Assessment → Differentiation → `*Fonti:*` footer. If you are near the token limit, shorten Activities and Differentiation rather than omitting the `*Fonti:*` footer.
 
 ## Footer Disclaimer (REQUIRED)
 At the end of EVERY response, include:
@@ -611,7 +608,7 @@ Apply these neuroscience-based strategies for HOW to teach:
 ## CRITICAL INSTRUCTIONS
 1. Use external sources for WHAT to teach (subject content)
 2. Use Knowledge Graph for HOW to teach (pedagogy)
-3. CLEARLY ATTRIBUTE sources with [📌 ...] and [✅ ...] markers
+3. Cite all sources in the *Fonti:* footer — do NOT embed [📌 ...] or [✅ ...] markers in the lesson body
 4. PRIORITIZE OER textbooks as they are domain-expert approved sources
 5. Include the footer disclaimer at the end
 

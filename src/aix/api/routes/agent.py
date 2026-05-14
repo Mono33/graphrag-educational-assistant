@@ -109,7 +109,7 @@ _AGENT_REQUEST_OPENAPI_EXAMPLES: dict = {
             ),
             "domain": "neuro",
             "language": "it",
-            "max_revisions": 2,
+            "max_revisions": 1,
             "educational_profile": {
                 "group": {
                     "title": "3A Liceo Scientifico",

@@ -60,6 +60,7 @@ SSE event vocabulary (single ``card`` event, terminating ``final`` / ``error``):
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from pathlib import Path
@@ -1171,6 +1172,62 @@ async def lesson_stream(
 
 
 # ----------------------------------------------------------------------------
+# Writer token stream — live typewriter endpoint
+# ----------------------------------------------------------------------------
+
+@router.get(
+    "/lesson/{lesson_id}/writer-stream",
+    name="webui_lesson_writer_stream",
+)
+async def lesson_writer_stream(
+    request: Request,
+    lesson_id: uuid.UUID,
+    user: Optional[User] = Depends(optional_current_user),
+) -> Response:
+    """Thin SSE endpoint that forwards live Writer tokens to the browser.
+
+    Opened by ``chat_writer_pending.html`` as a dedicated EventSource the
+    moment the pending card mounts.  The main agent SSE stream is blocked
+    inside ``graph.astream()`` while the write node runs, so tokens cannot
+    flow through it.  Instead, ``write_node`` puts each delta into a
+    per-session ``asyncio.Queue`` (the token bus registered in service.py);
+    this endpoint drains that queue and re-emits each delta as a
+    ``writer_chunk`` SSE event so the user sees a typewriter effect.
+    """
+    if user is None:
+        return Response(status_code=401)
+
+    from aix.agent.graph import write_stream as _ws
+
+    async def token_gen():
+        sid = str(lesson_id)
+        bus = _ws.get_bus(sid)
+        # The frontend may open this connection before the write node starts;
+        # poll briefly (up to 5 s) for the bus to be registered.
+        for _ in range(50):
+            if bus is not None:
+                break
+            await asyncio.sleep(0.1)
+            bus = _ws.get_bus(sid)
+        if bus is None:
+            yield {"event": "end", "data": "no-bus"}
+            return
+        while True:
+            try:
+                token = await asyncio.wait_for(bus.get(), timeout=120.0)
+            except asyncio.TimeoutError:
+                break
+            if token is None:
+                break
+            if await request.is_disconnected():
+                break
+            yield {"event": "writer_chunk", "data": token}
+        yield {"event": "end", "data": "ok"}
+
+    return EventSourceResponse(token_gen())
+
+
+# ----------------------------------------------------------------------------
 # Inline profile editing (P2 phase 2)
 # ----------------------------------------------------------------------------
 
@@ -1431,6 +1488,15 @@ def _stream_event_to_sse(
             ),
         }
 
+    if event.kind == "retriever_pending":
+        return {
+            "event": "card",
+            "data": _render_partial(
+                request, "partials/chat_retriever_pending.html",
+                {"payload": event.payload, "lesson": lesson},
+            ),
+        }
+
     if event.kind == "retriever":
         # Two root elements in one payload: the chat card (no OOB → lands
         # in #chat-cards via beforeend) AND the media panel (OOB → htmx
@@ -1448,12 +1514,31 @@ def _stream_event_to_sse(
             "data": retriever_html + " " + media_html,
         }
 
+    if event.kind == "writer_chunk":
+        # Raw token from the streaming Writer. Sent as a lightweight
+        # ``writer_chunk`` SSE event (NOT ``card``) so the client-side JS
+        # handler can append directly to the pending card's stream div
+        # without htmx trying to parse it as an HTML fragment.
+        return {
+            "event": "writer_chunk",
+            "data": (event.payload or {}).get("token", ""),
+        }
+
     if event.kind == "writer_pending":
         return {
             "event": "card",
             "data": _render_partial(
                 request, "partials/chat_writer_pending.html",
-                {"payload": event.payload},
+                {"payload": event.payload, "lesson": lesson},
+            ),
+        }
+
+    if event.kind == "critic_pending":
+        return {
+            "event": "card",
+            "data": _render_partial(
+                request, "partials/chat_critic_pending.html",
+                {"payload": event.payload, "lesson": lesson},
             ),
         }
 

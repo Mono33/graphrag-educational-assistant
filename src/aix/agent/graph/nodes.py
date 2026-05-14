@@ -10,6 +10,7 @@ import os
 import re
 from typing import Dict, Any
 
+from aix.agent.graph import write_stream
 from aix.agent.graph.state import AgentState
 from aix.agent.agents.planner_agent import PlannerAgent
 from aix.agent.agents.retriever_agent import RetrieverAgent
@@ -463,24 +464,37 @@ async def write_node(state: AgentState) -> Dict[str, Any]:
                 confidence=state.get("retrieval_confidence", "MEDIUM")
             )
             
-            lesson_plan = await writer.write(
-                teacher_query=state["teacher_query"],
-                plan=plan,
-                retrieval_result=retrieval_result,
-                language=state.get("language", "it"),
-                # NEW Phase 2: Pass curated media if available
-                curated_media=state.get("curated_media"),
-                # NEW Phase A: Pass external resources for hybrid mode
-                external_resources=state.get("external_resources"),
-                # NEW Phase B: Pass domain for extensions
-                domain=state.get("domain", "neuro"),
-                teacher_provided_context=state.get("teacher_provided_context"),
-                educational_profile=state.get("educational_profile"),
-                # CORE 2 #9 — Corrective RAG. None when the feature flag is
-                # off, so this is byte-identical to pre-#9 in default mode.
-                retrieval_warning=state.get("retrieval_warning"),
-                retrieval_grade_reason=state.get("retrieval_grade_reason"),
-            )
+            # Look up the SSE token bus for this session (registered by
+            # service.py before graph.astream() starts). Present only for
+            # webUI runs; None for API/MCP callers.
+            _session_id = state.get("session_id")
+            _token_bus = write_stream.get_bus(_session_id)
+
+            try:
+                lesson_plan = await writer.write(
+                    teacher_query=state["teacher_query"],
+                    plan=plan,
+                    retrieval_result=retrieval_result,
+                    language=state.get("language", "it"),
+                    # NEW Phase 2: Pass curated media if available
+                    curated_media=state.get("curated_media"),
+                    # NEW Phase A: Pass external resources for hybrid mode
+                    external_resources=state.get("external_resources"),
+                    # NEW Phase B: Pass domain for extensions
+                    domain=state.get("domain", "neuro"),
+                    teacher_provided_context=state.get("teacher_provided_context"),
+                    educational_profile=state.get("educational_profile"),
+                    # CORE 2 #9 — Corrective RAG. None when the feature flag is
+                    # off, so this is byte-identical to pre-#9 in default mode.
+                    retrieval_warning=state.get("retrieval_warning"),
+                    retrieval_grade_reason=state.get("retrieval_grade_reason"),
+                    token_bus=_token_bus,
+                )
+            finally:
+                # Always send the sentinel so the drain task in service.py exits
+                # cleanly — even if write() raised an exception.
+                if _token_bus is not None:
+                    _token_bus.put_nowait(None)
         
         return {
             "lesson_plan_draft": lesson_plan,
@@ -542,7 +556,7 @@ async def critique_node(state: AgentState) -> Dict[str, Any]:
             teacher_query=state["teacher_query"],
             retrieval_result=retrieval_result,
             revision_count=state.get("revision_count", 0),
-            max_revisions=state.get("max_revisions", 2),
+            max_revisions=state.get("max_revisions", 1),
             domain=state.get("domain", "neuro"),
             language=state.get("language", "it"),
             query_intent=query_intent
@@ -593,7 +607,7 @@ def should_continue_to_revision(state: AgentState) -> str:
         return "finish"
     
     revision_count = state.get("revision_count", 0)
-    max_revisions = state.get("max_revisions", 2)
+    max_revisions = state.get("max_revisions", 1)
     
     if revision_count >= max_revisions:
         logger.info("[Router] Max revisions reached, finishing...")

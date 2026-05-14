@@ -11,6 +11,35 @@ import re
 from typing import Optional, Dict, Any
 from dataclasses import dataclass
 
+# Fast, cheap model for the Critic — it only outputs ~300 tokens of structured
+# JSON; using the full LLM_MODEL is overkill and adds 25+ seconds of prefill.
+# Defaults to TEXT2CYPHER_MODEL (already google/gemini-2.5-flash in .env.example)
+# then falls back to LLM_MODEL so existing deployments stay unbroken.
+_CRITIC_MODEL: Optional[str] = (
+    os.getenv("AIX_CRITIC_MODEL")
+    or os.getenv("TEXT2CYPHER_MODEL")
+    or None          # None → build_completion_kwargs uses self.model (LLM_MODEL)
+)
+
+# Critic reads back the lesson it just received — truncate to avoid massive
+# prefill cost.  Strategy: keep head (objectives + first activities) AND tail
+# (differentiation + assessment) so all 5 scoring dimensions have evidence.
+_CRITIC_LESSON_MAX_CHARS = int(os.getenv("AIX_CRITIC_LESSON_MAX_CHARS", "3000"))
+
+# Retrieved context sent to the Critic — skip media lists (videos, OER, articles)
+# which the Critic never uses; keep only concept names and methodology names.
+_CRITIC_CONTEXT_MAX_CHARS = int(os.getenv("AIX_CRITIC_CONTEXT_MAX_CHARS", "1200"))
+
+
+def _truncate_lesson_for_critic(text: str) -> str:
+    """Keep head (2/3) + tail (1/3) so all lesson sections are represented."""
+    if len(text) <= _CRITIC_LESSON_MAX_CHARS:
+        return text
+    head = (_CRITIC_LESSON_MAX_CHARS * 2) // 3
+    tail = _CRITIC_LESSON_MAX_CHARS - head
+    omitted = len(text) - _CRITIC_LESSON_MAX_CHARS
+    return text[:head] + f"\n\n...[{omitted} chars omitted for brevity]...\n\n" + text[-tail:]
+
 from openai import AsyncOpenAI
 from aix.core.config import config as app_config, extract_response_content
 
@@ -154,22 +183,36 @@ class CriticAgent:
         
         # Get intent-specific prompts
         system_prompt, user_template = get_critic_prompts(query_intent)
-        
+
         # NEW Phase B: Add domain-specific extensions
         if DOMAIN_EXTENSIONS_AVAILABLE:
             domain_ext = get_domain_extension(domain, "critic")
             if domain_ext:
                 system_prompt += domain_ext
                 logger.info(f"[CriticAgent] Applied domain extension for '{domain}'")
-        
-        # Format retrieved context
-        context_text = retrieval_result.to_context_string()
-        
+
+        # Change #2 — truncate inputs to cut prefill cost.
+        # The Critic reads the full lesson plan back (~4 000-8 000 chars) plus
+        # the retrieved-context string (media lists, node details) — that can
+        # be 6 000+ input tokens, causing 15-20s of TTFT on any model.
+        # Fix: head+tail lesson slice keeps all 5 scoring dimensions visible;
+        # context without media is enough for Evidence Grounding scoring.
+        lesson_for_critic = _truncate_lesson_for_critic(lesson_plan)
+        context_text = retrieval_result.to_context_string(include_media=False)
+        if len(context_text) > _CRITIC_CONTEXT_MAX_CHARS:
+            context_text = context_text[:_CRITIC_CONTEXT_MAX_CHARS] + "\n...[context truncated]"
+
+        logger.debug(
+            "[CriticAgent] input sizes: lesson=%d→%d chars, context=%d chars, model=%s",
+            len(lesson_plan), len(lesson_for_critic), len(context_text),
+            _CRITIC_MODEL or "LLM_MODEL",
+        )
+
         # Format user prompt (handle both template types)
         if is_lesson_intent(query_intent):
             user_prompt = user_template.format(
                 teacher_query=teacher_query,
-                lesson_plan=lesson_plan,
+                lesson_plan=lesson_for_critic,
                 retrieved_context=context_text,
                 revision_count=revision_count,
                 max_revisions=max_revisions,
@@ -179,7 +222,7 @@ class CriticAgent:
         else:
             user_prompt = user_template.format(
                 teacher_query=teacher_query,
-                lesson_plan=lesson_plan,
+                lesson_plan=lesson_for_critic,
                 retrieved_context=context_text,
                 query_intent=query_intent,
                 revision_count=revision_count,
@@ -187,24 +230,19 @@ class CriticAgent:
                 domain=domain,
                 language="Italian" if language == "it" else "English"
             )
-        
+
         try:
-            # CORE 2 #11a — JSON parse hardening (2026-05-09):
-            # See Planner-side comment for full context. The CriticAgent's
-            # silent fallthrough below (``decision="APPROVE"`` on parse
-            # failure) is the exact behaviour the doc flags as the most
-            # dangerous silent-failure mode — a malformed Critic response
-            # would historically ship a lesson with verdict
-            # *"Approved due to parsing error"*. Adding ``json_mode=True``
-            # eliminates ~half of those failures up-front (provider returns
-            # valid JSON or fails loudly), and the structured log below
-            # makes the remainder *visible* rather than indistinguishable
-            # from a real approval. Default-on; ``build_completion_kwargs``
-            # auto-skips for reasoning models where it would be rejected.
+            # Change #1 — fast model for the Critic.
+            # The Critic outputs ~300 tokens of JSON; using LLM_MODEL (Claude Sonnet)
+            # wastes 25-30s on a task a fast model handles in 2-4s.
+            # model_override=_CRITIC_MODEL ensures build_completion_kwargs runs all
+            # o-series / reasoning-model guards against the actual model, not LLM_MODEL.
+            # CORE 2 #11a — json_mode=True to harden JSON parsing (see Planner comment).
             completion_kwargs = app_config.openai.build_completion_kwargs(
                 temperature=0.3,
                 max_tokens=2000,
                 json_mode=True,
+                model_override=_CRITIC_MODEL,
             )
             response = await client.chat.completions.create(
                 messages=[

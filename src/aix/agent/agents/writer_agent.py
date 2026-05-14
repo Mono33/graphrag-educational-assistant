@@ -8,7 +8,32 @@ Enhanced with curated media integration (Phase 2) for multimodal content support
 """
 
 import logging
+import os
+import re
 from typing import Optional, Dict, Any, List
+
+# Maximum output tokens for a single writer LLM call.
+# At ~3 chars/token (Italian markdown), 3 500 tokens ≈ 10 500-12 000 characters.
+# When the LLM hits this ceiling, the writer automatically makes ONE
+# continuation call (see _continue_truncated) so the user never sees a
+# mid-sentence cut. Override with AIX_WRITER_MAX_TOKENS env var.
+_WRITER_MAX_TOKENS = int(os.getenv("AIX_WRITER_MAX_TOKENS", "3500"))
+
+# Max number of automatic continuation calls when the writer output is cut
+# by finish_reason="length". 1 = at most 2 total LLM calls per write/revise.
+_WRITER_MAX_CONTINUATIONS = int(os.getenv("AIX_WRITER_MAX_CONTINUATIONS", "1"))
+
+# Continuation instruction appended to the conversation when the assistant's
+# previous turn was cut by finish_reason=length. The previous assistant turn
+# (already in the message history) ends mid-token; we ask the model to pick
+# up exactly where it stopped without repeating anything.
+_CONTINUATION_INSTRUCTION = (
+    "Your previous response was cut off mid-content because you hit the token limit. "
+    "Continue writing EXACTLY from where you stopped — do not repeat any content, "
+    "do not start a new heading, do not add a transition. Pick up the sentence or "
+    "list item that was cut and finish the lesson concisely, ending with the "
+    "`*Fonti:*` footer line."
+)
 
 from openai import AsyncOpenAI
 from aix.core.config import config as app_config, extract_response_content
@@ -66,7 +91,37 @@ class WriterAgent:
         if self._client is None:
             self._client = app_config.openai.get_async_client()
         return self._client
-    
+
+    async def _stream_completion(
+        self,
+        client: AsyncOpenAI,
+        messages: list,
+        completion_kwargs: dict,
+        token_bus,
+    ) -> tuple:
+        """Run one streaming completion, push tokens to the bus, and return
+        (content, finish_reason). Shared by the initial write call and any
+        auto-continuation calls so both feed the same UI stream.
+        """
+        content_parts: List[str] = []
+        last_finish_reason: Optional[str] = None
+        stream = await client.chat.completions.create(
+            messages=messages,
+            stream=True,
+            **completion_kwargs,
+        )
+        async for chunk in stream:
+            choice = chunk.choices[0] if chunk.choices else None
+            if choice is None:
+                continue
+            delta = choice.delta.content or ""
+            if delta:
+                content_parts.append(delta)
+                token_bus.put_nowait(delta)
+            if choice.finish_reason:
+                last_finish_reason = choice.finish_reason
+        return "".join(content_parts), last_finish_reason
+
     async def write(
         self,
         teacher_query: str,
@@ -78,6 +133,7 @@ class WriterAgent:
         domain: str = "neuro",  # Phase B: Domain for extensions
         teacher_provided_context: Optional[str] = None,  # WebUI #6.6 P3: chat uploads
         educational_profile: Optional[Dict[str, Any]] = None,  # Teacher's lesson profile
+        token_bus=None,  # Optional asyncio.Queue for live token streaming to the webUI
         # CORE 2 #9 — Corrective RAG. When the grader exhausted its retry
         # budget without reaching ``relevant``, the node sets
         # ``state.retrieval_warning=True`` and we receive it here. The
@@ -277,6 +333,18 @@ class WriterAgent:
             if domain_ext:
                 system_prompt += domain_ext
                 logger.info(f"[WriterAgent] Applied domain extension for '{domain}'")
+
+        # Hard override appended LAST so it takes precedence over any domain
+        # extension (e.g. Langfuse udl.writer_prompt) that might instruct the
+        # LLM to annotate with "> 🔗 UDL Principle:" or "> ⚠️ Why it matters:".
+        # These annotations waste tokens and cause truncation.
+        system_prompt += (
+            "\n\n**FINAL CONSTRAINT (overrides all above)**: "
+            "Do NOT add any inline annotation markers in the lesson body — "
+            "this includes `> 🔗 ...`, `> ⚠️ ...`, `[✅ ...]`, `[📌 ...]`, "
+            "or any similar bracketed/blockquote source tags. "
+            "All source citations go exclusively in the `*Fonti:*` footer."
+        )
         
         try:
             # max_tokens=8000: Italian markdown lessons with structured sections
@@ -288,39 +356,93 @@ class WriterAgent:
             # while staying well below Claude Sonnet 4.6's 64K output ceiling.
             completion_kwargs = app_config.openai.build_completion_kwargs(
                 temperature=0.7,
-                max_tokens=8000,
+                max_tokens=_WRITER_MAX_TOKENS,
             )
-            response = await client.chat.completions.create(
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                **completion_kwargs
-            )
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ]
 
-            content = extract_response_content(response, logger)
-
-            # Detect likely max_tokens truncation up-front so it surfaces in
-            # logs (the writer's content moves on to the critic regardless).
-            finish_reason = None
-            try:
-                finish_reason = response.choices[0].finish_reason
-            except (AttributeError, IndexError):
-                pass
-            if finish_reason in ("length", "max_tokens"):
-                logger.warning(
-                    "[WriterAgent] LLM stopped due to max_tokens (finish_reason=%s, "
-                    "%d chars). Lesson may be truncated — consider raising max_tokens.",
-                    finish_reason, len(content),
+            if token_bus is not None:
+                # Streaming path: forward each token to the webUI bus so the
+                # SSE endpoint can display the lesson as it's being written.
+                content, last_finish_reason = await self._stream_completion(
+                    client, messages, completion_kwargs, token_bus,
                 )
+                # Auto-continue if the LLM hit max_tokens — keeps streaming
+                # tokens to the same bus so the UI shows uninterrupted output.
+                continues = 0
+                while (
+                    last_finish_reason in ("length", "max_tokens")
+                    and continues < _WRITER_MAX_CONTINUATIONS
+                ):
+                    continues += 1
+                    logger.warning(
+                        "[WriterAgent] Streaming truncated at %d chars "
+                        "(finish_reason=%s) — auto-continuing (attempt %d/%d)",
+                        len(content), last_finish_reason, continues, _WRITER_MAX_CONTINUATIONS,
+                    )
+                    cont_messages = messages + [
+                        {"role": "assistant", "content": content},
+                        {"role": "user", "content": _CONTINUATION_INSTRUCTION},
+                    ]
+                    extra, last_finish_reason = await self._stream_completion(
+                        client, cont_messages, completion_kwargs, token_bus,
+                    )
+                    content += extra
+            else:
+                # Non-streaming path (revisions, non-webUI callers).
+                response = await client.chat.completions.create(
+                    messages=messages,
+                    **completion_kwargs,
+                )
+                content = extract_response_content(response, logger)
+
+                finish_reason = None
+                try:
+                    finish_reason = response.choices[0].finish_reason
+                except (AttributeError, IndexError):
+                    pass
+
+                # Auto-continue when the model hit max_tokens.
+                continues = 0
+                while (
+                    finish_reason in ("length", "max_tokens")
+                    and continues < _WRITER_MAX_CONTINUATIONS
+                ):
+                    continues += 1
+                    logger.warning(
+                        "[WriterAgent] Non-streaming output truncated at %d chars "
+                        "(finish_reason=%s) — auto-continuing (attempt %d/%d)",
+                        len(content), finish_reason, continues, _WRITER_MAX_CONTINUATIONS,
+                    )
+                    cont_messages = messages + [
+                        {"role": "assistant", "content": content},
+                        {"role": "user", "content": _CONTINUATION_INSTRUCTION},
+                    ]
+                    cont_response = await client.chat.completions.create(
+                        messages=cont_messages,
+                        **completion_kwargs,
+                    )
+                    content += extract_response_content(cont_response, logger)
+                    try:
+                        finish_reason = cont_response.choices[0].finish_reason
+                    except (AttributeError, IndexError):
+                        finish_reason = None
+
+            # Strip any stray inline source markers the LLM may insert despite
+            # the prompt prohibition — e.g. [✅ Da Knowledge Graph — ...] or
+            # [📌 Da fonte esterna]. These consume tokens without adding value.
+            content = re.sub(r"\[(?:✅|📌)[^\]]{0,200}\]", "", content)
+            content = re.sub(r"\s*>[ \t]*(?:🔗|⚠️)[^\n]*", "", content)
 
             logger.info(
                 f"[WriterAgent] Generated {intent} content "
                 f"({len(content)} characters)"
             )
-            
+
             return content
-            
+
         except Exception as e:
             logger.error(f"[WriterAgent] Generation failed: {e}")
             raise
@@ -370,14 +492,15 @@ class WriterAgent:
             # we don't truncate the revised version and pass quality regression.
             completion_kwargs = app_config.openai.build_completion_kwargs(
                 temperature=0.5,
-                max_tokens=8000,
+                max_tokens=_WRITER_MAX_TOKENS,
             )
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ]
             response = await client.chat.completions.create(
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                **completion_kwargs
+                messages=messages,
+                **completion_kwargs,
             )
 
             revised_content = extract_response_content(response, logger)
@@ -387,12 +510,35 @@ class WriterAgent:
                 finish_reason = response.choices[0].finish_reason
             except (AttributeError, IndexError):
                 pass
-            if finish_reason in ("length", "max_tokens"):
+
+            # Auto-continue when revision hits the token ceiling.
+            continues = 0
+            while (
+                finish_reason in ("length", "max_tokens")
+                and continues < _WRITER_MAX_CONTINUATIONS
+            ):
+                continues += 1
                 logger.warning(
-                    "[WriterAgent] Revision stopped due to max_tokens "
-                    "(finish_reason=%s, %d chars). Output may be truncated.",
-                    finish_reason, len(revised_content),
+                    "[WriterAgent] Revision truncated at %d chars "
+                    "(finish_reason=%s) — auto-continuing (attempt %d/%d)",
+                    len(revised_content), finish_reason, continues, _WRITER_MAX_CONTINUATIONS,
                 )
+                cont_messages = messages + [
+                    {"role": "assistant", "content": revised_content},
+                    {"role": "user", "content": _CONTINUATION_INSTRUCTION},
+                ]
+                cont_response = await client.chat.completions.create(
+                    messages=cont_messages,
+                    **completion_kwargs,
+                )
+                revised_content += extract_response_content(cont_response, logger)
+                try:
+                    finish_reason = cont_response.choices[0].finish_reason
+                except (AttributeError, IndexError):
+                    finish_reason = None
+
+            revised_content = re.sub(r"\[(?:✅|📌)[^\]]{0,200}\]", "", revised_content)
+            revised_content = re.sub(r"\s*>[ \t]*(?:🔗|⚠️)[^\n]*", "", revised_content)
 
             logger.info(
                 f"[WriterAgent] Revised content "

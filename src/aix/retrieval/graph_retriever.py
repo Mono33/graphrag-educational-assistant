@@ -801,218 +801,221 @@ class HybridGraphRetriever:
             corrected_query = self._apply_schema_corrections(cypher_query)
             alias_labels = self._extract_alias_labels(corrected_query)
 
-            with self.neo4j_driver.session() as session:
-                # 1) Run the original query
-                result = session.run(corrected_query)
-                records = list(result)
+            # Fix 4: run the blocking Neo4j call in a thread
+            def _run_main_query():
+                with self.neo4j_driver.session() as s:
+                    return list(s.run(corrected_query))
 
-                # 2) Process records - handle full nodes, scalars, or labeled nodes
-                initial_nodes = []
-                if records:
-                    sample_keys = list(dict(records[0]).keys())
-                    logger.info(f"[DEBUG FALLBACK] First row keys: {sample_keys}")
-                    logger.info(f"[DEBUG FALLBACK] Checking cases: has_label_cols={any(k in sample_keys for k in ['node_labels', 'source_labels', 'target_labels'])}, has_dots={any('.' in k for k in sample_keys)}, has_name={('name' in sample_keys)}, has_category_or_desc={any(k in sample_keys for k in ['category', 'description'])}")
-                    
-                    # CASE 1: Full node objects with explicit labels (NEW FORMAT)
-                    # Pattern: RETURN m, labels(m) as node_labels OR RETURN m as concept, labels(m) as node_labels (UNION fix)
-                    if any(k in sample_keys for k in ['node_labels', 'source_labels', 'target_labels']):
-                        for rec in records:
-                            row = dict(rec)
+            # 1) Run the original query (non-blocking via thread)
+            records = await asyncio.to_thread(_run_main_query)
+
+            # 2) Process records - handle full nodes, scalars, or labeled nodes
+            initial_nodes = []
+            if records:
+                sample_keys = list(dict(records[0]).keys())
+                logger.info(f"[DEBUG FALLBACK] First row keys: {sample_keys}")
+                logger.info(f"[DEBUG FALLBACK] Checking cases: has_label_cols={any(k in sample_keys for k in ['node_labels', 'source_labels', 'target_labels'])}, has_dots={any('.' in k for k in sample_keys)}, has_name={('name' in sample_keys)}, has_category_or_desc={any(k in sample_keys for k in ['category', 'description'])}")
+                
+                # CASE 1: Full node objects with explicit labels (NEW FORMAT)
+                # Pattern: RETURN m, labels(m) as node_labels OR RETURN m as concept, labels(m) as node_labels (UNION fix)
+                if any(k in sample_keys for k in ['node_labels', 'source_labels', 'target_labels']):
+                    for rec in records:
+                        row = dict(rec)
+                        
+                        # Process nodes with labels
+                        for key, value in row.items():
+                            if key in ['node_labels', 'source_labels', 'target_labels']:
+                                continue  # Skip label columns themselves
                             
-                            # Process nodes with labels
-                            for key, value in row.items():
-                                if key in ['node_labels', 'source_labels', 'target_labels']:
-                                    continue  # Skip label columns themselves
-                                
-                                # Check if this is a Neo4j Node object
-                                if hasattr(value, '__iter__') and hasattr(value, 'get'):
-                                    try:
-                                        node_dict = dict(value)
-                                        
-                                        # Get labels from corresponding label column
+                            # Check if this is a Neo4j Node object
+                            if hasattr(value, '__iter__') and hasattr(value, 'get'):
+                                try:
+                                    node_dict = dict(value)
+                                    
+                                    # Get labels from corresponding label column
+                                    if 'node_labels' in row:
+                                        node_dict['labels'] = row['node_labels']
+                                    elif key == 'concept':  # UNION fix: standardized column name for simple queries
                                         if 'node_labels' in row:
                                             node_dict['labels'] = row['node_labels']
-                                        elif key == 'concept':  # UNION fix: standardized column name for simple queries
-                                            if 'node_labels' in row:
-                                                node_dict['labels'] = row['node_labels']
-                                        elif key == 'source':  # UNION fix: standardized column name for relationship queries
-                                            if 'source_labels' in row:
-                                                node_dict['labels'] = row['source_labels']
-                                        elif key == 'target':  # UNION fix: standardized column name for relationship queries
-                                            if 'target_labels' in row:
-                                                node_dict['labels'] = row['target_labels']
-                                        elif key == 'm' or key == 'n':
-                                            if 'source_labels' in row:
-                                                node_dict['labels'] = row['source_labels']
-                                            elif 'node_labels' in row:
-                                                node_dict['labels'] = row['node_labels']
+                                    elif key == 'source':  # UNION fix: standardized column name for relationship queries
+                                        if 'source_labels' in row:
+                                            node_dict['labels'] = row['source_labels']
+                                    elif key == 'target':  # UNION fix: standardized column name for relationship queries
+                                        if 'target_labels' in row:
+                                            node_dict['labels'] = row['target_labels']
+                                    elif key == 'm' or key == 'n':
+                                        if 'source_labels' in row:
+                                            node_dict['labels'] = row['source_labels']
+                                        elif 'node_labels' in row:
+                                            node_dict['labels'] = row['node_labels']
+                                    else:
+                                        # Fallback: try to extract from node object
+                                        if hasattr(value, 'labels'):
+                                            node_dict['labels'] = list(value.labels)
                                         else:
-                                            # Fallback: try to extract from node object
-                                            if hasattr(value, 'labels'):
-                                                node_dict['labels'] = list(value.labels)
-                                            else:
-                                                node_dict['labels'] = []
-                                        
-                                        initial_nodes.append(self._normalize_node(node_dict))
-                                    except Exception as e:
-                                        logger.warning(f"Could not process full node object: {e}")
-                    
-                    # CASE 2: Scalar projections (legacy format) - fallback
-                    elif any("." in k for k in sample_keys):
-                        initial_nodes = self._records_to_nodes(records, alias_labels)
-                    
-                    # CASE 3: Pure scalar fallback results (from fallback definition queries)
-                    # Pattern: {name: "Emotions", category: "Affective Processes"}
-                    elif 'name' in sample_keys and any(k in sample_keys for k in ['category', 'description']):
-                        logger.info(f"[CASE 3 TRIGGERED] Detected fallback scalar results with keys: {sample_keys}")
-                        logger.info(f"[CASE 3] alias_labels extracted: {alias_labels}")  # Debug: show extracted labels
-                        for rec in records:
-                            row = dict(rec)
-                            if 'name' in row:
-                                # Try to infer label from query or use generic
-                                inferred_label = None
-                                # Check ALL aliases (not just specific ones) - take the first valid label
-                                for alias, label in alias_labels.items():
-                                    if label and label != '':  # Any valid label
-                                        inferred_label = label
-                                        break
-                                
-                                if not inferred_label:
-                                    inferred_label = 'Concept'  # Generic fallback (will be added to neuro_labels)
-                                
-                                node = {
-                                    "id": f"{inferred_label}:{row['name']}",
-                                    "name": row["name"],
-                                    "category": row.get("category", ""),
-                                    "labels": [inferred_label] if inferred_label else [],
-                                    "description": row.get("description", ""),
-                                    "rel_type": "",
-                                    "source_node": {}
-                                }
-                                initial_nodes.append(self._normalize_node(node))
-                                logger.info(f"Parsed fallback scalar: {row['name']} as {inferred_label}")
-                    
-                    # CASE 4: Aliased scalar projections (from domain few-shot examples)
-                    # Pattern: RETURN a.name AS challenge, m.name AS strategy, labels(m) AS strategy_type
-                    # Detects rows with string values (node names) and optional list values (labels)
-                    elif any(isinstance(dict(records[0]).get(k), str) for k in sample_keys):
-                        logger.info(f"[CASE 4] Handling aliased scalar results with keys: {sample_keys}")
-
-                        # Parse RETURN clause to map column aliases → query variable
-                        return_map = self._parse_return_aliases(corrected_query)
-
-                        # Parse MATCH relationship patterns: (src_var)-[:REL_TYPE]->(tgt_var)
-                        import re as _re
-                        rel_patterns = _re.findall(
-                            r'\((\w+)(?::\w[\w]*)?(?:\s*\{[^}]*\})?\)\s*-\[(?:\w*):(\w+)\]->\s*\((\w+)(?::\w[\w]*)?(?:\s*\{[^}]*\})?\)',
-                            corrected_query, _re.IGNORECASE
-                        )
-                        # rel_patterns: list of (src_var, rel_type, tgt_var)
-                        logger.debug(f"[CASE 4] Relationship patterns found: {rel_patterns}")
-
-                        # Build inverse map: query_var → list of string-value column aliases
-                        var_to_name_cols = defaultdict(list)
-                        for col_alias, query_var in return_map.items():
-                            if col_alias in sample_keys:
-                                var_to_name_cols[query_var].append(col_alias)
-
-                        # Build per-column label map from alias_labels
-                        col_to_label = {
-                            col_alias: alias_labels.get(query_var, '')
-                            for col_alias, query_var in return_map.items()
-                        }
-
-                        # Build per-column labels() column map:
-                        # e.g. 'giftedness_strategy' → 'giftedness_strategy_type'
-                        # (when labels(s1) AS giftedness_strategy_type returns labels for s1)
-                        col_to_list_col = {}
-                        for col_alias, query_var in return_map.items():
-                            if col_alias not in sample_keys:
-                                continue
-                            for other_col, other_var in return_map.items():
-                                if other_var == query_var and other_col != col_alias:
-                                    col_to_list_col[col_alias] = other_col
+                                            node_dict['labels'] = []
+                                    
+                                    initial_nodes.append(self._normalize_node(node_dict))
+                                except Exception as e:
+                                    logger.warning(f"Could not process full node object: {e}")
+                
+                # CASE 2: Scalar projections (legacy format) - fallback
+                elif any("." in k for k in sample_keys):
+                    initial_nodes = self._records_to_nodes(records, alias_labels)
+                
+                # CASE 3: Pure scalar fallback results (from fallback definition queries)
+                # Pattern: {name: "Emotions", category: "Affective Processes"}
+                elif 'name' in sample_keys and any(k in sample_keys for k in ['category', 'description']):
+                    logger.info(f"[CASE 3 TRIGGERED] Detected fallback scalar results with keys: {sample_keys}")
+                    logger.info(f"[CASE 3] alias_labels extracted: {alias_labels}")  # Debug: show extracted labels
+                    for rec in records:
+                        row = dict(rec)
+                        if 'name' in row:
+                            # Try to infer label from query or use generic
+                            inferred_label = None
+                            # Check ALL aliases (not just specific ones) - take the first valid label
+                            for alias, label in alias_labels.items():
+                                if label and label != '':  # Any valid label
+                                    inferred_label = label
                                     break
+                            
+                            if not inferred_label:
+                                inferred_label = 'Concept'  # Generic fallback (will be added to neuro_labels)
+                            
+                            node = {
+                                "id": f"{inferred_label}:{row['name']}",
+                                "name": row["name"],
+                                "category": row.get("category", ""),
+                                "labels": [inferred_label] if inferred_label else [],
+                                "description": row.get("description", ""),
+                                "rel_type": "",
+                                "source_node": {}
+                            }
+                            initial_nodes.append(self._normalize_node(node))
+                            logger.info(f"Parsed fallback scalar: {row['name']} as {inferred_label}")
+                
+                # CASE 4: Aliased scalar projections (from domain few-shot examples)
+                # Pattern: RETURN a.name AS challenge, m.name AS strategy, labels(m) AS strategy_type
+                # Detects rows with string values (node names) and optional list values (labels)
+                elif any(isinstance(dict(records[0]).get(k), str) for k in sample_keys):
+                    logger.info(f"[CASE 4] Handling aliased scalar results with keys: {sample_keys}")
 
-                        for rec in records:
-                            row = dict(rec)
+                    # Parse RETURN clause to map column aliases → query variable
+                    return_map = self._parse_return_aliases(corrected_query)
 
-                            # Determine which target columns carry rel_type from the MATCH patterns
-                            target_cols_rel = {}  # tgt_col → (rel_type, src_col)
-                            for src_var, rel_type, tgt_var in rel_patterns:
-                                for src_col in var_to_name_cols.get(src_var, []):
-                                    for tgt_col in var_to_name_cols.get(tgt_var, []):
-                                        target_cols_rel[tgt_col] = (rel_type, src_col)
+                    # Parse MATCH relationship patterns: (src_var)-[:REL_TYPE]->(tgt_var)
+                    import re as _re
+                    rel_patterns = _re.findall(
+                        r'\((\w+)(?::\w[\w]*)?(?:\s*\{[^}]*\})?\)\s*-\[(?:\w*):(\w+)\]->\s*\((\w+)(?::\w[\w]*)?(?:\s*\{[^}]*\})?\)',
+                        corrected_query, _re.IGNORECASE
+                    )
+                    # rel_patterns: list of (src_var, rel_type, tgt_var)
+                    logger.debug(f"[CASE 4] Relationship patterns found: {rel_patterns}")
 
-                            # First pass: build all nodes with correct per-column labels
-                            created_nodes = {}
-                            for col_name, val in row.items():
-                                if not isinstance(val, str) or not val:
-                                    continue
+                    # Build inverse map: query_var → list of string-value column aliases
+                    var_to_name_cols = defaultdict(list)
+                    for col_alias, query_var in return_map.items():
+                        if col_alias in sample_keys:
+                            var_to_name_cols[query_var].append(col_alias)
 
-                                node_label = col_to_label.get(col_name, '')
+                    # Build per-column label map from alias_labels
+                    col_to_label = {
+                        col_alias: alias_labels.get(query_var, '')
+                        for col_alias, query_var in return_map.items()
+                    }
 
-                                # Use per-column labels() list if available
-                                list_col = col_to_list_col.get(col_name)
-                                list_labels = []
-                                if list_col and isinstance(row.get(list_col), (list, tuple)):
-                                    list_labels = [str(l) for l in row[list_col]]
+                    # Build per-column labels() column map:
+                    # e.g. 'giftedness_strategy' → 'giftedness_strategy_type'
+                    # (when labels(s1) AS giftedness_strategy_type returns labels for s1)
+                    col_to_list_col = {}
+                    for col_alias, query_var in return_map.items():
+                        if col_alias not in sample_keys:
+                            continue
+                        for other_col, other_var in return_map.items():
+                            if other_var == query_var and other_col != col_alias:
+                                col_to_list_col[col_alias] = other_col
+                                break
 
-                                node = {
-                                    "id": f"{node_label}:{val}" if node_label else val,
-                                    "name": val,
-                                    "category": "",
-                                    "labels": list_labels if list_labels else ([node_label] if node_label else []),
-                                    "description": "",
-                                    "rel_type": "",
-                                    "source_node": {}
+                    for rec in records:
+                        row = dict(rec)
+
+                        # Determine which target columns carry rel_type from the MATCH patterns
+                        target_cols_rel = {}  # tgt_col → (rel_type, src_col)
+                        for src_var, rel_type, tgt_var in rel_patterns:
+                            for src_col in var_to_name_cols.get(src_var, []):
+                                for tgt_col in var_to_name_cols.get(tgt_var, []):
+                                    target_cols_rel[tgt_col] = (rel_type, src_col)
+
+                        # First pass: build all nodes with correct per-column labels
+                        created_nodes = {}
+                        for col_name, val in row.items():
+                            if not isinstance(val, str) or not val:
+                                continue
+
+                            node_label = col_to_label.get(col_name, '')
+
+                            # Use per-column labels() list if available
+                            list_col = col_to_list_col.get(col_name)
+                            list_labels = []
+                            if list_col and isinstance(row.get(list_col), (list, tuple)):
+                                list_labels = [str(l) for l in row[list_col]]
+
+                            node = {
+                                "id": f"{node_label}:{val}" if node_label else val,
+                                "name": val,
+                                "category": "",
+                                "labels": list_labels if list_labels else ([node_label] if node_label else []),
+                                "description": "",
+                                "rel_type": "",
+                                "source_node": {}
+                            }
+                            created_nodes[col_name] = node
+
+                        # Second pass: inject rel_type + source_node on target nodes
+                        # so _extract_triples() can pick them up later
+                        for tgt_col, (rel_type, src_col) in target_cols_rel.items():
+                            if tgt_col in created_nodes and src_col in created_nodes:
+                                src_node = created_nodes[src_col]
+                                created_nodes[tgt_col]['rel_type'] = rel_type
+                                created_nodes[tgt_col]['source_node'] = {
+                                    'name': src_node['name'],
+                                    'labels': src_node['labels'],
                                 }
-                                created_nodes[col_name] = node
 
-                            # Second pass: inject rel_type + source_node on target nodes
-                            # so _extract_triples() can pick them up later
-                            for tgt_col, (rel_type, src_col) in target_cols_rel.items():
-                                if tgt_col in created_nodes and src_col in created_nodes:
-                                    src_node = created_nodes[src_col]
-                                    created_nodes[tgt_col]['rel_type'] = rel_type
-                                    created_nodes[tgt_col]['source_node'] = {
-                                        'name': src_node['name'],
-                                        'labels': src_node['labels'],
-                                    }
+                        for node in created_nodes.values():
+                            # Only add target nodes (those with rel_type injected by
+                            # the second pass). Source/challenge nodes are not strategy
+                            # recommendations — their data is preserved in
+                            # target.source_node for triple extraction.
+                            # Fallback: if no rel_patterns were found, we have no
+                            # targeting info → add all nodes to avoid empty results.
+                            if not rel_patterns or node.get('rel_type'):
+                                initial_nodes.append(self._normalize_node(node))
 
-                            for node in created_nodes.values():
-                                # Only add target nodes (those with rel_type injected by
-                                # the second pass). Source/challenge nodes are not strategy
-                                # recommendations — their data is preserved in
-                                # target.source_node for triple extraction.
-                                # Fallback: if no rel_patterns were found, we have no
-                                # targeting info → add all nodes to avoid empty results.
-                                if not rel_patterns or node.get('rel_type'):
-                                    initial_nodes.append(self._normalize_node(node))
-
-                    # CASE 5: Simple node objects without explicit labels
-                    else:
-                        for rec in records:
-                            row = dict(rec)
-                            for v in row.values():
-                                try:
-                                    props = dict(v)
-                                    if hasattr(v, 'labels'):
-                                        props['labels'] = list(v.labels)
-                                    initial_nodes.append(self._normalize_node(props))
-                                except Exception:
-                                    pass
-
-                if not initial_nodes:
-                    logger.info("No initial nodes found from Cypher query")
-                    return []
-
-                # 3) Expand neighbors if enabled
-                if self.expand_neighbors:
-                    expanded_nodes = await self._expand_neighbors(initial_nodes, session, query)
-                    return expanded_nodes
+                # CASE 5: Simple node objects without explicit labels
                 else:
-                    return initial_nodes
+                    for rec in records:
+                        row = dict(rec)
+                        for v in row.values():
+                            try:
+                                props = dict(v)
+                                if hasattr(v, 'labels'):
+                                    props['labels'] = list(v.labels)
+                                initial_nodes.append(self._normalize_node(props))
+                            except Exception:
+                                pass
+
+            if not initial_nodes:
+                logger.info("No initial nodes found from Cypher query")
+                return []
+
+            # 3) Expand neighbors if enabled
+            if self.expand_neighbors:
+                expanded_nodes = await self._expand_neighbors(initial_nodes, None, query)
+                return expanded_nodes
+            else:
+                return initial_nodes
 
         except Exception as e:
             logger.error(f"Graph traversal failed: {e}")
@@ -1100,30 +1103,25 @@ class HybridGraphRetriever:
     async def _expand_neighbors(self, nodes: List[Dict], session, query: str = "") -> List[Dict]:
         """
         Expand nodes with their educational neighbors (structural + vector-based).
-        
-        Now includes P1 filtering to remove irrelevant structural neighbors.
-        Now includes hop_distance tracking for Graph Coverage metric.
-        
+
+        Fix 3: structural neighbors are fetched in a single batch query instead of
+        one query per node, cutting N sequential Neo4j round-trips to 1.
+
         Args:
             nodes: Initial nodes to expand from
-            session: Neo4j session
+            session: Neo4j session (kept for signature compatibility; no longer used here)
             query: Natural language query (for PHASE 1 intent detection)
         """
         initial_nodes = []
         expanded_nodes = []
         seen_node_ids = set()
-        
+
         for node in nodes:
             node_id = node.get('id') or node.get('name')
             if node_id and node_id not in seen_node_ids:
-                # If CASE 4 parsing already attached a real relationship (rel_type +
-                # source_node), this node was the TARGET of a Cypher relationship —
-                # treat it as a 1-hop structural match so graph_path is populated in
-                # explainability.  Pure column matches (no rel_type) stay at hop 0.
                 if node.get('rel_type') and node.get('source_node'):
                     node['hop_distance'] = 1
                     node['retrieval_stage'] = 'structural_neighbor'
-                    # Ensure triple direction fields are set for _extract_triples
                     if 'triple_source_name' not in node:
                         src_name = node.get('source_node', {}).get('name', '')
                         node['triple_source_name'] = src_name
@@ -1132,12 +1130,15 @@ class HybridGraphRetriever:
                     node['hop_distance'] = 0
                     node['retrieval_stage'] = 'direct_query'
                 expanded_nodes.append(self._normalize_node(node))
-                initial_nodes.append(node)  # Track for filtering
+                initial_nodes.append(node)
                 seen_node_ids.add(node_id)
-            
-            # Get structural neighbors (direct relationships) - hop_distance=1
-            structural_neighbors = self._get_educational_neighbors(node, session)
-            for neighbor in structural_neighbors:
+
+        # Fix 3: single batch query for ALL structural neighbors
+        all_structural = await self._batch_get_educational_neighbors(nodes)
+
+        for node in nodes:
+            node_name = node.get('name', '')
+            for neighbor in all_structural.get(node_name, []):
                 neighbor_id = neighbor.get('id') or neighbor.get('name')
                 if neighbor_id and neighbor_id not in seen_node_ids:
                     neighbor['source'] = 'structural'
@@ -1145,8 +1146,8 @@ class HybridGraphRetriever:
                     neighbor['retrieval_stage'] = 'structural_neighbor'
                     expanded_nodes.append(self._normalize_node(neighbor))
                     seen_node_ids.add(neighbor_id)
-            
-            # Get vector-based neighbors (semantic similarity) - hop_distance=2
+
+            # Vector-based neighbors (semantic similarity) - hop_distance=2
             if self.node2vec_loaded and self.use_vectors:
                 vector_neighbors = await self._get_vector_neighbors(node, seen_node_ids)
                 for neighbor in vector_neighbors:
@@ -1157,23 +1158,19 @@ class HybridGraphRetriever:
                         neighbor['retrieval_stage'] = 'vector_neighbor'
                         expanded_nodes.append(self._normalize_node(neighbor))
                         seen_node_ids.add(neighbor_id)
-        
-        # 🎯 P1 FIX: Filter irrelevant structural neighbors by label relevance
-        # Separate initial nodes from expanded neighbors
+
+        # P1 FIX: Filter irrelevant structural neighbors by label relevance
         expanded_only = [n for n in expanded_nodes if n not in initial_nodes]
-        
+
         if expanded_only:
             filtered_expanded = self._filter_semantic_nodes_by_relevance(
-                expanded_only, 
+                expanded_only,
                 initial_nodes,
                 query
             )
-            
             logger.info(
                 f"[P1 Filter] Structural+Vector neighbors: {len(expanded_only)} → Filtered: {len(filtered_expanded)}"
             )
-            
-            # Combine initial nodes + filtered expanded nodes
             return initial_nodes + filtered_expanded
         else:
             return expanded_nodes
@@ -1246,7 +1243,103 @@ class HybridGraphRetriever:
         except Exception as e:
             logger.error(f"Error getting neighbors for {node.get('name', 'unknown')}: {e}")
             return []
-    
+
+    async def _batch_get_educational_neighbors(self, nodes: List[Dict]) -> Dict[str, List[Dict]]:
+        """Batch-fetch educational neighbors for all nodes in a single Neo4j query.
+
+        Fix 3: replaces N sequential session.run() calls (one per node) with 1 query
+        via asyncio.to_thread() so the event loop is never blocked.
+
+        Returns:
+            Dict mapping source node name → list of neighbor dicts.
+        """
+        node_names: List[str] = []
+        name_to_label: Dict[str, str] = {}
+        name_to_node: Dict[str, Dict] = {}
+        for node in nodes:
+            name = node.get('name', '')
+            labels = node.get('labels', [])
+            if name and labels:
+                node_names.append(name)
+                name_to_label[name] = labels[0]
+                name_to_node[name] = node
+
+        if not node_names:
+            return {}
+
+        relevant_labels = list(self.expansion_labels)
+        limit = len(node_names) * 5
+
+        def _sync_batch(names: List[str]) -> List[Dict]:
+            batch_query = """
+            MATCH (source)-[r]-(n)
+            WHERE source.name IN $node_names
+              AND any(l IN labels(n) WHERE l IN $relevant_labels)
+            RETURN DISTINCT
+                   source.name        AS source_name,
+                   n                  AS neighbor_node,
+                   labels(n)          AS neighbor_labels,
+                   type(r)            AS rel_type,
+                   startNode(r).name  AS rel_start_name
+            LIMIT $limit
+            """
+            rows = []
+            with self.neo4j_driver.session() as session:
+                for record in session.run(
+                    batch_query,
+                    node_names=names,
+                    relevant_labels=relevant_labels,
+                    limit=limit,
+                ):
+                    rows.append({
+                        'source_name':     record['source_name'],
+                        'neighbor_node':   dict(record['neighbor_node']),
+                        'neighbor_labels': record['neighbor_labels'],
+                        'rel_type':        record['rel_type'],
+                        'rel_start_name':  record['rel_start_name'],
+                    })
+            return rows
+
+        try:
+            rows = await asyncio.to_thread(_sync_batch, node_names)
+        except Exception as e:
+            logger.error(f"[Fix3] Batch neighbor fetch failed: {e}")
+            return {}
+
+        result: Dict[str, List[Dict]] = {name: [] for name in node_names}
+        for row in rows:
+            source_name = row['source_name']
+            if source_name not in result:
+                continue
+
+            neighbor = row['neighbor_node']
+            neighbor_name = neighbor.get('name', '')
+            neighbor['labels'] = row['neighbor_labels']
+            neighbor['rel_type'] = row['rel_type']
+            rel_start_name = row['rel_start_name']
+
+            if rel_start_name == source_name:
+                neighbor['triple_source_name'] = source_name
+                neighbor['triple_target_name'] = neighbor_name
+            else:
+                neighbor['triple_source_name'] = neighbor_name
+                neighbor['triple_target_name'] = source_name
+
+            source_label = name_to_label.get(source_name, '')
+            neighbor['source_node'] = {
+                'name': source_name,
+                'labels': [source_label] if source_label else [],
+            }
+            label_for_id = neighbor['labels'][0] if neighbor.get('labels') else ''
+            neighbor['id'] = f"{label_for_id}:{neighbor_name}"
+            result[source_name].append(neighbor)
+
+        total = sum(len(v) for v in result.values())
+        logger.info(
+            f"[Fix3] Batch neighbor query: {len(node_names)} nodes → {total} neighbors (1 query)"
+        )
+        return result
+
     async def _get_vector_neighbors(self, node: Dict, seen_node_ids: set) -> List[Dict]:
         """Get vector-based neighbors using Node2Vec similarity.
         
@@ -2088,32 +2181,32 @@ class HybridGraphRetriever:
             return None
     
     async def _batch_get_node_details(self, node_names: List[str]) -> Dict[str, Dict]:
-        """Batch fetch node details from Neo4j (1 query instead of N sequential queries)."""
+        """Batch fetch node details from Neo4j (1 query, non-blocking via to_thread)."""
         if not node_names:
             return {}
-        
-        try:
+
+        def _sync_fetch(names: List[str]) -> Dict[str, Dict]:
+            query = """
+            MATCH (n)
+            WHERE n.name IN $names
+            RETURN n, labels(n) as labels
+            """
+            details: Dict[str, Dict] = {}
             with self.neo4j_driver.session() as session:
-                query = """
-                MATCH (n)
-                WHERE n.name IN $names
-                RETURN n, labels(n) as labels
-                """
-                result = session.run(query, names=node_names)
-                
-                details: Dict[str, Dict] = {}
-                for record in result:
+                for record in session.run(query, names=names):
                     node = dict(record['n'])
                     node['labels'] = record['labels']
                     name = node.get('name', '')
                     if name and name not in details:
                         details[name] = node
-                
-                logger.debug(
-                    f"[Batch Neo4j] Fetched {len(details)}/{len(node_names)} nodes in 1 query"
-                )
-                return details
-                
+            return details
+
+        try:
+            details = await asyncio.to_thread(_sync_fetch, node_names)
+            logger.debug(
+                f"[Batch Neo4j] Fetched {len(details)}/{len(node_names)} nodes in 1 query"
+            )
+            return details
         except Exception as e:
             logger.error(f"Batch node details failed: {e}")
             return {}
@@ -2323,7 +2416,11 @@ class EnhancedMultilingualText2Cypher:
             domain = self.domain
         
         # Step 1: Text2Cypher (now with domain support)
-        cypher_result = self.text2cypher.process_query(query, domain=domain, execute=True)
+        # Fix 4: run the synchronous LLM + Cypher execution in a thread so the event
+        # loop stays free for concurrent asyncio.gather() calls in the retriever.
+        cypher_result = await asyncio.to_thread(
+            self.text2cypher.process_query, query, domain=domain, execute=True
+        )
 
         # Step 2: Hybrid Retrieval (new functionality)
         # Use the translated English query for semantic search when available.

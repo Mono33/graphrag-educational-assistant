@@ -29,6 +29,7 @@ Usage:
 import os
 import logging
 import asyncio
+import random
 import aiohttp
 import time
 from typing import List, Dict, Any, Optional
@@ -587,9 +588,10 @@ class ExternalMediaAPI:
                         headers=headers
                     ) as resp:
                         if resp.status == 429:
-                            # Rate limited by server - exponential backoff
-                            delay = min(2 ** attempt * 2, 30)  # 2, 4, 8... max 30s
-                            logger.warning(f"[Semantic Scholar] Rate limited (429), waiting {delay}s (attempt {attempt + 1}/{max_retries})")
+                            # Jitter prevents parallel requests from retrying in lockstep
+                            base = min(2 ** attempt * 2, 30)  # 2, 4, 8... max 30s
+                            delay = base + random.uniform(0.5, 2.0)
+                            logger.warning(f"[Semantic Scholar] Rate limited (429), waiting {delay:.1f}s (attempt {attempt + 1}/{max_retries})")
                             await asyncio.sleep(delay)
                             continue
                         
@@ -653,6 +655,112 @@ class ExternalMediaAPI:
             logger.error(f"[Semantic Scholar] Error: {e}")
             return []
     
+    # =========================================================================
+    # OPENALEX API (replaces Semantic Scholar as primary academic search)
+    # =========================================================================
+
+    @staticmethod
+    def _reconstruct_abstract(inv_index: dict) -> str:
+        """Reconstruct plain-text abstract from OpenAlex inverted index format."""
+        if not inv_index:
+            return ""
+        pairs = [(pos, word) for word, positions in inv_index.items() for pos in positions]
+        return " ".join(w for _, w in sorted(pairs))
+
+    async def search_openalex(
+        self,
+        query: str,
+        max_results: int = 5,
+    ) -> List[SemanticScholarPaper]:
+        """
+        Search OpenAlex for open-access academic papers.
+
+        OpenAlex is free, requires no API key, and supports 10 req/s (polite pool)
+        with 100k requests/day — replacing Semantic Scholar which rate-limits aggressively
+        on the free tier. Returns the same SemanticScholarPaper dataclass so callers
+        need no changes.
+
+        Args:
+            query: Search query string
+            max_results: Maximum number of results to return
+
+        Returns:
+            List of SemanticScholarPaper objects (may be empty on error)
+        """
+        try:
+            session = await self._get_session()
+
+            params = {
+                "search": query,
+                "filter": "is_oa:true",
+                "per_page": min(max_results, 25),
+                "select": (
+                    "title,authorships,publication_year,doi,"
+                    "open_access,cited_by_count,primary_location,"
+                    "abstract_inverted_index"
+                ),
+            }
+            headers = {
+                # Polite pool: identify ourselves so OpenAlex gives priority routing
+                "User-Agent": "GraphAIxLearning/1.0 (mailto:angi36casali@gmail.com)",
+            }
+
+            async with session.get(
+                "https://api.openalex.org/works",
+                params=params,
+                headers=headers,
+            ) as resp:
+                if resp.status != 200:
+                    logger.warning("[OpenAlex] Search failed: HTTP %s for '%s'", resp.status, query)
+                    return []
+                data = await resp.json()
+
+            papers = []
+            for item in data.get("results", []):
+                # Authors — first 5
+                authors = [
+                    a.get("author", {}).get("display_name", "")
+                    for a in item.get("authorships", [])[:5]
+                ]
+
+                # DOI
+                doi_raw = item.get("doi") or ""
+                doi = doi_raw.replace("https://doi.org/", "") if doi_raw else None
+
+                # Open access URL
+                oa_info = item.get("open_access") or {}
+                pdf_url = oa_info.get("oa_url")
+
+                # Landing page URL (fallback to DOI URL)
+                primary = item.get("primary_location") or {}
+                url = primary.get("landing_page_url") or (doi_raw if doi_raw else "")
+
+                # Abstract
+                abstract_raw = self._reconstruct_abstract(
+                    item.get("abstract_inverted_index") or {}
+                )
+                abstract = abstract_raw[:300] if abstract_raw else None
+
+                papers.append(SemanticScholarPaper(
+                    title=item.get("display_name") or item.get("title", ""),
+                    authors=authors,
+                    year=item.get("publication_year"),
+                    abstract=abstract,
+                    citation_count=item.get("cited_by_count", 0),
+                    url=url,
+                    doi=doi,
+                    venue=None,
+                    is_open_access=bool(pdf_url),
+                    pdf_url=pdf_url,
+                ))
+
+            logger.info("[OpenAlex] Found %d papers for '%s'", len(papers), query)
+            return papers
+
+        except Exception as e:
+            logger.error("[OpenAlex] Error for '%s': %s", query, e)
+            return []
+
     # =========================================================================
     # COMBINED SEARCH
     # =========================================================================

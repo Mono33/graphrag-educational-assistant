@@ -60,6 +60,7 @@ class OpenAIConfig:
         max_tokens: int = 2000,
         json_mode: bool = False,
         include_reasoning: bool = True,
+        model_override: Optional[str] = None,
     ) -> dict:
         """Build chat.completions.create() kwargs compatible with the active model.
 
@@ -73,10 +74,15 @@ class OpenAIConfig:
             max_tokens: Max output tokens.
             json_mode: Request JSON output via response_format (skipped for reasoning models).
             include_reasoning: Ask OpenRouter to return thinking tokens in reasoning_content.
+            model_override: Use this model instead of self.model (e.g. a fast model for the
+                Critic). All model-family checks run against the override so kwargs are correct.
         """
-        kwargs: dict = {"model": self.model}
-        is_o_series = any(x in self.model.lower() for x in ("o1", "o3", "o4"))
-        is_thinking = self.is_reasoning_model()
+        model = model_override or self.model
+        kwargs: dict = {"model": model}
+        is_o_series = any(x in model.lower() for x in ("o1", "o3", "o4"))
+        is_thinking = any(x in model.lower() for x in (
+            "o1", "o3", "o4", "deepseek-r1", "deepseek/deepseek-r1", "thinking"
+        ))
 
         if is_o_series:
             kwargs["max_completion_tokens"] = max_tokens
@@ -91,6 +97,14 @@ class OpenAIConfig:
             kwargs["extra_body"] = {"include_reasoning": True}
 
         return kwargs
+
+    def build_completion_kwargs_for(
+        self,
+        model: str,
+        **kwargs,
+    ) -> dict:
+        """Convenience wrapper: build kwargs for a specific model (e.g. Critic, Text2Cypher)."""
+        return self.build_completion_kwargs(model_override=model, **kwargs)
 
 
 @dataclass

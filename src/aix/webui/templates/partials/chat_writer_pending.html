@@ -21,6 +21,7 @@
 {% set p = payload or {} %}
 {% set rev = p.get('revision', 1) %}
 {% set is_revision = p.get('is_revision', False) %}
+{% set lid = lesson.id | string if lesson else '' %}
 
 <div id="writer-card-rev{{ rev }}" class="aix-agent-shell">
 
@@ -54,20 +55,48 @@
           </div>
         {% endif %}
 
-        {# Skeleton paragraphs that subtly pulse — visual proof we're working #}
-        <div class="aix-skeleton-stack">
-          <div class="aix-skeleton-line" style="width:92%;"></div>
-          <div class="aix-skeleton-line" style="width:84%;"></div>
-          <div class="aix-skeleton-line" style="width:76%;"></div>
-          <div class="aix-skeleton-line" style="width:91%;"></div>
-          <div class="aix-skeleton-line" style="width:60%;"></div>
-        </div>
+        {# Live token stream — hidden until the first writer_chunk event arrives #}
+        <pre id="writer-stream-{{ lid }}"
+             style="display:none; white-space:pre-wrap; font-size:12px; line-height:1.55;
+                    max-height:24rem; overflow-y:auto; margin:0;
+                    background:var(--aix-cream, #fdfaf5);
+                    border:1px solid var(--aix-border-soft);
+                    border-radius:var(--aix-radius-sm); padding:10px 14px;
+                    color:var(--aix-text-primary);"></pre>
 
-        <p style="font-size:12px; font-style:italic; color:var(--aix-text-tertiary); margin:0;">
-          La generazione richiede tipicamente 60–90 secondi. Il Writer
-          incorpora i nodi del KG, le strategie pedagogiche e i media
-          curati, applicandoli al profilo educativo della classe.
-        </p>
+        {# Animated checklist — hidden when the first streaming token arrives #}
+        <div id="writer-skeleton-{{ lid }}" style="display:flex; flex-direction:column; gap:6px;">
+
+          <p style="font-size:12px; color:var(--aix-text-secondary); margin:0;">
+            Il Writer sta componendo la lezione:
+          </p>
+
+          <div class="writer-pending-item" style="animation-delay:0s;">
+            <span class="writer-pending-dot"></span>
+            <span>Lettura dei {{ "nodi" if not is_revision else "nodi KG e istruzioni di revisione" }} recuperati dal Knowledge Graph</span>
+          </div>
+          <div class="writer-pending-item" style="animation-delay:2s; opacity:0;">
+            <span class="writer-pending-dot"></span>
+            <span>Adattamento al profilo della classe (BES, livello, durata)</span>
+          </div>
+          <div class="writer-pending-item" style="animation-delay:4s; opacity:0;">
+            <span class="writer-pending-dot"></span>
+            <span>Selezione e sequenza delle strategie pedagogiche</span>
+          </div>
+          <div class="writer-pending-item" style="animation-delay:6s; opacity:0;">
+            <span class="writer-pending-dot"></span>
+            <span>Strutturazione delle attività e dei tempi della lezione</span>
+          </div>
+          <div class="writer-pending-item" style="animation-delay:8s; opacity:0;">
+            <span class="writer-pending-dot"></span>
+            <span>Citazione inline dei media curati (video, articoli, OER)</span>
+          </div>
+
+          <p style="font-size:11px; font-style:italic; color:var(--aix-text-tertiary); margin:4px 0 0;">
+            Il testo apparirà in tempo reale non appena il modello inizia a scrivere.
+          </p>
+
+        </div>
       </div>
 
     </article>
@@ -78,3 +107,57 @@
   </div>
 
 </div>
+
+<style>
+.writer-pending-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--aix-text-secondary);
+  animation: writer-item-appear 0.4s ease forwards;
+}
+.writer-pending-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--aix-writer, #5a7fa0);
+  flex-shrink: 0;
+  animation: writer-dot-pulse 1.4s ease-in-out infinite;
+}
+@keyframes writer-item-appear {
+  from { opacity: 0; transform: translateX(-6px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes writer-dot-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.35; transform: scale(0.6); }
+}
+</style>
+
+{% if lid %}
+<script>
+(function () {
+  var streamEl   = document.getElementById('writer-stream-{{ lid }}');
+  var skeletonEl = document.getElementById('writer-skeleton-{{ lid }}');
+  if (!streamEl) return;
+
+  function showToken(token) {
+    if (!token) return;
+    if (streamEl.style.display === 'none') {
+      streamEl.style.display = 'block';
+      if (skeletonEl) skeletonEl.style.display = 'none';
+    }
+    streamEl.textContent += token;
+    streamEl.scrollTop = streamEl.scrollHeight;
+  }
+
+  // Dedicated token stream: the main SSE is blocked inside graph.astream()
+  // while the write node runs, so tokens arrive on a separate connection.
+  var src = new EventSource('/webui/lesson/{{ lid }}/writer-stream');
+  src.addEventListener('writer_chunk', function (e) { showToken(e.data); });
+  src.addEventListener('end', function () { src.close(); });
+  src.onerror = function () { src.close(); };
+})();
+</script>
+{% endif %}
