@@ -167,9 +167,19 @@ class PlannerAgent:
         )
         
         try:
+            # CORE 2 #11a — JSON parse hardening (2026-05-09):
+            # Pass json_mode=True so OpenRouter forwards
+            # ``response_format={"type": "json_object"}`` to providers that
+            # support it (OpenAI, most OpenRouter routes). build_completion_kwargs
+            # automatically skips it for reasoning models (o1/o3/o4/DeepSeek-R1
+            # / Claude-thinking) where the API rejects the parameter, so this
+            # is byte-identical for those families and a hardening boost for
+            # everything else. The PLANNER_SYSTEM_PROMPT already asks for
+            # strict JSON so this is purely additive — no prompt change.
             completion_kwargs = app_config.openai.build_completion_kwargs(
                 temperature=0.3,
                 max_tokens=2000,
+                json_mode=True,
             )
             response = await client.chat.completions.create(
                 messages=[
@@ -260,9 +270,18 @@ class PlannerAgent:
             return plan
             
         except json.JSONDecodeError as e:
+            # CORE 2 #11a (2026-05-09): structured parse-error log.
+            # The marker `event=agent_parse_error agent=planner` is what
+            # Langfuse / log-aggregation filters key on so a fallback run
+            # can be distinguished from a real one in dashboards (today the
+            # fallback was indistinguishable, hence the silent-failure mode
+            # that the doc calls out). The fallback *shape* below is
+            # intentionally identical to pre-#11a so behaviour is byte-
+            # compatible — only the observability fingerprint changes.
+            raw_preview = content[:300] if "content" in dir() else "<not set>"
             logger.error(
-                "[PlannerAgent] Failed to parse JSON response: %s — raw content (first 300 chars): %r",
-                e, content[:300] if "content" in dir() else "<not set>",
+                "event=agent_parse_error agent=planner err=%s raw_preview=%r",
+                e, raw_preview,
             )
             return RetrievalPlan(
                 query_intent="lesson_creation",

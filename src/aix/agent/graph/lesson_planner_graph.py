@@ -32,7 +32,13 @@ from aix.agent.graph.nodes import (
     retrieve_node,
     write_node,
     critique_node,
-    should_continue_to_revision
+    should_continue_to_revision,
+    # CORE 2 #9 — Corrective RAG (Retrieval Grading). Imported eagerly so
+    # an import error fails fast even when the feature flag is off; the
+    # nodes are only added to the topology when the flag is on.
+    grade_retrieval_node,
+    should_retry_retrieval,
+    _corrective_rag_enabled,
 )
 
 logger = logging.getLogger(__name__)
@@ -44,10 +50,31 @@ def _build_workflow() -> StateGraph:
 
     Factored out so the sync and async ``build_*`` entry points can share
     the topology and only differ in the ``compile(checkpointer=...)`` call.
+
+    Topologies
+    ----------
+    * **Default** (``AIX_CORRECTIVE_RAG_ENABLED`` unset/false) — byte-
+      identical to pre-#9::
+
+          plan → retrieve → write → critique → [revise|finish|error]
+
+    * **Corrective-RAG mode** (``AIX_CORRECTIVE_RAG_ENABLED=true`` —
+      CORE 2 #9)::
+
+          plan → retrieve → grade_retrieval ─[continue]→ write → critique → [revise|finish|error]
+                                   │
+                                   └─[retry]→ retrieve
+
+      The retry edge re-enters the retriever with the grader's rewritten
+      query (when one was emitted), bounded by
+      ``AIX_CORRECTIVE_RAG_MAX_ATTEMPTS`` (default 2). After max attempts
+      the loop unconditionally falls through to the writer with
+      ``retrieval_warning=True`` so the lesson carries a low-confidence
+      caveat instead of pretending nothing happened.
     """
     workflow = StateGraph(AgentState)
 
-    # Add nodes
+    # Always-on agent nodes (pre-#9 topology)
     workflow.add_node("plan", plan_node)
     workflow.add_node("retrieve", retrieve_node)
     workflow.add_node("write", write_node)
@@ -55,7 +82,32 @@ def _build_workflow() -> StateGraph:
 
     workflow.set_entry_point("plan")
     workflow.add_edge("plan", "retrieve")
-    workflow.add_edge("retrieve", "write")
+
+    if _corrective_rag_enabled():
+        # CORE 2 #9 — Corrective RAG topology
+        workflow.add_node("grade_retrieval", grade_retrieval_node)
+        workflow.add_edge("retrieve", "grade_retrieval")
+        workflow.add_conditional_edges(
+            "grade_retrieval",
+            should_retry_retrieval,
+            {
+                "retry": "retrieve",
+                "continue": "write",
+                "error": END,
+            },
+        )
+        logger.info(
+            "[LessonPlannerGraph] Corrective RAG (#9) ENABLED — "
+            "topology includes grade_retrieval node with retry loop."
+        )
+    else:
+        # Pre-#9 default topology — direct retrieve → write edge.
+        workflow.add_edge("retrieve", "write")
+        logger.debug(
+            "[LessonPlannerGraph] Corrective RAG disabled (default) — "
+            "using direct retrieve → write edge."
+        )
+
     workflow.add_edge("write", "critique")
 
     # Add conditional edge for revision loop

@@ -1,5 +1,5 @@
 {#
-  Chat attachments tray (CORE 2 #6.6 P3).
+  Chat attachments tray (CORE 2 #6.6 P3 / re-skin P5.4).
 
   Sits directly above the chat input. Renders one chip per file in
   ``lesson.uploaded_files_json``; each chip carries a remove button that
@@ -11,28 +11,29 @@
   both the upload POST and the remove DELETE responses — both routes
   return *this same partial*, which keeps the round-trip trivial.
 
+  PRESERVED FOR HTMX:
+    - id="chat-attachments"               ← hx-target for upload + delete
+    - hx-delete + hx-target + hx-swap     ← per chip's remove button
+
   Required context:
     lesson    Lesson ORM
 #}
 {% set files = lesson.uploaded_files_json or [] %}
 <div id="chat-attachments"
-     class="px-1 {% if files %}pb-2{% endif %}">
+     style="padding:0 4px; {% if files %}padding-bottom:8px;{% endif %}">
   {% if files %}
-    <div class="flex flex-wrap gap-1.5">
+    <div style="display:flex; flex-wrap:wrap; gap:6px;">
       {% for f in files %}
         {% set fid = f.id if f.id else loop.index0|string %}
-        <span class="inline-flex items-center gap-1.5 rounded-full
-                     border border-slate-200 bg-slate-50 px-2.5 py-1
-                     text-[11px] text-slate-700 shadow-sm">
-          <wa-icon name="file-lines" style="font-size:0.8rem;color:#475569;"></wa-icon>
-          <span class="max-w-[18ch] truncate"
+        <span class="aix-attach-chip">
+          <wa-icon name="file-lines" style="font-size:0.8rem; color:var(--aix-text-secondary);"></wa-icon>
+          <span style="max-width:18ch; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"
                 title="{{ f.filename }}">{{ f.filename }}</span>
-          <span class="text-slate-400">·</span>
-          <span class="text-slate-400">{{ ((f.size or 0) / 1024) | round(0, "floor") | int }} KB</span>
+          <span class="aix-attach-chip-sep">·</span>
+          <span class="aix-attach-chip-size">{{ ((f.size or 0) / 1024) | round(0, "floor") | int }} KB</span>
           {% if lesson.status != "running" %}
             <button type="button"
-                    class="ml-0.5 rounded-full p-0.5 text-slate-400
-                           hover:text-rose-600 hover:bg-rose-50"
+                    class="aix-attach-chip-remove"
                     aria-label="Rimuovi {{ f.filename }}"
                     title="Rimuovi"
                     hx-delete="/webui/lesson/{{ lesson.id }}/upload/{{ fid }}"
@@ -44,7 +45,8 @@
         </span>
       {% endfor %}
     </div>
-    <p class="mt-1 px-1 text-[10.5px] text-slate-400 flex items-center gap-1">
+    <p style="margin:6px 4px 0; font-size:10.5px; color:var(--aix-text-tertiary);
+              display:flex; align-items:center; gap:4px;">
       <wa-icon name="info-circle" style="font-size:0.7rem;"></wa-icon>
       <span>
         Gli allegati sono usati come <strong>contesto</strong> per la lezione e

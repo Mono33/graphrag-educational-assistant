@@ -1,5 +1,5 @@
 {#
-  Retriever Agent card (CORE 2 #6.6 P2 phase 2).
+  Retriever Agent card (CORE 2 #6.6 P2 phase 2 + #9.UX-3 / re-skin P5.4).
 
   Rendered after the `retrieve` LangGraph node finishes. The retriever's
   output is THE substrate for the lesson — KG nodes, relationships,
@@ -11,87 +11,387 @@
   an OOB swap — see ``service.py`` and ``routes.py`` for how the media
   block is composited into the SSE payload alongside this card.
 
+  ──────────────────────────────────────────────────────────────────────
+  P5.4 reskin scope — what changed and what DID NOT
+  ──────────────────────────────────────────────────────────────────────
+  CHANGED: colors / borders / spacing only. Tailwind sky/amber/rose/
+           emerald utility classes for the corrective-RAG outcome row
+           were replaced with brand ``.aix-outcome-callout--{success,
+           info,warning,error}`` classes — identical visual semantics,
+           cohesive with the rest of the warm-academic palette.
+
+  NOT FIXED (deferred to a later pass — see ClickUp doc #9.UX-4):
+    • B1 — ``_compute_retrieval_outcome`` in service.py mis-classifies
+           curated KG media as "hybrid retrieval", flipping non-UDL
+           queries into the ``adapted_with_hybrid`` (info) outcome.
+           Logic untouched; only its visual rendering moved here.
+    • B2 — The ``adapted_with_hybrid`` body copy below is UDL-specific
+           ("pedagogia inclusiva (UDL)"). When the lesson domain is
+           ``neuro`` it reads oddly. Copy untouched; the same Jinja
+           variables and identical Italian sentences carry through to
+           preserve backend semantics for now.
+
   Required context (set by ``_build_retriever_payload``):
     payload = {
       nodes_count, relationships_count, recommendations_count,
       media_counts: {videos, articles, oer},
+      media_total,               # CORE 2 #9.UX-5 — sum of the three buckets
       top_concepts: [...],
-      retrieval_confidence
+      retrieval_confidence,
+      # CORE 2 #9 — Corrective RAG (optional, only set when
+      # AIX_CORRECTIVE_RAG_ENABLED=true and grade_retrieval ran):
+      retrieval_grade,           # "relevant" | "ambiguous" | "irrelevant"
+      retrieval_grade_label,     # human-readable label
+      retrieval_grade_emoji,     # ✅ / ⚠️ / ❌
+      retrieval_grade_reason,    # short rationale
+      retrieval_attempts,        # 1..max
+      retrieval_attempts_max,    # configured ceiling — drives "N/M" badge
+      retrieval_outcome,         # CORE 2 #9.UX-3 — single token that
+                                 # drives this row's color + headline +
+                                 # explanatory copy. Values:
+                                 #   "success"             → green ✅
+                                 #   "adapted_with_hybrid" → blue ℹ️
+                                 #   "limited_kg_only"     → amber ⚠️
+                                 #   "grader_error"        → red ❌
+      retrieval_warning,         # True iff max attempts ended non-relevant
+      retrieval_rewritten_query, # rewrite the grader proposed (if any)
+      # CORE 2 #9.UX-5 — domain-aware teacher copy for the CR-OFF banner
+      # and the (always-on) bottom footer. Three tiers based on nodes_count:
+      #   "healthy"      ≥5 nodes  → sage banner with counts narrative
+      #   "limited"      1-4 nodes → amber banner with integration note
+      #   "out_of_scope" 0 nodes   → slate-blue banner with fallback note
+      domain,                    # "udl" | "neuro" | None
+      domain_label_short,        # "UDL" / "Neuro" — used in tier 1/2 + footer
+      domain_label_long,         # "UDL (pedagogia inclusiva)" / "Neuro" — tier 0
+      coverage_tier              # "healthy" | "limited" | "out_of_scope"
     }
+
+  Backward-compat: when corrective-RAG is OFF, ``retrieval_grade`` is None
+  and the CR-ON ``aix-outcome-callout`` block is skipped. The new CORE 2
+  #9.UX-5 ``aix-coverage-banner`` block then renders in its place (also
+  gated on ``not p.retrieval_grade``) so the two blocks are mutually
+  exclusive — only one ever renders per turn.
+
+  Pre-#9.UX-5 backward-compat: when ``coverage_tier`` is absent (legacy
+  state diffs), the banner block's outer guard ``{% if p.coverage_tier %}``
+  silently skips it — the card renders identically to pre-#9.UX-5.
 #}
 
 {% set p = payload or {} %}
 {% set mc = p.get('media_counts') or {} %}
 
-<div class="flex items-start gap-3">
+<div class="aix-agent-shell">
 
-  {# ── Avatar (retriever = violet / knowledge graph) ────────────────── #}
-  <div class="flex-shrink-0 w-9 h-9 rounded-full bg-violet-100 text-violet-700
-              flex items-center justify-center ring-2 ring-white shadow-sm">
-    <wa-icon name="diagram-project" style="font-size:1rem;"></wa-icon>
+  <div class="aix-agent-avatar aix-agent-avatar--retriever">
+    <wa-icon name="diagram-project"></wa-icon>
   </div>
 
-  {# ── Card body ────────────────────────────────────────────────────── #}
-  <div class="flex-1 min-w-0">
-    <article class="rounded-xl border border-violet-200 bg-white shadow-sm overflow-hidden">
+  <div class="aix-agent-body">
+    <article class="aix-agent-card aix-agent-card--retriever aix-card-stripe-retriever">
 
-      <header class="px-4 py-2 border-b border-violet-100 bg-violet-50/60
-                     flex items-center justify-between gap-2 flex-wrap">
-        <div class="flex items-baseline gap-2">
-          <strong class="text-slate-800">Retriever Agent</strong>
-          <span class="text-xs text-slate-500">· interroga il Knowledge Graph e i media curati</span>
+      <header class="aix-agent-card-header aix-agent-card-header--retriever">
+        <div class="aix-agent-card-title">
+          <strong>Retriever Agent</strong>
+          <span class="aix-agent-card-role">· interroga il Knowledge Graph e i media curati</span>
         </div>
-        <wa-tag size="small" variant="neutral" pill>retrieve</wa-tag>
+        <span class="aix-pill aix-pill-neutral">retrieve</span>
       </header>
 
-      <div class="px-4 py-3 space-y-3 text-sm">
+      <div class="aix-agent-card-body" style="display:flex; flex-direction:column; gap:12px;">
 
         {# Tool-call header: shows we explicitly hit GraphRAG #}
-        <div class="flex items-center gap-2 text-xs text-slate-600
-                    bg-slate-50 border border-slate-200 rounded px-2 py-1.5 w-fit">
-          <wa-icon name="wrench" style="font-size:0.85rem;"></wa-icon>
-          <code class="text-[11px]">graphrag.search</code>
-          <span class="text-slate-400">·</span>
+        <div class="aix-tool-pill">
+          <wa-icon name="wrench" style="font-size:0.8rem;"></wa-icon>
+          <code>graphrag.search</code>
+          <span style="color:var(--aix-border-medium);">·</span>
           <span>{{ p.get('retrieval_confidence') or 'medium' }} confidence</span>
         </div>
 
         {# Counts grid #}
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-center">
-          <div class="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2">
-            <div class="text-lg font-semibold text-slate-800">{{ p.get('nodes_count', 0) }}</div>
-            <div class="text-[10px] uppercase tracking-wide text-slate-500">nodi KG</div>
+        <div class="aix-stat-grid">
+          <div class="aix-stat-tile">
+            <div class="aix-stat-tile-value">{{ p.get('nodes_count', 0) }}</div>
+            <div class="aix-stat-tile-label">nodi KG</div>
           </div>
-          <div class="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2">
-            <div class="text-lg font-semibold text-slate-800">{{ p.get('relationships_count', 0) }}</div>
-            <div class="text-[10px] uppercase tracking-wide text-slate-500">relazioni</div>
+          <div class="aix-stat-tile">
+            <div class="aix-stat-tile-value">{{ p.get('relationships_count', 0) }}</div>
+            <div class="aix-stat-tile-label">relazioni</div>
           </div>
-          <div class="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2">
-            <div class="text-lg font-semibold text-slate-800">{{ p.get('recommendations_count', 0) }}</div>
-            <div class="text-[10px] uppercase tracking-wide text-slate-500">strategie</div>
+          <div class="aix-stat-tile">
+            <div class="aix-stat-tile-value">{{ p.get('recommendations_count', 0) }}</div>
+            <div class="aix-stat-tile-label">strategie</div>
           </div>
-          <div class="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2">
-            <div class="text-lg font-semibold text-slate-800">
+          <div class="aix-stat-tile">
+            <div class="aix-stat-tile-value">
               {{ (mc.get('videos', 0) + mc.get('articles', 0) + mc.get('oer', 0)) }}
             </div>
-            <div class="text-[10px] uppercase tracking-wide text-slate-500">media</div>
+            <div class="aix-stat-tile-label">media</div>
           </div>
         </div>
 
         {# Top-N concept titles #}
         {% if p.get('top_concepts') %}
           <div>
-            <div class="text-xs uppercase tracking-wide text-slate-500 mb-1">
+            <div class="aix-section-label" style="margin-bottom:6px;">
               Concetti più rilevanti recuperati
             </div>
-            <div class="flex flex-wrap gap-1">
+            <div class="aix-chip-row">
               {% for c in p.top_concepts %}
-                <wa-tag size="small" variant="neutral" pill>{{ c }}</wa-tag>
+                <span class="aix-pill aix-pill-neutral">{{ c }}</span>
               {% endfor %}
             </div>
           </div>
         {% endif %}
 
-        <p class="text-xs text-slate-500 italic">
+        {# ── CORE 2 #9.UX-5 — Coverage banner (Corrective-RAG-OFF only) ─
+           Renders ONLY when corrective-RAG is OFF (i.e.
+           ``payload.retrieval_grade`` is None). This is the teacher's
+           PRIMARY explainability layer in the CR-OFF production default:
+           the CR-ON ``aix-outcome-callout`` block below is skipped, and
+           the raw stat-grid alone doesn't tell the teacher what the
+           numbers MEAN for the lesson. The banner closes that gap with
+           a 3-tier domain-aware narrative.
+
+           Three tiers driven by ``payload.coverage_tier``:
+             * "healthy"      (≥5 nodes)  sage    — full KG anchoring
+             * "limited"      (1-4 nodes) amber   — partial, will blend
+             * "out_of_scope" (0 nodes)   info    — fallback to general
+                                                     didactic knowledge
+                                                     adapted to the
+                                                     class profile
+
+           Domain labels come from ``_resolve_domain_labels`` in
+           service.py — UDL gets the explanatory "(pedagogia inclusiva)"
+           parenthetical in tier 0; neuro stays short ("Neuro") because
+           the user-facing convention for the neuro domain is the bare
+           word.
+
+           Mutually exclusive with the CR-ON callout below — both blocks
+           gate on ``payload.retrieval_grade`` (one with ``if``, the
+           other with ``if not``), so exactly one renders per turn.
+        #}
+        {% if (not p.get('retrieval_grade')) and p.get('coverage_tier') %}
+          {% set _tier = p.get('coverage_tier') %}
+          {% set _dom_short = p.get('domain_label_short') or 'il dominio attivo' %}
+          {% set _dom_long  = p.get('domain_label_long')  or _dom_short %}
+
+          {% if _tier == 'healthy' %}
+            {% set _tier_class = 'aix-coverage-banner--healthy' %}
+            {% set _dot_class = 'aix-dot-success' %}
+          {% elif _tier == 'limited' %}
+            {% set _tier_class = 'aix-coverage-banner--limited' %}
+            {% set _dot_class = 'aix-dot-warning' %}
+          {% else %}
+            {% set _tier_class = 'aix-coverage-banner--out-of-scope' %}
+            {% set _dot_class = 'aix-dot-info' %}
+          {% endif %}
+
+          <div class="aix-coverage-banner {{ _tier_class }}">
+
+            {% if _tier == 'healthy' %}
+              <span class="aix-coverage-banner-headline">
+                <span class="aix-dot {{ _dot_class }}"></span>
+                <span>Ricerca completata sulla base {{ _dom_short }}</span>
+              </span>
+              <p class="aix-coverage-banner-body">
+                {{ p.get('recommendations_count', 0) }} strategie selezionate da
+                {{ p.get('nodes_count', 0) }} concetti correlati, con
+                {{ p.get('media_total', 0) }} risorse multimediali già pronte
+                all'uso.
+              </p>
+
+            {% elif _tier == 'limited' %}
+              <span class="aix-coverage-banner-headline">
+                <span class="aix-dot {{ _dot_class }}"></span>
+                <span>Copertura parziale per questo argomento nella base {{ _dom_short }}</span>
+              </span>
+              <p class="aix-coverage-banner-body">
+                Trovate {{ p.get('recommendations_count', 0) }} strategie
+                specifiche. La lezione sarà integrata con strategie didattiche
+                generali per restare completa e coerente.
+              </p>
+
+            {% else %}{# out_of_scope #}
+              <span class="aix-coverage-banner-headline">
+                <span class="aix-dot {{ _dot_class }}"></span>
+                <span>Questo argomento non è presente nella base {{ _dom_long }}</span>
+              </span>
+              <p class="aix-coverage-banner-body">
+                La lezione si baserà su conoscenze didattiche generali del nostro
+                assistente e fonti esterne verificate ed integrate.
+              </p>
+            {% endif %}
+
+          </div>
+        {% endif %}
+
+        {# ── CORE 2 #9 + #9.UX-3 — Corrective-RAG grading row ────────────
+           Renders ONLY when ``payload.retrieval_grade`` is present
+           (i.e. AIX_CORRECTIVE_RAG_ENABLED=true and the
+           grade_retrieval node ran). With the feature flag off the
+           field is None and this whole block is silently skipped, so
+           pre-#9 cards render bit-for-bit identically.
+
+           #9.UX-3 — the row's color, icon, headline, and explanatory
+           copy are driven by a SINGLE token (``retrieval_outcome``)
+           computed in ``service._compute_retrieval_outcome``. Four
+           outcomes:
+             * success              → green ✅  (KG covered the query)
+             * adapted_with_hybrid  → blue  ℹ️  (KG out-of-scope, but
+                                                external sources filled
+                                                the gap; this is NOT an
+                                                error — the lesson is
+                                                still useful)
+             * limited_kg_only      → amber ⚠️  (KG sparse, no hybrid;
+                                                manual review needed)
+             * grader_error         → red   ❌  (grader LLM failed)
+
+           P5.4 reskin: the variant class is computed once (``_variant``)
+           and applied to ``.aix-outcome-callout``; everything else is
+           identical to pre-skin (including the hardcoded UDL phrasing
+           in ``adapted_with_hybrid`` — see file header re: B2 deferral).
+        #}
+        {% if p.get('retrieval_grade') %}
+          {% set outcome = p.get('retrieval_outcome') or 'success' %}
+
+          {% if outcome == 'adapted_with_hybrid' %}
+            {% set _variant = 'info' %}
+            {% set _icon = 'ℹ️' %}
+            {% set _headline = 'Valutazione recupero · Adattamento riuscito' %}
+          {% elif outcome == 'limited_kg_only' %}
+            {% set _variant = 'warning' %}
+            {% set _icon = '⚠️' %}
+            {% set _headline = 'Valutazione recupero · Copertura limitata' %}
+          {% elif outcome == 'grader_error' %}
+            {% set _variant = 'error' %}
+            {% set _icon = '❌' %}
+            {% set _headline = 'Valutazione recupero · Errore valutatore' %}
+          {% else %}
+            {% set _variant = 'success' %}
+            {% set _icon = p.get('retrieval_grade_emoji') or '✅' %}
+            {% set _headline = 'Valutazione recupero · ' ~ (p.get('retrieval_grade_label') or p.retrieval_grade) %}
+          {% endif %}
+
+          <div class="aix-outcome-callout aix-outcome-callout--{{ _variant }}">
+
+            {# ── Header: icon + headline + Tentativi badge ───────────── #}
+            <div style="display:flex; align-items:baseline; justify-content:space-between;
+                        gap:8px; flex-wrap:wrap;">
+              <span class="aix-outcome-callout-headline">
+                <span style="font-size:14px; line-height:1;">{{ _icon }}</span>
+                <span>{{ _headline }}</span>
+              </span>
+              {# CORE 2 #9.UX-2 — "Tentativi: N/M" badge.
+                 Progressive disclosure: only show when N>1 (i.e. the
+                 retry path actually fired). The common happy-path case
+                 (one attempt → relevant) stays visually clean. #}
+              {% if (p.get('retrieval_attempts') or 0) > 1 %}
+                <span class="aix-outcome-callout-attempts">
+                  Tentativi: {{ p.retrieval_attempts }}/{{ p.get('retrieval_attempts_max') or p.retrieval_attempts }}
+                </span>
+              {% endif %}
+            </div>
+
+            {# ── Body: outcome-specific explanatory copy ──────────────
+               The grader's own ``retrieval_grade_reason`` is shown
+               verbatim in the green / red cases (it's already rich
+               explainability — see the screenshot from the ADHD turn
+               we lifted the structure from). For blue / amber we
+               surface a structured "what we did + why" block, with
+               the grader's reason appended as a small "Dettaglio"
+               line for full transparency.
+            #}
+            {% if outcome == 'adapted_with_hybrid' %}
+              <p class="aix-outcome-callout-body">
+                Il Knowledge Graph è specializzato in pedagogia inclusiva
+                (UDL) e variabilità dell'apprendimento, non nel contenuto
+                disciplinare specifico. Per questa richiesta ho integrato:
+              </p>
+              <ul class="aix-outcome-callout-body"
+                  style="margin:6px 0 0 18px; padding:0; font-size:13px; line-height:1.5;">
+                <li>
+                  <strong>Pedagogia &amp; profilo apprendenti</strong> dal KG:
+                  {{ p.get('nodes_count', 0) }} concetti,
+                  {{ p.get('recommendations_count', 0) }} strategie didattiche
+                </li>
+                <li>
+                  <strong>Contenuto disciplinare</strong> da risorse esterne curate:
+                  {{ mc.get('articles', 0) }} articoli scientifici,
+                  {{ mc.get('oer', 0) }} OER &amp; manuali aperti{% if mc.get('videos', 0) %},
+                  {{ mc.get('videos', 0) }} video{% endif %}
+                </li>
+              </ul>
+              {% if p.get('retrieval_grade_reason') %}
+                <p class="aix-outcome-callout-detail">
+                  Dettaglio del valutatore: {{ p.retrieval_grade_reason }}
+                </p>
+              {% endif %}
+            {% elif outcome == 'limited_kg_only' %}
+              <p class="aix-outcome-callout-body">
+                Il Knowledge Graph contiene poche corrispondenze per questa
+                richiesta, e nessuna risorsa esterna è stata integrata.
+                La lezione è generata con queste limitazioni:
+                <strong>verifica manualmente il contenuto disciplinare</strong>
+                prima dell'uso in classe.
+              </p>
+              {% if p.get('retrieval_grade_reason') %}
+                <p class="aix-outcome-callout-detail">
+                  Dettaglio del valutatore: {{ p.retrieval_grade_reason }}
+                </p>
+              {% endif %}
+            {% elif outcome == 'grader_error' %}
+              <p class="aix-outcome-callout-body">
+                Il valutatore non ha potuto giudicare la qualità del
+                recupero. Il recupero originale è stato comunque usato
+                per generare la lezione (fail-open). Considera di
+                rigenerare se il risultato non è soddisfacente.
+              </p>
+              {% if p.get('retrieval_grade_reason') %}
+                <p class="aix-outcome-callout-detail">
+                  {{ p.retrieval_grade_reason }}
+                </p>
+              {% endif %}
+            {% else %}
+              {# success — original behaviour: surface grader's own reason verbatim #}
+              {% if p.get('retrieval_grade_reason') %}
+                <p class="aix-outcome-callout-body">{{ p.retrieval_grade_reason }}</p>
+              {% endif %}
+            {% endif %}
+
+            {# ── Rewrite — surfaced as a labelled inline line ──────────
+               CORE 2 #9 (Bonus UX) — when the grader proposed a rewrite
+               that was actually used in a retry attempt, surface it
+               as first-class explainability so the teacher can see
+               *what query the system reformulated to*. The attempt
+               index is included when known (>1) for traceability. #}
+            {% if p.get('retrieval_rewritten_query') %}
+              <div style="margin-top:8px; font-size:11.5px; color:var(--aix-text-secondary);">
+                <span style="font-style:italic; color:var(--aix-text-tertiary);">
+                  Query riformulata{% if (p.get('retrieval_attempts') or 0) > 1 %}
+                    al {{ p.retrieval_attempts }}° tentativo{% endif %}:
+                </span>
+                <code style="margin-left:4px;">{{ p.retrieval_rewritten_query }}</code>
+              </div>
+            {% endif %}
+
+            {# ── Conclusion — outcome-specific trust verdict ──────────
+               Only the blue case adds a "→" conclusion line because
+               the green case is self-explanatory and the amber/red
+               cases already include their own action prompt in the
+               body copy above. #}
+            {% if outcome == 'adapted_with_hybrid' %}
+              <p class="aix-outcome-callout-conclusion">
+                → La lezione integra pedagogia inclusiva (KG) e contenuto
+                disciplinare (risorse esterne curate). Le fonti esterne
+                sono citate inline nel piano per permetterti di
+                verificarle.
+              </p>
+            {% endif %}
+
+          </div>
+        {% endif %}
+
+        <p style="font-size:12px; font-style:italic; color:var(--aix-text-tertiary); margin:0;">
           I dettagli completi (video curati, articoli, manuali OER) sono
           disponibili nel pannello "Risorse multimediali" a destra.
         </p>
@@ -99,9 +399,21 @@
       </div>
 
     </article>
-    <div class="text-[11px] text-slate-400 mt-1 ml-1 flex items-center gap-1">
-      <wa-icon name="diagram-project" style="font-size:0.7rem;"></wa-icon>
-      <span>Retriever · GraphRAG + curated media</span>
+    {# CORE 2 #9.UX-5 — domain-aware footer. Pre-skin label was the
+       internal ``"Retriever · GraphRAG + curated media"`` (technical).
+       New label surfaces the actual data source the lesson rests on,
+       parameterized by the active domain. The verb "Knowledge graph"
+       is intentional (teacher decision, see ClickUp #9.UX-5) — may be
+       revisited in a future polish pass. Falls back to the legacy
+       generic label when ``domain_label_short`` is unknown so legacy
+       state diffs render identically to pre-#9.UX-5. #}
+    <div class="aix-agent-footer-label">
+      <wa-icon name="diagram-project" style="font-size:0.75rem;"></wa-icon>
+      {% if p.get('domain_label_short') %}
+        <span>Fonte: Knowledge graph della didattica {{ p.domain_label_short }} + risorse multimediali curate</span>
+      {% else %}
+        <span>Retriever · GraphRAG + curated media</span>
+      {% endif %}
     </div>
   </div>
 

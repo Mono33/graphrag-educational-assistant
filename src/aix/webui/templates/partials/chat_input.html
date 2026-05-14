@@ -1,5 +1,5 @@
 {#
-  Bottom chat input — three states (CORE 2 #6.6 P2 phase 2 + P3 + #10.1).
+  Bottom chat input — three states (CORE 2 #6.6 P2 phase 2 + P3 + #10.1 / re-skin P5.4).
 
   draft     → ACTIVE first-turn form. Posts ``query`` to /run and the
               response (rendered chat_conversation.html) is swapped into
@@ -32,6 +32,24 @@
   matching ``#chat-input-wrapper`` element on the page, leaving the rest
   of the SSE event (the placeholder lesson card or error card) to flow
   through the normal ``beforeend`` swap on ``#chat-cards``.
+
+  PRESERVED FOR HTMX / BACKEND CONTRACT (do not rename):
+    - id="chat-input-wrapper"     ← OOB-swap anchor
+    - id="chat-upload-input"      ← clicked by paperclip button's onclick
+    - id="chat-input-form"        ← stable id (referenced from devtools / E2E)
+    - hx-swap-oob flag            ← only when ``_oob`` is True
+    - all hx-* on the upload input + form
+    - name="query"                ← read by /run handler
+    - the onkeydown handler       ← Enter-submits behaviour
+    - the WebAwesome design rules noted in the original comment (kept verbatim
+      in the icon-only buttons below)
+
+  P5.4 reskin: just CSS classes change. Native <textarea> stays, <input
+  type=file> stays hidden, the two icon buttons stay <button> + <wa-icon>
+  (NOT <wa-button>) and the submit button stays a native <button> styled as
+  ``.aix-chat-input-send`` (no native title= replacements either — we keep
+  the existing title= tooltips that have been live and accessible since
+  CORE 2 #6.6 P3 smoke-testing — see ClickUp doc 10.4 → 10.5).
 
   Required context:
     lesson    Lesson ORM
@@ -76,72 +94,29 @@
         hx-target="#chat-conversation"
         hx-swap="innerHTML"
         hx-disabled-elt="find textarea, find button[type=submit]"
-        class="space-y-1">
+        style="display:flex; flex-direction:column; gap:4px;">
 
-    <div class="rounded-2xl border border-slate-200 bg-white shadow-sm p-2
-                flex items-end gap-2
-                focus-within:ring-2 focus-within:ring-sky-300/60
-                focus-within:border-sky-300">
+    <div class="aix-chat-input-shell">
 
-      {#
-        Action buttons (left) — paperclip triggers the hidden file input
-        declared above; the input handles the htmx round-trip itself.
-
-        Two design rules captured from CORE 2 #6.6 P3 smoke testing
-        (2026-04-26 — see ClickUp doc changelog 10.4 → 10.5):
-
-          1. Use plain <button> + <wa-icon> for icon-only buttons.
-             <wa-button> with only an icon in its default slot was
-             observed to render zero-width even with the doc-recommended
-             ``label="..."`` on the inner <wa-icon>. Labeled buttons
-             (e.g. the "Invia" submit below) can keep using <wa-button>
-             with slot="prefix" — those work fine.
-
-          2. Do NOT wrap form buttons in <wa-tooltip>. The CDN bundle
-             we load (webawesome.com 3.5.0) does not register the
-             <wa-tooltip> custom element, so the global FOUC rule
-             ``:not(:defined) { visibility: hidden }`` in _base.html
-             keeps the entire tooltip subtree (including our slotted
-             plain button) permanently invisible. Native HTML ``title=``
-             gives the same hover-tooltip behaviour, is announced by
-             every screen reader, and has zero JS dependency. We can
-             revisit fancier styled tooltips in P5 polish, gated on a
-             working <wa-tooltip>.
-      #}
-      <div class="flex items-center gap-1 pb-0.5">
+      <div class="aix-chat-input-icons">
         <button type="button"
+                class="aix-chat-input-icon-btn"
                 aria-label="Allega documento"
                 title="Allega PDF, TXT o Markdown come contesto per la lezione (max 10 MB)"
-                class="w-8 h-8 inline-flex items-center justify-center
-                       rounded-md text-slate-500 hover:text-slate-800
-                       hover:bg-slate-100 focus:outline-none
-                       focus-visible:ring-2 focus-visible:ring-sky-300/60
-                       transition-colors"
                 onclick="document.getElementById('chat-upload-input').click()">
           <wa-icon name="paperclip" style="font-size:0.95rem;"></wa-icon>
         </button>
         <button type="button" disabled
+                class="aix-chat-input-icon-btn"
                 aria-label="Mermaid"
-                title="Inserimento diagramma Mermaid — disponibile in una versione successiva"
-                class="w-8 h-8 inline-flex items-center justify-center
-                       rounded-md text-slate-300 cursor-not-allowed">
+                title="Inserimento diagramma Mermaid — disponibile in una versione successiva">
           <wa-icon name="diagram-project" style="font-size:0.95rem;"></wa-icon>
         </button>
       </div>
 
-      {#
-        We use a native <textarea> rather than <wa-textarea> here because
-        WebAwesome's wa-textarea has its own form-association quirks with
-        htmx form submission; native textareas behave deterministically.
-        Keystroke handling: Enter submits, Shift+Enter inserts newline —
-        the standard chat affordance. ``required`` + ``minlength`` give
-        cheap client-side validation; the server re-validates.
-      #}
       <textarea
         name="query"
-        class="flex-1 resize-none border-0 bg-transparent
-               px-2 py-2 text-sm text-slate-800 placeholder-slate-400
-               focus:outline-none"
+        class="aix-chat-input-textarea"
         rows="2"
         required
         minlength="3"
@@ -151,21 +126,19 @@
         onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault(); if(this.value.trim().length>=3){this.form.requestSubmit();}}"
       ></textarea>
 
-      <div class="pb-0.5">
-        <wa-button type="submit" size="small" variant="brand"
-                   aria-label="Invia messaggio e genera lezione">
-          <wa-icon slot="prefix" name="paper-plane" style="font-size:0.95rem;"></wa-icon>
-          Invia
-        </wa-button>
-      </div>
+      <button type="submit"
+              class="aix-chat-input-send"
+              aria-label="Invia messaggio e genera lezione">
+        <wa-icon name="paper-plane" style="font-size:0.85rem;"></wa-icon>
+        <span>Invia</span>
+      </button>
 
     </div>
 
-    <p class="text-[11px] text-slate-500 px-3 flex items-center gap-1.5">
+    <p class="aix-chat-input-hint">
       <wa-icon name="circle-info" style="font-size:0.75rem;"></wa-icon>
       <span>
-        Premi <kbd class="rounded bg-slate-100 px-1 py-0.5 text-[10px]
-                          border border-slate-200">Invio</kbd>
+        Premi <kbd>Invio</kbd>
         per inviare la richiesta. L'agente userà anche il profilo educativo a
         sinistra e gli eventuali documenti allegati. Tempo previsto: 60–90 secondi.
       </span>
@@ -175,17 +148,14 @@
 {% elif lesson.status == "running" %}
 
   {# ── DISABLED while the agent is generating ──────────────────────── #}
-  <div class="rounded-2xl border border-slate-200 bg-white shadow-sm
-              p-2 flex items-end gap-2 opacity-70" aria-disabled="true">
-    <div class="flex-1 px-3 py-2 text-sm text-slate-500
-                flex items-center gap-2">
+  <div class="aix-chat-input-shell aix-chat-input-shell--disabled" aria-disabled="true">
+    <div style="flex:1; display:flex; align-items:center; gap:8px;
+                font-size:13px; color:var(--aix-text-secondary); padding:6px 10px;">
       <wa-spinner style="font-size:0.85rem;"></wa-spinner>
       <span>Generazione in corso… Attendi il termine prima di inviare un altro messaggio.</span>
     </div>
-    <button type="button" disabled aria-label="In corso"
-            class="w-8 h-8 inline-flex items-center justify-center
-                   rounded-md bg-sky-300 text-white cursor-not-allowed">
-      <wa-icon name="paper-plane" style="font-size:0.95rem;"></wa-icon>
+    <button type="button" disabled class="aix-chat-input-send" aria-label="In corso">
+      <wa-icon name="paper-plane" style="font-size:0.85rem;"></wa-icon>
     </button>
   </div>
 
@@ -228,39 +198,29 @@
         hx-target="#chat-conversation"
         hx-swap="innerHTML"
         hx-disabled-elt="find textarea, find button[type=submit]"
-        class="space-y-1">
+        style="display:flex; flex-direction:column; gap:4px;">
 
-    <div class="rounded-2xl border border-slate-200 bg-white shadow-sm p-2
-                flex items-end gap-2
-                focus-within:ring-2 focus-within:ring-sky-300/60
-                focus-within:border-sky-300">
+    <div class="aix-chat-input-shell">
 
-      <div class="flex items-center gap-1 pb-0.5">
+      <div class="aix-chat-input-icons">
         <button type="button"
+                class="aix-chat-input-icon-btn"
                 aria-label="Allega documento"
                 title="Allega PDF, TXT o Markdown come contesto per la lezione (max 10 MB)"
-                class="w-8 h-8 inline-flex items-center justify-center
-                       rounded-md text-slate-500 hover:text-slate-800
-                       hover:bg-slate-100 focus:outline-none
-                       focus-visible:ring-2 focus-visible:ring-sky-300/60
-                       transition-colors"
                 onclick="document.getElementById('chat-upload-input').click()">
           <wa-icon name="paperclip" style="font-size:0.95rem;"></wa-icon>
         </button>
         <button type="button" disabled
+                class="aix-chat-input-icon-btn"
                 aria-label="Mermaid"
-                title="Inserimento diagramma Mermaid — disponibile in una versione successiva"
-                class="w-8 h-8 inline-flex items-center justify-center
-                       rounded-md text-slate-300 cursor-not-allowed">
+                title="Inserimento diagramma Mermaid — disponibile in una versione successiva">
           <wa-icon name="diagram-project" style="font-size:0.95rem;"></wa-icon>
         </button>
       </div>
 
       <textarea
         name="query"
-        class="flex-1 resize-none border-0 bg-transparent
-               px-2 py-2 text-sm text-slate-800 placeholder-slate-400
-               focus:outline-none"
+        class="aix-chat-input-textarea"
         rows="2"
         required
         minlength="3"
@@ -269,21 +229,19 @@
         onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault(); if(this.value.trim().length>=3){this.form.requestSubmit();}}"
       ></textarea>
 
-      <div class="pb-0.5">
-        <wa-button type="submit" size="small" variant="brand"
-                   aria-label="Invia messaggio di follow-up">
-          <wa-icon slot="prefix" name="paper-plane" style="font-size:0.95rem;"></wa-icon>
-          Invia
-        </wa-button>
-      </div>
+      <button type="submit"
+              class="aix-chat-input-send"
+              aria-label="Invia messaggio di follow-up">
+        <wa-icon name="paper-plane" style="font-size:0.85rem;"></wa-icon>
+        <span>Invia</span>
+      </button>
 
     </div>
 
-    <p class="text-[11px] text-slate-500 px-3 flex items-center gap-1.5">
+    <p class="aix-chat-input-hint">
       <wa-icon name="circle-info" style="font-size:0.75rem;"></wa-icon>
       <span>
-        Premi <kbd class="rounded bg-slate-100 px-1 py-0.5 text-[10px]
-                          border border-slate-200">Invio</kbd>
+        Premi <kbd>Invio</kbd>
         per continuare la conversazione. La lezione precedente resta
         visibile sopra; la nuova risposta verrà aggiunta al thread.
       </span>

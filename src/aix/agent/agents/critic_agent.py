@@ -6,6 +6,7 @@ Reviews lesson plans for quality and provides feedback.
 
 import json
 import logging
+import os
 import re
 from typing import Optional, Dict, Any
 from dataclasses import dataclass
@@ -188,9 +189,22 @@ class CriticAgent:
             )
         
         try:
+            # CORE 2 #11a — JSON parse hardening (2026-05-09):
+            # See Planner-side comment for full context. The CriticAgent's
+            # silent fallthrough below (``decision="APPROVE"`` on parse
+            # failure) is the exact behaviour the doc flags as the most
+            # dangerous silent-failure mode — a malformed Critic response
+            # would historically ship a lesson with verdict
+            # *"Approved due to parsing error"*. Adding ``json_mode=True``
+            # eliminates ~half of those failures up-front (provider returns
+            # valid JSON or fails loudly), and the structured log below
+            # makes the remainder *visible* rather than indistinguishable
+            # from a real approval. Default-on; ``build_completion_kwargs``
+            # auto-skips for reasoning models where it would be rejected.
             completion_kwargs = app_config.openai.build_completion_kwargs(
                 temperature=0.3,
                 max_tokens=2000,
+                json_mode=True,
             )
             response = await client.chat.completions.create(
                 messages=[
@@ -221,10 +235,45 @@ class CriticAgent:
             return result
             
         except json.JSONDecodeError as e:
+            # CORE 2 #11a (2026-05-09): structured parse-error log + env-gated
+            # behaviour. The legacy default is ``approve`` (today's silent
+            # auto-approve with summary "Approved due to parsing error") —
+            # kept as default so this change is byte-identical to pre-#11a
+            # behaviour. Ops can flip the env to ``revise`` to force the
+            # revision loop (exposes the failure to the writer-revise pass)
+            # or ``raise`` to hard-fail the run (best for staging once the
+            # parse-error rate is observed and proven low under json_mode).
+            raw_preview = content[:300] if "content" in dir() else "<not set>"
+            mode = (os.getenv("AIX_CRITIC_PARSE_ERROR_BEHAVIOR") or "approve").strip().lower()
             logger.error(
-                "[CriticAgent] Failed to parse JSON response: %s — raw content (first 300 chars): %r",
-                e, content[:300] if "content" in dir() else "<not set>",
+                "event=agent_parse_error agent=critic mode=%s err=%s raw_preview=%r",
+                mode, e, raw_preview,
             )
+
+            if mode == "raise":
+                raise
+
+            if mode == "revise":
+                # Surface the failure into the revision loop — Writer will
+                # see the typed marker in revision_instructions and the
+                # next critique cycle gets a fresh, hopefully-parseable run.
+                return CritiqueResult(
+                    scores={},
+                    average_score=2.0,
+                    decision="REVISE",
+                    strengths=[],
+                    weaknesses=["Critic response was unparseable JSON (parse-error fallback)"],
+                    revision_instructions=(
+                        "[parse_error] The previous critic response was malformed and could "
+                        "not be parsed. Please regenerate the lesson — your previous draft is "
+                        "kept; this revision pass exists to recover from a transient critic "
+                        "JSON error, not because of any specific issue with the lesson content."
+                    ),
+                    summary="[parse_error] Critic returned malformed JSON; forcing one revision pass for recovery.",
+                )
+
+            # Default: legacy "approve" path — unchanged behaviour. The only
+            # observable difference from pre-#11a is the log line above.
             return CritiqueResult(
                 scores={},
                 average_score=3.5,

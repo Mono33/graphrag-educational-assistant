@@ -1,7 +1,7 @@
 {% extends "_base.html" %}
 
 {#
-  Lesson chat workspace (CORE 2 #6.6 P2 phase 2).
+  Lesson chat workspace (CORE 2 #6.6 P2 phase 2 / re-skin P5.4).
 
   3-pane layout:
 
@@ -38,48 +38,62 @@
   the Lesson row today, so reload-when-complete shows only the user
   message + the final lesson card. Persisting per-agent events as JSON is
   follow-up work (see ClickUp doc — P4 / future).
+
+  P5.4 reskin notes:
+    Pure visual pass — every ``id=…``, ``hx-…``, ``sse-…`` and OOB swap
+    marker is preserved byte-identical because the chat is driven by
+    htmx-SSE and any drift would break the live stream. Layout shell
+    (3-pane grid + order) is also identical; only the surface styling
+    (typography, colors, spacing) follows ``docs/mockups/final_04_workspace.png``.
 #}
 
 {% set status_variant = {
     'draft':    'neutral',
     'running':  'warning',
     'complete': 'success',
-    'error':    'danger'
+    'error':    'error'
 }.get(lesson.status, 'neutral') %}
 
+{% set status_label = {
+    'draft':    'bozza',
+    'running':  'in corso',
+    'complete': 'completata',
+    'error':    'errore'
+}.get(lesson.status, lesson.status) %}
+
 {% block content %}
-<section class="max-w-7xl mx-auto space-y-4">
+<section class="space-y-5">
 
   {# ────────────────────────────────────────────────────────────────── #}
-  {# Header                                                           #}
+  {# Header                                                            #}
   {# ────────────────────────────────────────────────────────────────── #}
-  <div class="flex items-start justify-between gap-4 flex-wrap">
-    <div class="space-y-1 min-w-0">
-      <h1 class="text-2xl md:text-3xl font-serif tracking-tight truncate">
+  <header class="aix-workspace-header">
+    <div class="min-w-0">
+      <h1 class="aix-workspace-title truncate">
         {{ lesson.title or "Lezione senza titolo" }}
       </h1>
-      <p class="text-xs text-slate-500 flex flex-wrap items-center gap-x-3 gap-y-1">
-        <span>ID <code class="text-[10px]">{{ lesson.id }}</code></span>
-        <span>·</span>
+      <p class="aix-workspace-meta">
+        <span>ID <code>{{ lesson.id }}</code></span>
+        <span class="aix-workspace-meta-sep">·</span>
         <span>Stato
-          <wa-tag size="small" variant="{{ status_variant }}" pill>{{ lesson.status }}</wa-tag>
+          <span class="aix-pill aix-pill-{{ status_variant }}" style="margin-left:4px;">
+            {{ status_label }}
+          </span>
         </span>
-        <span>·</span>
+        <span class="aix-workspace-meta-sep">·</span>
         <span>Creata il {{ lesson.created_at.strftime('%d/%m/%Y %H:%M') }}</span>
       </p>
     </div>
-    <a href="/webui/lesson/new" class="no-underline">
-      <wa-button size="small" variant="default">
-        <wa-icon slot="prefix" name="circle-plus"></wa-icon>
-        Nuova lezione
-      </wa-button>
+    <a href="/webui/lesson/new" class="aix-btn aix-btn-outline aix-btn-sm">
+      <wa-icon name="circle-plus" style="font-size:0.85rem;"></wa-icon>
+      Nuova lezione
     </a>
-  </div>
+  </header>
 
   {# ────────────────────────────────────────────────────────────────── #}
   {# 3-pane workspace                                                 #}
   {# ────────────────────────────────────────────────────────────────── #}
-  <div class="grid grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)_320px] gap-4">
+  <div class="grid grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)_320px] gap-5">
 
     {# ── LEFT — profile sidebar (collapses below the chat on mobile) ── #}
     <div class="order-2 lg:order-1 space-y-4">

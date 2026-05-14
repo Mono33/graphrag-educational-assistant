@@ -6,6 +6,8 @@ Nodes are the building blocks of the LangGraph state machine.
 """
 
 import logging
+import os
+import re
 from typing import Dict, Any
 
 from aix.agent.graph.state import AgentState
@@ -13,6 +15,39 @@ from aix.agent.agents.planner_agent import PlannerAgent
 from aix.agent.agents.retriever_agent import RetrieverAgent
 from aix.agent.agents.writer_agent import WriterAgent
 from aix.agent.agents.critic_agent import CriticAgent
+
+# CORE 2 #12b.3 — duration-mention sniffer used by plan_node to decide
+# whether the *current* user turn explicitly mentions a duration. When it
+# does, the Planner-extracted duration wins (teacher just said it). When
+# it doesn't, the educational profile's ``time_available_minutes`` is
+# authoritative and overrides any duration the Planner may have extracted
+# from the conversation history. Word-boundary anchored to avoid matching
+# stray digits inside concept names ("UDL 7.2" must not trigger).
+_DURATION_MENTION_RE = re.compile(
+    r"\b\d+\s*(?:min(?:ut[oi]|utes?)?|h(?:rs?)?|hours?|ore?)\b",
+    re.IGNORECASE,
+)
+
+
+def _current_turn_mentions_duration(state: AgentState) -> bool:
+    """True iff the teacher's CURRENT turn (not the history) mentions a duration.
+
+    Falls back to ``teacher_query`` when ``raw_user_turn`` is missing — this
+    keeps legacy callers (single-turn, no history) byte-identical to pre-#12b.3,
+    since on first turn ``teacher_query`` IS the raw turn.
+    """
+    raw = state.get("raw_user_turn")
+    if raw is None:
+        raw = state.get("teacher_query") or ""
+    return bool(_DURATION_MENTION_RE.search(raw))
+
+
+# CORE 2 #9 — Corrective RAG. Imported eagerly so the module import
+# fails fast if the file is malformed; the actual agent is only
+# *instantiated* (and the LLM ever called) when the corrective-RAG
+# topology is wired in by ``build_lesson_planner_graph_async``, which
+# itself is gated by ``AIX_CORRECTIVE_RAG_ENABLED``.
+from aix.agent.agents.retrieval_grader_agent import RetrievalGraderAgent
 
 
 def _sanitize(obj: Any) -> Any:
@@ -50,6 +85,7 @@ _planner: PlannerAgent = None
 _retriever: RetrieverAgent = None
 _writer: WriterAgent = None
 _critic: CriticAgent = None
+_retrieval_grader: RetrievalGraderAgent = None
 
 
 def get_planner() -> PlannerAgent:
@@ -78,6 +114,36 @@ def get_critic() -> CriticAgent:
     if _critic is None:
         _critic = CriticAgent()
     return _critic
+
+
+def get_retrieval_grader() -> RetrievalGraderAgent:
+    """Lazy singleton for the corrective-RAG grader (CORE 2 #9).
+    Instantiated only when ``grade_retrieval_node`` actually runs, so
+    the LLM client/object is never created when the feature flag is off."""
+    global _retrieval_grader
+    if _retrieval_grader is None:
+        _retrieval_grader = RetrievalGraderAgent()
+    return _retrieval_grader
+
+
+# CORE 2 #9 — Corrective RAG configuration knobs.
+# Defaults are tuned for the "feature off" scenario: even when
+# ``AIX_CORRECTIVE_RAG_ENABLED=true`` flips the topology, the loop has a
+# hard ceiling of 2 attempts so a flaky LLM cannot run the pipeline in
+# circles. Both knobs are env-driven so ops can adjust without a redeploy.
+def _corrective_rag_max_attempts() -> int:
+    raw = os.getenv("AIX_CORRECTIVE_RAG_MAX_ATTEMPTS", "2")
+    try:
+        v = int(raw)
+        return max(1, min(v, 4))  # clamp to a sane range
+    except ValueError:
+        return 2
+
+
+def _corrective_rag_enabled() -> bool:
+    return (os.getenv("AIX_CORRECTIVE_RAG_ENABLED") or "false").strip().lower() in (
+        "1", "true", "yes", "on"
+    )
 
 
 async def plan_node(state: AgentState) -> Dict[str, Any]:
@@ -134,6 +200,52 @@ async def plan_node(state: AgentState) -> Dict[str, Any]:
                 "[Node: Plan] Planner did not emit response_language; "
                 "keeping seed language %r",
                 seed_language,
+            )
+
+        # Reconcile time_constraints — CORE 2 #12b.1 → #12b.3.
+        #
+        # Three precedence rules, in order:
+        #   1. The teacher's CURRENT turn explicitly mentions a duration
+        #      ("ora rifalla in 30 minuti") → that wins, even if it differs
+        #      from the profile. Detected via ``_current_turn_mentions_duration``
+        #      reading ``raw_user_turn`` (populated by the service layer
+        #      since #12b.3) — falls back to ``teacher_query`` when the
+        #      caller didn't populate the raw turn (single-turn / legacy).
+        #   2. The educational profile has ``time_available_minutes`` set
+        #      AND the current turn does NOT mention a duration → the
+        #      profile is authoritative. This overrides any Planner-
+        #      extracted duration that came from the conversation history.
+        #      Without this branch (the pre-#12b.3 behaviour), a previous
+        #      turn's "45 min" would silently outrank the teacher's just-
+        #      updated 60 min sidebar setting.
+        #   3. Legacy fallback for callers that don't pass an educational
+        #      profile: keep whatever the Planner extracted (or None).
+        ep = state.get("educational_profile") or {}
+        profile_duration = ep.get("time_available_minutes") or ep.get("lesson_duration")
+        current_turn_has_duration = _current_turn_mentions_duration(state)
+
+        if profile_duration and not current_turn_has_duration:
+            inferred = f"{profile_duration} minutes"
+            if plan.time_constraints and plan.time_constraints != inferred:
+                logger.info(
+                    "[Node: Plan] Overriding planner-extracted time_constraints=%r "
+                    "with profile-authoritative %s (current turn has no duration; "
+                    "profile.time_available_minutes=%s).",
+                    plan.time_constraints, inferred, profile_duration,
+                )
+            elif not plan.time_constraints:
+                logger.info(
+                    "[Node: Plan] time_constraints filled from profile "
+                    "(time_available_minutes=%s): %s",
+                    profile_duration, inferred,
+                )
+            plan.time_constraints = inferred
+        elif profile_duration and current_turn_has_duration and plan.time_constraints:
+            logger.info(
+                "[Node: Plan] Current turn mentions a duration; honouring "
+                "planner-extracted time_constraints=%r over profile "
+                "time_available_minutes=%s.",
+                plan.time_constraints, profile_duration,
             )
 
         # Enhanced logging with scope status
@@ -364,6 +476,10 @@ async def write_node(state: AgentState) -> Dict[str, Any]:
                 domain=state.get("domain", "neuro"),
                 teacher_provided_context=state.get("teacher_provided_context"),
                 educational_profile=state.get("educational_profile"),
+                # CORE 2 #9 — Corrective RAG. None when the feature flag is
+                # off, so this is byte-identical to pre-#9 in default mode.
+                retrieval_warning=state.get("retrieval_warning"),
+                retrieval_grade_reason=state.get("retrieval_grade_reason"),
             )
         
         return {
@@ -485,4 +601,163 @@ def should_continue_to_revision(state: AgentState) -> str:
     
     logger.info(f"[Router] Revision requested ({revision_count}/{max_revisions})")
     return "revise"
+
+
+# ---------------------------------------------------------------------------
+# CORE 2 #9 — Corrective RAG: grade_retrieval_node + should_retry_retrieval
+# ---------------------------------------------------------------------------
+#
+# Topology (when AIX_CORRECTIVE_RAG_ENABLED=true):
+#
+#     plan → retrieve → grade_retrieval ─[relevant or attempts==max]→ write
+#                              │
+#                              └─[ambiguous|irrelevant & attempts<max]→ retrieve
+#
+# When the flag is OFF (default), this node is NOT added to the workflow at
+# all (see lesson_planner_graph._build_workflow), so the pre-#9 edge
+# ``retrieve → write`` is preserved bit-for-bit. **No** code below runs in
+# that mode; this section only matters once the flag flips on.
+
+async def grade_retrieval_node(state: AgentState) -> Dict[str, Any]:
+    """
+    GRADE-RETRIEVAL NODE  (CORE 2 #9 — Corrective RAG)
+
+    Calls the cheap :class:`RetrievalGraderAgent` to decide whether the
+    just-completed retrieval pass is good enough to feed the Writer.
+
+    Reads:
+        retrieved_nodes, recommendations, key_concepts, search_queries,
+        retrieval_attempts, retrieval_rewritten_query (set by a prior
+        retry pass on this same turn).
+    Writes:
+        retrieval_grade, retrieval_grade_reason, retrieval_rewritten_query,
+        retrieval_attempts, retrieval_warning, plan.search_queries (when
+        a rewrite is applied).
+
+    On any error the node falls back to ``grade=relevant`` so the loop
+    cannot block the writer — the worst case under failure equals the
+    pre-#9 (no-grading) behaviour.
+    """
+    # Honour upstream errors — never grade a broken state.
+    if state.get("error"):
+        logger.warning("[Node: GradeRetrieval] Skipping - previous node failed")
+        return {"current_step": "error"}
+
+    attempts = int(state.get("retrieval_attempts") or 0) + 1
+    max_attempts = _corrective_rag_max_attempts()
+    logger.info(
+        "[Node: GradeRetrieval] Grading retrieval attempt %d/%d",
+        attempts, max_attempts,
+    )
+
+    grader = get_retrieval_grader()
+    plan_data = state.get("plan") or {}
+
+    try:
+        grader_result = await grader.grade(
+            query=state.get("teacher_query", ""),
+            key_concepts=plan_data.get("key_concepts") or state.get("key_concepts"),
+            search_queries=plan_data.get("search_queries") or state.get("search_queries"),
+            retrieved_nodes=state.get("retrieved_nodes") or [],
+            recommendations=state.get("recommendations") or [],
+        )
+    except Exception as e:  # noqa: BLE001 — defense in depth; agent already catches most
+        logger.error(
+            "[Node: GradeRetrieval] Unexpected grader failure (%s); "
+            "defaulting to grade=relevant to preserve pre-#9 behaviour.", e,
+        )
+        return {
+            "retrieval_grade": "relevant",
+            "retrieval_grade_reason": f"Grader exception: {e.__class__.__name__}",
+            "retrieval_attempts": attempts,
+            "current_step": "grade_complete",
+        }
+
+    updates: Dict[str, Any] = {
+        "retrieval_grade": grader_result.grade,
+        "retrieval_grade_reason": grader_result.reason,
+        "retrieval_attempts": attempts,
+        "current_step": "grade_complete",
+    }
+
+    # If the grader recommends a rewrite AND we still have budget, mutate
+    # the plan's search_queries so the next ``retrieve`` pass picks them
+    # up. We *prepend* the rewrite to keep the original queries as a
+    # safety net (so the second pass never returns *less* than the first).
+    can_retry = grader_result.needs_retry and attempts < max_attempts
+    if can_retry and grader_result.rewritten_query:
+        rewritten = grader_result.rewritten_query.strip()
+        existing = list(plan_data.get("search_queries") or [])
+        if rewritten and rewritten.lower() not in {q.lower() for q in existing}:
+            new_queries = [rewritten] + existing
+            new_plan = dict(plan_data)
+            new_plan["search_queries"] = new_queries
+            updates["plan"] = new_plan
+            updates["search_queries"] = new_queries
+            updates["retrieval_rewritten_query"] = rewritten
+            logger.info(
+                "[Node: GradeRetrieval] Rewriting search_queries with %r (attempt %d→%d)",
+                rewritten, attempts, attempts + 1,
+            )
+        else:
+            logger.info(
+                "[Node: GradeRetrieval] Rewrite suggestion %r is a duplicate — "
+                "skipping rewrite and continuing with current queries.",
+                rewritten,
+            )
+
+    # When attempts are exhausted with a non-relevant grade, mark a warning
+    # for the Writer so the lesson can carry a short caveat. This is
+    # additive — Writer reads ``retrieval_warning`` only when the field
+    # exists in state; pre-#9 callers set it to None.
+    if grader_result.needs_retry and attempts >= max_attempts:
+        updates["retrieval_warning"] = True
+        logger.warning(
+            "[Node: GradeRetrieval] grade=%s after max attempts (%d); flagging "
+            "retrieval_warning for Writer to carry a low-confidence caveat.",
+            grader_result.grade, max_attempts,
+        )
+    else:
+        # Explicit None on the relevant path so the writer doesn't see a
+        # stale warning from a checkpoint of an earlier turn.
+        updates["retrieval_warning"] = False if grader_result.grade == "relevant" else (
+            updates.get("retrieval_warning")
+        )
+
+    return updates
+
+
+def should_retry_retrieval(state: AgentState) -> str:
+    """
+    Conditional edge after :func:`grade_retrieval_node` (CORE 2 #9).
+
+    Routes:
+      * ``"retry"``  — re-enter the retriever with the (possibly rewritten)
+                       search_queries; bounded by ``max_attempts``.
+      * ``"continue"`` — proceed to the writer with whatever we have.
+      * ``"error"``  — propagate upstream failures.
+    """
+    if state.get("error"):
+        return "error"
+
+    grade = state.get("retrieval_grade", "relevant")
+    attempts = int(state.get("retrieval_attempts") or 0)
+    max_attempts = _corrective_rag_max_attempts()
+
+    if grade == "relevant":
+        logger.info("[Router] retrieval grade=relevant → writer")
+        return "continue"
+
+    if attempts >= max_attempts:
+        logger.info(
+            "[Router] retrieval grade=%s but max_attempts=%d reached → writer "
+            "(retrieval_warning=True)", grade, max_attempts,
+        )
+        return "continue"
+
+    logger.info(
+        "[Router] retrieval grade=%s (attempts=%d/%d) → retry retrieve",
+        grade, attempts, max_attempts,
+    )
+    return "retry"
 

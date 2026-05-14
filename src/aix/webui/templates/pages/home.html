@@ -1,134 +1,343 @@
+{#
+  Dashboard / homepage (CORE 2 #6.6 P5 — warm-academic brand pass).
+
+  This template replaces the P0 dev-skeleton homepage. It is a teacher-facing
+  landing page that surfaces the user's lesson library at a glance:
+
+    1. Hero band: greeting + lesson count + primary CTA + "Riprendi" mini-card
+    2. Three quick-action cards (Nuova / Le mie lezioni / Risorse)
+    3. Two-column grid:
+       LEFT  — "Suggerimenti per te" (3 starter prompts) + "Le tue ultime lezioni"
+       RIGHT — "Modelli rapidi" (4 templates) + "Attività recente"
+
+  Data contract (from aix.webui.routes.home → _build_dashboard_context):
+    dashboard.lesson_count   : int
+    dashboard.resume_lesson  : Optional[row dict]  (most-recent draft)
+    dashboard.recent_lessons : list[row dict]      (top 3 by updated_at)
+    dashboard.activity       : list[event dict]    (last 5 derived events)
+
+  Stub data (TODO markers below) — the three sections that don't have a real
+  backend yet ("Suggerimenti per te" prompts, "Modelli rapidi" templates) are
+  hardcoded as Jinja constants. Each row links to /webui/lesson/new with a
+  query-string contract so the future backend can pick it up without UI churn.
+
+  Anonymous visitors get a sign-in CTA hero instead of the personalised view —
+  the auth path is unchanged (still bounces through /auth/login).
+#}
 {% extends "_base.html" %}
 
+{# Wider layout than the default 7xl — the dashboard hero + 2-column grid
+   needs ~1280px to breathe. Keeps narrower forms (lesson_new, auth) at
+   the original max-w-7xl by NOT setting this on those pages. #}
+{% set main_container_class = "max-w-screen-xl mx-auto w-full px-6 py-8" %}
+
 {% block content %}
-<section class="space-y-8">
 
-  <div class="space-y-2">
-    <h1 class="text-3xl font-serif tracking-tight">
-      {% if user %}
-        Bentornato/a, {{ user.display_name or user.email }}
-      {% else %}
-        Ciao, mondo
-      {% endif %}
-    </h1>
-    <p class="text-slate-600 max-w-2xl">
-      Skeleton del frontend <strong>Path C</strong> — interfaccia interna di test
-      end-to-end per la pipeline agentica del progetto Agentic GraphRAG.
-      Sostituisce Streamlit come superficie di test per l'agente a partire da CORE 2.
+{% if not user %}
+
+  {# ── Anonymous landing — keep auth flow untouched, just rebrand the hero ── #}
+  <section class="aix-card p-10 max-w-3xl mx-auto text-center" style="margin-top:48px;">
+    <h1 class="aix-page-title">Benvenuta su AixLearning</h1>
+    <p class="aix-text-muted mt-3 mb-6 max-w-xl mx-auto">
+      Crea lezioni personalizzate per la tua classe, con un agente
+      pedagogico fondato su neuroscienze dell'apprendimento e principi UDL.
     </p>
-  </div>
-
-  {% if user %}
-    <wa-card class="max-w-2xl">
-      <div slot="header" class="flex items-center gap-2">
-        <wa-icon name="circle-plus"></wa-icon>
-        <h2 class="text-base font-medium m-0">Crea una nuova lezione</h2>
-      </div>
-      <p class="text-slate-600 mb-3">
-        Compila il <strong>profilo educativo</strong> della classe e dell'aula
-        per generare una lezione personalizzata. Il profilo viene passato sia
-        al GraphRAG sia all'agente LangGraph (CORE 1 #2.5).
-      </p>
-      <div slot="footer" class="flex items-center justify-end">
-        <a href="/webui/lesson/new" class="no-underline">
-          <wa-button variant="brand" appearance="filled">
-            <wa-icon slot="prefix" name="circle-plus"></wa-icon>
-            Apri il modulo
-          </wa-button>
-        </a>
-      </div>
-    </wa-card>
-  {% else %}
-    <wa-callout variant="brand" class="max-w-2xl">
-      <wa-icon slot="icon" name="user"></wa-icon>
-      <strong>Accedi</strong> per creare una lezione.
-      Hai già un account?
-      <a href="/auth/login" class="font-medium">Accedi</a> ·
-      Sei nuovo? <a href="/auth/register" class="font-medium">Registrati</a>.
-    </wa-callout>
-  {% endif %}
-
-  <wa-card class="max-w-2xl">
-    <div slot="header" class="flex items-center gap-2">
-      <wa-icon name="plug"></wa-icon>
-      <h2 class="text-base font-medium m-0">Verifica del wiring del frontend</h2>
+    <div class="flex items-center justify-center gap-3 flex-wrap">
+      <a href="/auth/login" class="aix-btn aix-btn-outline">Accedi</a>
+      <a href="/auth/register" class="aix-btn aix-btn-primary">Registrati</a>
     </div>
+  </section>
 
-    <p class="text-slate-600 mb-3">
-      Cliccando il bottone qui sotto, htmx esegue una <code class="text-sm">GET /webui/health</code>
-      e sostituisce il contenitore con il frammento HTML restituito dal server.
-      Se vedi una callout verde, il wiring tra
-      <strong>FastAPI · Jinja2 · htmx · WebAwesome · Tailwind</strong> è corretto.
-    </p>
+{% else %}
 
-    <div slot="footer" class="flex items-center justify-between gap-3">
-      <span class="text-xs text-slate-500">
-        P0 verification target — non chiama l'agente né il GraphRAG.
+  {# ──────────────────────────────────────────────────────────────────────
+     HERO ROW — greeting on the left, "Riprendi" on the right.
+     If the user has no draft to resume the right half is replaced with
+     a soft empty-state pointing to "Nuova lezione".
+     ────────────────────────────────────────────────────────────────────── #}
+  <section class="aix-card p-8 mb-6">
+    <div class="grid md:grid-cols-2 gap-8 items-stretch">
+
+      {# Left half: greeting #}
+      <div class="flex flex-col justify-center">
+        {% if dashboard.today_label %}
+          <div style="color:var(--aix-teal); font-size:13px; font-weight:500;
+                      margin-bottom:8px;">
+            {{ dashboard.today_label }}
+          </div>
+        {% endif %}
+        <h1 class="aix-page-title">
+          Buongiorno, {{ user.display_name or user.email.split('@')[0] }}
+        </h1>
+        <p class="aix-text-muted mt-2">
+          {% if dashboard.lesson_count == 0 %}
+            Inizia la tua prima lezione personalizzata.
+          {% elif dashboard.lesson_count == 1 %}
+            Hai 1 lezione in archivio.
+          {% else %}
+            Hai {{ dashboard.lesson_count }} lezioni in archivio.
+          {% endif %}
+        </p>
+        <div class="mt-6">
+          <a href="/webui/lesson/new" class="aix-btn aix-btn-primary">
+            <wa-icon name="circle-plus"></wa-icon>
+            Crea nuova lezione
+          </a>
+        </div>
+      </div>
+
+      {# Right half: Riprendi card OR empty-state #}
+      <div class="flex flex-col justify-center">
+        {% if dashboard.resume_lesson %}
+          <div class="aix-section-label">RIPRENDI DA DOVE ERI RIMASTO</div>
+          <div class="aix-card aix-card-stripe-warning mt-3 p-4 flex items-center gap-4">
+            <div class="flex-1 min-w-0">
+              <div class="aix-card-title" style="font-size:18px;">
+                {{ dashboard.resume_lesson.title }}
+              </div>
+              <div class="aix-text-muted mt-1" style="font-size:13px;">
+                Ultimo aggiornamento: {{ dashboard.resume_lesson.updated_rel }}
+                <span class="aix-footer-sep mx-1">·</span>
+                Stato:
+                <span class="{{ dashboard.resume_lesson.pill_class }} aix-pill" style="margin-left:2px;">
+                  {{ dashboard.resume_lesson.status_label }}
+                </span>
+              </div>
+            </div>
+            <a href="/webui/lesson/{{ dashboard.resume_lesson.id }}"
+               class="aix-btn aix-btn-outline-amber aix-btn-sm flex-shrink-0">
+              Continua →
+            </a>
+          </div>
+          {% if dashboard.lesson_count > 1 %}
+            <a href="/webui/lessons" class="aix-link mt-3" style="font-size:13px;">
+              oppure apri un'altra lezione →
+            </a>
+          {% endif %}
+        {% else %}
+          <div class="aix-section-label">PRIMI PASSI</div>
+          <div class="aix-card aix-card-stripe-teal mt-3 p-4">
+            <div class="aix-card-title" style="font-size:18px;">
+              Compila il profilo della classe
+            </div>
+            <p class="aix-text-muted mt-1" style="font-size:13px;">
+              Bastano pochi dati: classe, materia, durata e BES.
+              L'agente fa il resto.
+            </p>
+            <a href="/webui/lesson/new" class="aix-link mt-3 inline-block" style="font-size:13px;">
+              Inizia ora →
+            </a>
+          </div>
+        {% endif %}
+      </div>
+
+    </div>
+  </section>
+
+  {# ──────────────────────────────────────────────────────────────────────
+     QUICK-ACTION ROW — three cards
+     ────────────────────────────────────────────────────────────────────── #}
+  <section class="grid md:grid-cols-3 gap-4 mb-6">
+
+    <a href="/webui/lesson/new" class="aix-card p-5 flex items-center gap-4
+                                       no-underline aix-row-hover">
+      <span class="aix-icon-circle aix-icon-circle--teal aix-icon-on-dark">
+        <wa-icon name="circle-plus" style="font-size:20px;"></wa-icon>
       </span>
-      <wa-button
-        variant="brand"
-        appearance="filled"
-        hx-get="/webui/health"
-        hx-target="#health-target"
-        hx-swap="innerHTML"
-      >
-        <wa-icon slot="prefix" name="play"></wa-icon>
-        Esegui health check
-      </wa-button>
+      <div class="flex-1">
+        <div class="aix-card-title" style="font-size:18px;">Nuova lezione</div>
+        <div class="aix-text-muted mt-1" style="font-size:13px;">
+          Parti dal profilo classe e obiettivi didattici
+        </div>
+        <span class="aix-link" style="font-size:13px;">Apri →</span>
+      </div>
+    </a>
+
+    <a href="/webui/lessons" class="aix-card p-5 flex items-center gap-4
+                                    no-underline aix-row-hover">
+      <span class="aix-icon-circle aix-icon-circle--navy aix-icon-on-dark">
+        <wa-icon name="books" style="font-size:20px;"></wa-icon>
+      </span>
+      <div class="flex-1">
+        <div class="aix-card-title" style="font-size:18px;">
+          Le mie lezioni{% if dashboard.lesson_count %} ({{ dashboard.lesson_count }}){% endif %}
+        </div>
+        <div class="aix-text-muted mt-1" style="font-size:13px;">
+          Sfoglia l'archivio completo delle tue lezioni
+        </div>
+        <span class="aix-link-navy" style="font-size:13px;">Apri →</span>
+      </div>
+    </a>
+
+    <a href="/docs" class="aix-card p-5 flex items-center gap-4
+                          no-underline aix-row-hover">
+      <span class="aix-icon-circle aix-icon-circle--amber aix-icon-on-dark">
+        <wa-icon name="magnifying-glass" style="font-size:20px;"></wa-icon>
+      </span>
+      <div class="flex-1">
+        <div class="aix-card-title" style="font-size:18px;">Esplora materiali</div>
+        <div class="aix-text-muted mt-1" style="font-size:13px;">
+          Cerca e riutilizza contenuti, attività e risorse
+        </div>
+        <span class="aix-link-amber" style="font-size:13px;">Apri →</span>
+      </div>
+    </a>
+
+  </section>
+
+  {# ──────────────────────────────────────────────────────────────────────
+     CONTENT GRID — 60/40 split: left column has Suggerimenti +
+     Le tue ultime lezioni; right column has Modelli rapidi + Attività recente
+     ────────────────────────────────────────────────────────────────────── #}
+  <section class="grid md:grid-cols-5 gap-4">
+
+    {# ── LEFT COLUMN ── #}
+    <div class="md:col-span-3 flex flex-col gap-4">
+
+      {#
+        SUGGERIMENTI PER TE
+        TODO(P6): replace with real LLM-/heuristic-driven suggestions.
+        Today these are static prompts; each links to /webui/lesson/new with
+        a ?prompt= query-string contract so when the form starts honouring
+        prefill we don't have to touch the dashboard markup.
+      #}
+      <div class="aix-card p-5">
+        <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center gap-2">
+            <wa-icon name="wand-magic-sparkles" style="color:var(--aix-amber); font-size:16px;"></wa-icon>
+            <h2 class="aix-card-title" style="font-size:18px;">Suggerimenti per te</h2>
+          </div>
+          <a href="/webui/" class="aix-link" style="font-size:12px;">
+            Aggiorna suggerimenti ↻
+          </a>
+        </div>
+        {% set suggestions = [
+          'Crea una lezione su energia rinnovabile per seconda media',
+          'Attività di comprensione del testo per prima superiore',
+          'Verifica di matematica sulle frazioni per terza media',
+        ] %}
+        {% for s in suggestions %}
+          <a href="/webui/lesson/new?prompt={{ s | urlencode }}"
+             class="aix-row-hover flex items-center gap-3 px-2 py-2 no-underline"
+             style="color:var(--aix-text-primary);">
+            <wa-icon name="lightbulb" style="color:var(--aix-amber); font-size:14px;"></wa-icon>
+            <span class="flex-1" style="font-size:14px;">{{ s }}</span>
+            <wa-icon name="chevron-right" style="color:var(--aix-text-tertiary); font-size:12px;"></wa-icon>
+          </a>
+        {% endfor %}
+      </div>
+
+      {# LE TUE ULTIME LEZIONI — real data from dashboard.recent_lessons #}
+      <div class="aix-card p-5">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="aix-card-title" style="font-size:18px;">Le tue ultime lezioni</h2>
+          <a href="/webui/lessons" class="aix-link" style="font-size:12px;">
+            Vedi tutte →
+          </a>
+        </div>
+        {% if dashboard.recent_lessons %}
+          {% for row in dashboard.recent_lessons %}
+            <a href="/webui/lesson/{{ row.id }}"
+               class="aix-lesson-row aix-row-hover px-2 no-underline"
+               style="color:var(--aix-text-primary);">
+              <span class="aix-dot {{ row.dot_class }}"></span>
+              <div class="flex-1 min-w-0">
+                <div class="aix-lesson-row-title truncate">{{ row.title }}</div>
+                <div class="aix-lesson-row-meta truncate">
+                  {% set meta_parts = [] %}
+                  {% if row.subject %}{% set _ = meta_parts.append(row.subject) %}{% endif %}
+                  {% if row.duration_min %}{% set _ = meta_parts.append(row.duration_min ~ ' min') %}{% endif %}
+                  {% if row.disabilities %}
+                    {% set _ = meta_parts.append(row.disabilities | join(', ')) %}
+                  {% endif %}
+                  {{ meta_parts | join(' · ') }}
+                </div>
+              </div>
+              <span class="aix-pill {{ row.pill_class }} flex-shrink-0">{{ row.status_label }}</span>
+              <span class="aix-text-subtle flex-shrink-0" style="font-size:12px; min-width:48px; text-align:right;">
+                {{ row.updated_short }}
+              </span>
+            </a>
+          {% endfor %}
+        {% else %}
+          <div class="text-center py-6 aix-text-muted" style="font-size:13px;">
+            Nessuna lezione ancora.
+            <a href="/webui/lesson/new" class="aix-link">Crea la prima →</a>
+          </div>
+        {% endif %}
+      </div>
+
     </div>
-  </wa-card>
 
-  <div id="health-target" class="max-w-2xl"></div>
+    {# ── RIGHT COLUMN ── #}
+    <div class="md:col-span-2 flex flex-col gap-4">
 
-  <wa-divider></wa-divider>
-
-  <div class="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-4xl">
-    <wa-card>
-      <div slot="header" class="flex items-center gap-2">
-        <wa-icon name="diagram-project"></wa-icon>
-        <strong>GraphRAG endpoint</strong>
+      {#
+        MODELLI RAPIDI
+        TODO(P6): replace with a real template registry. The 4 entries
+        below are real pedagogical concepts; each link carries a
+        ?template= contract so the future Crea-lezione prefill picks them
+        up without touching this template.
+      #}
+      <div class="aix-card p-5">
+        <div class="flex items-center gap-2 mb-3">
+          <wa-icon name="bookmark" style="color:var(--aix-text-tertiary); font-size:14px;"></wa-icon>
+          <h2 class="aix-section-label" style="font-size:12px;">MODELLI RAPIDI</h2>
+        </div>
+        {% set templates = [
+          ('lezione_5e',           'Lezione 5E (Neuro)',          'Engage · Explore · Explain · Elaborate · Evaluate', 'planner',   'diagram-project'),
+          ('udl_3_principi',       'Lezione UDL 3-principi',      'Rappresentazione · Azione · Coinvolgimento',        'retriever', 'people-group'),
+          ('valutazione_formativa','Valutazione formativa',       'Verifica intermedia con feedback immediato',         'critic',    'chart-line'),
+          ('attivita_cooperativa', 'Attività cooperativa',        'Lavoro in piccoli gruppi con ruoli distribuiti',    'writer',    'people-arrows'),
+        ] %}
+        {% for tpl_key, name, desc, color, icon in templates %}
+          <a href="/webui/lesson/new?template={{ tpl_key }}"
+             class="aix-row-hover flex items-center gap-3 px-2 py-2 no-underline"
+             style="color:var(--aix-text-primary);">
+            <span class="aix-icon-circle aix-icon-circle--sm aix-icon-circle--{{ color }} aix-icon-on-dark">
+              <wa-icon name="{{ icon }}" style="font-size:14px;"></wa-icon>
+            </span>
+            <div class="flex-1 min-w-0">
+              <div class="aix-lesson-row-title truncate" style="font-size:14px;">{{ name }}</div>
+              <div class="aix-lesson-row-meta truncate" style="font-size:12px;">{{ desc }}</div>
+            </div>
+            <wa-icon name="chevron-right" style="color:var(--aix-text-tertiary); font-size:12px;"></wa-icon>
+          </a>
+        {% endfor %}
       </div>
-      <p class="text-sm text-slate-600">
-        Il contratto pubblico <code>/api/v1/context</code> usato dal team DEV
-        <strong>resta invariato</strong>. Questa webui non lo tocca.
-      </p>
-      <wa-button slot="footer" size="small" variant="default" href="/docs" target="_blank">
-        Vedi /docs
-      </wa-button>
-    </wa-card>
 
-    <wa-card>
-      <div slot="header" class="flex items-center gap-2">
-        <wa-icon name="robot"></wa-icon>
-        <strong>Agent service</strong>
+      {#
+        ATTIVITÀ RECENTE — derived live from dashboard.activity (real data
+        from lessons.updated_at). Empty state keeps the card balanced when
+        a brand-new account has no lessons yet.
+      #}
+      <div class="aix-card p-5">
+        <div class="flex items-center gap-2 mb-3">
+          <wa-icon name="clock-rotate-left" style="color:var(--aix-text-tertiary); font-size:14px;"></wa-icon>
+          <h2 class="aix-card-title" style="font-size:18px;">Attività recente</h2>
+        </div>
+        {% if dashboard.activity %}
+          {% for ev in dashboard.activity %}
+            <a href="/webui/lesson/{{ ev.lesson_id }}"
+               class="aix-row-hover flex items-start gap-3 px-2 py-2 no-underline"
+               style="color:var(--aix-text-primary);">
+              <span class="aix-text-subtle flex-shrink-0"
+                    style="font-size:12px; min-width:64px;">
+                {{ ev.rel }}
+              </span>
+              <span class="flex-1" style="font-size:13px;">{{ ev.description }}</span>
+            </a>
+          {% endfor %}
+        {% else %}
+          <div class="text-center py-4 aix-text-muted" style="font-size:13px;">
+            Nessuna attività recente.
+          </div>
+        {% endif %}
       </div>
-      <p class="text-sm text-slate-600">
-        Le fasi P1–P3 collegheranno questa UI a <code>aix.agent.service.run_agent()</code>
-        per il test end-to-end della pipeline LangGraph.
-      </p>
-      <wa-tag slot="footer" size="small" variant="warning">In arrivo</wa-tag>
-    </wa-card>
 
-    <wa-card>
-      <div slot="header" class="flex items-center gap-2">
-        <wa-icon name="file-lines"></wa-icon>
-        <strong>ADR-0001</strong>
-      </div>
-      <p class="text-sm text-slate-600">
-        Decisione architetturale: <strong>Path C — Mirror Stack</strong>
-        (FastAPI + htmx + WebAwesome). AixLearning native ridotto a fallback.
-      </p>
-      <wa-tag slot="footer" size="small" variant="success">Approvata</wa-tag>
-    </wa-card>
-  </div>
+    </div>
+  </section>
 
-  <wa-callout variant="neutral" class="max-w-4xl">
-    <wa-icon slot="icon" name="circle-info"></wa-icon>
-    <strong>Phase P1 — Auth + Profilo educativo.</strong>
-    Login + form per il profilo educativo della classe (CORE 1 #2.5) sono attivi.
-    Lo streaming dell'agente LangGraph (Writer · Critic · Revisore) arriverà in P2.
-    Vedi <code>docs/product/ClickUp_Agentic_GraphRAG_Update.md</code>.
-  </wa-callout>
+{% endif %}
 
-</section>
 {% endblock %}

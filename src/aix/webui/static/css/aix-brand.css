@@ -1,0 +1,1726 @@
+/* =============================================================================
+   AixLearning — Warm-academic brand system (CORE 2 #6.6 P5)
+   -----------------------------------------------------------------------------
+   Single source of truth for the teacher-facing UX. Keep everything in here
+   instead of inline <style> blocks so designers can iterate on a real .css
+   file and the browser caches it once across the whole site.
+
+   Layer ordering:
+     1. @import Google Fonts
+     2. :root design tokens (colors / radii / shadows / type)
+     3. Element resets that pair with Tailwind utility classes
+     4. .aix-* component classes (cards, pills, buttons, inputs, nav, ...)
+
+   Tailwind utilities are still used for *layout* (flex / grid / spacing).
+   The .aix-* classes own the *brand* (colors, fonts, shadows, radii). Mixing
+   the two intentionally — Tailwind for structure, brand CSS for identity.
+   ============================================================================= */
+
+@import url("https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap");
+
+/* -----------------------------------------------------------------------------
+   Design tokens
+   -----------------------------------------------------------------------------
+   Names map 1:1 to the warm-academic mockups in docs/mockups/. Any value
+   that appears more than once across pages must live here, never inline.
+   ----------------------------------------------------------------------------- */
+:root {
+  /* Brand surfaces */
+  --aix-ink-navy: #1a2540;          /* primary text + nav bg */
+  --aix-ink-navy-soft: #2a3550;
+  --aix-ink-navy-darker: #0f1729;
+  --aix-cream: #f7f5f0;             /* page background */
+  --aix-cream-darker: #efebe2;      /* subtle surface on cream */
+  --aix-paper: #ffffff;             /* cards */
+
+  /* Accent */
+  --aix-amber: #d4a45a;             /* primary CTA */
+  --aix-amber-hover: #c19449;
+  --aix-amber-soft: #faf3e3;
+  --aix-teal: #2d8a8a;              /* links + retriever agent */
+  --aix-teal-hover: #266f6f;
+  --aix-teal-soft: #e6f2f2;
+
+  /* Status (used on lesson rows, library stripes, pills) */
+  --aix-status-success: #2f8f6a;
+  --aix-status-success-soft: #e6f5ee;
+  --aix-status-warning: #d4a45a;
+  --aix-status-warning-soft: #faf3e3;
+  --aix-status-info: #3b6fa8;
+  --aix-status-info-soft: #e8f0fa;
+  --aix-status-error: #c64a4a;
+  --aix-status-error-soft: #fceaea;
+  --aix-status-neutral: #6a6a6a;
+  --aix-status-neutral-soft: #ededed;
+
+  /* Agent palette (Planner / Retriever / Writer / Critic) */
+  --aix-agent-planner: #6f5ec4;
+  --aix-agent-planner-soft: #efecf8;
+  --aix-agent-retriever: #2d8a8a;
+  --aix-agent-retriever-soft: #e6f2f2;
+  --aix-agent-writer: #d4a45a;
+  --aix-agent-writer-soft: #faf3e3;
+  --aix-agent-critic: #2f8f6a;
+  --aix-agent-critic-soft: #e6f5ee;
+
+  /* Text */
+  --aix-text-primary: #1a2540;
+  --aix-text-secondary: #5a6275;
+  --aix-text-tertiary: #8a92a3;
+  --aix-text-on-dark: #ffffff;
+  --aix-text-on-dark-muted: rgba(255, 255, 255, 0.72);
+
+  /* Border */
+  --aix-border-soft: #e6e3da;
+  --aix-border-medium: #d6d2c8;
+  --aix-border-on-dark: rgba(255, 255, 255, 0.12);
+
+  /* Shadows (soft + warm — never the hard bluish slate-default) */
+  --aix-shadow-soft: 0 1px 3px rgba(26, 37, 64, 0.06),
+                     0 1px 2px rgba(26, 37, 64, 0.04);
+  --aix-shadow-medium: 0 4px 12px rgba(26, 37, 64, 0.08);
+  --aix-shadow-floating: 0 12px 24px rgba(26, 37, 64, 0.12);
+
+  /* Radii */
+  --aix-radius-sm: 6px;
+  --aix-radius: 12px;
+  --aix-radius-lg: 16px;
+  --aix-radius-pill: 999px;
+
+  /* Typography */
+  --aix-font-serif: "Crimson Pro", "Source Serif Pro", Georgia, serif;
+  --aix-font-sans: "Inter", ui-sans-serif, system-ui, -apple-system,
+                   "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+/* -----------------------------------------------------------------------------
+   Element baseline
+   -----------------------------------------------------------------------------
+   Body becomes warm cream + Inter sans by default. The .font-serif helper
+   keeps existing usages working so this is a strict superset of P0 styling.
+   ----------------------------------------------------------------------------- */
+body.aix-body {
+  font-family: var(--aix-font-sans);
+  background-color: var(--aix-cream);
+  color: var(--aix-text-primary);
+}
+
+.aix-body .font-serif,
+.font-serif {
+  font-family: var(--aix-font-serif);
+}
+
+/* Ensure WebAwesome icons inside coloured circles don't pick up Tailwind's
+   currentColor when we just want plain white. */
+.aix-icon-on-dark wa-icon { color: var(--aix-text-on-dark); }
+
+/* -----------------------------------------------------------------------------
+   Top navigation bar
+   ----------------------------------------------------------------------------- */
+.aix-nav {
+  background-color: var(--aix-ink-navy);
+  color: var(--aix-text-on-dark);
+  border-bottom: 1px solid var(--aix-border-on-dark);
+}
+
+.aix-nav-inner {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 0 32px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  gap: 32px;
+}
+
+.aix-nav-brand {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  text-decoration: none;
+  color: var(--aix-text-on-dark);
+}
+
+.aix-nav-brand-mark {
+  font-family: var(--aix-font-serif);
+  font-weight: 600;
+  font-size: 22px;
+  letter-spacing: -0.01em;
+}
+
+.aix-nav-brand-sub {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--aix-text-on-dark-muted);
+  letter-spacing: 0.02em;
+}
+
+.aix-nav-links {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+}
+
+.aix-nav-link {
+  color: var(--aix-text-on-dark-muted);
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+  padding: 6px 0;
+  border-bottom: 2px solid transparent;
+  transition: color 120ms, border-color 120ms;
+}
+
+.aix-nav-link:hover {
+  color: var(--aix-text-on-dark);
+}
+
+.aix-nav-link.is-active {
+  color: var(--aix-text-on-dark);
+  border-bottom-color: var(--aix-text-on-dark);
+}
+
+.aix-nav-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--aix-border-on-dark);
+  border-radius: var(--aix-radius-pill);
+  padding: 6px 14px;
+  color: var(--aix-text-on-dark-muted);
+  font-size: 13px;
+  min-width: 220px;
+}
+
+.aix-nav-avatar {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--aix-border-on-dark);
+  border-radius: var(--aix-radius-pill);
+  padding: 4px 10px 4px 4px;
+  color: var(--aix-text-on-dark);
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.aix-nav-avatar-circle {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--aix-amber);
+  color: var(--aix-ink-navy);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+/* -----------------------------------------------------------------------------
+   Cards
+   -----------------------------------------------------------------------------
+   .aix-card is the single canonical surface. .aix-card-stripe-* adds a
+   coloured 3px left border (status / agent identity). Use Tailwind utilities
+   for padding / spacing inside, so consumers stay flexible.
+   ----------------------------------------------------------------------------- */
+.aix-card {
+  background-color: var(--aix-paper);
+  border-radius: var(--aix-radius-lg);
+  box-shadow: var(--aix-shadow-soft);
+  border: 1px solid var(--aix-border-soft);
+  overflow: hidden;
+}
+
+.aix-card-stripe-success { border-left: 3px solid var(--aix-status-success); }
+.aix-card-stripe-warning { border-left: 3px solid var(--aix-status-warning); }
+.aix-card-stripe-info    { border-left: 3px solid var(--aix-status-info); }
+.aix-card-stripe-error   { border-left: 3px solid var(--aix-status-error); }
+.aix-card-stripe-amber   { border-left: 3px solid var(--aix-amber); }
+.aix-card-stripe-teal    { border-left: 3px solid var(--aix-teal); }
+.aix-card-stripe-navy    { border-left: 3px solid var(--aix-ink-navy); }
+.aix-card-stripe-planner   { border-left: 3px solid var(--aix-agent-planner); }
+.aix-card-stripe-retriever { border-left: 3px solid var(--aix-agent-retriever); }
+.aix-card-stripe-writer    { border-left: 3px solid var(--aix-agent-writer); }
+.aix-card-stripe-critic    { border-left: 3px solid var(--aix-agent-critic); }
+
+/* -----------------------------------------------------------------------------
+   Typography helpers
+   ----------------------------------------------------------------------------- */
+.aix-page-title {
+  font-family: var(--aix-font-serif);
+  font-weight: 600;
+  font-size: 36px;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  color: var(--aix-text-primary);
+  margin: 0;
+}
+
+.aix-card-title {
+  font-family: var(--aix-font-serif);
+  font-weight: 600;
+  font-size: 22px;
+  line-height: 1.25;
+  color: var(--aix-text-primary);
+  margin: 0;
+}
+
+.aix-section-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--aix-text-tertiary);
+}
+
+.aix-text-muted   { color: var(--aix-text-secondary); }
+.aix-text-subtle  { color: var(--aix-text-tertiary); }
+
+/* -----------------------------------------------------------------------------
+   Buttons
+   -----------------------------------------------------------------------------
+   We hand-roll these instead of using <wa-button> for the brand-critical
+   surfaces. WebAwesome buttons stay available for non-brand flows (modals,
+   forms, dropdown triggers) to keep the existing logic intact.
+   ----------------------------------------------------------------------------- */
+.aix-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-family: var(--aix-font-sans);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
+  text-decoration: none;
+  padding: 10px 18px;
+  border-radius: var(--aix-radius);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background 120ms, border-color 120ms, color 120ms,
+              box-shadow 120ms;
+  white-space: nowrap;
+}
+
+.aix-btn[disabled],
+.aix-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.aix-btn-primary {
+  background-color: var(--aix-amber);
+  color: #ffffff;
+  border-color: var(--aix-amber);
+  box-shadow: var(--aix-shadow-soft);
+}
+.aix-btn-primary:hover {
+  background-color: var(--aix-amber-hover);
+  border-color: var(--aix-amber-hover);
+}
+
+.aix-btn-outline {
+  background-color: transparent;
+  color: var(--aix-text-primary);
+  border-color: var(--aix-border-medium);
+}
+.aix-btn-outline:hover {
+  background-color: var(--aix-cream-darker);
+}
+
+.aix-btn-outline-amber {
+  background-color: transparent;
+  color: var(--aix-amber-hover);
+  border-color: var(--aix-amber);
+}
+.aix-btn-outline-amber:hover {
+  background-color: var(--aix-amber-soft);
+}
+
+.aix-btn-ghost {
+  background-color: transparent;
+  color: var(--aix-text-secondary);
+  border-color: transparent;
+  padding: 6px 10px;
+}
+.aix-btn-ghost:hover {
+  color: var(--aix-text-primary);
+  background-color: var(--aix-cream-darker);
+}
+
+.aix-btn-sm {
+  padding: 6px 12px;
+  font-size: 13px;
+  border-radius: var(--aix-radius-sm);
+}
+
+/* -----------------------------------------------------------------------------
+   Pills (status / domain tags)
+   ----------------------------------------------------------------------------- */
+.aix-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: var(--aix-radius-pill);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: 0.01em;
+}
+
+.aix-pill-success { background: var(--aix-status-success-soft); color: var(--aix-status-success); }
+.aix-pill-warning { background: var(--aix-status-warning-soft); color: #8c6a23; }
+.aix-pill-info    { background: var(--aix-status-info-soft);    color: var(--aix-status-info); }
+.aix-pill-error   { background: var(--aix-status-error-soft);   color: var(--aix-status-error); }
+.aix-pill-neutral { background: var(--aix-status-neutral-soft); color: var(--aix-status-neutral); }
+
+/* Outlined domain badges (neuro / udl / ADHD / DSA / ...) */
+.aix-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 9px;
+  border-radius: var(--aix-radius-pill);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  background: transparent;
+  border: 1px solid currentColor;
+}
+.aix-badge-planner   { color: var(--aix-agent-planner); }
+.aix-badge-retriever { color: var(--aix-agent-retriever); }
+.aix-badge-amber     { color: var(--aix-amber-hover); }
+.aix-badge-teal      { color: var(--aix-teal); }
+.aix-badge-success   { color: var(--aix-status-success); }
+.aix-badge-warning   { color: #8c6a23; }
+.aix-badge-info      { color: var(--aix-status-info); }
+.aix-badge-error     { color: var(--aix-status-error); }
+.aix-badge-neutral   { color: var(--aix-status-neutral); }
+
+/* Status dots (for left side of "Le tue ultime lezioni" rows) */
+.aix-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.aix-dot-success { background-color: var(--aix-status-success); }
+.aix-dot-warning { background-color: var(--aix-status-warning); }
+.aix-dot-info    { background-color: var(--aix-status-info); }
+.aix-dot-error   { background-color: var(--aix-status-error); }
+.aix-dot-neutral { background-color: var(--aix-status-neutral); }
+
+/* -----------------------------------------------------------------------------
+   Circular icon badges (used in quick-action cards, suggestion rows, ...)
+   ----------------------------------------------------------------------------- */
+.aix-icon-circle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  color: var(--aix-text-on-dark);
+  flex-shrink: 0;
+}
+.aix-icon-circle--sm { width: 36px; height: 36px; }
+.aix-icon-circle--xs { width: 26px; height: 26px; }
+
+.aix-icon-circle--teal     { background-color: var(--aix-teal); }
+.aix-icon-circle--navy     { background-color: var(--aix-ink-navy); }
+.aix-icon-circle--amber    { background-color: var(--aix-amber); }
+.aix-icon-circle--planner  { background-color: var(--aix-agent-planner); }
+.aix-icon-circle--retriever{ background-color: var(--aix-agent-retriever); }
+.aix-icon-circle--writer   { background-color: var(--aix-agent-writer); }
+.aix-icon-circle--critic   { background-color: var(--aix-agent-critic); }
+.aix-icon-circle--success  { background-color: var(--aix-status-success); }
+
+.aix-icon-circle-soft--amber {
+  background-color: var(--aix-amber-soft);
+  color: var(--aix-amber-hover);
+}
+.aix-icon-circle-soft--teal {
+  background-color: var(--aix-teal-soft);
+  color: var(--aix-teal);
+}
+
+/* -----------------------------------------------------------------------------
+   Links
+   ----------------------------------------------------------------------------- */
+.aix-link {
+  color: var(--aix-teal);
+  text-decoration: none;
+  font-weight: 500;
+}
+.aix-link:hover { color: var(--aix-teal-hover); text-decoration: underline; }
+
+.aix-link-amber {
+  color: var(--aix-amber-hover);
+  text-decoration: none;
+  font-weight: 500;
+}
+.aix-link-amber:hover { color: var(--aix-amber); }
+
+.aix-link-navy {
+  color: var(--aix-ink-navy);
+  text-decoration: none;
+  font-weight: 500;
+}
+.aix-link-navy:hover { text-decoration: underline; }
+
+/* -----------------------------------------------------------------------------
+   Footer
+   ----------------------------------------------------------------------------- */
+.aix-footer {
+  background-color: var(--aix-cream-darker);
+  border-top: 1px solid var(--aix-border-soft);
+  color: var(--aix-text-tertiary);
+  font-size: 12px;
+}
+.aix-footer-inner {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 16px 32px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+.aix-footer a { color: var(--aix-text-tertiary); text-decoration: none; }
+.aix-footer a:hover { color: var(--aix-text-primary); }
+.aix-footer-sep { color: var(--aix-border-medium); }
+
+/* -----------------------------------------------------------------------------
+   Inputs (used by Create-Lesson form on later pages, declared here so the
+   foundation pass already covers it)
+   ----------------------------------------------------------------------------- */
+.aix-input,
+.aix-select,
+.aix-textarea {
+  display: block;
+  width: 100%;
+  font-family: var(--aix-font-sans);
+  font-size: 14px;
+  color: var(--aix-text-primary);
+  background-color: var(--aix-paper);
+  border: 1px solid var(--aix-border-medium);
+  border-radius: var(--aix-radius-sm);
+  padding: 9px 12px;
+  transition: border-color 120ms, box-shadow 120ms;
+}
+.aix-input:focus,
+.aix-select:focus,
+.aix-textarea:focus {
+  outline: none;
+  border-color: var(--aix-teal);
+  box-shadow: 0 0 0 3px var(--aix-teal-soft);
+}
+
+/* -----------------------------------------------------------------------------
+   Page header (shared by Library / Create / Workspace headers)
+   ----------------------------------------------------------------------------- */
+.aix-page-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+/* -----------------------------------------------------------------------------
+   Lesson row (used by Dashboard "Le tue ultime lezioni" + Library list mode)
+   ----------------------------------------------------------------------------- */
+.aix-lesson-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--aix-border-soft);
+}
+.aix-lesson-row:last-child { border-bottom: 0; }
+
+.aix-lesson-row-title {
+  font-weight: 600;
+  color: var(--aix-text-primary);
+}
+.aix-lesson-row-meta {
+  font-size: 13px;
+  color: var(--aix-text-secondary);
+}
+
+/* -----------------------------------------------------------------------------
+   Compatibility / utility shims
+   -----------------------------------------------------------------------------
+   .lesson-prose and .line-clamp-2 are still owned by _base.html (markdown
+   rendering for agent output). Don't duplicate them here — keep this file
+   focused on the brand layer. Add a thin Tailwind co-existence rule so
+   .aix-card-bg-cream surfaces don't fight bg-white from utility classes.
+   ----------------------------------------------------------------------------- */
+.aix-bg-cream { background-color: var(--aix-cream); }
+.aix-bg-cream-darker { background-color: var(--aix-cream-darker); }
+.aix-bg-paper { background-color: var(--aix-paper); }
+
+/* Tiny vertical hairline separator inside split cards */
+.aix-vrule {
+  width: 1px;
+  align-self: stretch;
+  background: var(--aix-border-soft);
+}
+
+/* Soft hover surface for clickable list rows */
+.aix-row-hover {
+  border-radius: var(--aix-radius-sm);
+  transition: background 120ms;
+}
+.aix-row-hover:hover {
+  background-color: var(--aix-cream);
+}
+
+/* -----------------------------------------------------------------------------
+   Alpine.js cloak — hide elements until Alpine has hydrated. Pair with
+   the ``x-cloak`` attribute to suppress no-match fallbacks or computed-state
+   panels from flashing on initial paint.
+   ----------------------------------------------------------------------------- */
+[x-cloak] { display: none !important; }
+
+/* =============================================================================
+   P5.3 — Crea lezione (form page) components
+   -----------------------------------------------------------------------------
+   Everything below is consumed exclusively by ``pages/lesson_new.html``. Kept
+   in this same file (single brand sheet) instead of a per-page stylesheet so
+   the rest of the WebUI keeps the one ``<link>`` already on every page.
+
+   Two design rules drive these classes:
+     • Native HTML form controls (no <wa-input>/<wa-select> wrapper chrome) so
+       we get full control over focus rings, chevrons, multi-select height,
+       and toggle visuals — matches docs/mockups/final_03_create_lesson.png.
+     • ``:has(:checked)`` to drive the toggle-card visual state, no JS. Modern
+       browsers (Chrome 105+, Safari 15.4+, Firefox 121+) all ship it. The
+       underlying <input type=checkbox> stays the source of truth for the
+       form POST → backend contract byte-identical to pre-#P5.3.
+   ============================================================================= */
+
+/* -----------------------------------------------------------------------------
+   3-step indicator (passive)
+   -----------------------------------------------------------------------------
+   Three anchor links arranged horizontally; clicking scrolls smoothly to the
+   matching <section id="…">. The ``.is-active`` modifier just highlights the
+   first step on initial paint (no scroll-spy yet — a future enhancement when
+   the form becomes a real multi-step wizard, which this passive marker is
+   deliberately NOT trying to be).
+   ----------------------------------------------------------------------------- */
+.aix-step-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 4px 0;
+}
+
+.aix-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--aix-text-tertiary);
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 500;
+  transition: color 120ms;
+}
+.aix-step:hover { color: var(--aix-text-primary); }
+.aix-step.is-active { color: var(--aix-text-primary); }
+
+.aix-step-number {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--aix-paper);
+  border: 1px solid var(--aix-border-medium);
+  color: var(--aix-text-secondary);
+  flex-shrink: 0;
+}
+.aix-step.is-active .aix-step-number {
+  background: var(--aix-teal);
+  border-color: var(--aix-teal);
+  color: var(--aix-text-on-dark);
+}
+
+.aix-step-label {
+  display: inline-flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+.aix-step-label-sub {
+  font-size: 11px;
+  color: var(--aix-text-tertiary);
+  font-weight: 400;
+}
+
+.aix-step-divider {
+  height: 1px;
+  background: var(--aix-border-medium);
+  flex: 1;
+  min-width: 24px;
+  max-width: 80px;
+}
+
+/* -----------------------------------------------------------------------------
+   Form section card (one per numbered section: Lezione / Profilo / Ambiente)
+   ----------------------------------------------------------------------------- */
+.aix-form-section {
+  background-color: var(--aix-paper);
+  border: 1px solid var(--aix-border-soft);
+  border-radius: var(--aix-radius-lg);
+  box-shadow: var(--aix-shadow-soft);
+  padding: 20px 24px 24px;
+}
+
+.aix-form-section-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--aix-border-soft);
+}
+
+.aix-form-section-number {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--aix-cream-darker);
+  color: var(--aix-text-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--aix-font-serif);
+  font-weight: 600;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.aix-form-section-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: var(--aix-radius-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 16px;
+}
+.aix-form-section-icon--amber { background: var(--aix-amber-soft);   color: var(--aix-amber-hover); }
+.aix-form-section-icon--teal  { background: var(--aix-teal-soft);    color: var(--aix-teal); }
+.aix-form-section-icon--navy  { background: var(--aix-cream-darker); color: var(--aix-ink-navy); }
+
+.aix-form-section-title {
+  font-family: var(--aix-font-serif);
+  font-weight: 600;
+  font-size: 18px;
+  color: var(--aix-text-primary);
+  margin: 0;
+}
+
+.aix-form-section-subtitle {
+  font-size: 13px;
+  color: var(--aix-text-secondary);
+  margin: 2px 0 0;
+}
+
+/* -----------------------------------------------------------------------------
+   Form fields — label / input / select / help / required marker
+   ----------------------------------------------------------------------------- */
+.aix-form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.aix-form-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--aix-text-secondary);
+  letter-spacing: 0.01em;
+}
+
+.aix-form-required {
+  color: var(--aix-status-error);
+  margin-left: 2px;
+}
+
+.aix-form-help {
+  font-size: 11px;
+  color: var(--aix-text-tertiary);
+}
+
+/* Carry a custom chevron on .aix-select so it looks like the mockup.
+   The native browser arrow is suppressed via ``appearance: none`` and we paint
+   our own SVG (URL-encoded, no external request). The text-secondary colour
+   inside the SVG matches Inter at this size; if the design system shifts, just
+   re-export with the new --aix-text-secondary hex. */
+.aix-select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'><path d='M3 4.5l3 3 3-3' stroke='%235a6275' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 36px;
+  cursor: pointer;
+}
+
+/* Native multi-select needs scroll room and shouldn't show a chevron */
+.aix-select[multiple] {
+  appearance: auto;
+  -webkit-appearance: auto;
+  background-image: none;
+  padding-right: 12px;
+  cursor: default;
+  min-height: 92px;
+}
+
+/* -----------------------------------------------------------------------------
+   Toggle cards (LIM / WiFi / Suite / Postazioni PC)
+   -----------------------------------------------------------------------------
+   Native <input type="checkbox"> is the form contract — backend reads
+   ``form.get("classroom_has_lim")`` and the paired hidden ``_present=1`` so
+   unchecked = false, checked = true. The label wraps everything so a click
+   anywhere flips the checkbox (and ``:has(:checked)`` repaints the visuals).
+   ----------------------------------------------------------------------------- */
+.aix-toggle-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--aix-border-soft);
+  border-radius: var(--aix-radius);
+  background: var(--aix-paper);
+  cursor: pointer;
+  transition: border-color 120ms, background 120ms;
+}
+.aix-toggle-card:hover { border-color: var(--aix-border-medium); }
+.aix-toggle-card:has(input[type="checkbox"]:checked) {
+  border-color: var(--aix-teal);
+  background: var(--aix-teal-soft);
+}
+.aix-toggle-card:has(input[type="checkbox"]:focus-visible) {
+  outline: 2px solid var(--aix-teal);
+  outline-offset: 2px;
+}
+
+.aix-toggle-card-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--aix-radius-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--aix-cream-darker);
+  color: var(--aix-text-secondary);
+  flex-shrink: 0;
+}
+.aix-toggle-card:has(input[type="checkbox"]:checked) .aix-toggle-card-icon {
+  background: var(--aix-paper);
+  color: var(--aix-teal);
+}
+
+.aix-toggle-card-body {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+  flex: 1;
+  min-width: 0;
+}
+.aix-toggle-card-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--aix-text-primary);
+}
+/* Status text reads "Non disponibile" by default, flips to "Disponibile" when
+   the checkbox is checked. Using ::before + content keeps the i18n string in
+   the HTML (data-on / data-off attrs) so localisers don't need to touch CSS. */
+.aix-toggle-card-status {
+  font-size: 11px;
+  color: var(--aix-text-tertiary);
+}
+.aix-toggle-card-status::before { content: attr(data-off); }
+.aix-toggle-card:has(input[type="checkbox"]:checked) .aix-toggle-card-status {
+  color: var(--aix-teal);
+}
+.aix-toggle-card:has(input[type="checkbox"]:checked) .aix-toggle-card-status::before {
+  content: attr(data-on);
+}
+
+/* The visible switch — purely CSS, driven by the underlying real checkbox */
+.aix-toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 36px;
+  height: 20px;
+  background: var(--aix-border-medium);
+  border-radius: 999px;
+  transition: background 150ms;
+  flex-shrink: 0;
+}
+.aix-toggle-switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  background: #ffffff;
+  border-radius: 50%;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  transition: left 150ms;
+}
+.aix-toggle-card:has(input[type="checkbox"]:checked) .aix-toggle-switch {
+  background: var(--aix-teal);
+}
+.aix-toggle-card:has(input[type="checkbox"]:checked) .aix-toggle-switch::after {
+  left: 18px;
+}
+
+/* Visually hide the underlying checkbox but keep it focusable + accessible */
+.aix-toggle-card input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
+
+/* -----------------------------------------------------------------------------
+   Right-rail informational cards (Suggerimenti / Esempio profilo / …)
+   ----------------------------------------------------------------------------- */
+.aix-side-card {
+  background-color: var(--aix-paper);
+  border: 1px solid var(--aix-border-soft);
+  border-radius: var(--aix-radius);
+  box-shadow: var(--aix-shadow-soft);
+  padding: 16px;
+}
+
+.aix-side-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.aix-side-card-title {
+  font-family: var(--aix-font-serif);
+  font-weight: 600;
+  font-size: 16px;
+  color: var(--aix-text-primary);
+}
+
+.aix-side-card-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.aix-side-card-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--aix-text-secondary);
+  line-height: 1.4;
+}
+
+/* Coloured 8px bullet dot for side-card list items. Variants follow the
+   agent/status palette already declared above, but bullets are small enough
+   that we keep them as a separate utility instead of overloading .aix-dot. */
+.aix-bullet {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-top: 6px;
+  flex-shrink: 0;
+}
+.aix-bullet-success { background: var(--aix-status-success); }
+.aix-bullet-amber   { background: var(--aix-amber); }
+.aix-bullet-teal    { background: var(--aix-teal); }
+.aix-bullet-planner { background: var(--aix-agent-planner); }
+.aix-bullet-info    { background: var(--aix-status-info); }
+
+/* Compact 2-column key-value list used inside "Esempio di profilo" */
+.aix-side-card-kv {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  column-gap: 12px;
+  row-gap: 4px;
+  font-size: 13px;
+  margin: 0;
+}
+.aix-side-card-kv dt {
+  color: var(--aix-text-tertiary);
+  font-weight: 500;
+}
+.aix-side-card-kv dd {
+  margin: 0;
+  color: var(--aix-text-primary);
+}
+
+/* -----------------------------------------------------------------------------
+   Form footer — Annulla · Salva bozza · Crea lezione
+   ----------------------------------------------------------------------------- */
+.aix-form-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-top: 6px;
+}
+
+.aix-form-footer-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* =============================================================================
+   P5.4 — Workspace (lesson chat) components
+   -----------------------------------------------------------------------------
+   Consumed by ``pages/lesson_show.html`` and its 16 partials (the 3 sidebars
+   and chat fragments under ``templates/partials/chat_*.html``).
+
+   Design rules:
+     • All htmx + SSE plumbing (ids, hx-*, sse-*, OOB swap markers) is owned
+       by the templates — these CSS classes only style the surfaces.
+     • Per-agent palette (planner / retriever / writer / critic) reuses the
+       --aix-agent-* tokens declared at the top of the file. No new tokens.
+     • Avatar + card pair share a single shell pattern: ``aix-agent-shell``
+       (flex row) + ``aix-agent-avatar`` + ``aix-agent-card``. Each agent
+       picks a variant; the structure is uniform so the chat reads as one
+       cohesive thread.
+   ============================================================================= */
+
+/* -----------------------------------------------------------------------------
+   Side pane (left = profile, right = media)
+   -----------------------------------------------------------------------------
+   Sticky column with internal scroll so the side rail stays in view while the
+   chat scrolls. The 5rem reserve keeps the column below the top nav.
+   ----------------------------------------------------------------------------- */
+.aix-side-pane {
+  background-color: var(--aix-paper);
+  border: 1px solid var(--aix-border-soft);
+  border-radius: var(--aix-radius);
+  box-shadow: var(--aix-shadow-soft);
+  padding: 16px;
+  font-size: 14px;
+  position: sticky;
+  top: 1rem;
+  max-height: calc(100vh - 5rem);
+  overflow-y: auto;
+}
+
+.aix-side-pane-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.aix-side-pane-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--aix-font-serif);
+  font-weight: 600;
+  font-size: 16px;
+  color: var(--aix-text-primary);
+}
+.aix-side-pane-subtitle {
+  font-size: 12px;
+  color: var(--aix-text-tertiary);
+  margin: 2px 0 12px;
+}
+
+.aix-side-pane-section + .aix-side-pane-section {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--aix-border-soft);
+}
+
+/* 2-column key/value list used by the profile sidebar */
+.aix-profile-kv {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  column-gap: 12px;
+  row-gap: 4px;
+  font-size: 13px;
+  margin: 6px 0 0;
+}
+.aix-profile-kv dt {
+  color: var(--aix-text-tertiary);
+  font-weight: 500;
+}
+.aix-profile-kv dd {
+  margin: 0;
+  color: var(--aix-text-primary);
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+/* Inline cluster of chips inside a side-pane section */
+.aix-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+/* -----------------------------------------------------------------------------
+   Workspace header — sits above the 3-pane grid
+   ----------------------------------------------------------------------------- */
+.aix-workspace-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.aix-workspace-title {
+  font-family: var(--aix-font-serif);
+  font-weight: 600;
+  font-size: 28px;
+  line-height: 1.2;
+  color: var(--aix-text-primary);
+  margin: 0;
+  letter-spacing: -0.005em;
+}
+.aix-workspace-meta {
+  font-size: 12px;
+  color: var(--aix-text-tertiary);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  margin-top: 4px;
+}
+.aix-workspace-meta-sep { color: var(--aix-border-medium); }
+.aix-workspace-meta code {
+  font-size: 10.5px;
+  background: var(--aix-cream-darker);
+  padding: 1px 6px;
+  border-radius: var(--aix-radius-sm);
+  color: var(--aix-text-secondary);
+}
+
+/* -----------------------------------------------------------------------------
+   Agent shell — common skeleton: round avatar + card
+   ----------------------------------------------------------------------------- */
+.aix-agent-shell {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.aix-agent-avatar {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--aix-cream-darker);
+  color: var(--aix-text-secondary);
+  box-shadow: 0 0 0 2px var(--aix-paper), var(--aix-shadow-soft);
+  font-size: 15px;
+}
+.aix-agent-avatar--planner    { background: var(--aix-agent-planner-soft);    color: var(--aix-agent-planner); }
+.aix-agent-avatar--retriever  { background: var(--aix-agent-retriever-soft);  color: var(--aix-agent-retriever); }
+.aix-agent-avatar--writer     { background: var(--aix-agent-writer-soft);     color: var(--aix-amber-hover); }
+.aix-agent-avatar--critic     { background: var(--aix-agent-critic-soft);     color: var(--aix-agent-critic); }
+.aix-agent-avatar--lesson     { background: var(--aix-ink-navy);              color: var(--aix-text-on-dark); }
+.aix-agent-avatar--error      { background: var(--aix-status-error-soft);     color: var(--aix-status-error); }
+.aix-agent-avatar--user       { background: var(--aix-teal);                  color: var(--aix-text-on-dark); font-weight: 600; font-size: 13px; letter-spacing: 0.04em; }
+
+.aix-agent-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.aix-agent-card {
+  background-color: var(--aix-paper);
+  border: 1px solid var(--aix-border-soft);
+  border-radius: var(--aix-radius);
+  box-shadow: var(--aix-shadow-soft);
+  overflow: hidden;
+}
+.aix-agent-card--planner    { border-color: var(--aix-agent-planner-soft); }
+.aix-agent-card--retriever  { border-color: var(--aix-agent-retriever-soft); }
+.aix-agent-card--writer     { border-color: var(--aix-agent-writer-soft); }
+.aix-agent-card--critic     { border-color: var(--aix-agent-critic-soft); }
+.aix-agent-card--lesson     { border-color: var(--aix-border-medium); box-shadow: var(--aix-shadow-medium); }
+.aix-agent-card--error      { border-color: var(--aix-status-error-soft); background: #fff7f7; }
+
+/* Card header — tinted strip with title + role + status pill on the right */
+.aix-agent-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--aix-border-soft);
+}
+.aix-agent-card-header--planner   { background: var(--aix-agent-planner-soft);   border-bottom-color: rgba(111, 94, 196, 0.18); }
+.aix-agent-card-header--retriever { background: var(--aix-agent-retriever-soft); border-bottom-color: rgba(45, 138, 138, 0.18); }
+.aix-agent-card-header--writer    { background: var(--aix-agent-writer-soft);    border-bottom-color: rgba(212, 164, 90, 0.22); }
+.aix-agent-card-header--critic    { background: var(--aix-agent-critic-soft);    border-bottom-color: rgba(47, 143, 106, 0.18); }
+.aix-agent-card-header--lesson    { background: var(--aix-cream); }
+.aix-agent-card-header--error     { background: var(--aix-status-error-soft); border-bottom-color: rgba(198, 74, 74, 0.18); }
+
+.aix-agent-card-title {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--aix-text-primary);
+}
+.aix-agent-card-role {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--aix-text-secondary);
+}
+
+.aix-agent-card-body {
+  padding: 14px 16px;
+  font-size: 14px;
+  color: var(--aix-text-primary);
+}
+
+.aix-agent-footer-label {
+  font-size: 11px;
+  color: var(--aix-text-tertiary);
+  margin-top: 4px;
+  margin-left: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* -----------------------------------------------------------------------------
+   Stat tile grid — used by the retriever counts row
+   ----------------------------------------------------------------------------- */
+.aix-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+@media (min-width: 768px) {
+  .aix-stat-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+.aix-stat-tile {
+  border: 1px solid var(--aix-border-soft);
+  background: var(--aix-cream);
+  border-radius: var(--aix-radius-sm);
+  padding: 10px 8px;
+  text-align: center;
+}
+.aix-stat-tile-value {
+  font-family: var(--aix-font-serif);
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--aix-text-primary);
+  line-height: 1.1;
+}
+.aix-stat-tile-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--aix-text-tertiary);
+  margin-top: 2px;
+}
+
+/* -----------------------------------------------------------------------------
+   Tool-call pill — surfaces "graphrag.search · medium confidence" style line
+   ----------------------------------------------------------------------------- */
+.aix-tool-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--aix-text-secondary);
+  background: var(--aix-cream);
+  border: 1px solid var(--aix-border-soft);
+  border-radius: var(--aix-radius-sm);
+  padding: 4px 10px;
+  font-family: var(--aix-font-sans);
+}
+.aix-tool-pill code {
+  font-size: 11px;
+  color: var(--aix-text-primary);
+  background: transparent;
+}
+
+/* -----------------------------------------------------------------------------
+   Outcome callout — corrective-RAG row inside the retriever card
+   -----------------------------------------------------------------------------
+   Four variants matching the four ``retrieval_outcome`` tokens. Logic still
+   lives in the template (Jinja sets the variant class), the CSS just paints.
+   ----------------------------------------------------------------------------- */
+.aix-outcome-callout {
+  border: 1px solid var(--aix-border-soft);
+  border-radius: var(--aix-radius-sm);
+  padding: 10px 12px;
+  font-size: 13px;
+}
+.aix-outcome-callout--success { background: var(--aix-status-success-soft); border-color: rgba(47, 143, 106, 0.22); color: var(--aix-text-primary); }
+.aix-outcome-callout--info    { background: var(--aix-status-info-soft);    border-color: rgba(59, 111, 168, 0.22); color: var(--aix-text-primary); }
+.aix-outcome-callout--warning { background: var(--aix-status-warning-soft); border-color: rgba(212, 164, 90, 0.32); color: var(--aix-text-primary); }
+.aix-outcome-callout--error   { background: var(--aix-status-error-soft);   border-color: rgba(198, 74, 74, 0.24); color: var(--aix-text-primary); }
+
+.aix-outcome-callout-headline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.aix-outcome-callout--success .aix-outcome-callout-headline { color: var(--aix-status-success); }
+.aix-outcome-callout--info    .aix-outcome-callout-headline { color: var(--aix-status-info); }
+.aix-outcome-callout--warning .aix-outcome-callout-headline { color: #8c6a23; }
+.aix-outcome-callout--error   .aix-outcome-callout-headline { color: var(--aix-status-error); }
+
+.aix-outcome-callout-attempts {
+  font-size: 11px;
+  color: var(--aix-text-tertiary);
+  white-space: nowrap;
+}
+.aix-outcome-callout-body { margin-top: 6px; line-height: 1.45; }
+.aix-outcome-callout-body code {
+  background: rgba(26, 37, 64, 0.06);
+  border-radius: var(--aix-radius-sm);
+  padding: 1px 6px;
+  font-size: 11.5px;
+}
+.aix-outcome-callout-detail {
+  margin-top: 6px;
+  font-size: 11.5px;
+  font-style: italic;
+  color: var(--aix-text-secondary);
+}
+.aix-outcome-callout-conclusion {
+  margin-top: 8px;
+  font-size: 11.5px;
+}
+.aix-outcome-callout--info .aix-outcome-callout-conclusion { color: var(--aix-status-info); }
+
+/* -----------------------------------------------------------------------------
+   Coverage banner — CORE 2 #9.UX-5 (Corrective-RAG-OFF teacher explainability)
+   -----------------------------------------------------------------------------
+   Parallel structure to ``.aix-outcome-callout`` but with friendlier
+   (non-uppercase) typography because this banner is the PRIMARY
+   explainability for teachers when Corrective RAG is disabled — it's the
+   first (and only) narrative the teacher reads about what the KG actually
+   returned. Three tiers:
+
+       --healthy       (≥5 KG nodes)   sage    "Ricerca completata sulla base..."
+       --limited       (1-4 KG nodes)  amber   "Copertura parziale..."
+       --out-of-scope  (0 KG nodes)    info    "Questo argomento non è presente..."
+
+   Reuses the existing status-* tokens so the colors stay coherent with
+   the rest of the chat workspace. Mutually exclusive with the CR-ON
+   ``.aix-outcome-callout`` block — the template gates them on
+   ``payload.retrieval_grade`` so only one block ever renders per turn.
+   ----------------------------------------------------------------------------- */
+.aix-coverage-banner {
+  border: 1px solid var(--aix-border-soft);
+  border-radius: var(--aix-radius-sm);
+  padding: 12px 14px;
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.aix-coverage-banner--healthy      { background: var(--aix-status-success-soft); border-color: rgba(47, 143, 106, 0.22); }
+.aix-coverage-banner--limited      { background: var(--aix-status-warning-soft); border-color: rgba(212, 164, 90, 0.32); }
+.aix-coverage-banner--out-of-scope { background: var(--aix-status-info-soft);    border-color: rgba(59, 111, 168, 0.22); }
+
+.aix-coverage-banner-headline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 13.5px;
+  line-height: 1.3;
+}
+.aix-coverage-banner--healthy      .aix-coverage-banner-headline { color: var(--aix-status-success); }
+.aix-coverage-banner--limited      .aix-coverage-banner-headline { color: #8c6a23; }
+.aix-coverage-banner--out-of-scope .aix-coverage-banner-headline { color: var(--aix-status-info); }
+
+.aix-coverage-banner-body {
+  margin: 0;
+  line-height: 1.5;
+  color: var(--aix-text-secondary);
+  font-size: 12.5px;
+}
+
+/* -----------------------------------------------------------------------------
+   Score bar (critic)
+   ----------------------------------------------------------------------------- */
+.aix-score-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--aix-border-soft);
+  overflow: hidden;
+}
+.aix-score-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 240ms ease-out;
+}
+.aix-score-bar-fill--high   { background: var(--aix-status-success); }
+.aix-score-bar-fill--mid    { background: var(--aix-amber); }
+.aix-score-bar-fill--low    { background: var(--aix-status-error); }
+
+/* -----------------------------------------------------------------------------
+   Skeleton (writer-pending placeholder)
+   ----------------------------------------------------------------------------- */
+@keyframes aix-pulse-soft {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.55; }
+}
+.aix-skeleton-stack { display: flex; flex-direction: column; gap: 8px; animation: aix-pulse-soft 1.6s ease-in-out infinite; }
+.aix-skeleton-line  { height: 11px; background: var(--aix-cream-darker); border-radius: 999px; }
+
+/* -----------------------------------------------------------------------------
+   User chat bubble (right-aligned, teal)
+   ----------------------------------------------------------------------------- */
+.aix-msg-row-user {
+  display: flex;
+  flex-direction: row-reverse;
+  align-items: flex-start;
+  gap: 12px;
+}
+.aix-msg-bubble-user {
+  max-width: 85%;
+  background: var(--aix-teal);
+  color: var(--aix-text-on-dark);
+  border-radius: 18px;
+  border-top-right-radius: 4px;
+  padding: 10px 14px;
+  box-shadow: var(--aix-shadow-soft);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+  font-size: 14px;
+}
+.aix-msg-user-meta {
+  font-size: 11px;
+  color: var(--aix-text-tertiary);
+  margin-top: 4px;
+  margin-right: 4px;
+  text-align: right;
+}
+
+/* -----------------------------------------------------------------------------
+   Chat input shell (3 states)
+   -----------------------------------------------------------------------------
+   Border + focus-within ring use brand teal. Disabled state dims the whole
+   shell. The icon buttons (paperclip / mermaid) are uniform 32x32 rounded
+   targets sitting inside the same shell.
+   ----------------------------------------------------------------------------- */
+.aix-chat-input-shell {
+  background: var(--aix-paper);
+  border: 1px solid var(--aix-border-medium);
+  border-radius: var(--aix-radius);
+  box-shadow: var(--aix-shadow-soft);
+  padding: 8px 8px 8px 8px;
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  transition: border-color 120ms, box-shadow 120ms;
+}
+.aix-chat-input-shell:focus-within {
+  border-color: var(--aix-teal);
+  box-shadow: 0 0 0 3px var(--aix-teal-soft), var(--aix-shadow-soft);
+}
+.aix-chat-input-shell--disabled {
+  opacity: 0.7;
+}
+
+.aix-chat-input-icons {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding-bottom: 2px;
+}
+.aix-chat-input-icon-btn {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--aix-radius-sm);
+  color: var(--aix-text-tertiary);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  transition: background 120ms, color 120ms;
+}
+.aix-chat-input-icon-btn:hover {
+  background: var(--aix-cream-darker);
+  color: var(--aix-text-primary);
+}
+.aix-chat-input-icon-btn:disabled,
+.aix-chat-input-icon-btn[disabled] {
+  color: var(--aix-border-medium);
+  cursor: not-allowed;
+  background: transparent;
+}
+
+.aix-chat-input-textarea {
+  flex: 1;
+  resize: none;
+  border: 0;
+  background: transparent;
+  font-family: var(--aix-font-sans);
+  font-size: 14px;
+  color: var(--aix-text-primary);
+  padding: 6px 4px;
+  line-height: 1.5;
+}
+.aix-chat-input-textarea::placeholder { color: var(--aix-text-tertiary); }
+.aix-chat-input-textarea:focus { outline: none; }
+
+.aix-chat-input-send {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--aix-amber);
+  color: #ffffff;
+  border: 1px solid var(--aix-amber);
+  font-weight: 600;
+  font-size: 13px;
+  padding: 7px 14px;
+  border-radius: var(--aix-radius-sm);
+  cursor: pointer;
+  transition: background 120ms;
+}
+.aix-chat-input-send:hover {
+  background: var(--aix-amber-hover);
+  border-color: var(--aix-amber-hover);
+}
+.aix-chat-input-send:disabled,
+.aix-chat-input-send[disabled] {
+  background: var(--aix-border-medium);
+  border-color: var(--aix-border-medium);
+  cursor: not-allowed;
+}
+
+.aix-chat-input-hint {
+  font-size: 11px;
+  color: var(--aix-text-tertiary);
+  padding: 6px 10px 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  line-height: 1.5;
+}
+.aix-chat-input-hint kbd {
+  font-family: var(--aix-font-sans);
+  font-size: 10px;
+  background: var(--aix-cream-darker);
+  border: 1px solid var(--aix-border-soft);
+  border-radius: 4px;
+  padding: 1px 5px;
+  color: var(--aix-text-secondary);
+}
+
+/* -----------------------------------------------------------------------------
+   Attachment chip (above the chat input)
+   ----------------------------------------------------------------------------- */
+.aix-attach-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--aix-cream);
+  border: 1px solid var(--aix-border-soft);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 12px;
+  color: var(--aix-text-primary);
+  box-shadow: var(--aix-shadow-soft);
+}
+.aix-attach-chip-sep { color: var(--aix-border-medium); }
+.aix-attach-chip-size { color: var(--aix-text-tertiary); }
+.aix-attach-chip-remove {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 0;
+  background: transparent;
+  color: var(--aix-text-tertiary);
+  cursor: pointer;
+}
+.aix-attach-chip-remove:hover {
+  background: var(--aix-status-error-soft);
+  color: var(--aix-status-error);
+}
+
+/* -----------------------------------------------------------------------------
+   Empty state (dashed)
+   ----------------------------------------------------------------------------- */
+.aix-empty-state {
+  border: 2px dashed var(--aix-border-medium);
+  border-radius: var(--aix-radius);
+  padding: 28px 24px;
+  text-align: center;
+  background: var(--aix-paper);
+  color: var(--aix-text-secondary);
+}
+.aix-empty-state-icon {
+  font-size: 28px;
+  color: var(--aix-border-medium);
+  margin-bottom: 8px;
+}
+.aix-empty-state-title {
+  font-weight: 600;
+  color: var(--aix-text-primary);
+}
+.aix-empty-state-body {
+  font-size: 13px;
+  color: var(--aix-text-secondary);
+  max-width: 36ch;
+  margin: 4px auto 0;
+}
+
+/* -----------------------------------------------------------------------------
+   Media panel sections (right rail)
+   ----------------------------------------------------------------------------- */
+.aix-media-section + .aix-media-section {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--aix-border-soft);
+}
+.aix-media-section > summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--aix-text-tertiary);
+  margin-bottom: 6px;
+}
+.aix-media-section > summary::-webkit-details-marker { display: none; }
+.aix-media-section > summary:hover { color: var(--aix-text-primary); }
+
+.aix-media-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.aix-media-item {
+  font-size: 13px;
+  line-height: 1.4;
+}
+.aix-media-item a {
+  color: var(--aix-teal);
+  text-decoration: none;
+}
+.aix-media-item a:hover {
+  color: var(--aix-teal-hover);
+  text-decoration: underline;
+}
+.aix-media-item-title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+.aix-media-item-meta {
+  font-size: 11px;
+  color: var(--aix-text-tertiary);
+  margin-left: 18px;
+}
+
+/* -----------------------------------------------------------------------------
+   Lesson card metadata strip
+   ----------------------------------------------------------------------------- */
+.aix-meta-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 16px;
+  padding: 8px 16px;
+  font-size: 12px;
+  color: var(--aix-text-secondary);
+  background: var(--aix-paper);
+  border-bottom: 1px solid var(--aix-border-soft);
+}
+.aix-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.aix-meta-item strong {
+  font-weight: 600;
+  color: var(--aix-text-primary);
+}
+
+/* -----------------------------------------------------------------------------
+   Lesson card footer actions
+   ----------------------------------------------------------------------------- */
+.aix-lesson-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 16px;
+  background: var(--aix-cream);
+  border-top: 1px solid var(--aix-border-soft);
+}
+.aix-lesson-footer-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.aix-lesson-footer-label {
+  font-size: 11px;
+  color: var(--aix-text-tertiary);
+  margin-right: 4px;
+}

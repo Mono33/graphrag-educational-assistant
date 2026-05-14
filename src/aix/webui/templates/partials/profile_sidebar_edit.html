@@ -1,5 +1,5 @@
 {#
-  Profile sidebar — EDIT mode (CORE 2 #6.6 P2 phase 2).
+  Profile sidebar — EDIT mode (CORE 2 #6.6 P2 phase 2 / re-skin P5.4).
 
   Compact inline form that replaces the read-only profile_sidebar.html
   when the user clicks "Aggiorna profilo". Pre-filled with the lesson's
@@ -14,6 +14,15 @@
     - "Annulla" does hx-get /webui/lesson/{id}/profile → returns the
       read-only sidebar.
 
+  PRESERVED FOR HTMX / BACKEND CONTRACT (do not rename):
+    - id="profile-sidebar"             ← hx-target on both sides of the toggle.
+    - All <input>/<select> name=        ← read by the POST handler.
+    - <wa-input>, <wa-select>, <wa-checkbox>, <wa-callout>, <wa-button> stay
+      WebAwesome components because (a) the existing POST handler reads
+      their values just fine via the standard form-association protocol
+      and (b) the inline form is dense, scoped, and not part of the main
+      "Crea lezione" flow that we hand-rolled with native controls in P5.3.
+
   Required context:
     lesson           Lesson ORM
     profile_errors   Optional[list[str]]   — validation error strings
@@ -26,19 +35,19 @@
 {% set room    = profile.get('classroom') or {} %}
 
 <aside id="profile-sidebar"
-       class="rounded-xl border-2 border-sky-300 bg-white p-4 shadow-md space-y-3
-              text-sm sticky top-4 overflow-y-auto max-h-[calc(100vh-5rem)]">
+       class="aix-side-pane"
+       style="border-color:var(--aix-amber); border-width:1.5px;">
 
   {# ── Header ──────────────────────────────────────────────────────── #}
-  <div class="flex items-center gap-2 text-sky-700">
+  <div class="aix-side-pane-title" style="color:var(--aix-amber-hover);">
     <wa-icon name="pen-to-square"></wa-icon>
-    <strong>Modifica profilo</strong>
+    <span>Modifica profilo</span>
   </div>
 
   {% if profile_errors %}
-    <wa-callout variant="danger" size="small">
+    <wa-callout variant="danger" size="small" style="margin-top:8px;">
       <wa-icon slot="icon" name="circle-exclamation"></wa-icon>
-      <ul class="ml-3 list-disc text-xs">
+      <ul style="margin:0; padding-left:18px; font-size:12px;">
         {% for e in profile_errors %}
           <li>{{ e }}</li>
         {% endfor %}
@@ -49,11 +58,11 @@
   <form hx-post="/webui/lesson/{{ lesson.id }}/profile"
         hx-target="#profile-sidebar"
         hx-swap="outerHTML"
-        class="space-y-3">
+        style="display:flex; flex-direction:column; gap:12px; margin-top:12px;">
 
     {# ── Lesson title ──────────────────────────────────────────────── #}
-    <fieldset class="space-y-2">
-      <legend class="text-[10px] uppercase tracking-wide text-slate-500">Titolo</legend>
+    <fieldset style="border:0; padding:0; margin:0; display:flex; flex-direction:column; gap:8px;">
+      <legend class="aix-section-label">Titolo</legend>
       <wa-input type="text" name="lesson_title"
                 label="Titolo lezione" size="small"
                 value="{{ lesson.title or '' }}"
@@ -61,14 +70,14 @@
     </fieldset>
 
     {# ── Lesson framing ────────────────────────────────────────────── #}
-    <fieldset class="space-y-2">
-      <legend class="text-[10px] uppercase tracking-wide text-slate-500">Lezione</legend>
+    <fieldset style="border:0; padding:0; margin:0; display:flex; flex-direction:column; gap:8px;">
+      <legend class="aix-section-label">Lezione</legend>
 
       {% set _domain = lesson.domain or 'neuro' %}
       <wa-select name="domain" label="Dominio" size="small">
-        <wa-option value="neuro" {% if _domain == 'neuro' %}selected{% endif %}>🧠 Neuro</wa-option>
-        <wa-option value="udl" {% if _domain == 'udl' %}selected{% endif %}>🎯 UDL</wa-option>
-        <wa-option value="all" {% if _domain == 'all' %}selected{% endif %}>🌐 Tutti</wa-option>
+        <wa-option value="neuro" {% if _domain == 'neuro' %}selected{% endif %}>Neuro</wa-option>
+        <wa-option value="udl"   {% if _domain == 'udl'   %}selected{% endif %}>UDL</wa-option>
+        <wa-option value="all"   {% if _domain == 'all'   %}selected{% endif %}>Tutti</wa-option>
       </wa-select>
 
       <wa-input type="text" name="subject_area"
@@ -89,8 +98,8 @@
     </fieldset>
 
     {# ── Class ─────────────────────────────────────────────────────── #}
-    <fieldset class="space-y-2">
-      <legend class="text-[10px] uppercase tracking-wide text-slate-500">Classe</legend>
+    <fieldset style="border:0; padding:0; margin:0; display:flex; flex-direction:column; gap:8px;">
+      <legend class="aix-section-label">Classe</legend>
 
       <wa-input type="text" name="group_title"
                 label="Nome" size="small"
@@ -134,8 +143,8 @@
     </fieldset>
 
     {# ── Classroom ─────────────────────────────────────────────────── #}
-    <fieldset class="space-y-2">
-      <legend class="text-[10px] uppercase tracking-wide text-slate-500">Aula</legend>
+    <fieldset style="border:0; padding:0; margin:0; display:flex; flex-direction:column; gap:8px;">
+      <legend class="aix-section-label">Aula</legend>
 
       <wa-input type="text" name="classroom_title"
                 label="Nome" size="small"
@@ -156,14 +165,14 @@
         {% endfor %}
       </wa-select>
 
-      <div class="grid grid-cols-2 gap-2 text-[12px]">
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; font-size:12px;">
         {% for fld, lbl, key in [
           ('classroom_has_lim',    'LIM',   'has_lim'),
           ('classroom_has_wifi',   'WiFi',  'has_wifi'),
           ('classroom_has_suite',  'Suite', 'has_suite'),
           ('classroom_pc_station', 'PC',    'pc_station'),
         ] %}
-          <label class="flex items-center gap-1.5 cursor-pointer">
+          <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
             <input type="hidden" name="{{ fld }}_present" value="1">
             <wa-checkbox name="{{ fld }}"
               {% if room.get(key) %}checked{% endif %}
@@ -174,17 +183,18 @@
     </fieldset>
 
     {# ── Actions ───────────────────────────────────────────────────── #}
-    <div class="flex items-center gap-2 pt-2 border-t border-slate-200">
-      <wa-button type="button" size="small" variant="default"
-                 hx-get="/webui/lesson/{{ lesson.id }}/profile"
-                 hx-target="#profile-sidebar"
-                 hx-swap="outerHTML">
+    <div style="display:flex; gap:8px; padding-top:8px;
+                border-top:1px solid var(--aix-border-soft);">
+      <button type="button" class="aix-btn aix-btn-outline aix-btn-sm"
+              hx-get="/webui/lesson/{{ lesson.id }}/profile"
+              hx-target="#profile-sidebar"
+              hx-swap="outerHTML">
         Annulla
-      </wa-button>
-      <wa-button type="submit" size="small" variant="brand" class="flex-1">
-        <wa-icon slot="prefix" name="check"></wa-icon>
+      </button>
+      <button type="submit" class="aix-btn aix-btn-primary aix-btn-sm" style="flex:1;">
+        <wa-icon name="check" style="font-size:0.85rem;"></wa-icon>
         Salva
-      </wa-button>
+      </button>
     </div>
 
   </form>

@@ -88,6 +88,7 @@ from aix.webui.agent import run_agent_stream
 from aix.webui.auth.dependencies import optional_current_user
 from aix.webui.auth.models import User
 from aix.webui.db import get_async_session
+from aix.webui.lessons.display import lesson_to_row
 from aix.webui.lessons.models import Lesson, LessonMessage
 from aix.webui.lessons.schemas import form_to_profile_dict
 from aix.webui.lessons.uploads import delete_upload, save_upload
@@ -197,20 +198,67 @@ async def lesson_list(
     user: Optional[User] = Depends(optional_current_user),
     session: AsyncSession = Depends(get_async_session),
 ) -> Response:
-    """List all lessons for the current user, newest first."""
+    """
+    List all lessons for the current user, newest first.
+
+    Brand-pass (CORE 2 #6.6 P5) additions to the context passed to the
+    template — all *derived* from the same query result, no extra DB hits:
+
+        rows     : list[row_dict]  — flattened lesson rows (display.lesson_to_row)
+        stats    : dict[str, int]  — counts per status (total, draft, complete, …)
+        filters  : dict[str, list] — distinct values for sidebar filters
+                                     (subjects, classes, disabilities)
+        active_nav : str           — highlights "Le mie lezioni" in the navbar
+
+    The legacy ``lessons`` context var (list of ORM rows) is kept around for
+    backward compatibility — the new template doesn't consume it, but any
+    yet-unmigrated partial that imports this route's context still works.
+    """
     if user is None:
         return _bounce_to_login("/webui/lessons")
 
     result = await session.execute(
         select(Lesson)
         .where(Lesson.owner_id == user.id)
-        .order_by(Lesson.created_at.desc())
+        .order_by(Lesson.updated_at.desc())
     )
-    lessons = result.scalars().all()
+    lessons = list(result.scalars().all())
+
+    rows = [lesson_to_row(l) for l in lessons]
+
+    # Aggregate stats for the one-liner subtitle ("7 lezioni · 0 bozze · …").
+    stats = {
+        "total":    len(rows),
+        "draft":    sum(1 for r in rows if r["status"] == "draft"),
+        "running":  sum(1 for r in rows if r["status"] == "running"),
+        "complete": sum(1 for r in rows if r["status"] == "complete"),
+        "error":    sum(1 for r in rows if r["status"] == "error"),
+    }
+
+    # Distinct filter values, derived from the rows we already have. Sorted
+    # so the sidebar checkboxes render deterministically. Empty strings are
+    # dropped so a row with no subject doesn't get a blank checkbox.
+    def _distinct(values: list[str]) -> list[str]:
+        return sorted({v for v in values if v})
+
+    filters = {
+        "subjects":     _distinct(r["subject"] for r in rows),
+        "classes":      _distinct(r["group_title"] for r in rows),
+        "disabilities": _distinct(d for r in rows for d in (r["disabilities"] or [])),
+    }
 
     return templates.TemplateResponse(
         "pages/lesson_list.html",
-        {"request": request, "user": user, "lessons": lessons},
+        {
+            "request":     request,
+            "user":        user,
+            "lessons":     lessons,         # legacy context var, kept for compat
+            "rows":        rows,            # new shape for the brand template
+            "stats":       stats,
+            "filters":     filters,
+            "active_nav":  "lessons",
+            "title":       "Le mie lezioni · AixLearning",
+        },
     )
 
 
@@ -387,6 +435,8 @@ async def lesson_new_get(
             "title": "Nuova lezione · AixLearning",
             "phase": "P3 — Chat workspace + allegati",
             "user": user,
+            # CORE 2 #6.6 P5.3 — drives the navbar's underline on "Crea lezione".
+            "active_nav": "new",
             "form_errors": None,
             "form_values": {},
             **_label_dicts(),
@@ -452,6 +502,9 @@ async def lesson_create(
                 "title": "Nuova lezione · AixLearning",
                 "phase": "P3 — Chat workspace + allegati",
                 "user": user,
+                # CORE 2 #6.6 P5.3 — keep the navbar consistent on the
+                # error-redisplay path (the user is still on /lesson/new).
+                "active_nav": "new",
                 "form_errors": [
                     f"{'.'.join(str(p) for p in err.get('loc', ()))}: "
                     f"{err.get('msg', 'campo non valido')}"
@@ -572,6 +625,11 @@ async def lesson_show(
             "lesson_plan_html": lesson_plan_html,
             "meta": meta_for_replay,
             "media": None,  # not persisted yet — empty placeholder on reload
+            # P5.4 — workspace is a "leaf" of the Library tab. Highlighting
+            # "Le mie lezioni" in the top nav matches the user's mental model
+            # ("I'm inside one of my lessons") and is the same convention the
+            # Library list uses (active_nav="lessons").
+            "active_nav": "lessons",
             **_label_dicts(),
         },
     )

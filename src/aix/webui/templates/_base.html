@@ -16,6 +16,10 @@
       - htmx 2 (hypermedia)
       - Tailwind CSS (utility CSS)
       - Alpine.js (tiny client-side islands)
+
+    P5 brand pass adds:
+      - /static/css/aix-brand.css — warm-academic design tokens + components
+      - Google Fonts: Crimson Pro (serif headings), Inter (sans body/UI)
   #}
 
   <link rel="stylesheet"
@@ -45,12 +49,13 @@
   <script defer
           src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.0/dist/cdn.min.js"></script>
 
+  {# P5 brand pass — warm-academic design tokens + components. Loaded AFTER
+     Tailwind CDN so .aix-* classes win against any Tailwind utility collision. #}
+  <link rel="stylesheet" href="/static/css/aix-brand.css">
+
   <style>
     /* Avoid flash of unstyled content from web-component upgrades. */
     :not(:defined) { visibility: hidden; }
-    body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI",
-                        Roboto, "Helvetica Neue", Arial, sans-serif; }
-    .font-serif { font-family: "Source Serif Pro", Georgia, serif; }
 
     /*
       ── .lesson-prose ────────────────────────────────────────────────
@@ -99,7 +104,7 @@
 
   {% block head_extra %}{% endblock %}
 </head>
-<body class="bg-slate-50 text-slate-900 min-h-screen flex flex-col">
+<body class="aix-body min-h-screen flex flex-col">
 
   {% include "partials/navbar.html" %}
 
@@ -108,20 +113,24 @@
     (280px profile + chat + 320px media) on lg screens (≥1024px). Forms
     cap themselves narrower via their own ``max-w-*`` on the inner
     ``<section>`` so they remain readable.
+
+    Brand pass (P5): pages can override ``main_container_class`` to opt
+    out of the centred max-w-7xl wrapper when they need a 3-column grid
+    that fills the viewport (Library, Workspace). The default keeps
+    every existing page rendering identically.
   #}
-  <main class="flex-1 max-w-7xl mx-auto w-full px-6 py-8">
+  <main class="flex-1 {{ main_container_class or 'max-w-7xl mx-auto w-full px-6 py-8' }}">
     {% block content %}{% endblock %}
   </main>
 
-  <footer class="bg-white border-t border-slate-200">
-    <div class="max-w-6xl mx-auto px-6 py-4 text-xs text-slate-500
-                flex flex-wrap items-center gap-x-2 gap-y-1">
+  <footer class="aix-footer">
+    <div class="aix-footer-inner">
       <span>Built with</span>
-      <span class="font-mono text-slate-700">FastAPI · htmx · WebAwesome · Tailwind</span>
-      <span class="text-slate-300">·</span>
-      <span>Path C Mirror Stack — ADR-0001</span>
-      <span class="text-slate-300">·</span>
-      <a class="text-slate-500 hover:text-slate-800" href="/docs">API docs</a>
+      <span class="font-mono">FastAPI · htmx · WebAwesome · Tailwind</span>
+      <span class="aix-footer-sep">·</span>
+      <a href="/docs">API docs</a>
+      <span class="aix-footer-sep">·</span>
+      <span>v0.4.0</span>
     </div>
   </footer>
 

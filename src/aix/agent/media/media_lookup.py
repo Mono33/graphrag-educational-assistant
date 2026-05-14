@@ -30,6 +30,8 @@ class VideoResource:
     platform: str  # youtube, vimeo, etc.
     search_query: str
     url: Optional[str] = None
+    embed_url: Optional[str] = None  # verified embed URL (new pool format)
+    rights_status: Optional[str] = None  # youtube_embed | youtube_cc (new pool format)
     duration_hint: Optional[str] = None
     language: str = "en"
     educational_level: str = "general"
@@ -100,8 +102,9 @@ class MediaContent:
         if self.videos:
             lines.append(f"\n### 🎥 Video per '{self.concept_name}':")
             for v in self.videos[:3]:
-                if v.url:
-                    lines.append(f"- [{v.title}]({v.url}) ({v.duration_hint or 'video'})")
+                display_url = v.url or v.embed_url
+                if display_url:
+                    lines.append(f"- [{v.title}]({display_url}) ({v.duration_hint or 'video'})")
                 else:
                     lines.append(f"- Cerca: \"{v.search_query}\" su {v.platform}")
         
@@ -132,7 +135,8 @@ class MediaContent:
                 if c.journal:
                     lines.append(f"  {c.journal}")
                 if c.doi:
-                    lines.append(f"  DOI: {c.doi}")
+                    doi_link = f"https://doi.org/{c.doi}"
+                    lines.append(f"  [DOI: {c.doi}]({doi_link})")
         
         if self.open_textbooks:
             lines.append(f"\n### 📚 Libri di Testo Aperti (OER) per '{self.concept_name}':")
@@ -164,7 +168,7 @@ class MediaLookup:
     def __init__(self, domain: str = "neuro", mapping_path: Optional[str] = None):
         """
         Initialize Media Lookup.
-        
+
         Args:
             domain: Knowledge domain ("neuro" or "udl")
             mapping_path: Optional custom path to media mapping JSON
@@ -173,51 +177,81 @@ class MediaLookup:
         self.media_by_concept: Dict[str, Dict] = {}
         self.media_by_id: Dict[str, Dict] = {}
         self.loaded = False
-        
+        self._pool_loaded = False  # True when loaded from the new verified pool format
+
         # Default path based on domain.
         # Media mapping JSONs live under <repo_root>/data/media/
         # (separated from data/kg/{domain}/ which holds the KG dump only).
         if mapping_path is None:
             # Walk up from src/aix/agent/media/ to the repo root (5 levels)
             repo_root = Path(__file__).resolve().parent.parent.parent.parent.parent
-            mapping_path = repo_root / "data" / "media" / f"kg_{domain}_media_mapping.json"
+            pool_path = repo_root / "data" / "media" / f"kg_{domain}_media_pool.json"
+            legacy_path = repo_root / "data" / "media" / f"kg_{domain}_media_mapping.json"
+            # Prefer the verified pool if it exists
+            mapping_path = pool_path if pool_path.exists() else legacy_path
         else:
             mapping_path = Path(mapping_path)
-        
+
         self.mapping_path = mapping_path
         self._load_mapping()
     
     def _load_mapping(self) -> None:
-        """Load media mapping from JSON file"""
+        """Load media mapping from JSON file (verified pool or legacy mapping)."""
         if not self.mapping_path.exists():
             logger.warning(
                 f"[MediaLookup] Media mapping not found at {self.mapping_path}. "
-                "Run generate_media_mapping.py to create it."
+                "Run scripts/media_pool/01_run_pool_agent.py to generate the verified pool."
             )
             return
-        
+
         try:
-            with open(self.mapping_path, 'r', encoding='utf-8') as f:
+            with open(self.mapping_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            
-            concepts = data.get('concepts', [])
-            
-            for concept in concepts:
-                name = concept.get('name', '').lower().strip()
-                concept_id = concept.get('id', '')
-                
-                if name:
-                    self.media_by_concept[name] = concept
-                if concept_id:
-                    self.media_by_id[concept_id] = concept
-            
-            self.loaded = True
-            logger.info(
-                f"[MediaLookup] Loaded media mapping: {len(self.media_by_concept)} concepts"
-            )
-            
+
+            # Detect format: verified pool has top-level "entries" dict keyed by concept name
+            if "entries" in data and isinstance(data["entries"], dict):
+                self._load_pool_format(data)
+            else:
+                self._load_legacy_format(data)
+
         except Exception as e:
             logger.error(f"[MediaLookup] Failed to load media mapping: {e}")
+
+    def _load_pool_format(self, data: Dict) -> None:
+        """Load the new verified pool format (kg_{domain}_media_pool.json)."""
+        entries = data.get("entries", {})
+        for concept_name, entry in entries.items():
+            # Only include entries that have at least one verified item
+            if not (entry.get("videos") or entry.get("citations") or entry.get("wikipedia")):
+                continue
+            # Store under normalised name; also keep original for exact-match
+            key = concept_name.lower().strip()
+            # Attach the concept name so _parse_media_content can read it
+            entry_with_name = {"name": concept_name, "id": key, "category": "", **entry}
+            self.media_by_concept[key] = entry_with_name
+
+        self._pool_loaded = True
+        self.loaded = True
+        logger.info(
+            f"[MediaLookup] Loaded verified pool ({data.get('generated_by', '?')}): "
+            f"{len(self.media_by_concept)} concepts"
+        )
+
+    def _load_legacy_format(self, data: Dict) -> None:
+        """Load the legacy media mapping format (kg_{domain}_media_mapping.json)."""
+        concepts = data.get("concepts", [])
+        for concept in concepts:
+            name = concept.get("name", "").lower().strip()
+            concept_id = concept.get("id", "")
+            if name:
+                self.media_by_concept[name] = concept
+            if concept_id:
+                self.media_by_id[concept_id] = concept
+
+        self.loaded = True
+        logger.info(
+            f"[MediaLookup] Loaded legacy media mapping: {len(self.media_by_concept)} concepts"
+        )
     
     def find_media_for_concept(self, concept_name: str) -> Optional[MediaContent]:
         """
@@ -313,17 +347,22 @@ class MediaLookup:
         return combined
     
     def _parse_media_content(self, data: Dict) -> MediaContent:
-        """Parse raw JSON data into MediaContent dataclass"""
+        """Parse raw JSON data into MediaContent dataclass (handles both pool and legacy formats)."""
         videos = []
-        for v in data.get('videos', []):
+        for v in data.get("videos", []):
+            # New pool format has video_id + embed_url; skip entries without a verified date
+            if self._pool_loaded and not v.get("verified_date"):
+                continue
             videos.append(VideoResource(
-                title=v.get('title', ''),
-                platform=v.get('platform', 'youtube'),
-                search_query=v.get('search_query', ''),
-                url=v.get('url'),
-                duration_hint=v.get('duration_hint'),
-                language=v.get('language', 'en'),
-                educational_level=v.get('educational_level', 'general')
+                title=v.get("title", ""),
+                platform=v.get("platform", "youtube"),
+                search_query=v.get("search_query", v.get("title", "")),
+                url=v.get("url"),
+                embed_url=v.get("embed_url"),
+                rights_status=v.get("rights_status"),
+                duration_hint=v.get("duration_hint"),
+                language=v.get("language", "en"),
+                educational_level=v.get("educational_level", "general"),
             ))
         
         images = []
@@ -347,14 +386,16 @@ class MediaLookup:
             ))
         
         citations = []
-        for c in data.get('citations', []):
+        for c in data.get("citations", []):
+            if self._pool_loaded and not c.get("verified_date"):
+                continue
             citations.append(Citation(
-                title=c.get('title', ''),
-                authors=c.get('authors', []),
-                year=c.get('year'),
-                journal=c.get('journal'),
-                doi=c.get('doi'),
-                abstract_snippet=c.get('abstract_snippet')
+                title=c.get("title", ""),
+                authors=c.get("authors", []),
+                year=c.get("year"),
+                journal=c.get("journal"),
+                doi=c.get("doi"),
+                abstract_snippet=c.get("abstract_snippet"),
             ))
         
         open_textbooks = []
@@ -384,39 +425,29 @@ class MediaLookup:
         return list(self.media_by_concept.keys())
     
     def get_stats(self) -> Dict[str, int]:
-        """Get statistics about the media mapping"""
+        """Get statistics about the media mapping."""
         if not self.loaded:
             return {"loaded": False, "concepts": 0}
-        
-        total_videos = sum(
-            len(c.get('videos', [])) 
-            for c in self.media_by_concept.values()
-        )
-        total_images = sum(
-            len(c.get('images', [])) 
-            for c in self.media_by_concept.values()
-        )
-        total_resources = sum(
-            len(c.get('resources', [])) 
-            for c in self.media_by_concept.values()
-        )
-        total_citations = sum(
-            len(c.get('citations', [])) 
-            for c in self.media_by_concept.values()
-        )
-        total_textbooks = sum(
-            len(c.get('open_textbooks', [])) 
-            for c in self.media_by_concept.values()
-        )
-        
-        return {
+
+        total_videos = sum(len(c.get("videos", [])) for c in self.media_by_concept.values())
+        total_citations = sum(len(c.get("citations", [])) for c in self.media_by_concept.values())
+
+        stats: Dict[str, Any] = {
             "loaded": True,
+            "pool_format": self._pool_loaded,
             "concepts": len(self.media_by_concept),
             "total_videos": total_videos,
-            "total_open_textbooks": total_textbooks,
-            "total_images": total_images,
-            "total_resources": total_resources,
-            "total_citations": total_citations
+            "total_citations": total_citations,
         }
+
+        if self._pool_loaded:
+            total_wiki = sum(1 for c in self.media_by_concept.values() if c.get("wikipedia"))
+            stats["total_wikipedia"] = total_wiki
+        else:
+            stats["total_images"] = sum(len(c.get("images", [])) for c in self.media_by_concept.values())
+            stats["total_resources"] = sum(len(c.get("resources", [])) for c in self.media_by_concept.values())
+            stats["total_open_textbooks"] = sum(len(c.get("open_textbooks", [])) for c in self.media_by_concept.values())
+
+        return stats
 
 

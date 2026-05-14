@@ -1,264 +1,571 @@
 {% extends "_base.html" %}
 
 {#
-  EducationalProfile form (CORE 2 #6.6 P1).
+  Crea lezione — EducationalProfile form (CORE 2 #6.6 P5.3 — warm-academic
+  brand pass).
 
-  Fields are flat (form-encoded) and the POST handler reconstructs the nested
-  EducationalProfile via aix.webui.lessons.schemas.form_to_profile_dict.
+  This is a PURE VISUAL re-skin. The form contract is byte-identical to the
+  pre-P5.3 page:
 
-  Convention for boolean checkboxes (classroom_has_lim, …):
-    - A hidden <input name="<field>_present" value="1"> is emitted alongside
-      the visible checkbox so the server can tell "user said no" (checkbox
-      unchecked, hidden present) from "user didn't see this question"
-      (neither field present). For the form below the hidden field is always
-      emitted, so unchecked = False, checked = True.
+    • POST → /webui/lesson (action attribute, unchanged)
+    • Field names + types (used by ``aix.webui.lessons.schemas.form_to_profile_dict``):
+        title, domain (required), subject_area, specific_topic,
+        time_available_minutes,
+        group_title, group_students_number, group_grade,
+        group_disabilities[] (multiple), group_class_features[] (multiple),
+        group_student_attributes[] (multiple),
+        classroom_title, classroom_forniture_mobility, classroom_own_device,
+        classroom_has_lim / _wifi / _suite / _pc_station (checkboxes)
+    • Each classroom_has_* checkbox is paired with a hidden
+      ``<fld>_present=1`` input so the server can tell "unchecked" from
+      "not present in form" — same convention as before.
+    • Context vars consumed (passed in by ``lesson_new_get`` /
+      ``lesson_create`` in lessons/routes.py):
+        fv (alias of form_values), form_errors, GRADE_LABELS,
+        DISABILITY_LABELS, CLASS_FEATURE_LABELS, STUDENT_ATTR_LABELS,
+        FORNITURE_MOBILITY_LABELS, OWN_DEVICE_LABELS, active_nav='new'
+    • No JS state machine — all three sections are visible at once, single
+      POST at the end. The 3-step indicator at the top is a passive anchor
+      jumper (clicking a step smooth-scrolls to its <section id="…">).
+
+  Visual layout: 2-column on lg+ (form left = 9/12, info rail right = 3/12).
+  On md and below the rail collapses below the form (single column).
+
+  Why we dropped <wa-input> / <wa-select> / <wa-checkbox> here:
+    - We need full styling control to match docs/mockups/final_03_create_lesson.png
+      (custom chevrons, toggle-card visuals, label rhythm). WebAwesome's
+      shadow-DOM defaults fight Tailwind utility classes and the brand
+      tokens. Native HTML + .aix-* classes gives a tighter result with
+      strictly less code.
+    - The POST payload is identical: native ``<input>``, ``<select>``,
+      ``<input type="checkbox">`` are exactly what the backend already parses.
+
+  THE ONE DELIBERATE EXCEPTION — multi-selects (P5.3 follow-up, retrospective
+  fix on 2026-05-12):
+    The three "selezione multipla" fields below (BES / Caratteristiche
+    classe / Caratteristiche studenti) keep using ``<wa-select multiple>``
+    instead of native ``<select multiple>``. Reason: native HTML's
+    multi-select is the one form control no UI library replicates with
+    native styling — it renders as a tiny scrollable list-box requiring
+    Ctrl/Cmd-click for multiple selection, which teachers do not discover
+    and which we already had a better solution for pre-P5.3. WebAwesome's
+    chip-chooser is far more discoverable (click → dropdown → chips
+    appear inline) and is the exact pattern the inline ``Aggiorna
+    profilo`` sidebar in the workspace still uses, so this brings the
+    two profile-input surfaces back into visual + behavioural alignment.
+
+    Backend contract: ``<wa-select multiple>`` participates in native
+    form submission via the ElementInternals API — the POST body emits
+    one ``group_disabilities=CODE`` line per selected option, identical
+    to ``<select multiple>``, so ``form.getlist("group_disabilities")``
+    on the server side reads the same shape.
 #}
 
 {% set fv = form_values or {} %}
 
 {% block content %}
-<section class="max-w-3xl mx-auto space-y-6">
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
 
-  <div class="space-y-2">
-    <h1 class="text-3xl font-serif tracking-tight">Nuova lezione</h1>
-    <p class="text-slate-600">
-      Compila il <strong>profilo educativo</strong> della classe e dell'aula.
-      Questi dati vengono passati sia al GraphRAG sia all'agente LangGraph
-      (CORE 1 #2.5) per personalizzare i materiali generati.
-    </p>
-    <wa-callout variant="neutral" appearance="filled outlined" size="small">
-      <wa-icon slot="icon" name="comments"></wa-icon>
-      Dopo aver salvato il profilo verrai portato sulla
-      <strong>chat della lezione</strong>: lì scriverai la tua richiesta
-      specifica e l'agente la userà insieme a questo profilo per generare
-      la lezione.
-    </wa-callout>
+  {# ========================================================================
+     LEFT COLUMN — form
+     ======================================================================== #}
+  <div class="lg:col-span-9 space-y-6">
+
+    {# Page header — serif title + short subtitle (mirrors Dashboard rhythm) #}
+    <header>
+      <h1 class="aix-page-title">Crea una nuova lezione</h1>
+      <p class="aix-text-muted mt-2 max-w-2xl">
+        Compila il <strong style="color: var(--aix-text-primary);">profilo educativo</strong>
+        della classe e dell'aula. Questi dati vengono passati sia al
+        Knowledge Graph sia all'agente Planner per generare una lezione
+        personalizzata.
+      </p>
+    </header>
+
+    {#
+      3-step indicator — passive, anchor-link-only. The first step is
+      ``.is-active`` on initial paint so the teacher knows where they are.
+      A future enhancement (scroll-spy via IntersectionObserver) can keep
+      the active step in sync as they scroll without changing this markup.
+    #}
+    <nav class="aix-step-indicator" aria-label="Sezioni del modulo">
+      <a href="#section-lezione" class="aix-step is-active">
+        <span class="aix-step-number">1</span>
+        <span class="aix-step-label">
+          <span>Lezione</span>
+          <span class="aix-step-label-sub">Dettagli della lezione</span>
+        </span>
+      </a>
+      <span class="aix-step-divider" aria-hidden="true"></span>
+      <a href="#section-profilo" class="aix-step">
+        <span class="aix-step-number">2</span>
+        <span class="aix-step-label">
+          <span>Profilo della classe</span>
+          <span class="aix-step-label-sub">Studenti e caratteristiche</span>
+        </span>
+      </a>
+      <span class="aix-step-divider" aria-hidden="true"></span>
+      <a href="#section-ambiente" class="aix-step">
+        <span class="aix-step-number">3</span>
+        <span class="aix-step-label">
+          <span>Ambiente d'aula</span>
+          <span class="aix-step-label-sub">Spazi, dispositivi e tecnologie</span>
+        </span>
+      </a>
+    </nav>
+
+    {#
+      Validation errors banner. The error shape comes from the server
+      (form_errors is a list of "loc: msg" strings, see
+      ``lesson_create`` in lessons/routes.py) — we just render it nicely.
+    #}
+    {% if form_errors %}
+      <div class="aix-card aix-card-stripe-error" style="padding: 14px 16px;">
+        <strong style="color: var(--aix-status-error);">
+          Controlla i campi del modulo.
+        </strong>
+        <ul class="mt-2 ml-5 list-disc text-sm aix-text-muted space-y-0.5">
+          {% for err in form_errors %}<li>{{ err }}</li>{% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+
+    {#
+      Main form. ``action="/webui/lesson"`` matches the existing
+      ``webui_lesson_create`` POST route — DO NOT CHANGE.
+    #}
+    <form method="post" action="/webui/lesson" class="space-y-6">
+
+      {# ─── Section 1: Lezione ─────────────────────────────────────────── #}
+      <section id="section-lezione" class="aix-form-section" style="scroll-margin-top: 80px;">
+        <header class="aix-form-section-header">
+          <span class="aix-form-section-number">1</span>
+          <span class="aix-form-section-icon aix-form-section-icon--amber" aria-hidden="true">
+            <wa-icon name="book-open"></wa-icon>
+          </span>
+          <div>
+            <h2 class="aix-form-section-title">Lezione</h2>
+            <p class="aix-form-section-subtitle">
+              Definisci l'argomento e il focus della lezione
+            </p>
+          </div>
+        </header>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-x-5 gap-y-4">
+
+          <div class="aix-form-field">
+            <label for="f-title" class="aix-form-label">Titolo (opzionale)</label>
+            <input id="f-title" type="text" name="title" class="aix-input"
+                   placeholder="Es. Fotosintesi — 3A Liceo"
+                   value="{{ fv.get('title', '') }}">
+          </div>
+
+          <div class="aix-form-field">
+            <label for="f-domain" class="aix-form-label">
+              Dominio del Knowledge Graph<span class="aix-form-required">*</span>
+            </label>
+            {% set _d = fv.get('domain', 'neuro') %}
+            <select id="f-domain" name="domain" class="aix-select" required>
+              <option value="neuro" {% if _d == 'neuro' %}selected{% endif %}>Neuro — Neuroscienze dell'apprendimento</option>
+              <option value="udl"   {% if _d == 'udl' %}selected{% endif %}>UDL — Universal Design for Learning</option>
+              <option value="all"   {% if _d == 'all' %}selected{% endif %}>Tutti i domini</option>
+            </select>
+          </div>
+
+          {#
+            Materia — plain free-text input.
+
+            Pre-P5.3 was a plain text field. P5.3 added a ``<datalist>`` for
+            soft autocomplete (18 common subjects), but on Chrome/Windows
+            the native datalist UI renders as a tall, unstyleable dark
+            panel that pops on every focus — see retrospective on
+            2026-05-12. We reverted to plain free text:
+              • The placeholder already shows usage examples.
+              • The browser's built-in autofill memory (per ``name=``
+                attribute) still suggests previously typed values
+                unobtrusively below the field — no template wiring needed.
+              • Teachers typing "Sci…" is faster than dismissing the
+                full-height datalist panel each time.
+          #}
+          <div class="aix-form-field">
+            <label for="f-subject" class="aix-form-label">Materia</label>
+            <input id="f-subject" type="text" name="subject_area" class="aix-input"
+                   placeholder="Es. Scienze, Matematica, Storia"
+                   value="{{ fv.get('subject_area', '') }}">
+          </div>
+
+          <div class="aix-form-field">
+            <label for="f-topic" class="aix-form-label">Argomento specifico</label>
+            <input id="f-topic" type="text" name="specific_topic" class="aix-input"
+                   placeholder="Es. Fotosintesi clorofilliana"
+                   value="{{ fv.get('specific_topic', '') }}">
+          </div>
+
+          <div class="aix-form-field">
+            <label for="f-duration" class="aix-form-label">Durata (minuti)</label>
+            <input id="f-duration" type="number" name="time_available_minutes" class="aix-input"
+                   min="15" max="480" step="5" placeholder="60"
+                   value="{{ fv.get('time_available_minutes', '') }}">
+            <span class="aix-form-help">Tra 15 e 480 minuti.</span>
+          </div>
+
+        </div>
+      </section>
+
+      {# ─── Section 2: Profilo della classe ────────────────────────────── #}
+      <section id="section-profilo" class="aix-form-section" style="scroll-margin-top: 80px;">
+        <header class="aix-form-section-header">
+          <span class="aix-form-section-number">2</span>
+          <span class="aix-form-section-icon aix-form-section-icon--teal" aria-hidden="true">
+            <wa-icon name="users"></wa-icon>
+          </span>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 flex-wrap">
+              <h2 class="aix-form-section-title">Profilo della classe</h2>
+              <span class="aix-badge aix-badge-neutral">EducationalGroup</span>
+            </div>
+            <p class="aix-form-section-subtitle">
+              Descrivi la tua classe per personalizzare la lezione
+            </p>
+          </div>
+        </header>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-x-5 gap-y-4">
+
+          <div class="aix-form-field">
+            <label for="f-group-title" class="aix-form-label">Nome della classe</label>
+            <input id="f-group-title" type="text" name="group_title" class="aix-input"
+                   placeholder="Es. 3A Liceo Scientifico"
+                   value="{{ fv.get('group_title', '') }}">
+          </div>
+
+          <div class="aix-form-field">
+            <label for="f-group-students" class="aix-form-label">Numero di studenti</label>
+            <input id="f-group-students" type="number" name="group_students_number" class="aix-input"
+                   min="1" max="40" placeholder="20"
+                   value="{{ fv.get('group_students_number', '') }}">
+          </div>
+
+          <div class="aix-form-field">
+            <label for="f-group-grade" class="aix-form-label">Livello scolastico</label>
+            {% set _grade = fv.get('group_grade', '') %}
+            <select id="f-group-grade" name="group_grade" class="aix-select">
+              <option value="" {% if not _grade %}selected{% endif %}>— Non specificato —</option>
+              {% for code, label in GRADE_LABELS.items() %}
+                <option value="{{ code }}" {% if code == _grade %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          {#
+            Spacer cell keeps the 2-col rhythm clean (Livello on row 2, then
+            the three multi-selects start on a fresh row 3 below).
+          #}
+          <div class="hidden md:block" aria-hidden="true"></div>
+
+          {#
+            ─── Multi-select fields — WebAwesome chip choosers ──────────────
+            See file header re: P5.3 retrospective fix. The three fields
+            below use ``<wa-select multiple>`` instead of native HTML so
+            teachers get the chip-style chooser (click → dropdown opens →
+            click an option → it appears inline as a removable chip).
+            Backend contract is byte-identical to native ``<select
+            multiple>`` thanks to wa-select's ElementInternals form
+            association — ``form.getlist(name)`` reads the same shape.
+
+            Label rhythm: we render the field label via an EXTERNAL
+            ``<label class="aix-form-label">`` (same brand class as every
+            other field on this page) and do NOT use wa-select's built-in
+            ``label=`` attribute. Reason: wa-select's internal label is
+            drawn by WebAwesome's shadow-DOM CSS (slightly larger, weight
+            400) which doesn't match our 12px/weight-500 brand label.
+            The ``for="…"`` binding may not traverse the shadow DOM
+            uniformly across browsers, so we add ``aria-label`` on the
+            wa-select itself as a belt-and-suspenders a11y guarantee.
+          #}
+          <div class="aix-form-field">
+            <label for="f-group-dis" class="aix-form-label">BES (selezione multipla)</label>
+            {% set _dis = fv.get('group_disabilities', []) %}
+            <wa-select id="f-group-dis"
+                       name="group_disabilities"
+                       aria-label="BES (selezione multipla)"
+                       multiple>
+              {% for code, label in DISABILITY_LABELS.items() %}
+                <wa-option value="{{ code }}" {% if code in _dis %}selected{% endif %}>{{ label }}</wa-option>
+              {% endfor %}
+            </wa-select>
+            <span class="aix-form-help">
+              Bisogni Educativi Speciali presenti nella classe.
+            </span>
+          </div>
+
+          <div class="aix-form-field">
+            <label for="f-class-feat" class="aix-form-label">
+              Caratteristiche della classe (selezione multipla)
+            </label>
+            {% set _cf = fv.get('group_class_features', []) %}
+            <wa-select id="f-class-feat"
+                       name="group_class_features"
+                       aria-label="Caratteristiche della classe (selezione multipla)"
+                       multiple>
+              {% for code, label in CLASS_FEATURE_LABELS.items() %}
+                <wa-option value="{{ code }}" {% if code in _cf %}selected{% endif %}>{{ label }}</wa-option>
+              {% endfor %}
+            </wa-select>
+          </div>
+
+          <div class="aix-form-field md:col-span-2">
+            <label for="f-stud-attrs" class="aix-form-label">
+              Caratteristiche degli studenti (selezione multipla)
+            </label>
+            {% set _sa = fv.get('group_student_attributes', []) %}
+            <wa-select id="f-stud-attrs"
+                       name="group_student_attributes"
+                       aria-label="Caratteristiche degli studenti (selezione multipla)"
+                       multiple>
+              {% for code, label in STUDENT_ATTR_LABELS.items() %}
+                <wa-option value="{{ code }}" {% if code in _sa %}selected{% endif %}>{{ label }}</wa-option>
+              {% endfor %}
+            </wa-select>
+          </div>
+
+        </div>
+      </section>
+
+      {# ─── Section 3: Ambiente d'aula ─────────────────────────────────── #}
+      <section id="section-ambiente" class="aix-form-section" style="scroll-margin-top: 80px;">
+        <header class="aix-form-section-header">
+          <span class="aix-form-section-number">3</span>
+          <span class="aix-form-section-icon aix-form-section-icon--navy" aria-hidden="true">
+            <wa-icon name="chalkboard"></wa-icon>
+          </span>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 flex-wrap">
+              <h2 class="aix-form-section-title">Ambiente d'aula</h2>
+              <span class="aix-badge aix-badge-neutral">ClassroomEnvironment</span>
+            </div>
+            <p class="aix-form-section-subtitle">
+              Indica gli spazi e le tecnologie disponibili
+            </p>
+          </div>
+        </header>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-x-5 gap-y-4">
+
+          <div class="aix-form-field">
+            <label for="f-classroom-title" class="aix-form-label">Nome dell'aula</label>
+            <input id="f-classroom-title" type="text" name="classroom_title" class="aix-input"
+                   placeholder="Es. Aula 101"
+                   value="{{ fv.get('classroom_title', '') }}">
+          </div>
+
+          <div class="aix-form-field">
+            <label for="f-mobility" class="aix-form-label">Mobilità dei banchi</label>
+            {% set _mob = fv.get('classroom_forniture_mobility', 'NO') %}
+            <select id="f-mobility" name="classroom_forniture_mobility" class="aix-select">
+              {% for code, label in FORNITURE_MOBILITY_LABELS.items() %}
+                <option value="{{ code }}" {% if code == _mob %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="aix-form-field md:col-span-2">
+            <label for="f-byod" class="aix-form-label">Dispositivi personali (BYOD)</label>
+            {% set _byod = fv.get('classroom_own_device', 'NO') %}
+            <select id="f-byod" name="classroom_own_device" class="aix-select">
+              {% for code, label in OWN_DEVICE_LABELS.items() %}
+                <option value="{{ code }}" {% if code == _byod %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+        </div>
+
+        {#
+          Toggle cards. Each <label> wraps a hidden ``_present`` companion +
+          the visually hidden real checkbox + the brand-styled switch. Click
+          anywhere on the card flips the checkbox (native label behaviour),
+          and ``:has(:checked)`` in aix-brand.css repaints the visual state
+          — no JS.
+
+          The (fld, lbl, icon, on, off) tuple drives both the label and the
+          status text via ``data-on`` / ``data-off`` attrs so the strings
+          stay in the HTML for future i18n.
+        #}
+        <div class="mt-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {% for fld, lbl, icon in [
+              ('classroom_has_lim',    'LIM',                       'tv'),
+              ('classroom_has_wifi',   'WiFi',                      'wifi'),
+              ('classroom_has_suite',  'Suite (Workspace / 365)',   'cloud'),
+              ('classroom_pc_station', 'Postazioni PC',             'desktop'),
+          ] %}
+            <label class="aix-toggle-card">
+              {# Companion hidden field so the server can distinguish "no" from "absent" #}
+              <input type="hidden" name="{{ fld }}_present" value="1">
+
+              <span class="aix-toggle-card-icon" aria-hidden="true">
+                <wa-icon name="{{ icon }}"></wa-icon>
+              </span>
+
+              <span class="aix-toggle-card-body">
+                <span class="aix-toggle-card-title">{{ lbl }}</span>
+                <span class="aix-toggle-card-status"
+                      data-on="Disponibile"
+                      data-off="Non disponibile"></span>
+              </span>
+
+              <input type="checkbox" name="{{ fld }}" value="on"
+                     {% if fv.get(fld) %}checked{% endif %}>
+              <span class="aix-toggle-switch" aria-hidden="true"></span>
+            </label>
+          {% endfor %}
+        </div>
+
+      </section>
+
+      {#
+        Footer actions. "Salva bozza" is intentionally disabled — the
+        Lesson row is already created in ``draft`` status by "Crea lezione",
+        so today there is no separate "save without leaving" affordance.
+        We keep the button visible (matches the mockup) with a tooltip
+        explaining the situation; CORE 4 will define the dedicated draft
+        flow alongside autosave.
+      #}
+      <footer class="aix-form-footer">
+        <a href="/webui/lessons" class="aix-link aix-link-navy">← Annulla</a>
+
+        <div class="aix-form-footer-actions">
+          <button type="button"
+                  class="aix-btn aix-btn-outline"
+                  aria-disabled="true"
+                  disabled
+                  title="Prossimamente — la bozza viene già salvata automaticamente cliccando «Crea lezione»">
+            Salva bozza
+          </button>
+          <button type="submit" class="aix-btn aix-btn-primary">
+            Crea lezione
+            <wa-icon name="arrow-right" style="font-size: 0.9rem;"></wa-icon>
+          </button>
+        </div>
+      </footer>
+
+    </form>
+
   </div>
 
-  {% if form_errors %}
-    <wa-callout variant="danger" appearance="filled outlined">
-      <wa-icon slot="icon" name="circle-exclamation"></wa-icon>
-      <strong>Controlla i campi del modulo.</strong>
-      <ul class="mt-2 ml-4 list-disc text-sm">
-        {% for err in form_errors %}
-          <li>{{ err }}</li>
-        {% endfor %}
+  {# ========================================================================
+     RIGHT COLUMN — informational rail
+     ========================================================================
+     Static, decorative content. Lives below the form on <lg viewports so
+     the form keeps top-of-fold priority on mobile.
+     ======================================================================== #}
+  <aside class="lg:col-span-3 space-y-4">
+
+    {# Suggerimenti — practical hints, green checkmark bullets #}
+    <div class="aix-side-card">
+      <header class="aix-side-card-header">
+        <wa-icon name="lightbulb"
+                 style="color: var(--aix-amber-hover); font-size: 18px;"></wa-icon>
+        <span class="aix-side-card-title">Suggerimenti</span>
+      </header>
+      <ul class="aix-side-card-list">
+        <li>
+          <span class="aix-bullet aix-bullet-success" aria-hidden="true"></span>
+          Più dettagli fornisci, più la lezione sarà mirata ai bisogni della tua classe.
+        </li>
+        <li>
+          <span class="aix-bullet aix-bullet-success" aria-hidden="true"></span>
+          Seleziona più opzioni nelle caratteristiche per una personalizzazione migliore.
+        </li>
+        <li>
+          <span class="aix-bullet aix-bullet-success" aria-hidden="true"></span>
+          Puoi salvare una bozza e completare il profilo in un secondo momento.
+        </li>
       </ul>
-    </wa-callout>
-  {% endif %}
-
-  <form method="post" action="/webui/lesson" class="flex flex-col gap-6">
-
-    {# ──────────────────────────────────────────────────────────────────── #}
-    {# General lesson fields                                               #}
-    {# ──────────────────────────────────────────────────────────────────── #}
-    <wa-card>
-      <div slot="header" class="flex items-center gap-2">
-        <wa-icon name="file-pen"></wa-icon>
-        <strong>Lezione</strong>
-      </div>
-
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <wa-input
-          type="text"
-          name="title"
-          label="Titolo (opzionale)"
-          placeholder="Es. Fotosintesi — 3A Liceo"
-          value="{{ fv.get('title', '') }}"
-        ></wa-input>
-
-        <wa-select
-          name="domain"
-          label="Dominio del Knowledge Graph"
-          value="{{ fv.get('domain', 'neuro') }}"
-          required
-        >
-          <wa-option value="neuro">Neuro — Neuroscienze dell'apprendimento</wa-option>
-          <wa-option value="udl">UDL — Universal Design for Learning</wa-option>
-          <wa-option value="all">Tutti i domini</wa-option>
-        </wa-select>
-
-        <wa-input
-          type="text"
-          name="subject_area"
-          label="Materia"
-          placeholder="Es. Scienze, Matematica, Storia"
-          value="{{ fv.get('subject_area', '') }}"
-        ></wa-input>
-
-        <wa-input
-          type="text"
-          name="specific_topic"
-          label="Argomento specifico"
-          placeholder="Es. Fotosintesi clorofilliana"
-          value="{{ fv.get('specific_topic', '') }}"
-        ></wa-input>
-
-        <wa-input
-          type="number"
-          name="time_available_minutes"
-          label="Durata (minuti)"
-          min="15"
-          max="480"
-          step="5"
-          placeholder="60"
-          value="{{ fv.get('time_available_minutes', '') }}"
-          help-text="Tra 15 e 480 minuti."
-        ></wa-input>
-      </div>
-    </wa-card>
-
-    {# ──────────────────────────────────────────────────────────────────── #}
-    {# Educational group (party.models.Party)                              #}
-    {# ──────────────────────────────────────────────────────────────────── #}
-    <wa-card>
-      <div slot="header" class="flex items-center gap-2">
-        <wa-icon name="users"></wa-icon>
-        <strong>Profilo della classe</strong>
-        <wa-tag size="small" variant="neutral" pill>EducationalGroup</wa-tag>
-      </div>
-
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <wa-input
-          type="text"
-          name="group_title"
-          label="Nome della classe"
-          placeholder="Es. 3A Liceo Scientifico"
-          value="{{ fv.get('group_title', '') }}"
-        ></wa-input>
-
-        <wa-input
-          type="number"
-          name="group_students_number"
-          label="Numero di studenti"
-          min="1"
-          max="40"
-          value="{{ fv.get('group_students_number', '') }}"
-          placeholder="20"
-        ></wa-input>
-
-        {% set _grade = fv.get('group_grade', '') %}
-        <wa-select name="group_grade" label="Livello scolastico">
-          <wa-option value="" {% if not _grade %}selected{% endif %}>— Non specificato —</wa-option>
-          {% for code, label in GRADE_LABELS.items() %}
-            <wa-option value="{{ code }}" {% if code == _grade %}selected{% endif %}>{{ label }}</wa-option>
-          {% endfor %}
-        </wa-select>
-
-        <div></div>{# spacer to keep two-column rhythm on md+ #}
-
-        {% set _disabilities = fv.get('group_disabilities', []) %}
-        <wa-select
-          name="group_disabilities"
-          label="BES (selezione multipla)"
-          multiple
-          help-text="Bisogni Educativi Speciali presenti nella classe."
-        >
-          {% for code, label in DISABILITY_LABELS.items() %}
-            <wa-option value="{{ code }}" {% if code in _disabilities %}selected{% endif %}>{{ label }}</wa-option>
-          {% endfor %}
-        </wa-select>
-
-        {% set _class_features = fv.get('group_class_features', []) %}
-        <wa-select
-          name="group_class_features"
-          label="Caratteristiche della classe (selezione multipla)"
-          multiple
-        >
-          {% for code, label in CLASS_FEATURE_LABELS.items() %}
-            <wa-option value="{{ code }}" {% if code in _class_features %}selected{% endif %}>{{ label }}</wa-option>
-          {% endfor %}
-        </wa-select>
-
-        {% set _student_attrs = fv.get('group_student_attributes', []) %}
-        <wa-select
-          name="group_student_attributes"
-          label="Caratteristiche degli studenti (selezione multipla)"
-          multiple
-          class="md:col-span-2"
-        >
-          {% for code, label in STUDENT_ATTR_LABELS.items() %}
-            <wa-option value="{{ code }}" {% if code in _student_attrs %}selected{% endif %}>{{ label }}</wa-option>
-          {% endfor %}
-        </wa-select>
-      </div>
-    </wa-card>
-
-    {# ──────────────────────────────────────────────────────────────────── #}
-    {# Classroom environment (classroom.models.Classroom)                  #}
-    {# ──────────────────────────────────────────────────────────────────── #}
-    <wa-card>
-      <div slot="header" class="flex items-center gap-2">
-        <wa-icon name="chalkboard"></wa-icon>
-        <strong>Ambiente d'aula</strong>
-        <wa-tag size="small" variant="neutral" pill>ClassroomEnvironment</wa-tag>
-      </div>
-
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <wa-input
-          type="text"
-          name="classroom_title"
-          label="Nome dell'aula"
-          placeholder="Es. Aula 101"
-          value="{{ fv.get('classroom_title', '') }}"
-        ></wa-input>
-
-        {% set _mobility = fv.get('classroom_forniture_mobility', 'NO') %}
-        <wa-select name="classroom_forniture_mobility" label="Mobilità dei banchi">
-          {% for code, label in FORNITURE_MOBILITY_LABELS.items() %}
-            <wa-option value="{{ code }}" {% if code == _mobility %}selected{% endif %}>{{ label }}</wa-option>
-          {% endfor %}
-        </wa-select>
-
-        {% set _byod = fv.get('classroom_own_device', 'NO') %}
-        <wa-select
-          name="classroom_own_device"
-          label="Dispositivi personali (BYOD)"
-          class="md:col-span-2"
-        >
-          {% for code, label in OWN_DEVICE_LABELS.items() %}
-            <wa-option value="{{ code }}" {% if code == _byod %}selected{% endif %}>{{ label }}</wa-option>
-          {% endfor %}
-        </wa-select>
-      </div>
-
-      <div class="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
-        {% for fld, lbl in [
-          ('classroom_has_lim',     'LIM'),
-          ('classroom_has_wifi',    'WiFi'),
-          ('classroom_has_suite',   'Suite (Workspace / 365)'),
-          ('classroom_pc_station',  'Postazioni PC'),
-        ] %}
-          <label class="flex items-start gap-2 cursor-pointer text-sm">
-            <input type="hidden" name="{{ fld }}_present" value="1">
-            <wa-checkbox
-              name="{{ fld }}"
-              {% if fv.get(fld) %}checked{% endif %}
-            >{{ lbl }}</wa-checkbox>
-          </label>
-        {% endfor %}
-      </div>
-    </wa-card>
-
-    <div class="flex items-center justify-between gap-3">
-      <a href="/webui/" class="text-sm text-slate-600 hover:text-slate-900">
-        ← Annulla e torna alla home
-      </a>
-      <wa-button type="submit" variant="brand" appearance="filled" size="medium">
-        <wa-icon slot="prefix" name="paper-plane"></wa-icon>
-        Crea lezione
-      </wa-button>
     </div>
 
-  </form>
+    {# Esempio di profilo — sample data display, helps teachers visualise output #}
+    <div class="aix-side-card">
+      <header class="aix-side-card-header">
+        <wa-icon name="user-graduate"
+                 style="color: var(--aix-teal); font-size: 18px;"></wa-icon>
+        <span class="aix-side-card-title">Esempio di profilo</span>
+      </header>
+      <dl class="aix-side-card-kv">
+        <dt>Classe</dt><dd>3A Liceo Scientifico</dd>
+        <dt>Studenti</dt><dd>25</dd>
+        <dt>Livello</dt><dd>Secondaria di II grado</dd>
+        <dt>BES</dt><dd>DSA, Disturbi dell'attenzione</dd>
+        <dt>Caratteristiche</dt><dd>Eterogenea, Stili di apprendimento diversi</dd>
+        <dt>Ambiente</dt><dd>Aula con LIM e WiFi</dd>
+      </dl>
+    </div>
 
-  <wa-callout variant="neutral">
-    <wa-icon slot="icon" name="circle-info"></wa-icon>
-    Tutti i campi sono <strong>opzionali</strong> a parte il dominio.
-    Più campi del profilo compilati ⇒ metodologie suggerite più pertinenti
-    e prompt dell'agente più specializzati. La chat con i passaggi
-    dell'agente apparirà subito dopo l'invio.
-  </wa-callout>
+    {# Perché — short rationale, makes the profile feel less bureaucratic #}
+    <div class="aix-side-card">
+      <header class="aix-side-card-header">
+        <wa-icon name="clipboard-list"
+                 style="color: var(--aix-status-info); font-size: 18px;"></wa-icon>
+        <span class="aix-side-card-title">Perché questi dati sono utili?</span>
+      </header>
+      <ul class="aix-side-card-list">
+        <li>
+          <span class="aix-bullet aix-bullet-success" aria-hidden="true"></span>
+          Permettono all'agente di selezionare i contenuti più pertinenti dal Knowledge Graph.
+        </li>
+        <li>
+          <span class="aix-bullet aix-bullet-success" aria-hidden="true"></span>
+          Consentono di adattare attività, linguaggio e strategie ai tuoi studenti.
+        </li>
+        <li>
+          <span class="aix-bullet aix-bullet-success" aria-hidden="true"></span>
+          Garantiscono inclusione e accessibilità, soprattutto per studenti con BES/DSA.
+        </li>
+      </ul>
+    </div>
 
-</section>
+    {# L'agente genererà — preview of outputs, builds confidence before submit #}
+    <div class="aix-side-card">
+      <header class="aix-side-card-header">
+        <wa-icon name="sparkles"
+                 style="color: var(--aix-agent-planner); font-size: 18px;"></wa-icon>
+        <span class="aix-side-card-title">L'agente genererà</span>
+      </header>
+      <ul class="aix-side-card-list">
+        <li>
+          <span class="aix-bullet aix-bullet-planner" aria-hidden="true"></span>
+          Obiettivi di apprendimento chiari e misurabili
+        </li>
+        <li>
+          <span class="aix-bullet aix-bullet-teal" aria-hidden="true"></span>
+          Attività didattiche differenziate e coinvolgenti
+        </li>
+        <li>
+          <span class="aix-bullet aix-bullet-amber" aria-hidden="true"></span>
+          Materiali e risorse personalizzati
+        </li>
+        <li>
+          <span class="aix-bullet aix-bullet-info" aria-hidden="true"></span>
+          Adattamenti per BES / DSA
+        </li>
+      </ul>
+      <p class="mt-3 text-[12px] italic aix-text-subtle">
+        Il tutto pronto per la tua classe.
+      </p>
+    </div>
+
+  </aside>
+
+</div>
+
+{#
+  Smooth-scroll for the 3-step indicator anchor links. Native CSS
+  ``scroll-behavior: smooth`` on <html> is the most portable approach, but
+  we scope it here so the rest of the WebUI keeps its instant-anchor
+  behaviour (avoids surprising the chat workspace's "scroll to last card"
+  pattern in P5.4).
+#}
+<style>
+  html { scroll-behavior: smooth; }
+</style>
 {% endblock %}

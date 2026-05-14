@@ -72,6 +72,14 @@ class AgentState(TypedDict, total=False):
     # `conversation_history` so the agent has continuity even when older
     # turns are summarised.
     conversation_summary: Optional[str]
+    # CORE 2 #12b.3 — the *current turn's* raw user text, BEFORE the service
+    # layer prepended the conversation history / summary. ``teacher_query``
+    # carries the augmented blob (so every agent sees prior context); this
+    # field carries just what the teacher actually typed in this turn so
+    # nodes that need to honour user-vs-history precedence can do so. None
+    # on legacy callers that don't populate it — nodes must fall back to
+    # ``teacher_query`` in that case to stay backward-compatible.
+    raw_user_turn: Optional[str]
 
     # ========================================
     # PLANNER OUTPUT
@@ -102,6 +110,20 @@ class AgentState(TypedDict, total=False):
 
     # NEW Phase A: External resources for out-of-scope queries
     external_resources: Optional[Dict[str, Any]]  # Wikipedia, OER, Semantic Scholar results
+
+    # ========================================
+    # CORE 2 #9 — Corrective RAG (Retrieval Grading)
+    # ========================================
+    # All fields below are populated ONLY when AIX_CORRECTIVE_RAG_ENABLED=true
+    # AND the grade_retrieval_node is in the compiled graph topology. When the
+    # feature flag is off (default), these stay None and the rest of the
+    # pipeline behaves byte-identically to pre-#9. Writer / Critic read them
+    # additively — a None value is interpreted as "no grading was performed".
+    retrieval_grade: Optional[str]              # "relevant" | "ambiguous" | "irrelevant"
+    retrieval_grade_reason: Optional[str]       # 1-line LLM rationale (for traces)
+    retrieval_attempts: Optional[int]           # Number of retrieval passes done so far (1-N)
+    retrieval_rewritten_query: Optional[str]    # Grader's suggested query rewrite, if any
+    retrieval_warning: Optional[bool]           # True iff all attempts ended non-relevant
 
     # ========================================
     # WRITER OUTPUT
@@ -143,6 +165,7 @@ def create_initial_state(
     teacher_provided_context: Optional[str] = None,
     conversation_history: Optional[List[Dict[str, str]]] = None,
     conversation_summary: Optional[str] = None,
+    raw_user_turn: Optional[str] = None,
 ) -> AgentState:
     """
     Create initial state for a new lesson planning request.
@@ -172,6 +195,15 @@ def create_initial_state(
             thread exceeds the windowing threshold (CORE 2 #10.4). Prepended
             to ``conversation_history`` in the Writer prompt to preserve
             continuity. None on short threads.
+        raw_user_turn: Optional raw text of the *current* turn only — i.e.
+            ``query`` *before* the service layer prepended the conversation
+            history / summary. Used by ``plan_node`` (CORE 2 #12b.3) so the
+            Planner-extracted duration is only honoured when the teacher
+            actually mentions one in *this* turn (otherwise the educational
+            profile's ``time_available_minutes`` wins). When None, plan_node
+            falls back to ``query`` — which keeps single-turn behaviour
+            identical to pre-#12b.3 since on the first turn the augmenter
+            short-circuits and ``query == raw_user_turn``.
 
     Returns:
         Initialized AgentState
@@ -186,6 +218,7 @@ def create_initial_state(
         teacher_provided_context=teacher_provided_context,
         conversation_history=conversation_history,
         conversation_summary=conversation_summary,
+        raw_user_turn=raw_user_turn,
 
         # Planner (empty)
         plan=None,
@@ -208,6 +241,14 @@ def create_initial_state(
         retrieval_confidence=None,
         curated_media=None,  # NEW Phase 1
         external_resources=None,  # NEW Phase A
+        # CORE 2 #9 — Corrective RAG (gated by AIX_CORRECTIVE_RAG_ENABLED).
+        # Initialised to None so the Writer/Critic see the same shape they
+        # always have when the feature is off.
+        retrieval_grade=None,
+        retrieval_grade_reason=None,
+        retrieval_attempts=None,
+        retrieval_rewritten_query=None,
+        retrieval_warning=None,
 
         # Writer (empty)
         lesson_plan_draft=None,

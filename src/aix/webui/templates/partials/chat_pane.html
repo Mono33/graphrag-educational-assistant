@@ -47,7 +47,10 @@
 
   {# Subtle "agent pipeline running" status line. Kept tiny and quiet
      because the cards themselves carry the active-state signal. #}
-  <div id="chat-spinner" class="text-xs text-slate-400 flex items-center gap-2 pl-12">
+  <div id="chat-spinner"
+       style="display:flex; align-items:center; gap:8px;
+              padding-left:48px; font-size:12px;
+              color:var(--aix-text-tertiary);">
     <wa-spinner style="font-size:0.85rem;"></wa-spinner>
     <span>L'agente sta lavorando — i passaggi si aggiungono qui sopra man mano che procedono.</span>
   </div>

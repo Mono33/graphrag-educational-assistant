@@ -1,6 +1,6 @@
 {#
   Media panel — right column of the chat workspace
-  (CORE 2 #6.6 P2 phase 2).
+  (CORE 2 #6.6 P2 phase 2 / re-skin P5.4).
 
   Displays the ``curated_media`` payload from the retriever agent.
   Updated live during a run via OOB swap (the SSE 'card' event for the
@@ -11,10 +11,17 @@
   the Lesson row (only counts via meta), so on reload the panel renders
   in its empty/placeholder state. Persisting full media is P4 work.
 
+  PRESERVED FOR HTMX:
+    - id="media-panel"             ← required for the retriever-card OOB swap
+    - hx-swap-oob="outerHTML" flag ← only emitted when ``oob`` is truthy
+                                     (set by ``_build_retriever_payload``)
+
   Required context:
     media     dict | None — the curated_media payload, possibly empty.
               Shape: { videos: [...], resources: [...],
                        citations: [...], open_textbooks: [...] }
+    oob       bool, optional — when True the partial is part of an SSE OOB
+                                swap (sibling of the retriever card)
 #}
 
 {% set m = media or {} %}
@@ -26,64 +33,61 @@
 
 <aside id="media-panel"
        {% if oob is defined and oob %}hx-swap-oob="outerHTML"{% endif %}
-       class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm space-y-4
-              text-sm sticky top-4 overflow-y-auto max-h-[calc(100vh-5rem)]">
+       class="aix-side-pane">
 
   {# ── Header ───────────────────────────────────────────────────────── #}
-  <div>
-    <div class="flex items-center justify-between gap-2">
-      <div class="flex items-center gap-2 text-slate-700">
-        <wa-icon name="photo-film"></wa-icon>
-        <strong>Risorse multimediali</strong>
-      </div>
-      <wa-tag size="small" variant="neutral" pill>{{ total }}</wa-tag>
+  <div class="aix-side-pane-header">
+    <div class="aix-side-pane-title">
+      <wa-icon name="photo-film" style="color:var(--aix-teal);"></wa-icon>
+      <span>Risorse multimediali</span>
     </div>
-    <p class="text-xs text-slate-500 mt-1">
-      Selezionate dal Retriever Agent dal database curato.
-    </p>
+    <span class="aix-pill aix-pill-neutral">{{ total }}</span>
   </div>
+  <p class="aix-side-pane-subtitle">
+    Selezionate dal Retriever Agent dal database curato.
+  </p>
 
   {% if total == 0 %}
     {# ── Empty / placeholder state ─────────────────────────────────── #}
-    <div class="rounded-lg border-2 border-dashed border-slate-200 p-4
-                text-center text-xs text-slate-500 space-y-2">
-      <wa-icon name="photo-film" style="font-size:1.25rem;color:#cbd5e1;"></wa-icon>
-      <p>Le risorse multimediali appariranno qui dopo che il Retriever
-         Agent avrà interrogato il database.</p>
+    <div class="aix-empty-state" style="padding:18px 16px;">
+      <div class="aix-empty-state-icon">
+        <wa-icon name="photo-film"></wa-icon>
+      </div>
+      <p class="aix-empty-state-body" style="margin:0;">
+        Le risorse multimediali appariranno qui dopo che il Retriever
+        Agent avrà interrogato il database.
+      </p>
     </div>
   {% else %}
 
     {# ── Videos ──────────────────────────────────────────────────── #}
     {% if videos %}
-      <details open>
-        <summary class="cursor-pointer select-none flex items-center justify-between
-                        text-[11px] uppercase tracking-wide text-slate-500
-                        hover:text-slate-700 mb-1">
-          <span class="flex items-center gap-1.5">
-            <wa-icon name="video" style="font-size:0.8rem;"></wa-icon>
+      <details class="aix-media-section" open>
+        <summary>
+          <span style="display:inline-flex; align-items:center; gap:6px;">
+            <wa-icon name="video" style="font-size:0.85rem;"></wa-icon>
             Video curati
           </span>
-          <wa-tag size="small" variant="neutral" pill>{{ videos | length }}</wa-tag>
+          <span class="aix-pill aix-pill-neutral">{{ videos | length }}</span>
         </summary>
-        <ul class="space-y-1.5 mt-2">
+        <ul class="aix-media-list">
           {% for v in videos[:6] %}
             {% set url = v.get('url') or v.get('suggested_url') %}
-            <li class="text-[12px] leading-snug">
+            <li class="aix-media-item">
               {% if url %}
                 <a href="{{ url }}" target="_blank" rel="noopener noreferrer"
-                   class="text-sky-700 hover:text-sky-900 hover:underline
-                          flex items-start gap-1.5">
-                  <wa-icon name="play" style="font-size:0.7rem;margin-top:3px;"></wa-icon>
+                   class="aix-media-item-title-row">
+                  <wa-icon name="play" style="font-size:0.7rem; margin-top:3px;"></wa-icon>
                   <span class="line-clamp-2">{{ v.get('title') or 'Video' }}</span>
                 </a>
               {% else %}
-                <span class="text-slate-700 flex items-start gap-1.5">
-                  <wa-icon name="magnifying-glass" style="font-size:0.7rem;margin-top:3px;"></wa-icon>
+                <span class="aix-media-item-title-row" style="color:var(--aix-text-primary);">
+                  <wa-icon name="magnifying-glass" style="font-size:0.7rem; margin-top:3px;"></wa-icon>
                   <span class="line-clamp-2">{{ v.get('title') or v.get('search_query') or 'Video' }}</span>
                 </span>
               {% endif %}
               {% if v.get('duration_hint') %}
-                <span class="text-[10px] text-slate-400 ml-4">{{ v.duration_hint }}</span>
+                <span class="aix-media-item-meta">{{ v.duration_hint }}</span>
               {% endif %}
             </li>
           {% endfor %}
@@ -93,21 +97,21 @@
 
     {# ── Citations / scientific articles ────────────────────────── #}
     {% if citations %}
-      <details {% if not videos %}open{% endif %}>
-        <summary class="cursor-pointer select-none flex items-center justify-between
-                        text-[11px] uppercase tracking-wide text-slate-500
-                        hover:text-slate-700 mb-1">
-          <span class="flex items-center gap-1.5">
-            <wa-icon name="newspaper" style="font-size:0.8rem;"></wa-icon>
+      <details class="aix-media-section" {% if not videos %}open{% endif %}>
+        <summary>
+          <span style="display:inline-flex; align-items:center; gap:6px;">
+            <wa-icon name="newspaper" style="font-size:0.85rem;"></wa-icon>
             Articoli scientifici
           </span>
-          <wa-tag size="small" variant="neutral" pill>{{ citations | length }}</wa-tag>
+          <span class="aix-pill aix-pill-neutral">{{ citations | length }}</span>
         </summary>
-        <ul class="space-y-1.5 mt-2">
+        <ul class="aix-media-list">
           {% for c in citations[:5] %}
-            <li class="text-[12px] leading-snug text-slate-700">
-              <div class="font-medium line-clamp-2">{{ c.get('title') or 'Articolo' }}</div>
-              <div class="text-[10px] text-slate-500">
+            <li class="aix-media-item">
+              <div style="font-weight:600; color:var(--aix-text-primary);" class="line-clamp-2">
+                {{ c.get('title') or 'Articolo' }}
+              </div>
+              <div class="aix-media-item-meta" style="margin-left:0;">
                 {% set authors = c.get('authors') or [] %}
                 {% if authors %}
                   {{ authors[:2] | join(', ') }}{% if authors | length > 2 %} et al.{% endif %}
@@ -117,7 +121,7 @@
               </div>
               {% if c.get('doi') %}
                 <a href="https://doi.org/{{ c.doi }}" target="_blank" rel="noopener noreferrer"
-                   class="text-[10px] text-sky-700 hover:text-sky-900 hover:underline">
+                   style="font-size:11px;">
                   DOI: {{ c.doi }}
                 </a>
               {% endif %}
@@ -129,41 +133,38 @@
 
     {# ── OER & textbooks ────────────────────────────────────────── #}
     {% if resources or textbooks %}
-      <details {% if not videos and not citations %}open{% endif %}>
-        <summary class="cursor-pointer select-none flex items-center justify-between
-                        text-[11px] uppercase tracking-wide text-slate-500
-                        hover:text-slate-700 mb-1">
-          <span class="flex items-center gap-1.5">
-            <wa-icon name="book" style="font-size:0.8rem;"></wa-icon>
+      <details class="aix-media-section" {% if not videos and not citations %}open{% endif %}>
+        <summary>
+          <span style="display:inline-flex; align-items:center; gap:6px;">
+            <wa-icon name="book" style="font-size:0.85rem;"></wa-icon>
             OER &amp; Manuali
           </span>
-          <wa-tag size="small" variant="neutral" pill>{{ (resources | length) + (textbooks | length) }}</wa-tag>
+          <span class="aix-pill aix-pill-neutral">{{ (resources | length) + (textbooks | length) }}</span>
         </summary>
-        <ul class="space-y-1.5 mt-2">
+        <ul class="aix-media-list">
           {% for r in resources[:4] %}
             {% set url = r.get('url') or r.get('suggested_url') %}
-            <li class="text-[12px] leading-snug">
+            <li class="aix-media-item">
               {% if url %}
                 <a href="{{ url }}" target="_blank" rel="noopener noreferrer"
-                   class="text-sky-700 hover:text-sky-900 hover:underline
-                          flex items-start gap-1.5">
-                  <wa-icon name="link" style="font-size:0.7rem;margin-top:3px;"></wa-icon>
+                   class="aix-media-item-title-row">
+                  <wa-icon name="link" style="font-size:0.7rem; margin-top:3px;"></wa-icon>
                   <span class="line-clamp-2">{{ r.get('title') or 'Risorsa' }}</span>
                 </a>
               {% else %}
-                <span class="text-slate-700">{{ r.get('title') or 'Risorsa' }}</span>
+                <span style="color:var(--aix-text-primary);">{{ r.get('title') or 'Risorsa' }}</span>
               {% endif %}
             </li>
           {% endfor %}
           {% for t in textbooks[:3] %}
-            <li class="text-[12px] leading-snug text-slate-700">
-              <div class="font-medium flex items-start gap-1.5">
-                <wa-icon name="book" style="font-size:0.7rem;margin-top:3px;"></wa-icon>
+            <li class="aix-media-item">
+              <div style="display:flex; align-items:flex-start; gap:6px; font-weight:600; color:var(--aix-text-primary);">
+                <wa-icon name="book" style="font-size:0.7rem; margin-top:3px;"></wa-icon>
                 <span class="line-clamp-2">
                   {{ t.get('title') or 'Libro' }}{% if t.get('chapter') %} — {{ t.chapter }}{% endif %}
                 </span>
               </div>
-              <div class="text-[10px] text-slate-500 ml-4">
+              <div class="aix-media-item-meta">
                 {{ t.get('source') or 'OER' }}
                 {% if t.get('license') %} · {{ t.license }}{% endif %}
               </div>
@@ -175,7 +176,8 @@
 
   {% endif %}
 
-  <p class="text-[10px] text-slate-400 italic pt-2 border-t border-slate-100">
+  <p style="font-size:10.5px; color:var(--aix-text-tertiary); font-style:italic;
+            margin:12px 0 0; padding-top:10px; border-top:1px solid var(--aix-border-soft);">
     I link aprono in una nuova scheda. Le risorse sono già citate
     inline nel piano della lezione.
   </p>

@@ -1,5 +1,5 @@
 {#
-  Writer Agent — completed draft card (CORE 2 #6.6 P2 phase 2).
+  Writer Agent — completed draft card (CORE 2 #6.6 P2 phase 2 / re-skin P5.4).
 
   Rendered after the `write` LangGraph node finishes. OOB-replaces the
   matching ``writer-card-rev{N}`` placeholder via ``hx-swap-oob="outerHTML"``
@@ -12,6 +12,11 @@
   lesson". Keeps the visual hierarchy honest: critic comes next, then the
   final lesson card is the artifact.
 
+  PRESERVED FOR HTMX:
+    - id="writer-card-rev{N}"          ← OOB swap target (must match pending)
+    - hx-swap-oob="outerHTML" attribute ← htmx pulls this element out of the
+                                          SSE payload by id
+
   Required context:
     payload = { revision }
     lesson_plan_md = <draft markdown for THIS revision>
@@ -23,33 +28,27 @@
 
 <div id="writer-card-rev{{ rev }}"
      hx-swap-oob="outerHTML"
-     class="flex items-start gap-3">
+     class="aix-agent-shell">
 
-  {# ── Avatar (writer = emerald / quill, completed) ──────────────────── #}
-  <div class="flex-shrink-0 w-9 h-9 rounded-full bg-emerald-100 text-emerald-700
-              flex items-center justify-center ring-2 ring-white shadow-sm">
-    <wa-icon name="pen-nib" style="font-size:1rem;"></wa-icon>
+  <div class="aix-agent-avatar aix-agent-avatar--writer">
+    <wa-icon name="pen-nib"></wa-icon>
   </div>
 
-  {# ── Card body ────────────────────────────────────────────────────── #}
-  <div class="flex-1 min-w-0">
-    <article class="rounded-xl border border-emerald-200 bg-white shadow-sm overflow-hidden">
+  <div class="aix-agent-body">
+    <article class="aix-agent-card aix-agent-card--writer aix-card-stripe-writer">
 
-      <header class="px-4 py-2 border-b border-emerald-100 bg-emerald-50/60
-                     flex items-center justify-between gap-2 flex-wrap">
-        <div class="flex items-baseline gap-2">
-          <strong class="text-slate-800">Writer Agent</strong>
-          <span class="text-xs text-slate-500">
-            · bozza {{ rev }}
-          </span>
+      <header class="aix-agent-card-header aix-agent-card-header--writer">
+        <div class="aix-agent-card-title">
+          <strong>Writer Agent</strong>
+          <span class="aix-agent-card-role">· bozza {{ rev }}</span>
         </div>
-        <wa-tag size="small" variant="success" pill>
+        <span class="aix-pill aix-pill-success">
           <wa-icon name="circle-check" style="font-size:0.7rem;"></wa-icon>
           bozza pronta
-        </wa-tag>
+        </span>
       </header>
 
-      <div class="px-4 py-3 text-sm text-slate-700">
+      <div class="aix-agent-card-body" style="font-size:13px; color:var(--aix-text-primary);">
 
         {# Compact collapsed-by-default preview of the draft. The polished
            final version lives in the lesson card at the bottom of the
@@ -57,17 +56,21 @@
            completed and a way to inspect the draft if the critic asks
            for revisions. #}
         <details>
-          <summary class="cursor-pointer select-none text-sm text-slate-600
-                          hover:text-slate-900 flex items-center gap-1.5">
+          <summary style="cursor:pointer; user-select:none;
+                          display:inline-flex; align-items:center; gap:6px;
+                          color:var(--aix-text-secondary); font-size:13px;">
             <wa-icon name="file-lines" style="font-size:0.85rem;"></wa-icon>
             Mostra la bozza ({{ (lesson_plan_md or '') | length }} caratteri)
           </summary>
-          <article class="lesson-prose mt-3 max-h-[28rem] overflow-y-auto
-                          border border-slate-100 rounded p-3 bg-slate-50/40">
+          <article class="lesson-prose"
+                   style="margin-top:10px; max-height:28rem; overflow-y:auto;
+                          border:1px solid var(--aix-border-soft);
+                          border-radius:var(--aix-radius-sm);
+                          padding:12px; background:var(--aix-cream);">
             {% if lesson_plan_html %}
               {{ lesson_plan_html | safe }}
             {% else %}
-              <pre class="whitespace-pre-wrap text-xs leading-relaxed">{{ lesson_plan_md or '' }}</pre>
+              <pre style="white-space:pre-wrap; font-size:12px; line-height:1.5;">{{ lesson_plan_md or '' }}</pre>
             {% endif %}
           </article>
         </details>
@@ -75,8 +78,8 @@
       </div>
 
     </article>
-    <div class="text-[11px] text-slate-400 mt-1 ml-1 flex items-center gap-1">
-      <wa-icon name="pen-nib" style="font-size:0.7rem;"></wa-icon>
+    <div class="aix-agent-footer-label">
+      <wa-icon name="pen-nib" style="font-size:0.75rem;"></wa-icon>
       <span>Writer · bozza {{ rev }}</span>
     </div>
   </div>

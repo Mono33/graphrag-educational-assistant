@@ -175,6 +175,19 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"⚠️ WebUI DB init failed (auth + lessons disabled): {e}")
 
+    # CORE 2 #11a follow-up — LLM connectivity probe.
+    # Issues a one-shot ``GET /models`` against the configured LLM
+    # endpoint and emits a single, actionable log line that distinguishes
+    # TLS failures, auth failures, and outages from each other (the
+    # OpenAI SDK collapses all three into 'Connection error.' otherwise).
+    # Default-on; flip ``AIX_LLM_PROBE_ENABLED=false`` to disable. Runs in
+    # the background — never blocks startup, never fails the API.
+    try:
+        from aix.core.connectivity_probe import schedule_startup_probe
+        await schedule_startup_probe()
+    except Exception as e:  # noqa: BLE001
+        logger.debug("⚠️ LLM connectivity probe scheduling failed: %s", e)
+
     # CORE 5 #20 Phase 5 — MCP Streamable HTTP sub-app lifespan.
     # FastMCP's http_app() Starlette app initialises an internal
     # ``StreamableHTTPSessionManager`` inside its own lifespan. If we don't
@@ -296,6 +309,31 @@ try:
     logger.info("✅ Path C webui mounted at /webui/")
 except ImportError as exc:
     logger.warning(f"⚠️ Path C webui not loaded (skipping): {exc}")
+
+# CORE 2 #6.6 P5 (brand refresh) — serve the WebUI's static assets at /static/.
+# This carries the warm-academic brand CSS (aix-brand.css) and any future
+# locally-served fonts / SVG icons. Lives under aix.webui.static so the
+# package keeps owning its own assets; the mount path /static is conventional
+# and unused elsewhere in the API. Wrapped in try/except like every other
+# optional mount so a missing folder cannot block the public /api/v1 surface.
+try:
+    from fastapi.staticfiles import StaticFiles
+
+    _WEBUI_STATIC_DIR = Path(__file__).resolve().parents[1] / "webui" / "static"
+    if _WEBUI_STATIC_DIR.is_dir():
+        app.mount(
+            "/static",
+            StaticFiles(directory=str(_WEBUI_STATIC_DIR)),
+            name="static",
+        )
+        logger.info("✅ WebUI static mounted at /static (from %s)", _WEBUI_STATIC_DIR)
+    else:
+        logger.info(
+            "ℹ️ WebUI static directory not present (skipping /static mount): %s",
+            _WEBUI_STATIC_DIR,
+        )
+except Exception as exc:  # noqa: BLE001
+    logger.warning("⚠️ /static mount failed (skipping): %s", exc)
 
 # JSON Bearer auth router (CORE 2 #7).
 #
