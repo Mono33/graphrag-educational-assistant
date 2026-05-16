@@ -395,9 +395,10 @@ def _count_media(media: Optional[Dict[str, Any]]) -> Dict[str, int]:
         return len(value) if isinstance(value, (list, dict)) else 0
 
     return {
-        "videos":   _len_of("videos"),
-        "articles": _len_of("citations"),
-        "oer":      _len_of("resources") + _len_of("open_textbooks"),
+        "videos":    _len_of("videos"),
+        "articles":  _len_of("citations"),
+        "oer":       _len_of("resources") + _len_of("open_textbooks"),
+        "web":       _len_of("web_links"),
     }
 
 

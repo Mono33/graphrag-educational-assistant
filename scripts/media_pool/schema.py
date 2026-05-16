@@ -22,6 +22,12 @@ class VideoEntry:
     language: str = "en"
     duration_hint: Optional[str] = None
     graph_context: Optional[str] = None
+    # Engagement fields — populated by 04_enrich_pool.py
+    view_count: Optional[int] = None
+    like_count: Optional[int] = None
+    duration_seconds: Optional[int] = None
+    trusted_channel: bool = False
+    quality_score: Optional[float] = None
 
 
 @dataclass

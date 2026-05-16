@@ -95,3 +95,6 @@ lingua-language-detector>=2.0.0
 
 # Media pool scripts (scripts/media_pool/) — offline YouTube search without API key/quota
 yt-dlp>=2026.1.0
+
+# Live web search — DDGS (DuckDuckGo) for real-time related URLs in the media panel
+duckduckgo-search>=6.3.0

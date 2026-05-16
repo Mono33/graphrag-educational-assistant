@@ -51,7 +51,13 @@ class OpenAIConfig:
         - Return thinking content in reasoning_content field  (DeepSeek R1, Claude via OpenRouter)
         """
         m = self.model.lower()
-        return any(x in m for x in ("o1", "o3", "o4", "deepseek-r1", "deepseek/deepseek-r1", "thinking"))
+        return any(x in m for x in (
+            "o1", "o3", "o4",
+            "deepseek-r1", "deepseek/deepseek-r1",
+            "thinking",
+            "claude-sonnet-4",  # Claude Sonnet 4.x supports extended thinking via OpenRouter
+            "claude-opus-4",    # Claude Opus 4.x supports extended thinking via OpenRouter
+        ))
 
     def build_completion_kwargs(
         self,
@@ -78,10 +84,12 @@ class OpenAIConfig:
                 Critic). All model-family checks run against the override so kwargs are correct.
         """
         model = model_override or self.model
+        m_lower = model.lower()
         kwargs: dict = {"model": model}
-        is_o_series = any(x in model.lower() for x in ("o1", "o3", "o4"))
-        is_thinking = any(x in model.lower() for x in (
-            "o1", "o3", "o4", "deepseek-r1", "deepseek/deepseek-r1", "thinking"
+        is_o_series = any(x in m_lower for x in ("o1", "o3", "o4"))
+        is_thinking = any(x in m_lower for x in (
+            "o1", "o3", "o4", "deepseek-r1", "deepseek/deepseek-r1", "thinking",
+            "claude-sonnet-4", "claude-opus-4",
         ))
 
         if is_o_series:
@@ -94,7 +102,25 @@ class OpenAIConfig:
             kwargs["response_format"] = {"type": "json_object"}
 
         if is_thinking and include_reasoning:
-            kwargs["extra_body"] = {"include_reasoning": True}
+            if "claude" in m_lower:
+                # Claude extended thinking via OpenRouter — requires temperature=1.
+                # max_tokens is the TOTAL budget (thinking + content combined).
+                # With effort="medium", thinking alone uses 4 000+ tokens, exhausting
+                # a 3 500-token ceiling before any content is generated (finish_reason=length
+                # at 0 chars). We add a per-effort buffer ON TOP of the requested content
+                # budget so thinking never starves content.
+                # Effort → approx thinking tokens → buffer added to caller's max_tokens:
+                #   low    ~1 024 tokens  +2 000
+                #   medium ~4 000 tokens  +6 000
+                #   high   ~8 000 tokens  +10 000
+                effort = os.getenv("AIX_THINKING_EFFORT", "low")
+                _thinking_buffer = {"low": 2000, "medium": 6000, "high": 10000}.get(effort, 2000)
+                kwargs["temperature"] = 1
+                kwargs["max_tokens"] = max_tokens + _thinking_buffer
+                kwargs["extra_body"] = {"reasoning": {"effort": effort}}
+            elif "deepseek" in m_lower:
+                kwargs["extra_body"] = {"include_reasoning": True}
+            # o-series: reasoning is always on, no extra_body needed
 
         return kwargs
 

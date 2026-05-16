@@ -35,6 +35,10 @@ class VideoResource:
     duration_hint: Optional[str] = None
     language: str = "en"
     educational_level: str = "general"
+    # Engagement fields populated by 04_enrich_pool.py
+    duration_seconds: Optional[int] = None
+    quality_score: Optional[float] = None
+    trusted_channel: bool = False
 
 
 @dataclass
@@ -319,7 +323,14 @@ class MediaLookup:
         for name in concept_names:
             media = self.find_media_for_concept(name)
             if media:
-                combined.videos.extend(media.videos[:2])
+                # Sort by quality_score descending (trusted + high-view first); pool JSON
+                # is pre-sorted by 04_enrich_pool.py but in-memory sort is free and safe.
+                sorted_videos = sorted(
+                    media.videos,
+                    key=lambda v: (v.trusted_channel, v.quality_score or 0),
+                    reverse=True,
+                )
+                combined.videos.extend(sorted_videos[:2])
                 combined.images.extend(media.images[:2])
                 combined.resources.extend(media.resources[:2])
                 combined.citations.extend(media.citations[:2])
@@ -363,6 +374,9 @@ class MediaLookup:
                 duration_hint=v.get("duration_hint"),
                 language=v.get("language", "en"),
                 educational_level=v.get("educational_level", "general"),
+                duration_seconds=v.get("duration_seconds"),
+                quality_score=v.get("quality_score"),
+                trusted_channel=v.get("trusted_channel", False),
             ))
         
         images = []

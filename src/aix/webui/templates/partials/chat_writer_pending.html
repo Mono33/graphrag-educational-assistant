@@ -2,10 +2,11 @@
   Writer Agent — pending placeholder (CORE 2 #6.6 P2 phase 2 / re-skin P5.4).
 
   Rendered immediately after the retriever finishes, BEFORE the writer call
-  starts. Today the writer call is non-streaming (a single, long
-  ``chat.completions.create``); without this placeholder the chat would
-  look frozen for 60–90 seconds. P2 phase 3 swaps in token streaming and
-  this same wrapper becomes the streaming-tokens target.
+  starts. Displays an animated checklist while the LLM starts up, then:
+    1. Switches to a "💭 Elaborazione pedagogica…" accordion that fills with
+       the model's thinking tokens (reasoning_details) in real time.
+    2. When the first lesson-content token arrives the accordion collapses
+       and the lesson is rendered as live markdown via marked.js.
 
   The wrapper element carries a unique id ``writer-card-rev{N}`` so the
   matching ``chat_writer_card.html`` can OOB-replace it with the completed
@@ -23,7 +24,8 @@
 {% set is_revision = p.get('is_revision', False) %}
 {% set lid = lesson.id | string if lesson else '' %}
 
-<div id="writer-card-rev{{ rev }}" class="aix-agent-shell">
+<div id="writer-card-rev{{ rev }}" class="aix-agent-shell"
+     {% if lid %}data-writer-stream="{{ lid }}"{% endif %}>
 
   <div class="aix-agent-avatar aix-agent-avatar--writer">
     <wa-icon name="pen-nib"></wa-icon>
@@ -55,16 +57,33 @@
           </div>
         {% endif %}
 
-        {# Live token stream — hidden until the first writer_chunk event arrives #}
-        <pre id="writer-stream-{{ lid }}"
-             style="display:none; white-space:pre-wrap; font-size:12px; line-height:1.55;
-                    max-height:24rem; overflow-y:auto; margin:0;
+        {# Thinking accordion — hidden until first think_chunk; collapses when content starts #}
+        <div id="writer-think-{{ lid }}" style="display:none; margin-bottom:2px;">
+          <details id="writer-think-details-{{ lid }}" open>
+            <summary style="cursor:pointer; font-size:11px; color:var(--aix-text-tertiary);
+                            display:flex; align-items:center; gap:6px; list-style:none;
+                            padding:4px 0; user-select:none;">
+              <span class="writer-think-dot"></span>
+              💭 <em>Elaborazione pedagogica…</em>
+            </summary>
+            <div id="writer-think-body-{{ lid }}"
+                 style="font-size:11px; font-family:monospace; color:var(--aix-text-tertiary);
+                        max-height:180px; overflow-y:auto; padding:8px 10px; margin-top:4px;
+                        background:rgba(124,107,191,0.05);
+                        border-left:2px solid rgba(124,107,191,0.28);
+                        border-radius:0 4px 4px 0; white-space:pre-wrap;"></div>
+          </details>
+        </div>
+
+        {# Live markdown preview — hidden until first writer_chunk #}
+        <div id="writer-stream-{{ lid }}" class="aix-prose writer-stream-prose"
+             style="display:none; max-height:28rem; overflow-y:auto;
                     background:var(--aix-cream, #fdfaf5);
                     border:1px solid var(--aix-border-soft);
-                    border-radius:var(--aix-radius-sm); padding:10px 14px;
-                    color:var(--aix-text-primary);"></pre>
+                    border-radius:var(--aix-radius-sm); padding:10px 18px;
+                    font-size:13px; line-height:1.6;"></div>
 
-        {# Animated checklist — hidden when the first streaming token arrives #}
+        {# Animated checklist — hidden when the first token (think or content) arrives #}
         <div id="writer-skeleton-{{ lid }}" style="display:flex; flex-direction:column; gap:6px;">
 
           <p style="font-size:12px; color:var(--aix-text-secondary); margin:0;">
@@ -125,6 +144,15 @@
   flex-shrink: 0;
   animation: writer-dot-pulse 1.4s ease-in-out infinite;
 }
+.writer-think-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--aix-purple, #7c6bbf);
+  display: inline-block;
+  flex-shrink: 0;
+  animation: writer-dot-pulse 1.4s ease-in-out infinite;
+}
 @keyframes writer-item-appear {
   from { opacity: 0; transform: translateX(-6px); }
   to   { opacity: 1; transform: translateX(0); }
@@ -133,31 +161,24 @@
   0%, 100% { opacity: 1; transform: scale(1); }
   50%       { opacity: 0.35; transform: scale(0.6); }
 }
+
+/* Minimal prose styles for the markdown preview */
+.writer-stream-prose h1, .writer-stream-prose h2, .writer-stream-prose h3 {
+  margin: 0.75em 0 0.35em;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.writer-stream-prose h1 { font-size: 1.15em; }
+.writer-stream-prose h2 { font-size: 1.05em; }
+.writer-stream-prose h3 { font-size: 0.97em; }
+.writer-stream-prose p  { margin: 0.4em 0; }
+.writer-stream-prose ul, .writer-stream-prose ol { padding-left: 1.4em; margin: 0.4em 0; }
+.writer-stream-prose li { margin: 0.2em 0; }
+.writer-stream-prose strong { font-weight: 600; }
+.writer-stream-prose em { font-style: italic; }
+.writer-stream-prose hr { border: none; border-top: 1px solid var(--aix-border-soft); margin: 0.8em 0; }
 </style>
 
-{% if lid %}
-<script>
-(function () {
-  var streamEl   = document.getElementById('writer-stream-{{ lid }}');
-  var skeletonEl = document.getElementById('writer-skeleton-{{ lid }}');
-  if (!streamEl) return;
-
-  function showToken(token) {
-    if (!token) return;
-    if (streamEl.style.display === 'none') {
-      streamEl.style.display = 'block';
-      if (skeletonEl) skeletonEl.style.display = 'none';
-    }
-    streamEl.textContent += token;
-    streamEl.scrollTop = streamEl.scrollHeight;
-  }
-
-  // Dedicated token stream: the main SSE is blocked inside graph.astream()
-  // while the write node runs, so tokens arrive on a separate connection.
-  var src = new EventSource('/webui/lesson/{{ lid }}/writer-stream');
-  src.addEventListener('writer_chunk', function (e) { showToken(e.data); });
-  src.addEventListener('end', function () { src.close(); });
-  src.onerror = function () { src.close(); };
-})();
-</script>
-{% endif %}
+{# EventSource is opened by the MutationObserver in _base.html when it detects
+   data-writer-stream="{{ lid }}" on this card. No inline <script> here —
+   HTMX 2 does not execute scripts in SSE-received HTML. #}

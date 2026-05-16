@@ -1076,6 +1076,59 @@ class ExternalMediaAPI:
             return []
 
 
+    async def search_web_ddgs(
+        self,
+        query: str,
+        max_results: int = 4,
+        region: str = "it-it",
+    ) -> List[Dict[str, str]]:
+        """
+        Live web search via DuckDuckGo (no API key, no quota).
+
+        Results are returned as plain dicts {title, url, snippet} so the
+        media panel can render them as a simple link list.  Runs the
+        blocking DDGS call in a thread-pool executor to avoid blocking
+        the async event loop.
+
+        Args:
+            query:       Search query (concept + educational context)
+            max_results: Number of results to return (default 4)
+            region:      DuckDuckGo region code for result localisation
+                         (default "it-it" for Italian-language results)
+
+        Returns:
+            List of {title, url, snippet} dicts; empty list on any failure.
+        """
+        try:
+            from duckduckgo_search import DDGS
+        except ImportError:
+            logger.debug("[DDGS] duckduckgo-search not installed; skipping web search")
+            return []
+
+        def _sync_search() -> List[Dict[str, str]]:
+            results: List[Dict[str, str]] = []
+            try:
+                with DDGS() as ddgs:
+                    for r in ddgs.text(query, region=region, max_results=max_results):
+                        results.append({
+                            "title": r.get("title", ""),
+                            "url": r.get("href", ""),
+                            "snippet": (r.get("body") or "")[:200],
+                        })
+            except Exception as exc:
+                logger.debug("[DDGS] sync search raised: %s", exc)
+            return results
+
+        try:
+            loop = asyncio.get_event_loop()
+            results = await loop.run_in_executor(None, _sync_search)
+            logger.info("[DDGS] %d web results for %r", len(results), query[:60])
+            return results
+        except Exception as exc:
+            logger.warning("[DDGS] web search failed for %r: %s", query[:60], exc)
+            return []
+
+
 # =============================================================================
 # CONVENIENCE ALIASES (backward compatibility)
 # =============================================================================

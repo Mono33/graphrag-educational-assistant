@@ -56,6 +56,25 @@ MAX_ITERATIONS = int(os.getenv("POOL_AGENT_MAX_ITER", "25"))  # tool calls per c
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 MEDIA_DIR = os.path.join(REPO_ROOT, "data", "media")
 
+# Video IDs rejected by 04_enrich_pool.py (loaded from sidecar at startup).
+# Prevents the agent from re-collecting videos already known to fail quality thresholds.
+_REJECTED_VIDEO_IDS: set[str] = set()
+
+
+def _load_rejected_ids(domain: str) -> set[str]:
+    path = os.path.join(MEDIA_DIR, f"kg_{domain}_rejected_ids.json")
+    if not os.path.exists(path):
+        return set()
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        ids = set(data.keys()) if isinstance(data, dict) else set(data)
+        logger.info("Loaded %d rejected video IDs from enrichment sidecar", len(ids))
+        return ids
+    except Exception as exc:
+        logger.warning("Could not load rejected IDs sidecar: %s", exc)
+        return set()
+
 # =============================================================================
 # System prompt
 # =============================================================================
@@ -131,6 +150,7 @@ SAVE_TOOL_DEFINITION = {
 ALL_TOOLS = [
     neo4j_tool.TOOL_DEFINITION,
     youtube_tool.TOOL_DEFINITION,
+    youtube_tool.TOOL_DEFINITION_IT,   # Idea 2: Italian-language videos
     scholar_tool.TOOL_DEFINITION,
     wikipedia_tool.TOOL_DEFINITION,
     SAVE_TOOL_DEFINITION,
@@ -140,14 +160,17 @@ ALL_TOOLS = [
 # Tool dispatcher
 # =============================================================================
 
-def dispatch_tool(tool_name: str, tool_args: Dict[str, Any], concept_name: str, pool_entries: Dict) -> str:
+def dispatch_tool(tool_name: str, tool_args: Dict[str, Any], concept_name: str, pool_entries: Dict, domain: str = "") -> str:
     """Execute a tool call and return the result as a JSON string."""
     try:
         if tool_name == "query_neo4j":
             result = neo4j_tool.run_query(tool_args["cypher"])
 
         elif tool_name == "search_youtube":
-            result = youtube_tool.search_videos(tool_args["query"])
+            result = youtube_tool.search_videos(tool_args["query"], domain=domain)
+
+        elif tool_name == "search_youtube_it":
+            result = youtube_tool.search_videos_it(tool_args["query"], domain=domain)
 
         elif tool_name == "search_semantic_scholar":
             result = scholar_tool.search_papers(tool_args["query"])
@@ -191,6 +214,21 @@ def _handle_save(args: Dict[str, Any], pool_entries: Dict) -> Dict:
         # Reject anything outside that range — it's a hallucinated or corrupted ID.
         if not (len(vid_id) == 11 and all(c.isalnum() or c in "-_" for c in vid_id)):
             return {"saved": False, "reason": f"Invalid video_id '{vid_id}' — must be exactly 11 chars (YouTube format)"}
+        # Reject IDs that previously failed enrichment quality thresholds
+        if vid_id in _REJECTED_VIDEO_IDS:
+            return {
+                "saved": False,
+                "reason": (
+                    f"video_id '{vid_id}' was previously rejected by enrichment filters "
+                    "(low views, too short/long, or below quality threshold). "
+                    "Try a different video."
+                ),
+            }
+        # Skip duplicates already collected in this run for the same concept
+        existing_ids = {v.get("video_id") for v in pool_entries.get(concept, {}).get("videos", [])}
+        if vid_id in existing_ids:
+            return {"saved": False, "reason": f"video_id '{vid_id}' already saved for concept '{concept}'"}
+
         # Always derive url/embed_url from video_id to prevent LLM typos
         data["url"] = f"https://youtu.be/{vid_id}"
         data["embed_url"] = f"https://www.youtube.com/embed/{vid_id}"
@@ -307,7 +345,7 @@ def run_agent_for_concept(
                 tool_args = {}
 
             logger.debug(f"  [tool] {tool_name}({list(tool_args.keys())})")
-            result_str = dispatch_tool(tool_name, tool_args, concept_name, pool_entries)
+            result_str = dispatch_tool(tool_name, tool_args, concept_name, pool_entries, domain=domain)
 
             messages.append(
                 {
@@ -408,9 +446,13 @@ def main():
     parser.add_argument("--concept", type=str, default=None, help="Process a single concept name (for testing)")
     args = parser.parse_args()
 
+    global _REJECTED_VIDEO_IDS
     os.makedirs(MEDIA_DIR, exist_ok=True)
     pool_path = os.path.join(MEDIA_DIR, f"kg_{args.domain}_media_pool.json")
     checkpoint_path = os.path.join(MEDIA_DIR, f"checkpoint_{args.domain}.json")
+
+    # Block re-collection of videos that already failed enrichment quality thresholds
+    _REJECTED_VIDEO_IDS = _load_rejected_ids(args.domain)
 
     # Load existing state
     checkpoint = load_checkpoint(checkpoint_path) if args.resume else {}

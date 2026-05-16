@@ -1,6 +1,11 @@
 """
 YouTube tool — searches YouTube via yt-dlp (no API key, no quota).
 Verifies embeddability via YouTube's official oEmbed endpoint before accepting a video.
+
+Idea 3: TRUSTED_CHANNELS whitelist — channels that receive a quality-score bonus in
+         04_enrich_pool.py. The flag is set here at search time so newly collected
+         entries are pre-tagged without needing a separate enrichment pass.
+Idea 2: search_videos_it() — Italian-language variant for the bilingual pool track.
 """
 
 import logging
@@ -24,6 +29,35 @@ logger = logging.getLogger(__name__)
 _LAST_CALL = 0.0
 _MIN_INTERVAL = 1.5  # polite: ~1 search every 1.5s across all threads
 _LOCK = threading.Lock()
+
+# =============================================================================
+# Trusted channel whitelist (Idea 3)
+# Synced with 04_enrich_pool.py — keep both lists in sync if you update one.
+# =============================================================================
+
+TRUSTED_CHANNELS: dict[str, set[str]] = {
+    "neuro": {
+        "ted", "ted-ed", "ted education", "kurzgesagt",
+        "scishow", "scishow psych", "crash course", "3blue1brown",
+        "mit opencourseware", "hhmi biointeractive", "noba project",
+        "sentis", "asap science", "the brain", "neuroscientifically",
+        "psychology today", "stanford", "harvard",
+    },
+    "udl": {
+        "cast", "understood", "khan academy", "edutopia",
+        "iris center", "do-it uw", "national center on disability",
+        "pacer center", "vanderbilt", "kennedy center",
+        "special education", "inclusion", "accessibility",
+    },
+}
+
+_ALL_TRUSTED = {ch for chs in TRUSTED_CHANNELS.values() for ch in chs}
+
+
+def _is_trusted(channel: str, domain: str = "") -> bool:
+    lookup = TRUSTED_CHANNELS.get(domain, _ALL_TRUSTED)
+    c_lower = (channel or "").lower()
+    return any(t in c_lower for t in lookup)
 
 
 def _wait():
@@ -51,10 +85,16 @@ def _is_embeddable(video_id: str) -> bool:
         return False
 
 
-def search_videos(query: str, max_results: int = 3) -> Dict[str, Any]:
+def search_videos(query: str, max_results: int = 3, domain: str = "", language: str = "en") -> Dict[str, Any]:
     """
     Search YouTube for educational videos using yt-dlp (no API key required).
     Verifies embeddability via oEmbed before accepting each video.
+
+    Args:
+        query:       YouTube search query
+        max_results: Number of verified videos to return
+        domain:      Pool domain ("neuro" | "udl") — used for trusted-channel check
+        language:    ISO language code stored on returned entries ("en" | "it")
 
     Returns:
         {"results": [...], "count": int} — only embeddable, non-live videos
@@ -116,35 +156,51 @@ def search_videos(query: str, max_results: int = 3) -> Dict[str, Any]:
         license_ = entry.get("license") or ""
         rights_status = "youtube_cc" if "creative commons" in license_.lower() else "youtube_embed"
 
+        channel = entry.get("channel") or entry.get("uploader", "")
         results.append(
             {
                 "title": entry.get("title", ""),
                 "video_id": video_id,
                 "url": f"https://youtu.be/{video_id}",
                 "embed_url": f"https://www.youtube.com/embed/{video_id}",
-                "channel": entry.get("channel") or entry.get("uploader", ""),
+                "channel": channel,
                 "rights_status": rights_status,
                 "verified_date": today,
-                "language": "en",
+                "language": language,
                 "duration_hint": str(entry.get("duration", "")),
+                "trusted_channel": _is_trusted(channel, domain),
             }
         )
 
     return {"results": results, "count": len(results)}
 
 
-# Tool definition for OpenAI function-calling format
+def search_videos_it(query: str, max_results: int = 3, domain: str = "") -> Dict[str, Any]:
+    """
+    Italian-language variant of search_videos (Idea 2).
+
+    Appends Italian educational suffixes to the query and sets language="it"
+    on returned entries. The agent calls this alongside search_youtube to build
+    a bilingual pool so Italian teachers get native-language content first.
+    """
+    it_query = f"{query} spiegazione didattica scuola italiana"
+    return search_videos(it_query, max_results=max_results, domain=domain, language="it")
+
+
+# Tool definitions for OpenAI function-calling format
+
 TOOL_DEFINITION = {
     "type": "function",
     "function": {
         "name": "search_youtube",
         "description": (
-            "Search YouTube for embeddable educational videos. "
+            "Search YouTube for embeddable educational videos (English). "
             "No API key needed — no quota limits. "
             "Returns only videos verified as publicly embeddable via oEmbed. "
             "Include context from the Knowledge Graph to make queries specific. "
             "Example good query: 'metacognition classroom strategies ADHD students' "
-            "instead of just 'metacognition'."
+            "instead of just 'metacognition'. "
+            "Call search_youtube_it as well to add Italian-language videos to the pool."
         ),
         "parameters": {
             "type": "object",
@@ -155,6 +211,29 @@ TOOL_DEFINITION = {
                         "YouTube search query. Be specific and educational. "
                         "Include concept name + educational context + target audience when relevant."
                     ),
+                }
+            },
+            "required": ["query"],
+        },
+    },
+}
+
+TOOL_DEFINITION_IT = {
+    "type": "function",
+    "function": {
+        "name": "search_youtube_it",
+        "description": (
+            "Search YouTube for Italian-language educational videos. "
+            "Use this AFTER search_youtube to add native Italian content for Italian teachers. "
+            "The tool automatically appends Italian search suffixes. "
+            "Pass the same concept query as search_youtube."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Concept name to search in Italian (e.g. 'metacognizione', 'memoria di lavoro').",
                 }
             },
             "required": ["query"],

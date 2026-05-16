@@ -135,5 +135,100 @@
   </footer>
 
   {% block body_extra %}{% endblock %}
+
+  {#
+    Writer stream — persistent MutationObserver that opens a dedicated EventSource
+    for each writer pending card as it mounts in the DOM.
+
+    WHY HERE: HTMX 2 does not execute <script> tags inside SSE-received HTML
+    (only htmx attributes are processed).  The writer pending card is injected
+    via the main SSE stream, so any <script> placed inside that template will
+    silently be ignored.  This global observer is the correct pattern: it runs
+    once in the base page, watches for [data-writer-stream] elements, and opens
+    the per-lesson EventSource when it finds one.
+  #}
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script>
+  (function () {
+    var _activeStreams = {};
+
+    function openWriterStream(lid) {
+      if (!lid || _activeStreams[lid]) return;
+
+      var thinkWrap = document.getElementById('writer-think-' + lid);
+      var thinkDet  = document.getElementById('writer-think-details-' + lid);
+      var thinkBody = document.getElementById('writer-think-body-' + lid);
+      var streamEl  = document.getElementById('writer-stream-' + lid);
+      var skelEl    = document.getElementById('writer-skeleton-' + lid);
+      if (!streamEl) return;
+
+      var mdBuffer       = '';
+      var renderTimer    = null;
+      var contentStarted = false;
+
+      function scheduleRender() {
+        if (renderTimer) return;
+        renderTimer = setTimeout(function () {
+          if (window.marked) {
+            streamEl.innerHTML = marked.parse(mdBuffer);
+          } else {
+            streamEl.textContent = mdBuffer;
+          }
+          streamEl.scrollTop = streamEl.scrollHeight;
+          renderTimer = null;
+        }, 150);
+      }
+
+      var src = new EventSource('/webui/lesson/' + lid + '/writer-stream');
+      _activeStreams[lid] = src;
+
+      src.addEventListener('think_chunk', function (e) {
+        if (skelEl && skelEl.style.display !== 'none') skelEl.style.display = 'none';
+        if (thinkWrap && thinkWrap.style.display === 'none') thinkWrap.style.display = 'block';
+        if (thinkBody) {
+          thinkBody.textContent += e.data;
+          thinkBody.scrollTop = thinkBody.scrollHeight;
+        }
+      });
+
+      src.addEventListener('writer_chunk', function (e) {
+        if (!contentStarted) {
+          contentStarted = true;
+          if (thinkDet) thinkDet.open = false;
+          if (streamEl.style.display === 'none') streamEl.style.display = 'block';
+          if (skelEl) skelEl.style.display = 'none';
+        }
+        mdBuffer += e.data;
+        scheduleRender();
+      });
+
+      src.addEventListener('end', function () {
+        src.close();
+        delete _activeStreams[lid];
+      });
+
+      src.onerror = function () {
+        src.close();
+        delete _activeStreams[lid];
+      };
+    }
+
+    function checkNode(node) {
+      if (node.nodeType !== 1) return;
+      if (node.dataset && node.dataset.writerStream) {
+        openWriterStream(node.dataset.writerStream);
+      }
+      node.querySelectorAll('[data-writer-stream]').forEach(function (el) {
+        openWriterStream(el.dataset.writerStream);
+      });
+    }
+
+    new MutationObserver(function (mutations) {
+      mutations.forEach(function (mutation) {
+        mutation.addedNodes.forEach(checkNode);
+      });
+    }).observe(document.body, { childList: true, subtree: true });
+  })();
+  </script>
 </body>
 </html>

@@ -1221,7 +1221,13 @@ async def lesson_writer_stream(
                 break
             if await request.is_disconnected():
                 break
-            yield {"event": "writer_chunk", "data": token}
+            if isinstance(token, tuple):
+                event_type, data = token
+                event_name = "think_chunk" if event_type == "think" else "writer_chunk"
+            else:
+                event_name = "writer_chunk"
+                data = token
+            yield {"event": event_name, "data": data}
         yield {"event": "end", "data": "ok"}
 
     return EventSourceResponse(token_gen())

@@ -10,6 +10,7 @@ Media lookup is optional and fails gracefully for backward compatibility.
 
 import asyncio
 import logging
+import re
 from typing import Optional, List, Dict, Any
 from dataclasses import dataclass, field
 
@@ -335,95 +336,151 @@ class RetrieverAgent:
         # NEW Phase 1: Curated Media Lookup
         # ============================================
         # This is additive - if it fails, retrieval still succeeds
-        result.curated_media = self._fetch_curated_media(result.nodes, plan.key_concepts)
-        
+        result.curated_media = self._fetch_curated_media(
+            result.nodes, plan.key_concepts, plan.time_constraints
+        )
+
         # ============================================
-        # NEW Phase A: Hybrid Retrieval for Out-of-Scope
+        # DDGS live web search (always, not just out-of-scope)
+        # Runs in parallel with hybrid retrieval when that branch is active.
         # ============================================
-        # If scope is partial or out-of-scope, fetch external resources
         result.scope_status = plan.scope_status
-        
+
         if plan.needs_external_apis:
-            external_resources = await self._fetch_external_resources(
+            # Run DDGS and external APIs concurrently
+            web_links_task = self._fetch_web_links(plan.key_concepts, plan.search_queries)
+            ext_task = self._fetch_external_resources(
                 subject_concepts=plan.subject_concepts or [],
-                pedagogy_concepts=plan.pedagogy_concepts or plan.key_concepts
+                pedagogy_concepts=plan.pedagogy_concepts or plan.key_concepts,
             )
-            result.external_resources = external_resources
-            
-            scope_emoji = {"partial_scope": "⚠️", "out_of_scope": "❌"}.get(plan.scope_status, "❓")
-            logger.info(
-                f"[RetrieverAgent] {scope_emoji} HYBRID retrieval: "
-                f"External resources fetched for {plan.subject_concepts}"
+            web_links, external_resources = await asyncio.gather(
+                web_links_task, ext_task, return_exceptions=True
             )
-        
+            if not isinstance(external_resources, Exception):
+                result.external_resources = external_resources
+                scope_emoji = {"partial_scope": "⚠️", "out_of_scope": "❌"}.get(plan.scope_status, "❓")
+                logger.info(
+                    f"[RetrieverAgent] {scope_emoji} HYBRID retrieval: "
+                    f"External resources fetched for {plan.subject_concepts}"
+                )
+        else:
+            web_links = await self._fetch_web_links(plan.key_concepts, plan.search_queries)
+
+        if web_links and not isinstance(web_links, Exception):
+            result.curated_media["web_links"] = web_links
+
         # Log results
         media_str = ""
         if result.curated_media:
             media_count = (
                 len(result.curated_media.get('videos', [])) +
                 len(result.curated_media.get('resources', [])) +
-                len(result.curated_media.get('citations', []))
+                len(result.curated_media.get('citations', [])) +
+                len(result.curated_media.get('web_links', []))
             )
             media_str = f", {media_count} media items"
-        
+
         external_str = ""
         if result.external_resources:
             external_count = sum(len(v) if isinstance(v, list) else 1 for v in result.external_resources.values() if v)
             external_str = f", {external_count} external resources"
-        
+
         logger.info(
             f"[RetrieverAgent] Retrieved total: {result.total_nodes} nodes, "
             f"{result.total_relationships} relationships, "
             f"{len(result.recommendations)} recommendations{media_str}{external_str}"
         )
-        
+
         return result
     
+    @staticmethod
+    def _parse_lesson_minutes(time_constraints: Optional[str]) -> Optional[int]:
+        """Extract integer minutes from a freeform time string (e.g. '60 minuti', '1 hour')."""
+        if not time_constraints:
+            return None
+        m = re.search(r"(\d+)", time_constraints)
+        return int(m.group(1)) if m else None
+
+    @staticmethod
+    def _duration_ok(duration_s: Optional[int], lesson_minutes: Optional[int]) -> bool:
+        """
+        Return True if the video duration fits the lesson length.
+
+        Buckets (Idea 5):
+          lesson ≤ 30 min →  1–15 min clips  (60–900 s)
+          lesson ≤ 60 min →  2–25 min clips  (120–1500 s)
+          lesson > 60 min →  3–40 min clips  (180–2400 s)
+        Entries without duration_seconds always pass (backward-compat with un-enriched pools).
+        """
+        if duration_s is None:
+            return True  # not enriched yet — let it through
+        if lesson_minutes is None or lesson_minutes <= 0:
+            return True  # no time info — no filter
+        if lesson_minutes <= 30:
+            return 60 <= duration_s <= 900
+        elif lesson_minutes <= 60:
+            return 120 <= duration_s <= 1500
+        else:
+            return 180 <= duration_s <= 2400
+
     def _fetch_curated_media(
-        self, 
-        nodes: List[Dict[str, Any]], 
-        key_concepts: List[str]
+        self,
+        nodes: List[Dict[str, Any]],
+        key_concepts: List[str],
+        time_constraints: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Fetch curated media from sidecar JSON based on retrieved concepts.
-        
+
         This is a graceful operation - failures don't affect main retrieval.
-        
+
         Args:
-            nodes: Retrieved nodes from GraphRAG
-            key_concepts: Key concepts from planner
-            
+            nodes:            Retrieved nodes from GraphRAG
+            key_concepts:     Key concepts from planner
+            time_constraints: Freeform lesson-duration string from RetrievalPlan
+                              (e.g. "60 minuti") — used for duration-aware filtering (Idea 5)
+
         Returns:
             Dict with videos, resources, citations (empty dict on failure)
         """
         media_lookup = self._get_media_lookup()
         if not media_lookup:
             return {}
-        
+
+        lesson_minutes = self._parse_lesson_minutes(time_constraints)
+
         try:
             # Collect concept names to look up
             concept_names = set()
-            
+
             # From retrieved nodes
             for node in nodes[:15]:  # Limit to top 15 nodes
                 name = node.get('name')
                 if name:
                     concept_names.add(name)
-            
+
             # From planner's key concepts
             for concept in key_concepts:
                 concept_names.add(concept)
-            
+
             if not concept_names:
                 return {}
-            
+
             # Get combined media for all concepts
             combined_media = media_lookup.get_combined_media(list(concept_names))
-            
+
             if not combined_media.has_content():
                 logger.debug("[RetrieverAgent] No curated media found for concepts")
                 return {}
-            
+
+            # Duration-aware filtering (Idea 5).
+            # Prefer videos that fit the lesson slot; fall back to all if nothing passes.
+            duration_filtered = [
+                v for v in combined_media.videos
+                if self._duration_ok(v.duration_seconds, lesson_minutes)
+            ]
+            videos_to_use = duration_filtered if duration_filtered else combined_media.videos
+
             # Convert to dict for state serialization
             media_dict = {
                 'videos': [
@@ -434,7 +491,7 @@ class RetrieverAgent:
                         'search_query': v.search_query,
                         'duration_hint': v.duration_hint
                     }
-                    for v in combined_media.videos[:5]
+                    for v in videos_to_use[:5]
                 ],
                 'images': [
                     {
@@ -490,6 +547,68 @@ class RetrieverAgent:
             logger.warning(f"[RetrieverAgent] Media lookup failed (non-critical): {e}")
             return {}
     
+    async def _fetch_web_links(
+        self,
+        key_concepts: List[str],
+        search_queries: List[str],
+        max_per_concept: int = 3,
+        max_total: int = 9,
+    ) -> List[Dict[str, str]]:
+        """
+        Fetch live web results via DuckDuckGo for the top key concepts.
+
+        Runs one DDGS query per concept (max 3 concepts) in parallel and
+        deduplicates results by URL. Results are stored in
+        ``curated_media['web_links']`` and rendered in the media panel as
+        a dedicated "Ricerca web" section.
+
+        Falls back gracefully to an empty list if DDGS is unavailable or
+        the network call fails — the rest of the media panel is unaffected.
+        """
+        external_api = self._get_external_api()
+        if not external_api:
+            return []
+
+        # Pick the 3 most specific concepts for querying; fall back to
+        # planner search_queries if key_concepts is empty.
+        concepts_to_search = (key_concepts or search_queries)[:3]
+        if not concepts_to_search:
+            return []
+
+        async def _search_one(concept: str) -> List[Dict[str, str]]:
+            query = f"{concept} didattica insegnamento scuola"
+            return await external_api.search_web_ddgs(
+                query, max_results=max_per_concept, region="it-it"
+            )
+
+        try:
+            per_concept = await asyncio.gather(
+                *[_search_one(c) for c in concepts_to_search],
+                return_exceptions=True,
+            )
+        except Exception as exc:
+            logger.warning("[RetrieverAgent] DDGS gather failed: %s", exc)
+            return []
+
+        # Flatten, deduplicate by URL, cap total
+        seen_urls: set = set()
+        results: List[Dict[str, str]] = []
+        for batch in per_concept:
+            if isinstance(batch, Exception):
+                continue
+            for item in batch:
+                url = item.get("url", "")
+                if url and url not in seen_urls:
+                    seen_urls.add(url)
+                    results.append(item)
+                    if len(results) >= max_total:
+                        break
+            if len(results) >= max_total:
+                break
+
+        logger.info("[RetrieverAgent] DDGS: %d web links for concepts %s", len(results), concepts_to_search)
+        return results
+
     async def _fetch_external_resources(
         self,
         subject_concepts: List[str],
