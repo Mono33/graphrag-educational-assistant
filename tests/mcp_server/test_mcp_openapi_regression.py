@@ -17,10 +17,8 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import List
 
 import pytest
-
 
 _BASELINE_PATH = (
     Path(__file__).resolve().parents[2]
@@ -41,11 +39,11 @@ def _live_routes(http_client) -> set[str]:
     }
 
 
-def _baseline_routes() -> List[str]:
+def _baseline_routes() -> list[str]:
     """Parse the baseline file's ``METHOD path`` lines."""
     if not _BASELINE_PATH.exists():
         pytest.skip(f"baseline missing at {_BASELINE_PATH}")
-    expected: List[str] = []
+    expected: list[str] = []
     with _BASELINE_PATH.open(encoding="utf-8") as fh:
         for line in fh:
             parts = line.split()

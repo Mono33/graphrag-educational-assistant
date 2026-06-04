@@ -10,40 +10,41 @@ Adding a new domain is as simple as:
 3. Done! All components automatically use it.
 """
 
-from typing import Dict, Optional, List
+from typing import Optional
+
 from aix.domains.base_config import BaseDomainConfig
 
 
 class DomainRegistry:
     """Registry for all domain configurations"""
-    
+
     def __init__(self):
         """Initialize domain registry"""
-        self._domains: Dict[str, BaseDomainConfig] = {}
+        self._domains: dict[str, BaseDomainConfig] = {}
         self._register_domains()
-    
+
     def _register_domains(self):
         """Register all available domains
-        
+
         To add a new domain:
         1. Import the domain config class
         2. Instantiate it
         3. Register it in self._domains
         """
         # Import domain configurations
-        from aix.domains.udl_domain import UDLDomainConfig
         from aix.domains.neuro_domain import NeuroDomainConfig
-        
+        from aix.domains.udl_domain import UDLDomainConfig
+
         # Register UDL domain
         udl = UDLDomainConfig()
         self._domains[udl.name] = udl
         print(f"[OK] Registered domain: {udl.name} ({udl.display_name})")
-        
+
         # Register Neuro domain
         neuro = NeuroDomainConfig()
         self._domains[neuro.name] = neuro
         print(f"[OK] Registered domain: {neuro.name} ({neuro.display_name})")
-        
+
         # ============================================================
         # FUTURE DOMAINS: Just add here!
         # ============================================================
@@ -52,43 +53,43 @@ class DomainRegistry:
         # math = MathDomainConfig()
         # self._domains[math.name] = math
         # print(f"✅ Registered domain: {math.name} ({math.display_name})")
-    
+
     def get(self, domain_name: str) -> Optional[BaseDomainConfig]:
         """Get domain configuration by name
-        
+
         Args:
             domain_name: Domain identifier ('udl', 'neuro', 'math', etc.)
-            
+
         Returns:
             Domain configuration or None if not found
-            
+
         Note:
             Returns None for domain_name="all" (means merge all domains)
         """
         if domain_name == "all":
             return None  # "all" is special case (merge multiple domains)
-        
+
         return self._domains.get(domain_name)
-    
-    def list_all(self) -> List[str]:
+
+    def list_all(self) -> list[str]:
         """List all registered domain names
-        
+
         Returns:
             List of domain identifiers (e.g., ['udl', 'neuro'])
         """
         return list(self._domains.keys())
-    
-    def get_all_configs(self) -> List[BaseDomainConfig]:
+
+    def get_all_configs(self) -> list[BaseDomainConfig]:
         """Get all domain configurations
-        
+
         Returns:
             List of domain configuration instances
         """
         return list(self._domains.values())
-    
-    def validate_all(self) -> Dict[str, tuple]:
+
+    def validate_all(self) -> dict[str, tuple]:
         """Validate all registered domains
-        
+
         Returns:
             Dict mapping domain_name -> (is_valid, errors)
         """
@@ -96,9 +97,9 @@ class DomainRegistry:
         for name, domain_config in self._domains.items():
             is_valid, errors = domain_config.validate()
             results[name] = (is_valid, errors)
-        
+
         return results
-    
+
     def __repr__(self) -> str:
         """String representation"""
         return f"<DomainRegistry: {len(self._domains)} domains registered ({', '.join(self._domains.keys())})>"
@@ -111,9 +112,10 @@ class DomainRegistry:
 # Create global registry (lazy initialization on first import)
 _registry = None
 
+
 def get_registry() -> DomainRegistry:
     """Get global domain registry (singleton)
-    
+
     Returns:
         Domain registry instance
     """
@@ -127,15 +129,16 @@ def get_registry() -> DomainRegistry:
 # CONVENIENCE FUNCTIONS
 # ============================================================
 
+
 def get_domain_config(domain: str) -> Optional[BaseDomainConfig]:
     """Get domain configuration (convenience function)
-    
+
     Args:
         domain: Domain identifier ('udl', 'neuro', 'all', etc.)
-        
+
     Returns:
         Domain configuration or None if not found or domain="all"
-        
+
     Example:
         >>> config = get_domain_config("udl")
         >>> weights = config.get_node2vec_weights()
@@ -145,12 +148,12 @@ def get_domain_config(domain: str) -> Optional[BaseDomainConfig]:
     return registry.get(domain)
 
 
-def list_available_domains() -> List[str]:
+def list_available_domains() -> list[str]:
     """List all available domain identifiers
-    
+
     Returns:
         List of domain names (e.g., ['udl', 'neuro'])
-        
+
     Example:
         >>> domains = list_available_domains()
         >>> print(domains)  # ['udl', 'neuro']
@@ -159,12 +162,12 @@ def list_available_domains() -> List[str]:
     return registry.list_all()
 
 
-def validate_domains() -> Dict[str, tuple]:
+def validate_domains() -> dict[str, tuple]:
     """Validate all registered domains
-    
+
     Returns:
         Dict mapping domain_name -> (is_valid, errors)
-        
+
     Example:
         >>> results = validate_domains()
         >>> for domain, (valid, errors) in results.items():
@@ -180,10 +183,9 @@ def validate_domains() -> Dict[str, tuple]:
 # ============================================================
 
 __all__ = [
-    'DomainRegistry',
-    'get_registry',
-    'get_domain_config',
-    'list_available_domains',
-    'validate_domains'
+    "DomainRegistry",
+    "get_registry",
+    "get_domain_config",
+    "list_available_domains",
+    "validate_domains",
 ]
-

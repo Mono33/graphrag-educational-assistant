@@ -13,17 +13,17 @@ Requirements for full implementation:
 
 Usage (future):
     from aix.agent.media.canva_generator import CanvaGenerator
-    
+
     generator = CanvaGenerator(api_key="your-canva-api-key")
     result = await generator.generate("metacognition", "mindmap")
     print(result.edit_url)  # URL to edit in Canva
     print(result.image_url)  # URL to exported image
 """
 
-import os
 import logging
-from typing import Optional, List, Dict, Any
+import os
 from dataclasses import dataclass
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -31,21 +31,22 @@ logger = logging.getLogger(__name__)
 @dataclass
 class CanvaResult:
     """Result from Canva diagram generation"""
+
     success: bool
     concept: str
     diagram_type: str
-    
+
     # URLs
     image_url: Optional[str] = None
     edit_url: Optional[str] = None  # URL to edit in Canva
-    
+
     # Cost (varies by subscription)
     cost: float = 0.0
-    
+
     # Error info
     error_message: Optional[str] = None
-    
-    def to_dict(self) -> Dict[str, Any]:
+
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary"""
         return {
             "success": self.success,
@@ -54,7 +55,7 @@ class CanvaResult:
             "image_url": self.image_url,
             "edit_url": self.edit_url,
             "cost": self.cost,
-            "error_message": self.error_message
+            "error_message": self.error_message,
         }
 
 
@@ -72,63 +73,60 @@ CANVA_TEMPLATES = {
 class CanvaGenerator:
     """
     Generate diagrams using Canva Connect API.
-    
+
     This is a placeholder implementation. Full integration requires:
     1. Canva for Teams subscription
     2. API credentials from developer portal
     3. Pre-configured templates for each diagram type
-    
+
     Status: Coming Soon
     """
-    
+
     CANVA_API_URL = "https://api.canva.com/rest/v1"
-    
+
     def __init__(self, api_key: Optional[str] = None):
         """
         Initialize Canva generator.
-        
+
         Args:
             api_key: Canva API key. If not provided,
                     will use CANVA_API_KEY environment variable.
         """
-        self.api_key = api_key or os.getenv('CANVA_API_KEY')
+        self.api_key = api_key or os.getenv("CANVA_API_KEY")
         self._available = self.api_key is not None
-        
+
         if self._available:
             logger.info("[CanvaGenerator] Initialized with API key")
         else:
             logger.info("[CanvaGenerator] No API key - using placeholder mode")
-    
+
     @property
     def is_available(self) -> bool:
         """Check if Canva integration is available"""
         return self._available
-    
+
     async def close(self):
         """Close resources (placeholder)"""
         pass
-    
+
     async def generate(
-        self,
-        concept: str,
-        diagram_type: str,
-        related_concepts: Optional[List[str]] = None
+        self, concept: str, diagram_type: str, related_concepts: Optional[list[str]] = None
     ) -> CanvaResult:
         """
         Generate a diagram using Canva.
-        
+
         Currently returns a placeholder response.
         Full implementation will:
         1. Clone a template
         2. Populate with concept data
         3. Export to image
         4. Return URLs
-        
+
         Args:
             concept: Main concept for the diagram
             diagram_type: Type of diagram
             related_concepts: Optional related concepts
-            
+
         Returns:
             CanvaResult (currently placeholder)
         """
@@ -137,43 +135,32 @@ class CanvaGenerator:
                 success=False,
                 concept=concept,
                 diagram_type=diagram_type,
-                error_message="Canva integration not available. Set CANVA_API_KEY to enable."
+                error_message="Canva integration not available. Set CANVA_API_KEY to enable.",
             )
-        
+
         # Placeholder: Full implementation coming soon
         logger.warning("[CanvaGenerator] Full implementation coming soon")
-        
+
         return CanvaResult(
             success=False,
             concept=concept,
             diagram_type=diagram_type,
-            error_message="Canva integration coming soon. Use Mermaid.js or DALL-E instead."
+            error_message="Canva integration coming soon. Use Mermaid.js or DALL-E instead.",
         )
-    
-    async def list_templates(self) -> List[Dict[str, Any]]:
+
+    async def list_templates(self) -> list[dict[str, Any]]:
         """
         List available Canva templates.
-        
+
         Returns:
             List of template info (placeholder)
         """
-        return [
-            {
-                "id": "placeholder",
-                "name": "Coming Soon",
-                "type": "mindmap",
-                "available": False
-            }
-        ]
-    
+        return [{"id": "placeholder", "name": "Coming Soon", "type": "mindmap", "available": False}]
+
     @property
-    def stats(self) -> Dict[str, Any]:
+    def stats(self) -> dict[str, Any]:
         """Get generator statistics"""
-        return {
-            "available": self._available,
-            "diagrams_generated": 0,
-            "status": "coming_soon"
-        }
+        return {"available": self._available, "diagrams_generated": 0, "status": "coming_soon"}
 
 
 # =============================================================================
@@ -201,7 +188,7 @@ CANVA CONNECT API IMPLEMENTATION GUIDE
         "client_id": "...",
         "client_secret": "..."
       }
-   
+
    b. Clone template:
       POST /designs
       {
@@ -212,14 +199,14 @@ CANVA CONNECT API IMPLEMENTATION GUIDE
           "items": ["item1", "item2"]
         }
       }
-   
+
    c. Export to image:
       POST /designs/{design_id}/exports
       {
         "format": "png",
         "quality": "high"
       }
-   
+
    d. Get export URL:
       GET /designs/{design_id}/exports/{export_id}
 
@@ -233,5 +220,3 @@ CANVA CONNECT API IMPLEMENTATION GUIDE
    - For AI-generated visuals: Use DALL-E 3
    - Canva best for: Professional, branded materials
 """
-
-

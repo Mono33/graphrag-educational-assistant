@@ -77,6 +77,7 @@
          id="chat-upload-input"
          name="file"
          class="hidden"
+         aria-hidden="true"
          accept=".pdf,.txt,.md,.markdown,application/pdf,text/plain,text/markdown"
          hx-post="/webui/lesson/{{ lesson.id }}/upload"
          hx-encoding="multipart/form-data"
@@ -94,7 +95,7 @@
         hx-target="#chat-conversation"
         hx-swap="innerHTML"
         hx-disabled-elt="find textarea, find button[type=submit]"
-        style="display:flex; flex-direction:column; gap:4px;">
+        class="aix-col-4">
 
     <div class="aix-chat-input-shell">
 
@@ -104,13 +105,13 @@
                 aria-label="Allega documento"
                 title="Allega PDF, TXT o Markdown come contesto per la lezione (max 10 MB)"
                 onclick="document.getElementById('chat-upload-input').click()">
-          <wa-icon name="paperclip" style="font-size:0.95rem;"></wa-icon>
+          <wa-icon name="paperclip" class="aix-fs-095"></wa-icon>
         </button>
         <button type="button" disabled
                 class="aix-chat-input-icon-btn"
                 aria-label="Mermaid"
                 title="Inserimento diagramma Mermaid — disponibile in una versione successiva">
-          <wa-icon name="diagram-project" style="font-size:0.95rem;"></wa-icon>
+          <wa-icon name="diagram-project" class="aix-fs-095"></wa-icon>
         </button>
       </div>
 
@@ -129,14 +130,14 @@
       <button type="submit"
               class="aix-chat-input-send"
               aria-label="Invia messaggio e genera lezione">
-        <wa-icon name="paper-plane" style="font-size:0.85rem;"></wa-icon>
+        <wa-icon name="paper-plane" class="aix-fs-085"></wa-icon>
         <span>Invia</span>
       </button>
 
     </div>
 
     <p class="aix-chat-input-hint">
-      <wa-icon name="circle-info" style="font-size:0.75rem;"></wa-icon>
+      <wa-icon name="circle-info" class="aix-fs-sm"></wa-icon>
       <span>
         Premi <kbd>Invio</kbd>
         per inviare la richiesta. L'agente userà anche il profilo educativo a
@@ -149,13 +150,12 @@
 
   {# ── DISABLED while the agent is generating ──────────────────────── #}
   <div class="aix-chat-input-shell aix-chat-input-shell--disabled" aria-disabled="true">
-    <div style="flex:1; display:flex; align-items:center; gap:8px;
-                font-size:13px; color:var(--aix-text-secondary); padding:6px 10px;">
-      <wa-spinner style="font-size:0.85rem;"></wa-spinner>
+    <div class="aix-irow-8 aix-fs-13 aix-color-secondary aix-chat-running-hint">
+      <wa-spinner class="aix-fs-085"></wa-spinner>
       <span>Generazione in corso… Attendi il termine prima di inviare un altro messaggio.</span>
     </div>
     <button type="button" disabled class="aix-chat-input-send" aria-label="In corso">
-      <wa-icon name="paper-plane" style="font-size:0.85rem;"></wa-icon>
+      <wa-icon name="paper-plane" class="aix-fs-085"></wa-icon>
     </button>
   </div>
 
@@ -183,6 +183,7 @@
          id="chat-upload-input"
          name="file"
          class="hidden"
+         aria-hidden="true"
          accept=".pdf,.txt,.md,.markdown,application/pdf,text/plain,text/markdown"
          hx-post="/webui/lesson/{{ lesson.id }}/upload"
          hx-encoding="multipart/form-data"
@@ -198,7 +199,7 @@
         hx-target="#chat-conversation"
         hx-swap="innerHTML"
         hx-disabled-elt="find textarea, find button[type=submit]"
-        style="display:flex; flex-direction:column; gap:4px;">
+        class="aix-col-4">
 
     <div class="aix-chat-input-shell">
 
@@ -208,13 +209,13 @@
                 aria-label="Allega documento"
                 title="Allega PDF, TXT o Markdown come contesto per la lezione (max 10 MB)"
                 onclick="document.getElementById('chat-upload-input').click()">
-          <wa-icon name="paperclip" style="font-size:0.95rem;"></wa-icon>
+          <wa-icon name="paperclip" class="aix-fs-095"></wa-icon>
         </button>
         <button type="button" disabled
                 class="aix-chat-input-icon-btn"
                 aria-label="Mermaid"
                 title="Inserimento diagramma Mermaid — disponibile in una versione successiva">
-          <wa-icon name="diagram-project" style="font-size:0.95rem;"></wa-icon>
+          <wa-icon name="diagram-project" class="aix-fs-095"></wa-icon>
         </button>
       </div>
 
@@ -232,14 +233,14 @@
       <button type="submit"
               class="aix-chat-input-send"
               aria-label="Invia messaggio di follow-up">
-        <wa-icon name="paper-plane" style="font-size:0.85rem;"></wa-icon>
+        <wa-icon name="paper-plane" class="aix-fs-085"></wa-icon>
         <span>Invia</span>
       </button>
 
     </div>
 
     <p class="aix-chat-input-hint">
-      <wa-icon name="circle-info" style="font-size:0.75rem;"></wa-icon>
+      <wa-icon name="circle-info" class="aix-fs-sm"></wa-icon>
       <span>
         Premi <kbd>Invio</kbd>
         per continuare la conversazione. La lezione precedente resta

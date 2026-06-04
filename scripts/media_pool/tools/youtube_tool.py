@@ -9,11 +9,10 @@ Idea 2: search_videos_it() — Italian-language variant for the bilingual pool t
 """
 
 import logging
+import threading
 import time
 from datetime import date
-from typing import Any, Dict
-
-import threading
+from typing import Any
 
 import requests
 
@@ -85,7 +84,7 @@ def _is_embeddable(video_id: str) -> bool:
         return False
 
 
-def search_videos(query: str, max_results: int = 3, domain: str = "", language: str = "en") -> Dict[str, Any]:
+def search_videos(query: str, max_results: int = 3, domain: str = "", language: str = "en") -> dict[str, Any]:
     """
     Search YouTube for educational videos using yt-dlp (no API key required).
     Verifies embeddability via oEmbed before accepting each video.
@@ -175,7 +174,7 @@ def search_videos(query: str, max_results: int = 3, domain: str = "", language: 
     return {"results": results, "count": len(results)}
 
 
-def search_videos_it(query: str, max_results: int = 3, domain: str = "") -> Dict[str, Any]:
+def search_videos_it(query: str, max_results: int = 3, domain: str = "") -> dict[str, Any]:
     """
     Italian-language variant of search_videos (Idea 2).
 

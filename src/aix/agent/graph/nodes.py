@@ -8,14 +8,14 @@ Nodes are the building blocks of the LangGraph state machine.
 import logging
 import os
 import re
-from typing import Dict, Any
+from typing import Any
 
-from aix.agent.graph import write_stream
-from aix.agent.graph.state import AgentState
+from aix.agent.agents.critic_agent import CriticAgent
 from aix.agent.agents.planner_agent import PlannerAgent
 from aix.agent.agents.retriever_agent import RetrieverAgent
 from aix.agent.agents.writer_agent import WriterAgent
-from aix.agent.agents.critic_agent import CriticAgent
+from aix.agent.graph import write_stream
+from aix.agent.graph.state import AgentState
 
 # CORE 2 #12b.3 — duration-mention sniffer used by plan_node to decide
 # whether the *current* user turn explicitly mentions a duration. When it
@@ -62,6 +62,7 @@ def _sanitize(obj: Any) -> Any:
     """
     try:
         import numpy as np
+
         if isinstance(obj, np.floating):
             return float(obj)
         if isinstance(obj, np.integer):
@@ -78,6 +79,7 @@ def _sanitize(obj: Any) -> Any:
     if isinstance(obj, list):
         return [_sanitize(v) for v in obj]
     return obj
+
 
 logger = logging.getLogger(__name__)
 
@@ -143,22 +145,25 @@ def _corrective_rag_max_attempts() -> int:
 
 def _corrective_rag_enabled() -> bool:
     return (os.getenv("AIX_CORRECTIVE_RAG_ENABLED") or "false").strip().lower() in (
-        "1", "true", "yes", "on"
+        "1",
+        "true",
+        "yes",
+        "on",
     )
 
 
-async def plan_node(state: AgentState) -> Dict[str, Any]:
+async def plan_node(state: AgentState) -> dict[str, Any]:
     """
     PLANNER NODE
-    
+
     Analyzes the teacher query, detects intent, and creates a retrieval plan.
-    
+
     Input: teacher_query, domain, language
     Output: plan, query_intent, lesson_type, key_concepts, search_queries,
             language (possibly overridden by LLM-driven detection — Point (a))
     """
     logger.info("[Node: Plan] Starting planning phase...")
-    
+
     planner = get_planner()
     seed_language = state.get("language", "it")
 
@@ -167,6 +172,7 @@ async def plan_node(state: AgentState) -> Dict[str, Any]:
             query=state["teacher_query"],
             domain=state.get("domain", "neuro"),
             language=seed_language,
+            pedagogical_intent=state.get("pedagogical_intent"),
         )
 
         # Point (a): the Planner LLM is the canonical L1 language detector.
@@ -186,20 +192,23 @@ async def plan_node(state: AgentState) -> Dict[str, Any]:
             logger.info(
                 "[Node: Plan] 🌐 Language override: seed=%r → planner=%r "
                 "(confidence=%s) — writer/critic will reply in %r",
-                seed_language, plan.response_language,
-                plan.language_confidence, plan.response_language,
+                seed_language,
+                plan.response_language,
+                plan.language_confidence,
+                plan.response_language,
             )
         elif plan.response_language:
             logger.info(
                 "[Node: Plan] Language confirmed: %r (planner_conf=%s, seed=%r)",
-                effective_language, plan.language_confidence, seed_language,
+                effective_language,
+                plan.language_confidence,
+                seed_language,
             )
         else:
             # Planner didn't emit response_language (legacy prompt / older
             # model output) — keep the seed silently.
             logger.debug(
-                "[Node: Plan] Planner did not emit response_language; "
-                "keeping seed language %r",
+                "[Node: Plan] Planner did not emit response_language; keeping seed language %r",
                 seed_language,
             )
 
@@ -232,13 +241,16 @@ async def plan_node(state: AgentState) -> Dict[str, Any]:
                     "[Node: Plan] Overriding planner-extracted time_constraints=%r "
                     "with profile-authoritative %s (current turn has no duration; "
                     "profile.time_available_minutes=%s).",
-                    plan.time_constraints, inferred, profile_duration,
+                    plan.time_constraints,
+                    inferred,
+                    profile_duration,
                 )
             elif not plan.time_constraints:
                 logger.info(
                     "[Node: Plan] time_constraints filled from profile "
                     "(time_available_minutes=%s): %s",
-                    profile_duration, inferred,
+                    profile_duration,
+                    inferred,
                 )
             plan.time_constraints = inferred
         elif profile_duration and current_turn_has_duration and plan.time_constraints:
@@ -246,17 +258,20 @@ async def plan_node(state: AgentState) -> Dict[str, Any]:
                 "[Node: Plan] Current turn mentions a duration; honouring "
                 "planner-extracted time_constraints=%r over profile "
                 "time_available_minutes=%s.",
-                plan.time_constraints, profile_duration,
+                plan.time_constraints,
+                profile_duration,
             )
 
         # Enhanced logging with scope status
-        scope_emoji = {"in_scope": "✅", "partial_scope": "⚠️", "out_of_scope": "❌"}.get(plan.scope_status, "❓")
+        scope_emoji = {"in_scope": "✅", "partial_scope": "⚠️", "out_of_scope": "❌"}.get(
+            plan.scope_status, "❓"
+        )
         logger.info(
             f"[Node: Plan] Detected intent: {plan.query_intent} (confidence: {plan.intent_confidence}), "
             f"scope: {scope_emoji} {plan.scope_status} ({plan.scope_confidence:.0%})"
         )
-        
-        updates: Dict[str, Any] = {
+
+        updates: dict[str, Any] = {
             "plan": {
                 "query_intent": plan.query_intent,
                 "intent_confidence": plan.intent_confidence,
@@ -297,21 +312,18 @@ async def plan_node(state: AgentState) -> Dict[str, Any]:
         if language_overridden:
             updates["language"] = effective_language
         return updates
-        
+
     except Exception as e:
         logger.error(f"[Node: Plan] Error: {e}")
-        return {
-            "error": str(e),
-            "current_step": "error"
-        }
+        return {"error": str(e), "current_step": "error"}
 
 
-async def retrieve_node(state: AgentState) -> Dict[str, Any]:
+async def retrieve_node(state: AgentState) -> dict[str, Any]:
     """
     RETRIEVER NODE
-    
+
     Executes GraphRAG searches based on the plan.
-    
+
     Input: plan, search_queries, domain
     Output: graphrag_results, retrieved_nodes, recommendations
     """
@@ -319,16 +331,16 @@ async def retrieve_node(state: AgentState) -> Dict[str, Any]:
     if state.get("error"):
         logger.warning("[Node: Retrieve] Skipping - previous node failed")
         return {"current_step": "error"}
-    
+
     logger.info("[Node: Retrieve] Starting retrieval phase...")
-    
+
     domain = state.get("domain", "neuro")
     retriever = get_retriever(domain)
-    
+
     try:
         # Reconstruct the plan
         from aix.agent.agents.planner_agent import RetrievalPlan
-        
+
         plan_data = state.get("plan", {})
         plan = RetrievalPlan(
             query_intent=plan_data.get("query_intent", "lesson_creation"),
@@ -343,9 +355,9 @@ async def retrieve_node(state: AgentState) -> Dict[str, Any]:
             scope_status=plan_data.get("scope_status", "in_scope"),
             scope_confidence=plan_data.get("scope_confidence", 1.0),
             subject_concepts=plan_data.get("subject_concepts"),
-            pedagogy_concepts=plan_data.get("pedagogy_concepts")
+            pedagogy_concepts=plan_data.get("pedagogy_concepts"),
         )
-        
+
         # Enrich plan.search_queries with educational profile terms
         ep = state.get("educational_profile") or {}
         profile_terms: list = []
@@ -364,22 +376,25 @@ async def retrieve_node(state: AgentState) -> Dict[str, Any]:
                     existing_lower.add(pt.lower())
             logger.info(
                 "[Node: Retrieve] Profile enrichment added %d terms: %s",
-                len(profile_terms), profile_terms
+                len(profile_terms),
+                profile_terms,
             )
 
         result = await retriever.retrieve(plan)
 
         # Log hybrid retrieval if applicable
         if result.is_hybrid:
-            logger.info(f"[Node: Retrieve] ⚠️ HYBRID mode: KG pedagogy + external resources")
+            logger.info("[Node: Retrieve] ⚠️ HYBRID mode: KG pedagogy + external resources")
 
         # Sanitize before storing in AgentState — msgpack (LangGraph checkpointer)
         # cannot serialize numpy scalar types that Neo4j / sklearn may return.
         return {
-            "graphrag_results": _sanitize([
-                {"nodes": r.nodes, "relationships": r.relationships}
-                for r in result.search_results
-            ]),
+            "graphrag_results": _sanitize(
+                [
+                    {"nodes": r.nodes, "relationships": r.relationships}
+                    for r in result.search_results
+                ]
+            ),
             "retrieved_nodes": _sanitize(result.nodes),
             "retrieved_relationships": _sanitize(result.relationships),
             "recommendations": _sanitize(result.recommendations),
@@ -387,24 +402,23 @@ async def retrieve_node(state: AgentState) -> Dict[str, Any]:
             # NEW Phase 1: Curated media from sidecar JSON
             "curated_media": _sanitize(result.curated_media) if result.curated_media else None,
             # NEW Phase A: External resources for out-of-scope queries
-            "external_resources": _sanitize(result.external_resources) if result.external_resources else None,
-            "current_step": "retrieve_complete"
+            "external_resources": _sanitize(result.external_resources)
+            if result.external_resources
+            else None,
+            "current_step": "retrieve_complete",
         }
-        
+
     except Exception as e:
         logger.error(f"[Node: Retrieve] Error: {e}")
-        return {
-            "error": str(e),
-            "current_step": "error"
-        }
+        return {"error": str(e), "current_step": "error"}
 
 
-async def write_node(state: AgentState) -> Dict[str, Any]:
+async def write_node(state: AgentState) -> dict[str, Any]:
     """
     WRITER NODE
-    
+
     Generates or revises the lesson plan.
-    
+
     Input: teacher_query, plan, retrieved_nodes, recommendations
     Output: lesson_plan_draft
     """
@@ -412,20 +426,20 @@ async def write_node(state: AgentState) -> Dict[str, Any]:
     if state.get("error"):
         logger.warning("[Node: Write] Skipping - previous node failed")
         return {"current_step": "error"}
-    
+
     revision_count = state.get("revision_count", 0)
-    
+
     if revision_count > 0:
         logger.info(f"[Node: Write] Revising (iteration {revision_count})...")
     else:
         logger.info("[Node: Write] Starting initial writing...")
-    
+
     writer = get_writer()
-    
+
     try:
         plan_data = state.get("plan", {})
         query_intent = plan_data.get("query_intent", state.get("query_intent", "lesson_creation"))
-        
+
         # Check if this is a revision
         if revision_count > 0 and state.get("lesson_plan_draft"):
             # Revision mode - pass intent for consistent formatting
@@ -434,13 +448,13 @@ async def write_node(state: AgentState) -> Dict[str, Any]:
                 critique=state.get("critique", ""),
                 revision_instructions=state.get("revision_instructions", ""),
                 language=state.get("language", "it"),
-                intent=query_intent
+                intent=query_intent,
             )
         else:
             # Initial writing
             from aix.agent.agents.planner_agent import RetrievalPlan
             from aix.agent.agents.retriever_agent import RetrievalResult
-            
+
             plan = RetrievalPlan(
                 query_intent=query_intent,
                 key_concepts=plan_data.get("key_concepts", []),
@@ -454,16 +468,16 @@ async def write_node(state: AgentState) -> Dict[str, Any]:
                 scope_status=plan_data.get("scope_status", "in_scope"),
                 scope_confidence=plan_data.get("scope_confidence", 1.0),
                 subject_concepts=plan_data.get("subject_concepts"),
-                pedagogy_concepts=plan_data.get("pedagogy_concepts")
+                pedagogy_concepts=plan_data.get("pedagogy_concepts"),
             )
-            
+
             retrieval_result = RetrievalResult(
                 nodes=state.get("retrieved_nodes", []),
                 relationships=state.get("retrieved_relationships", []),
                 recommendations=state.get("recommendations", []),
-                confidence=state.get("retrieval_confidence", "MEDIUM")
+                confidence=state.get("retrieval_confidence", "MEDIUM"),
             )
-            
+
             # Look up the SSE token bus for this session (registered by
             # service.py before graph.astream() starts). Present only for
             # webUI runs; None for API/MCP callers.
@@ -484,6 +498,8 @@ async def write_node(state: AgentState) -> Dict[str, Any]:
                     domain=state.get("domain", "neuro"),
                     teacher_provided_context=state.get("teacher_provided_context"),
                     educational_profile=state.get("educational_profile"),
+                    pedagogical_intent=state.get("pedagogical_intent"),
+                    refinement_instruction=state.get("refinement_instruction"),
                     # CORE 2 #9 — Corrective RAG. None when the feature flag is
                     # off, so this is byte-identical to pre-#9 in default mode.
                     retrieval_warning=state.get("retrieval_warning"),
@@ -495,27 +511,21 @@ async def write_node(state: AgentState) -> Dict[str, Any]:
                 # cleanly — even if write() raised an exception.
                 if _token_bus is not None:
                     _token_bus.put_nowait(None)
-        
-        return {
-            "lesson_plan_draft": lesson_plan,
-            "current_step": "write_complete"
-        }
-        
+
+        return {"lesson_plan_draft": lesson_plan, "current_step": "write_complete"}
+
     except Exception as e:
         logger.error(f"[Node: Write] Error: {e}")
-        return {
-            "error": str(e),
-            "current_step": "error"
-        }
+        return {"error": str(e), "current_step": "error"}
 
 
-async def critique_node(state: AgentState) -> Dict[str, Any]:
+async def critique_node(state: AgentState) -> dict[str, Any]:
     """
     CRITIC NODE
-    
+
     Reviews the content and decides to approve or request revision.
     Adapts evaluation criteria based on query intent.
-    
+
     Input: lesson_plan_draft, teacher_query, retrieved_nodes, query_intent
     Output: critique, approved, revision_instructions
     """
@@ -523,34 +533,30 @@ async def critique_node(state: AgentState) -> Dict[str, Any]:
     if state.get("error"):
         logger.warning("[Node: Critique] Skipping - previous node failed")
         return {"current_step": "error", "approved": False}
-    
+
     # Check if we have content to critique
     if not state.get("lesson_plan_draft"):
         logger.warning("[Node: Critique] No content to review")
-        return {
-            "error": "No content generated",
-            "current_step": "error",
-            "approved": False
-        }
-    
+        return {"error": "No content generated", "current_step": "error", "approved": False}
+
     # Get query intent for appropriate evaluation
     plan_data = state.get("plan", {})
     query_intent = plan_data.get("query_intent", state.get("query_intent", "lesson_creation"))
-    
+
     logger.info(f"[Node: Critique] Reviewing content (intent: {query_intent})...")
-    
+
     critic = get_critic()
-    
+
     try:
         from aix.agent.agents.retriever_agent import RetrievalResult
-        
+
         retrieval_result = RetrievalResult(
             nodes=state.get("retrieved_nodes", []),
             relationships=state.get("retrieved_relationships", []),
             recommendations=state.get("recommendations", []),
-            confidence=state.get("retrieval_confidence", "MEDIUM")
+            confidence=state.get("retrieval_confidence", "MEDIUM"),
         )
-        
+
         result = await critic.critique(
             lesson_plan=state["lesson_plan_draft"],
             teacher_query=state["teacher_query"],
@@ -559,41 +565,38 @@ async def critique_node(state: AgentState) -> Dict[str, Any]:
             max_revisions=state.get("max_revisions", 1),
             domain=state.get("domain", "neuro"),
             language=state.get("language", "it"),
-            query_intent=query_intent
+            query_intent=query_intent,
         )
-        
+
         updates = {
             "critique": result.summary,
             "critique_score": result.average_score,
             "approved": result.approved,
-            "current_step": "critique_complete"
+            "current_step": "critique_complete",
         }
-        
+
         if result.approved:
             updates["final_lesson_plan"] = state["lesson_plan_draft"]
             updates["final_metadata"] = {
                 "scores": result.scores,
                 "strengths": result.strengths,
-                "revision_count": state.get("revision_count", 0)
+                "revision_count": state.get("revision_count", 0),
             }
         else:
             updates["revision_instructions"] = result.revision_instructions
             updates["revision_count"] = state.get("revision_count", 0) + 1
-        
+
         return updates
-        
+
     except Exception as e:
         logger.error(f"[Node: Critique] Error: {e}")
-        return {
-            "error": str(e),
-            "current_step": "error"
-        }
+        return {"error": str(e), "current_step": "error"}
 
 
 def should_continue_to_revision(state: AgentState) -> str:
     """
     Conditional edge: Decide whether to revise or finish.
-    
+
     Returns:
         "revise" - Go back to writer
         "finish" - End the pipeline
@@ -601,18 +604,18 @@ def should_continue_to_revision(state: AgentState) -> str:
     """
     if state.get("error"):
         return "error"
-    
+
     if state.get("approved", False):
         logger.info("[Router] Lesson plan approved, finishing...")
         return "finish"
-    
+
     revision_count = state.get("revision_count", 0)
     max_revisions = state.get("max_revisions", 1)
-    
+
     if revision_count >= max_revisions:
         logger.info("[Router] Max revisions reached, finishing...")
         return "finish"
-    
+
     logger.info(f"[Router] Revision requested ({revision_count}/{max_revisions})")
     return "revise"
 
@@ -632,7 +635,8 @@ def should_continue_to_revision(state: AgentState) -> str:
 # ``retrieve → write`` is preserved bit-for-bit. **No** code below runs in
 # that mode; this section only matters once the flag flips on.
 
-async def grade_retrieval_node(state: AgentState) -> Dict[str, Any]:
+
+async def grade_retrieval_node(state: AgentState) -> dict[str, Any]:
     """
     GRADE-RETRIEVAL NODE  (CORE 2 #9 — Corrective RAG)
 
@@ -661,7 +665,8 @@ async def grade_retrieval_node(state: AgentState) -> Dict[str, Any]:
     max_attempts = _corrective_rag_max_attempts()
     logger.info(
         "[Node: GradeRetrieval] Grading retrieval attempt %d/%d",
-        attempts, max_attempts,
+        attempts,
+        max_attempts,
     )
 
     grader = get_retrieval_grader()
@@ -678,7 +683,8 @@ async def grade_retrieval_node(state: AgentState) -> Dict[str, Any]:
     except Exception as e:  # noqa: BLE001 — defense in depth; agent already catches most
         logger.error(
             "[Node: GradeRetrieval] Unexpected grader failure (%s); "
-            "defaulting to grade=relevant to preserve pre-#9 behaviour.", e,
+            "defaulting to grade=relevant to preserve pre-#9 behaviour.",
+            e,
         )
         return {
             "retrieval_grade": "relevant",
@@ -687,7 +693,7 @@ async def grade_retrieval_node(state: AgentState) -> Dict[str, Any]:
             "current_step": "grade_complete",
         }
 
-    updates: Dict[str, Any] = {
+    updates: dict[str, Any] = {
         "retrieval_grade": grader_result.grade,
         "retrieval_grade_reason": grader_result.reason,
         "retrieval_attempts": attempts,
@@ -711,7 +717,9 @@ async def grade_retrieval_node(state: AgentState) -> Dict[str, Any]:
             updates["retrieval_rewritten_query"] = rewritten
             logger.info(
                 "[Node: GradeRetrieval] Rewriting search_queries with %r (attempt %d→%d)",
-                rewritten, attempts, attempts + 1,
+                rewritten,
+                attempts,
+                attempts + 1,
             )
         else:
             logger.info(
@@ -729,13 +737,14 @@ async def grade_retrieval_node(state: AgentState) -> Dict[str, Any]:
         logger.warning(
             "[Node: GradeRetrieval] grade=%s after max attempts (%d); flagging "
             "retrieval_warning for Writer to carry a low-confidence caveat.",
-            grader_result.grade, max_attempts,
+            grader_result.grade,
+            max_attempts,
         )
     else:
         # Explicit None on the relevant path so the writer doesn't see a
         # stale warning from a checkpoint of an earlier turn.
-        updates["retrieval_warning"] = False if grader_result.grade == "relevant" else (
-            updates.get("retrieval_warning")
+        updates["retrieval_warning"] = (
+            False if grader_result.grade == "relevant" else (updates.get("retrieval_warning"))
         )
 
     return updates
@@ -765,13 +774,16 @@ def should_retry_retrieval(state: AgentState) -> str:
     if attempts >= max_attempts:
         logger.info(
             "[Router] retrieval grade=%s but max_attempts=%d reached → writer "
-            "(retrieval_warning=True)", grade, max_attempts,
+            "(retrieval_warning=True)",
+            grade,
+            max_attempts,
         )
         return "continue"
 
     logger.info(
         "[Router] retrieval grade=%s (attempts=%d/%d) → retry retrieve",
-        grade, attempts, max_attempts,
+        grade,
+        attempts,
+        max_attempts,
     )
     return "retry"
-

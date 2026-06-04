@@ -12,10 +12,8 @@ Does NOT log in — credentials-free smoke. Run after starting uvicorn:
 from __future__ import annotations
 
 import sys
-
 import urllib.error
 import urllib.request
-
 
 BASE = "http://127.0.0.1:8765"
 

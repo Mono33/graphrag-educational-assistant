@@ -14,21 +14,21 @@ Mermaid.ink API: https://mermaid.ink
 
 Usage:
     from aix.agent.media.mermaid_generator import MermaidGenerator
-    
+
     generator = MermaidGenerator()
     result = await generator.generate("metacognition", "mindmap", ["planning", "monitoring"])
     print(result.svg_url)  # URL to rendered SVG
     print(result.mermaid_code)  # Raw Mermaid code
 """
 
-import os
+import asyncio
 import base64
 import logging
-import asyncio
-import aiohttp
-from typing import List, Optional, Dict, Any
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
+from typing import Any, Optional
+
+import aiohttp
 from openai import AsyncOpenAI
 
 logger = logging.getLogger(__name__)
@@ -36,6 +36,7 @@ logger = logging.getLogger(__name__)
 
 class MermaidDiagramType(Enum):
     """Supported Mermaid diagram types"""
+
     MINDMAP = "mindmap"
     FLOWCHART = "flowchart"
     SEQUENCE = "sequence"
@@ -48,24 +49,25 @@ class MermaidDiagramType(Enum):
 @dataclass
 class MermaidResult:
     """Result from Mermaid diagram generation"""
+
     success: bool
     concept: str
     diagram_type: str
-    
+
     # URLs for rendered diagrams
     svg_url: Optional[str] = None
     png_url: Optional[str] = None
-    
+
     # Raw Mermaid code (for display/editing)
     mermaid_code: Optional[str] = None
-    
+
     # Cost is always 0 (FREE!)
     cost: float = 0.0
-    
+
     # Error info
     error_message: Optional[str] = None
-    
-    def to_dict(self) -> Dict[str, Any]:
+
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization"""
         return {
             "success": self.success,
@@ -75,7 +77,7 @@ class MermaidResult:
             "png_url": self.png_url,
             "mermaid_code": self.mermaid_code,
             "cost": self.cost,
-            "error_message": self.error_message
+            "error_message": self.error_message,
         }
 
 
@@ -104,7 +106,6 @@ mindmap
       Elemento 2.2
 
 Output ONLY the Mermaid code, no explanation or markdown fences.""",
-
     "flowchart": """Generate a Mermaid.js flowchart for the educational concept "{concept}".
 
 Related concepts to include: {related_concepts}
@@ -125,7 +126,6 @@ flowchart TD
     D --> E
 
 Output ONLY the Mermaid code, no explanation or markdown fences.""",
-
     "hierarchy": """Generate a Mermaid.js hierarchy diagram for the educational concept "{concept}".
 
 Related concepts to include: {related_concepts}
@@ -145,7 +145,6 @@ graph TD
     C --> F[Detail 2.1]
 
 Output ONLY the Mermaid code, no explanation or markdown fences.""",
-
     "sequence": """Generate a Mermaid.js sequence diagram for the educational concept "{concept}".
 
 Related concepts to include: {related_concepts}
@@ -167,7 +166,6 @@ sequenceDiagram
     B-->>S: Understanding
 
 Output ONLY the Mermaid code, no explanation or markdown fences.""",
-
     "timeline": """Generate a Mermaid.js timeline for the educational concept "{concept}".
 
 Related concepts to include: {related_concepts}
@@ -189,7 +187,6 @@ timeline
         Stage 4 : Application
 
 Output ONLY the Mermaid code, no explanation or markdown fences.""",
-
     "comparison": """Generate a Mermaid.js comparison diagram for the educational concept "{concept}".
 
 Related concepts to include: {related_concepts}
@@ -214,7 +211,6 @@ graph LR
     A2 -.->|different| B2
 
 Output ONLY the Mermaid code, no explanation or markdown fences.""",
-
     "process": """Generate a Mermaid.js process diagram for the educational concept "{concept}".
 
 Related concepts to include: {related_concepts}
@@ -233,148 +229,146 @@ flowchart LR
     C -->|Error| E[Step 4: Retry]
     E --> B
 
-Output ONLY the Mermaid code, no explanation or markdown fences."""
+Output ONLY the Mermaid code, no explanation or markdown fences.""",
 }
 
 
 class MermaidGenerator:
     """
     Generate educational diagrams using Mermaid.js
-    
+
     Uses mermaid.ink API for rendering (FREE, no API key needed).
     Uses GPT-4o-mini for generating Mermaid code (fast, cheap).
     """
-    
+
     MERMAID_INK_URL = "https://mermaid.ink"
-    
+
     def __init__(self, openai_api_key: Optional[str] = None):
         """
         Initialize Mermaid generator.
-        
+
         Args:
             openai_api_key: Optional OpenAI API key. If not provided,
                           will use OPENAI_API_KEY environment variable.
         """
         self._client: Optional[AsyncOpenAI] = None
         self._session: Optional[aiohttp.ClientSession] = None
-        
+
         # Track usage (for logging only, it's free!)
         self._diagrams_generated = 0
-        
+
         logger.info("[MermaidGenerator] Initialized (FREE diagram generation)")
-    
+
     async def _get_client(self) -> AsyncOpenAI:
         """Get or create OpenRouter-compatible client"""
         if self._client is None:
             from aix.core.config import config as app_config
+
             self._client = app_config.openai.get_async_client()
         return self._client
-    
+
     async def _get_session(self) -> aiohttp.ClientSession:
         """Get or create aiohttp session"""
         if self._session is None or self._session.closed:
             self._session = aiohttp.ClientSession()
         return self._session
-    
+
     async def close(self):
         """Close resources"""
         if self._session and not self._session.closed:
             await self._session.close()
-    
+
     def _encode_mermaid(self, mermaid_code: str) -> str:
         """Encode Mermaid code for URL"""
         # Clean up the code
         code = mermaid_code.strip()
-        
+
         # Remove markdown fences if present
         if code.startswith("```"):
             lines = code.split("\n")
             code = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
-        
+
         # Base64 encode for URL
-        encoded = base64.urlsafe_b64encode(code.encode('utf-8')).decode('utf-8')
+        encoded = base64.urlsafe_b64encode(code.encode("utf-8")).decode("utf-8")
         return encoded
-    
+
     def get_svg_url(self, mermaid_code: str) -> str:
         """Get mermaid.ink SVG URL for the code"""
         encoded = self._encode_mermaid(mermaid_code)
         return f"{self.MERMAID_INK_URL}/svg/{encoded}"
-    
+
     def get_png_url(self, mermaid_code: str) -> str:
         """Get mermaid.ink PNG URL for the code"""
         encoded = self._encode_mermaid(mermaid_code)
         return f"{self.MERMAID_INK_URL}/img/{encoded}"
-    
+
     async def _generate_mermaid_code(
-        self,
-        concept: str,
-        diagram_type: str,
-        related_concepts: Optional[List[str]] = None
+        self, concept: str, diagram_type: str, related_concepts: Optional[list[str]] = None
     ) -> str:
         """Use LLM to generate Mermaid.js code"""
-        
+
         # Get template for diagram type
         template = MERMAID_TEMPLATES.get(
-            diagram_type.lower(),
-            MERMAID_TEMPLATES["mindmap"]  # Default to mindmap
-        )
-        
+            diagram_type.lower(), MERMAID_TEMPLATES["mindmap"]
+        )  # Default to mindmap
+
         # Format prompt
         prompt = template.format(
             concept=concept,
-            related_concepts=", ".join(related_concepts) if related_concepts else "none specified"
+            related_concepts=", ".join(related_concepts) if related_concepts else "none specified",
         )
-        
+
         try:
             client = await self._get_client()
-            
+
             response = await client.chat.completions.create(
                 model="gpt-4o-mini",  # Fast and cheap for code generation
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are an expert at creating Mermaid.js diagrams for educational content. Output ONLY valid Mermaid code, no explanations."
+                        "content": "You are an expert at creating Mermaid.js diagrams for educational content. Output ONLY valid Mermaid code, no explanations.",
                     },
-                    {"role": "user", "content": prompt}
+                    {"role": "user", "content": prompt},
                 ],
                 temperature=0.3,  # Lower temperature for more consistent code
-                max_tokens=1000
+                max_tokens=1000,
             )
-            
+
             mermaid_code = response.choices[0].message.content.strip()
-            
+
             # Clean up any markdown fences
             if mermaid_code.startswith("```"):
                 lines = mermaid_code.split("\n")
                 # Remove first line (```mermaid) and last line (```)
                 mermaid_code = "\n".join(
-                    line for i, line in enumerate(lines) 
+                    line
+                    for i, line in enumerate(lines)
                     if i > 0 and not (i == len(lines) - 1 and line.strip() == "```")
                 )
-            
+
             logger.info(f"[MermaidGenerator] Generated {diagram_type} code for '{concept}'")
             return mermaid_code.strip()
-            
+
         except Exception as e:
             logger.error(f"[MermaidGenerator] Error generating code: {e}")
             raise
-    
+
     async def generate(
         self,
         concept: str,
         diagram_type: str = "mindmap",
-        related_concepts: Optional[List[str]] = None,
-        validate: bool = True
+        related_concepts: Optional[list[str]] = None,
+        validate: bool = True,
     ) -> MermaidResult:
         """
         Generate a Mermaid diagram.
-        
+
         Args:
             concept: Main concept for the diagram
             diagram_type: Type of diagram (mindmap, flowchart, hierarchy, etc.)
             related_concepts: Optional list of related concepts to include
             validate: Whether to validate the generated code renders correctly
-            
+
         Returns:
             MermaidResult with SVG/PNG URLs and raw code
         """
@@ -383,23 +377,23 @@ class MermaidGenerator:
             mermaid_code = await self._generate_mermaid_code(
                 concept, diagram_type, related_concepts
             )
-            
+
             # Generate URLs
             svg_url = self.get_svg_url(mermaid_code)
             png_url = self.get_png_url(mermaid_code)
-            
+
             # Optionally validate that the code renders
             if validate:
                 is_valid = await self._validate_render(svg_url)
                 if not is_valid:
-                    logger.warning(f"[MermaidGenerator] Code validation failed, attempting fix...")
+                    logger.warning("[MermaidGenerator] Code validation failed, attempting fix...")
                     # Try a simpler fallback
                     mermaid_code = self._get_fallback_code(concept, diagram_type)
                     svg_url = self.get_svg_url(mermaid_code)
                     png_url = self.get_png_url(mermaid_code)
-            
+
             self._diagrams_generated += 1
-            
+
             return MermaidResult(
                 success=True,
                 concept=concept,
@@ -407,18 +401,15 @@ class MermaidGenerator:
                 svg_url=svg_url,
                 png_url=png_url,
                 mermaid_code=mermaid_code,
-                cost=0.0  # FREE!
+                cost=0.0,  # FREE!
             )
-            
+
         except Exception as e:
             logger.error(f"[MermaidGenerator] Error generating diagram: {e}")
             return MermaidResult(
-                success=False,
-                concept=concept,
-                diagram_type=diagram_type,
-                error_message=str(e)
+                success=False, concept=concept, diagram_type=diagram_type, error_message=str(e)
             )
-    
+
     async def _validate_render(self, svg_url: str) -> bool:
         """Check if the SVG URL returns a valid image"""
         try:
@@ -427,7 +418,7 @@ class MermaidGenerator:
                 return resp.status == 200
         except Exception:
             return False
-    
+
     def _get_fallback_code(self, concept: str, diagram_type: str) -> str:
         """Generate simple fallback code if LLM-generated code fails"""
         if diagram_type == "mindmap":
@@ -456,14 +447,14 @@ class MermaidGenerator:
     Info 1
     Info 2
     Info 3"""
-    
+
     @property
-    def stats(self) -> Dict[str, Any]:
+    def stats(self) -> dict[str, Any]:
         """Get generator statistics"""
         return {
             "diagrams_generated": self._diagrams_generated,
             "total_cost": 0.0,  # Always free!
-            "generator": "mermaid.ink"
+            "generator": "mermaid.ink",
         }
 
 
@@ -475,29 +466,29 @@ async def test_mermaid_generator():
     print("=" * 60)
     print("TESTING MERMAID GENERATOR")
     print("=" * 60)
-    
+
     generator = MermaidGenerator()
-    
+
     # Test different diagram types
     test_cases = [
         ("metacognizione", "mindmap", ["pianificazione", "monitoraggio", "valutazione"]),
         ("self-regulation", "flowchart", ["goal setting", "monitoring", "adjustment"]),
         ("learning styles", "comparison", ["visual", "auditory", "kinesthetic"]),
     ]
-    
+
     for concept, diagram_type, related in test_cases:
         print(f"\n📊 Generating {diagram_type} for '{concept}'...")
-        
+
         result = await generator.generate(concept, diagram_type, related, validate=False)
-        
+
         if result.success:
-            print(f"  ✅ Success!")
+            print("  ✅ Success!")
             print(f"  📝 Mermaid code:\n{result.mermaid_code[:200]}...")
             print(f"  🔗 SVG URL: {result.svg_url[:80]}...")
             print(f"  💰 Cost: ${result.cost:.2f} (FREE!)")
         else:
             print(f"  ❌ Error: {result.error_message}")
-    
+
     await generator.close()
     print(f"\n📊 Stats: {generator.stats}")
     print("\n✅ Mermaid generator tests complete!")
@@ -506,5 +497,3 @@ async def test_mermaid_generator():
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     asyncio.run(test_mermaid_generator())
-
-

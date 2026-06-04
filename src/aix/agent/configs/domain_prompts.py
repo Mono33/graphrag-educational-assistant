@@ -16,7 +16,6 @@ Domain extensions provide:
 """
 
 import logging
-from typing import Optional, Dict
 
 # ---------------------------------------------------------------------------
 # Dynamic domain registry (Option 2, Step 1 — see docs/Agent_Domain_Prompt_Integration.md)
@@ -26,6 +25,7 @@ from typing import Optional, Dict
 # ---------------------------------------------------------------------------
 try:
     from aix.domains import get_domain_config
+
     _DOMAIN_REGISTRY_AVAILABLE = True
 except ImportError:
     _DOMAIN_REGISTRY_AVAILABLE = False
@@ -41,7 +41,7 @@ NEURO_WRITER_EXTENSION = """
 
 ## 🧠 Neuro-Didactic Principles (Domain Extension)
 
-You are an expert in **Neurodidactics** - applying neuroscience to education. 
+You are an expert in **Neurodidactics** - applying neuroscience to education.
 Apply these neuroscience-based principles in ALL content you generate:
 
 ### Core Neuroscience Principles
@@ -149,7 +149,7 @@ Apply the three UDL principles in ALL content you generate:
 
 ### 1. Multiple Means of ENGAGEMENT (WHY of learning)
 - Provide options for self-regulation
-- Sustain effort and persistence  
+- Sustain effort and persistence
 - Recruit interest
 
 ### 2. Multiple Means of REPRESENTATION (WHAT of learning)
@@ -190,15 +190,9 @@ When evaluating content for the **UDL** domain:
 # DOMAIN EXTENSIONS MAPPING
 # =============================================================================
 
-DOMAIN_EXTENSIONS: Dict[str, Dict[str, str]] = {
-    "neuro": {
-        "writer": NEURO_WRITER_EXTENSION,
-        "critic": NEURO_CRITIC_EXTENSION
-    },
-    "udl": {
-        "writer": UDL_WRITER_EXTENSION,
-        "critic": UDL_CRITIC_EXTENSION
-    },
+DOMAIN_EXTENSIONS: dict[str, dict[str, str]] = {
+    "neuro": {"writer": NEURO_WRITER_EXTENSION, "critic": NEURO_CRITIC_EXTENSION},
+    "udl": {"writer": UDL_WRITER_EXTENSION, "critic": UDL_CRITIC_EXTENSION},
     # Add more domains here as needed
     # "stem": { "writer": STEM_WRITER_EXTENSION, "critic": STEM_CRITIC_EXTENSION }
 }
@@ -207,29 +201,29 @@ DOMAIN_EXTENSIONS: Dict[str, Dict[str, str]] = {
 def get_domain_extension(domain: str, agent: str) -> str:
     """
     Get domain-specific prompt extension for an agent.
-    
+
     Domain extensions are ONLY applied when:
     1. User is in Agent Mode (not GraphRAG Mode)
     2. User has selected a specific domain (neuro, udl)
     3. The agent supports extensions (writer, critic)
-    
+
     For **writer** agents the function dynamically loads the rich
     ``get_system_prompt()`` from the ``domains/`` registry when available
     (Option 2 — see ``docs/Agent_Domain_Prompt_Integration.md``).
     For **critic** agents the function returns the static hardcoded
     extensions until Option 3 introduces a dedicated critic prompt
     method on ``BaseDomainConfig``.
-    
+
     Args:
         domain: Knowledge domain ("neuro", "udl", "all")
         agent: Agent type ("writer" or "critic")
-        
+
     Returns:
         Domain-specific extension string, or empty string if:
         - Domain is "all" (no single domain selected)
         - Domain not found in extensions
         - Agent type not supported
-    
+
     Example:
         >>> ext = get_domain_extension("neuro", "writer")
         >>> full_prompt = base_prompt + ext
@@ -248,7 +242,9 @@ def get_domain_extension(domain: str, agent: str) -> str:
         except Exception as e:
             logger.warning(
                 "Dynamic domain load failed for %s/%s: %s — falling back to static",
-                domain, agent, e,
+                domain,
+                agent,
+                e,
             )
 
     # Fallback: static extensions (always used for critic, and for writer
@@ -265,5 +261,3 @@ def get_available_domains() -> list:
 def has_domain_extension(domain: str) -> bool:
     """Check if a domain has extensions defined."""
     return domain.lower() in DOMAIN_EXTENSIONS
-
-

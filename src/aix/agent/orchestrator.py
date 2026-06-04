@@ -6,12 +6,12 @@ It provides a clean API that hides the underlying LangGraph complexity.
 """
 
 import logging
-import os
-from typing import Optional, Dict, Any, List
 from dataclasses import dataclass
+from typing import Any, Optional
 
 # Load environment variables FIRST (for OPENAI_API_KEY)
 from dotenv import load_dotenv
+
 load_dotenv()
 
 logger = logging.getLogger(__name__)
@@ -20,25 +20,26 @@ logger = logging.getLogger(__name__)
 @dataclass
 class LessonPlanResult:
     """Result from the lesson planning pipeline"""
+
     success: bool
     lesson_plan: Optional[str]
     approved: bool
     revision_count: int
-    scores: Optional[Dict[str, int]]
+    scores: Optional[dict[str, int]]
     nodes_used: int
     recommendations_used: int
     critique_summary: Optional[str]
     error: Optional[str] = None
     # Phase 3: Added for upsell buttons
     query_intent: Optional[str] = "lesson_creation"
-    key_concepts: Optional[List[str]] = None
+    key_concepts: Optional[list[str]] = None
     # Phase 3 (Media): Curated media from sidecar JSON
-    curated_media: Optional[Dict[str, Any]] = None
+    curated_media: Optional[dict[str, Any]] = None
     # Phase A: Scope detection for hybrid mode
     scope_status: Optional[str] = "in_scope"  # in_scope, partial_scope, out_of_scope
     scope_confidence: Optional[float] = 1.0
-    external_resources: Optional[Dict[str, Any]] = None  # Wikipedia, papers, OER
-    
+    external_resources: Optional[dict[str, Any]] = None  # Wikipedia, papers, OER
+
     def to_dict(self) -> dict:
         return {
             "success": self.success,
@@ -55,19 +56,19 @@ class LessonPlanResult:
             "curated_media": self.curated_media,
             "scope_status": self.scope_status,
             "scope_confidence": self.scope_confidence,
-            "external_resources": self.external_resources
+            "external_resources": self.external_resources,
         }
-    
+
     @property
     def has_media(self) -> bool:
         """Check if curated media is available"""
         return bool(self.curated_media and any(self.curated_media.values()))
-    
+
     @property
     def is_hybrid(self) -> bool:
         """Check if this is a hybrid result (external + KG sources)"""
         return self.scope_status in ("partial_scope", "out_of_scope")
-    
+
     @property
     def has_external_resources(self) -> bool:
         """Check if external resources were used"""
@@ -77,10 +78,10 @@ class LessonPlanResult:
 class AgentOrchestrator:
     """
     Main orchestrator for the Agentic GraphRAG system.
-    
+
     This class provides a simple, clean API for creating lesson plans
     using the multi-agent pipeline (Planner → Retriever → Writer → Critic).
-    
+
     Usage:
         # Async usage
         orchestrator = AgentOrchestrator(domain="neuro")
@@ -88,29 +89,29 @@ class AgentOrchestrator:
             "Crea una lezione sulla motivazione per studenti con ADHD"
         )
         print(result.lesson_plan)
-        
+
         # Sync usage
         result = orchestrator.create_lesson_plan_sync(
             "Crea una lezione sulla metacognizione"
         )
-    
+
     The orchestrator:
     1. Uses your EXISTING GraphRAG engine (no modifications)
     2. Adds planning, writing, and quality review capabilities
     3. Supports automatic revision cycles
     4. Works with both "neuro" and "udl" domains
     """
-    
+
     def __init__(
         self,
         domain: str = "neuro",
         language: str = "it",
         max_revisions: int = 2,
-        model: str = "gpt-4o"
+        model: str = "gpt-4o",
     ):
         """
         Initialize the Agent Orchestrator.
-        
+
         Args:
             domain: Knowledge domain
                 - "neuro": Neuroscience-based learning strategies
@@ -125,25 +126,24 @@ class AgentOrchestrator:
         self.language = language
         self.max_revisions = max_revisions
         self.model = model
-        
+
         self._pipeline = None
-        
+
         logger.info(
             f"[Orchestrator] Initialized for domain='{domain}', "
             f"language='{language}', max_revisions={max_revisions}"
         )
-    
+
     def _get_pipeline(self):
         """Lazy initialization of the pipeline"""
         if self._pipeline is None:
             from aix.agent.graph.lesson_planner_graph import LessonPlannerPipeline
+
             self._pipeline = LessonPlannerPipeline(
-                domain=self.domain,
-                language=self.language,
-                max_revisions=self.max_revisions
+                domain=self.domain, language=self.language, max_revisions=self.max_revisions
             )
         return self._pipeline
-    
+
     async def create_lesson_plan(
         self,
         query: str,
@@ -180,7 +180,7 @@ class AgentOrchestrator:
 
         try:
             result = await pipeline.run(query, session_id, educational_profile=educational_profile)
-            
+
             return LessonPlanResult(
                 success=result.get("success", False),
                 lesson_plan=result.get("lesson_plan"),
@@ -199,9 +199,9 @@ class AgentOrchestrator:
                 # Phase A: Scope detection for hybrid mode
                 scope_status=result.get("scope_status", "in_scope"),
                 scope_confidence=result.get("scope_confidence", 1.0),
-                external_resources=result.get("external_resources")
+                external_resources=result.get("external_resources"),
             )
-            
+
         except Exception as e:
             logger.error(f"[Orchestrator] Pipeline failed: {e}")
             return LessonPlanResult(
@@ -213,9 +213,9 @@ class AgentOrchestrator:
                 nodes_used=0,
                 recommendations_used=0,
                 critique_summary=None,
-                error=str(e)
+                error=str(e),
             )
-    
+
     def create_lesson_plan_sync(
         self,
         query: str,
@@ -224,41 +224,43 @@ class AgentOrchestrator:
     ) -> LessonPlanResult:
         """
         Synchronous version of create_lesson_plan().
-        
+
         Use this in non-async contexts (e.g., scripts, Jupyter notebooks).
         """
         import asyncio
+
         return asyncio.run(
             self.create_lesson_plan(query, session_id, educational_profile=educational_profile)
         )
-    
-    async def quick_search(self, query: str) -> Dict[str, Any]:
+
+    async def quick_search(self, query: str) -> dict[str, Any]:
         """
         Quick search without lesson plan generation.
-        
+
         Useful for exploring the knowledge graph or testing retrieval.
-        
+
         Args:
             query: Search query
-            
+
         Returns:
             Dictionary with retrieved nodes and recommendations
         """
         from aix.agent.tools.graphrag_tool import GraphRAGTool
-        
+
         tool = GraphRAGTool(domain=self.domain)
         result = await tool.search(query)
-        
+
         return {
             "nodes": result.nodes,
             "relationships": result.relationships,
             "recommendations": result.recommendations,
-            "confidence": result.confidence
+            "confidence": result.confidence,
         }
-    
-    def quick_search_sync(self, query: str) -> Dict[str, Any]:
+
+    def quick_search_sync(self, query: str) -> dict[str, Any]:
         """Synchronous version of quick_search()"""
         import asyncio
+
         return asyncio.run(self.quick_search(query))
 
 
@@ -266,99 +268,72 @@ class AgentOrchestrator:
 def main():
     """
     CLI interface for testing the orchestrator.
-    
+
     Usage:
         python -m agent.orchestrator "Your query here"
     """
     import argparse
     import asyncio
-    
-    parser = argparse.ArgumentParser(
-        description="Create lesson plans using Agentic GraphRAG"
+
+    parser = argparse.ArgumentParser(description="Create lesson plans using Agentic GraphRAG")
+    parser.add_argument("query", type=str, help="Teacher's query in natural language")
+    parser.add_argument(
+        "--domain", type=str, default="neuro", choices=["neuro", "udl"], help="Knowledge domain"
     )
     parser.add_argument(
-        "query",
-        type=str,
-        help="Teacher's query in natural language"
+        "--language", type=str, default="it", choices=["it", "en"], help="Output language"
     )
-    parser.add_argument(
-        "--domain",
-        type=str,
-        default="neuro",
-        choices=["neuro", "udl"],
-        help="Knowledge domain"
-    )
-    parser.add_argument(
-        "--language",
-        type=str,
-        default="it",
-        choices=["it", "en"],
-        help="Output language"
-    )
-    parser.add_argument(
-        "--max-revisions",
-        type=int,
-        default=2,
-        help="Maximum revision cycles"
-    )
-    parser.add_argument(
-        "--output",
-        type=str,
-        help="Output file path (optional)"
-    )
-    
+    parser.add_argument("--max-revisions", type=int, default=2, help="Maximum revision cycles")
+    parser.add_argument("--output", type=str, help="Output file path (optional)")
+
     args = parser.parse_args()
-    
+
     # Configure logging
     logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
-    
-    print(f"\n🎓 Agentic GraphRAG Lesson Planner")
-    print(f"=" * 50)
+
+    print("\n🎓 Agentic GraphRAG Lesson Planner")
+    print("=" * 50)
     print(f"Query: {args.query}")
     print(f"Domain: {args.domain}")
     print(f"Language: {args.language}")
-    print(f"=" * 50)
-    
+    print("=" * 50)
+
     # Create orchestrator
     orchestrator = AgentOrchestrator(
-        domain=args.domain,
-        language=args.language,
-        max_revisions=args.max_revisions
+        domain=args.domain, language=args.language, max_revisions=args.max_revisions
     )
-    
+
     # Run pipeline
     result = asyncio.run(orchestrator.create_lesson_plan(args.query))
-    
+
     # Output results
-    print(f"\n📊 Results")
-    print(f"-" * 50)
+    print("\n📊 Results")
+    print("-" * 50)
     print(f"Success: {result.success}")
     print(f"Approved: {result.approved}")
     print(f"Revisions: {result.revision_count}")
     print(f"Nodes Used: {result.nodes_used}")
     print(f"Recommendations: {result.recommendations_used}")
-    
+
     if result.scores:
         print(f"\nScores: {result.scores}")
-    
+
     if result.error:
         print(f"\n❌ Error: {result.error}")
-    
+
     if result.lesson_plan:
-        print(f"\n📝 Lesson Plan")
-        print(f"=" * 50)
+        print("\n📝 Lesson Plan")
+        print("=" * 50)
         print(result.lesson_plan)
-        
+
         # Save to file if specified
         if args.output:
-            with open(args.output, 'w', encoding='utf-8') as f:
+            with open(args.output, "w", encoding="utf-8") as f:
                 f.write(result.lesson_plan)
             print(f"\n✅ Saved to: {args.output}")
 
 
 if __name__ == "__main__":
     main()
-

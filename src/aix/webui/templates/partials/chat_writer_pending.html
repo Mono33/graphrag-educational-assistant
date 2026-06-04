@@ -42,76 +42,63 @@
           </span>
         </div>
         <span class="aix-pill aix-pill-warning">
-          <wa-spinner style="font-size:0.7rem;"></wa-spinner>
+          <wa-spinner class="aix-fs-xs"></wa-spinner>
           in scrittura
         </span>
       </header>
 
-      <div class="aix-agent-card-body" style="display:flex; flex-direction:column; gap:10px;">
+      <div class="aix-agent-card-body aix-col-10">
         {% if is_revision and p.get('feedback') %}
-          <div style="font-size:12px; color:var(--aix-text-secondary);
-                      background:var(--aix-amber-soft); border:1px solid rgba(212,164,90,0.32);
-                      border-radius:var(--aix-radius-sm); padding:8px 12px;">
-            <strong style="color:var(--aix-amber-hover);">Indicazioni di revisione:</strong>
-            <span style="margin-left:4px;">{{ p.feedback }}</span>
+          <div class="aix-fs-12 aix-color-secondary aix-revision-box">
+            <strong class="aix-color-amber">Indicazioni di revisione:</strong>
+            <span class="aix-ml-4px">{{ p.feedback }}</span>
           </div>
         {% endif %}
 
         {# Thinking accordion — hidden until first think_chunk; collapses when content starts #}
-        <div id="writer-think-{{ lid }}" style="display:none; margin-bottom:2px;">
+        <div id="writer-think-{{ lid }}" class="aix-mb-2px" style="display:none;">
           <details id="writer-think-details-{{ lid }}" open>
-            <summary style="cursor:pointer; font-size:11px; color:var(--aix-text-tertiary);
-                            display:flex; align-items:center; gap:6px; list-style:none;
-                            padding:4px 0; user-select:none;">
+            <summary class="aix-irow-6 aix-clickable aix-fs-11 aix-color-tertiary aix-think-summary">
               <span class="writer-think-dot"></span>
               💭 <em>Elaborazione pedagogica…</em>
             </summary>
-            <div id="writer-think-body-{{ lid }}"
-                 style="font-size:11px; font-family:monospace; color:var(--aix-text-tertiary);
-                        max-height:180px; overflow-y:auto; padding:8px 10px; margin-top:4px;
-                        background:rgba(124,107,191,0.05);
-                        border-left:2px solid rgba(124,107,191,0.28);
-                        border-radius:0 4px 4px 0; white-space:pre-wrap;"></div>
+            <div id="writer-think-body-{{ lid }}" class="aix-think-body"></div>
           </details>
         </div>
 
         {# Live markdown preview — hidden until first writer_chunk #}
-        <div id="writer-stream-{{ lid }}" class="aix-prose writer-stream-prose"
-             style="display:none; max-height:28rem; overflow-y:auto;
-                    background:var(--aix-cream, #fdfaf5);
-                    border:1px solid var(--aix-border-soft);
-                    border-radius:var(--aix-radius-sm); padding:10px 18px;
-                    font-size:13px; line-height:1.6;"></div>
+        <div id="writer-stream-{{ lid }}" class="aix-prose writer-stream-prose aix-writer-stream-box"
+             style="display:none;"></div>
 
         {# Animated checklist — hidden when the first token (think or content) arrives #}
-        <div id="writer-skeleton-{{ lid }}" style="display:flex; flex-direction:column; gap:6px;">
+        <div id="writer-skeleton-{{ lid }}" class="aix-col-6">
 
-          <p style="font-size:12px; color:var(--aix-text-secondary); margin:0;">
+          <p class="aix-color-secondary aix-fs-12 m-0">
             Il Writer sta componendo la lezione:
           </p>
 
-          <div class="writer-pending-item" style="animation-delay:0s;">
+          <div class="writer-pending-item aix-delay-0">
             <span class="writer-pending-dot"></span>
             <span>Lettura dei {{ "nodi" if not is_revision else "nodi KG e istruzioni di revisione" }} recuperati dal Knowledge Graph</span>
           </div>
-          <div class="writer-pending-item" style="animation-delay:2s; opacity:0;">
+          <div class="writer-pending-item aix-delay-2s">
             <span class="writer-pending-dot"></span>
             <span>Adattamento al profilo della classe (BES, livello, durata)</span>
           </div>
-          <div class="writer-pending-item" style="animation-delay:4s; opacity:0;">
+          <div class="writer-pending-item aix-delay-4s">
             <span class="writer-pending-dot"></span>
             <span>Selezione e sequenza delle strategie pedagogiche</span>
           </div>
-          <div class="writer-pending-item" style="animation-delay:6s; opacity:0;">
+          <div class="writer-pending-item aix-delay-6s">
             <span class="writer-pending-dot"></span>
             <span>Strutturazione delle attività e dei tempi della lezione</span>
           </div>
-          <div class="writer-pending-item" style="animation-delay:8s; opacity:0;">
+          <div class="writer-pending-item aix-delay-8s">
             <span class="writer-pending-dot"></span>
             <span>Citazione inline dei media curati (video, articoli, OER)</span>
           </div>
 
-          <p style="font-size:11px; font-style:italic; color:var(--aix-text-tertiary); margin:4px 0 0;">
+          <p class="aix-footnote-sm mt-1">
             Il testo apparirà in tempo reale non appena il modello inizia a scrivere.
           </p>
 
@@ -120,64 +107,14 @@
 
     </article>
     <div class="aix-agent-footer-label">
-      <wa-icon name="pen-nib" style="font-size:0.75rem;"></wa-icon>
+      <wa-icon name="pen-nib" class="aix-fs-sm"></wa-icon>
       <span>Writer · pending</span>
     </div>
   </div>
 
 </div>
 
-<style>
-.writer-pending-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  color: var(--aix-text-secondary);
-  animation: writer-item-appear 0.4s ease forwards;
-}
-.writer-pending-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--aix-writer, #5a7fa0);
-  flex-shrink: 0;
-  animation: writer-dot-pulse 1.4s ease-in-out infinite;
-}
-.writer-think-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--aix-purple, #7c6bbf);
-  display: inline-block;
-  flex-shrink: 0;
-  animation: writer-dot-pulse 1.4s ease-in-out infinite;
-}
-@keyframes writer-item-appear {
-  from { opacity: 0; transform: translateX(-6px); }
-  to   { opacity: 1; transform: translateX(0); }
-}
-@keyframes writer-dot-pulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50%       { opacity: 0.35; transform: scale(0.6); }
-}
-
-/* Minimal prose styles for the markdown preview */
-.writer-stream-prose h1, .writer-stream-prose h2, .writer-stream-prose h3 {
-  margin: 0.75em 0 0.35em;
-  font-weight: 600;
-  line-height: 1.3;
-}
-.writer-stream-prose h1 { font-size: 1.15em; }
-.writer-stream-prose h2 { font-size: 1.05em; }
-.writer-stream-prose h3 { font-size: 0.97em; }
-.writer-stream-prose p  { margin: 0.4em 0; }
-.writer-stream-prose ul, .writer-stream-prose ol { padding-left: 1.4em; margin: 0.4em 0; }
-.writer-stream-prose li { margin: 0.2em 0; }
-.writer-stream-prose strong { font-weight: 600; }
-.writer-stream-prose em { font-style: italic; }
-.writer-stream-prose hr { border: none; border-top: 1px solid var(--aix-border-soft); margin: 0.8em 0; }
-</style>
+{# .writer-pending-item / .writer-pending-dot / .writer-stream-prose / @keyframes → aix-brand.css #}
 
 {# EventSource is opened by the MutationObserver in _base.html when it detects
    data-writer-stream="{{ lid }}" on this card. No inline <script> here —

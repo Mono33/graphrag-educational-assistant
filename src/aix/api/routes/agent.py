@@ -24,8 +24,11 @@ Routes
 Both routes:
     * Reuse ``aix.webui.agent.service.stream_agent_events`` — a DB-less
       sibling of the webui's ``run_agent_stream``. Zero new agent code.
-    * Authenticate via fastapi-users' ``current_active_user`` — accepts
-      either the webui cookie OR ``Authorization: Bearer <jwt>``.
+    * Authenticate via ``_require_caller`` — accepts any of:
+        - webui cookie (browser)
+        - ``Authorization: Bearer <jwt>`` (API / Postman)
+        - HTTP Basic Auth with ``GRAPH_API_USERNAME`` / ``GRAPH_API_PWD``
+          env vars (service-to-service, e.g. AixLearning Dramatiq worker)
     * Are strictly additive: they do NOT touch the existing
       ``/api/v1/context``, ``/webui/*``, or ``/auth/*`` surfaces.
 
@@ -36,29 +39,61 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import secrets
 import uuid
-from typing import AsyncIterator, Optional
+from collections.abc import AsyncIterator
+from typing import Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, status
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from sse_starlette.sse import EventSourceResponse
 
 from aix.api.schemas import (
+    AgentRunMeta,
     AgentRunRequest,
     AgentRunResponse,
-    AgentRunMeta,
     CriticScores,
     MediaCounts,
     PlannerInfo,
     RetrieverInfo,
 )
-from aix.webui.auth import current_active_user
-from aix.webui.auth.models import User
 from aix.webui.agent.service import StreamEvent, stream_agent_events
+from aix.webui.auth.dependencies import optional_current_user
+from aix.webui.auth.models import User
 
 logger = logging.getLogger(__name__)
 
 
 router = APIRouter(prefix="/agent", tags=["agent"])
+
+# ---------------------------------------------------------------------------
+# Dual-auth dependency: accepts Bearer JWT / cookie (webui) OR HTTP Basic Auth
+# (service-to-service, e.g. AixLearning Dramatiq worker calling this endpoint
+# from the internal Docker network).  Basic Auth credentials are read from
+# GRAPH_API_USERNAME / GRAPH_API_PWD env vars — the same pair already used by
+# AixLearning's existing GraphRagService wrapper for /api/v1/context.
+# ---------------------------------------------------------------------------
+
+_basic_security = HTTPBasic(auto_error=False)
+
+
+async def _require_caller(
+    basic: Optional[HTTPBasicCredentials] = Depends(_basic_security),
+    user: Optional[User] = Depends(optional_current_user),
+) -> User | str:
+    """Authenticate via JWT/cookie (browser/webui) OR Basic Auth (service account)."""
+    if basic is not None:
+        svc_user = os.getenv("GRAPH_API_USERNAME", "")
+        svc_pwd = os.getenv("GRAPH_API_PWD", "")
+        if svc_user and svc_pwd:
+            user_ok = secrets.compare_digest(basic.username.encode(), svc_user.encode())
+            pwd_ok = secrets.compare_digest(basic.password.encode(), svc_pwd.encode())
+            if user_ok and pwd_ok:
+                return "service_account"
+    if user is not None:
+        return user
+    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
 
 # ---------------------------------------------------------------------------
@@ -250,7 +285,7 @@ async def run_agent(
         ...,
         openapi_examples=_AGENT_REQUEST_OPENAPI_EXAMPLES,
     ),
-    user: User = Depends(current_active_user),
+    caller: User | str = Depends(_require_caller),
 ) -> AgentRunResponse:
     """
     Drain ``stream_agent_events`` to completion and assemble the final
@@ -306,9 +341,12 @@ async def run_agent(
             detail=error_message or "Agent finished without a lesson plan",
         )
 
+    caller_id = caller if isinstance(caller, str) else caller.email
     logger.info(
-        "[api.agent] /run complete user=%s session=%s duration=%.1fs",
-        user.email, session_id, final_meta.duration_seconds,
+        "[api.agent] /run complete caller=%s session=%s duration=%.1fs",
+        caller_id,
+        session_id,
+        final_meta.duration_seconds,
     )
 
     return AgentRunResponse(
@@ -349,7 +387,7 @@ async def stream_agent(
         ...,
         openapi_examples=_AGENT_REQUEST_OPENAPI_EXAMPLES,
     ),
-    user: User = Depends(current_active_user),
+    caller: User | str = Depends(_require_caller),
 ) -> EventSourceResponse:
     """
     Wrap ``stream_agent_events`` in an SSE response that JSON-encodes
@@ -363,9 +401,12 @@ async def stream_agent(
         else None
     )
 
+    caller_id = caller if isinstance(caller, str) else caller.email
     logger.info(
-        "[api.agent] /stream open user=%s session=%s domain=%s",
-        user.email, session_id, payload.domain,
+        "[api.agent] /stream open caller=%s session=%s domain=%s",
+        caller_id,
+        session_id,
+        payload.domain,
     )
 
     async def _publisher() -> AsyncIterator[dict]:

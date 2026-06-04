@@ -1,0 +1,73 @@
+{#
+  Chat-based pedagogical intent selection card.
+
+  Emitted as an SSE "card" event immediately after the planner card on
+  a first-turn (phase 1) run.  The teacher clicks one of the six intent
+  chips (or "Continua senza obiettivo") to confirm their pedagogical
+  intent.  Each button POSTs to /run with intent_confirmed=1 and the
+  chosen code, which triggers the full pipeline (phase 2).
+
+  Required context:
+    lesson                   ORM Lesson (for the /run POST URL)
+    PEDAGOGICAL_INTENT_OPTIONS  list[{code, label, description}]
+#}
+
+<div class="aix-agent-shell">
+
+  <div class="aix-agent-avatar aix-agent-avatar--intent">
+    <wa-icon name="bullseye"></wa-icon>
+  </div>
+
+  <div class="aix-agent-body">
+    <article class="aix-agent-card aix-agent-card--intent">
+
+      <header class="aix-agent-card-header">
+        <div class="aix-irow-8 aix-items-start">
+          <wa-icon name="bullseye" class="aix-fs-115 aix-color-teal aix-mt-2px"></wa-icon>
+          <div>
+            <div class="aix-card-heading">
+              Qual è l'obiettivo di questa lezione?
+            </div>
+            <div class="aix-fs-12 aix-color-tertiary aix-mt-2px">
+              Backward Design · Seleziona l'intento prima che l'agente ricerchi nel KG
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <div class="aix-intent-select-grid">
+        {% for opt in PEDAGOGICAL_INTENT_OPTIONS %}
+        <button type="button"
+                class="aix-intent-select-chip"
+                hx-post="/webui/lesson/{{ lesson.id }}/run"
+                hx-target="#chat-conversation"
+                hx-swap="innerHTML"
+                hx-vals='{"intent_confirmed": "1", "pedagogical_intent_code": "{{ opt.code }}"}'>
+          <span class="aix-intent-select-label">{{ opt.label }}</span>
+          {% if opt.description %}
+          <span class="aix-intent-select-desc">{{ opt.description }}</span>
+          {% endif %}
+        </button>
+        {% endfor %}
+      </div>
+
+      <div class="aix-intent-select-skip">
+        <button type="button"
+                class="aix-btn aix-btn-outline aix-btn-sm"
+                hx-post="/webui/lesson/{{ lesson.id }}/run"
+                hx-target="#chat-conversation"
+                hx-swap="innerHTML"
+                hx-vals='{"intent_confirmed": "1", "pedagogical_intent_code": "skip"}'>
+          Continua senza obiettivo
+        </button>
+      </div>
+
+    </article>
+
+    <div class="aix-agent-footer-label">
+      <wa-icon name="clock" class="aix-meta-icon"></wa-icon>
+      <span>In attesa della tua scelta</span>
+    </div>
+  </div>
+
+</div>

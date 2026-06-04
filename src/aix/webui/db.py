@@ -28,8 +28,8 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import AsyncGenerator
 from pathlib import Path
-from typing import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -46,8 +46,8 @@ logger = logging.getLogger(__name__)
 # lives in <repo>/data/webui/webui.db regardless of the cwd uvicorn was
 # launched from. This mirrors the strategy used in ``webui.routes`` for
 # the templates directory.
-_PACKAGE_DIR = Path(__file__).resolve().parent           # …/src/aix/webui
-_REPO_ROOT = _PACKAGE_DIR.parents[2]                     # …/graphaixlearning
+_PACKAGE_DIR = Path(__file__).resolve().parent  # …/src/aix/webui
+_REPO_ROOT = _PACKAGE_DIR.parents[2]  # …/graphaixlearning
 _DEFAULT_DB_PATH = _REPO_ROOT / "data" / "webui" / "webui.db"
 _DEFAULT_DB_URL = f"sqlite+aiosqlite:///{_DEFAULT_DB_PATH.as_posix()}"
 
@@ -158,7 +158,7 @@ async def _apply_dev_schema_hotpatches(conn) -> None:
     hotpatches = [
         # CORE 2 #6.6 P2 phase 1 — agent run lifecycle columns
         ("lesson", "lesson_plan_md", "ALTER TABLE lesson ADD COLUMN lesson_plan_md TEXT"),
-        ("lesson", "error_message",  "ALTER TABLE lesson ADD COLUMN error_message VARCHAR(500)"),
+        ("lesson", "error_message", "ALTER TABLE lesson ADD COLUMN error_message VARCHAR(500)"),
         # CORE 2 #6.6 P2 phase 2 — chat workspace
         # Persists the teacher's original (synthesized OR free-text) query so
         # we can render it as the user's first chat bubble on a fresh GET,
@@ -176,8 +176,7 @@ async def _apply_dev_schema_hotpatches(conn) -> None:
         # PRAGMA returns one row per column — if our target column isn't in
         # that list, we need to add it.
         existing_cols = {
-            row[1]
-            for row in (await conn.execute(text(f"PRAGMA table_info({table})"))).all()
+            row[1] for row in (await conn.execute(text(f"PRAGMA table_info({table})"))).all()
         }
         if column in existing_cols:
             continue

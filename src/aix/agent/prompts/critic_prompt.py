@@ -210,7 +210,7 @@ INTENT_CRITIC_SYSTEM_PROMPTS = {
     "definition": CRITIC_SYSTEM_PROMPT_INFORMATIONAL,
     "comparison": CRITIC_SYSTEM_PROMPT_INFORMATIONAL,
     "explanation": CRITIC_SYSTEM_PROMPT_INFORMATIONAL,
-    "recommendation": CRITIC_SYSTEM_PROMPT_INFORMATIONAL,  
+    "recommendation": CRITIC_SYSTEM_PROMPT_INFORMATIONAL,
     "list": CRITIC_SYSTEM_PROMPT_INFORMATIONAL,
 }
 
@@ -228,10 +228,10 @@ INTENT_CRITIC_USER_TEMPLATES = {
 def get_critic_prompts(intent: str) -> tuple:
     """
     Get the appropriate system and user prompts for a given intent.
-    
+
     Args:
         intent: Query intent (lesson_creation, definition, etc.)
-        
+
     Returns:
         Tuple of (system_prompt, user_template)
     """

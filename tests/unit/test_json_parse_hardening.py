@@ -33,7 +33,6 @@ from aix.agent.agents.critic_agent import CriticAgent
 from aix.agent.agents.planner_agent import PlannerAgent
 from aix.agent.agents.retriever_agent import RetrievalResult
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

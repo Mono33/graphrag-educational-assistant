@@ -5,13 +5,14 @@ Defines the shared state that flows through the multi-agent pipeline.
 Each agent can read and update this state.
 """
 
-from typing import TypedDict, Optional, List, Dict, Any
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import Any, Optional, TypedDict
 
 
 class LessonPlanType(Enum):
     """Types of lesson plans that can be generated"""
+
     FULL_LESSON = "full_lesson"
     ACTIVITY = "activity"
     ASSESSMENT = "assessment"
@@ -20,21 +21,23 @@ class LessonPlanType(Enum):
 
 class QueryIntent(Enum):
     """Types of queries the Agent can handle"""
-    LESSON_CREATION = "lesson_creation"      # Full lesson plan request
-    ACTIVITY_DESIGN = "activity_design"      # Single activity request
-    DEFINITION = "definition"                 # "What is X?" questions
-    COMPARISON = "comparison"                 # "Compare X and Y" questions
-    EXPLANATION = "explanation"               # "How does X work?" questions
-    RECOMMENDATION = "recommendation"         # "What strategies for...?" questions
-    LIST = "list"                             # "List the types of..." questions
+
+    LESSON_CREATION = "lesson_creation"  # Full lesson plan request
+    ACTIVITY_DESIGN = "activity_design"  # Single activity request
+    DEFINITION = "definition"  # "What is X?" questions
+    COMPARISON = "comparison"  # "Compare X and Y" questions
+    EXPLANATION = "explanation"  # "How does X work?" questions
+    RECOMMENDATION = "recommendation"  # "What strategies for...?" questions
+    LIST = "list"  # "List the types of..." questions
 
 
 class ScopeStatus(Enum):
     """Scope status for query topics relative to Knowledge Graph"""
-    IN_SCOPE = "in_scope"              # Topic found in KG (e.g., metacognition, attention)
-    PARTIAL_SCOPE = "partial_scope"    # Pedagogy in KG, but subject topic outside
-    OUT_OF_SCOPE = "out_of_scope"      # Topic completely outside KG domain
-    UNKNOWN = "unknown"                # Could not determine scope
+
+    IN_SCOPE = "in_scope"  # Topic found in KG (e.g., metacognition, attention)
+    PARTIAL_SCOPE = "partial_scope"  # Pedagogy in KG, but subject topic outside
+    OUT_OF_SCOPE = "out_of_scope"  # Topic completely outside KG domain
+    UNKNOWN = "unknown"  # Could not determine scope
 
 
 class AgentState(TypedDict, total=False):
@@ -48,11 +51,15 @@ class AgentState(TypedDict, total=False):
     # ========================================
     # INPUT (set at start)
     # ========================================
-    teacher_query: str              # Original query from teacher
-    domain: str                     # Knowledge domain ("neuro" or "udl")
-    language: str                   # Response language ("it" or "en")
-    session_id: Optional[str]       # For conversation persistence
-    educational_profile: Optional[Dict[str, Any]]  # CORE 1 #2.5 — per-request class/classroom context (group, classroom, time, subject)
+    teacher_query: str  # Original query from teacher
+    domain: str  # Knowledge domain ("neuro" or "udl")
+    language: str  # Response language ("it" or "en")
+    session_id: Optional[str]  # For conversation persistence
+    educational_profile: Optional[
+        dict[str, Any]
+    ]  # CORE 1 #2.5 — per-request class/classroom context (group, classroom, time, subject)
+    pedagogical_intent: Optional[str]  # Teacher's lesson goal: "{code}" or "{code}: {detail}"
+    refinement_instruction: Optional[str]  # SAM refinement: instruction from guided panel on re-run
     # WebUI #6.6 P3 — joined text from teacher file uploads. Used by the Writer
     # only as additional context; never sent to the GraphRAG / KG retriever.
     teacher_provided_context: Optional[str]
@@ -65,7 +72,7 @@ class AgentState(TypedDict, total=False):
     # can adapt its output (e.g., "now adapt for ADHD"). Populated by the
     # service layer from the persisted `lesson_message` table.
     # Will be summary-buffered in #10.4 once threads exceed N tokens.
-    conversation_history: Optional[List[Dict[str, str]]]
+    conversation_history: Optional[list[dict[str, str]]]
     # CORE 2 #10.4 — summary of the oldest turns when the window is
     # exceeded. None on short threads. Populated by the service layer
     # before invoking the graph. Writer prompt prepends this before
@@ -84,32 +91,32 @@ class AgentState(TypedDict, total=False):
     # ========================================
     # PLANNER OUTPUT
     # ========================================
-    plan: Optional[Dict[str, Any]]  # Retrieval plan created by planner
-    query_intent: Optional[str]     # Detected intent (lesson_creation, definition, etc.)
-    lesson_type: Optional[str]      # Type of lesson to generate (if lesson_creation)
-    target_grade: Optional[str]     # Target grade level (if detected)
-    key_concepts: Optional[List[str]]  # Key concepts to search for
-    search_queries: Optional[List[str]]  # Queries to run on GraphRAG
+    plan: Optional[dict[str, Any]]  # Retrieval plan created by planner
+    query_intent: Optional[str]  # Detected intent (lesson_creation, definition, etc.)
+    lesson_type: Optional[str]  # Type of lesson to generate (if lesson_creation)
+    target_grade: Optional[str]  # Target grade level (if detected)
+    key_concepts: Optional[list[str]]  # Key concepts to search for
+    search_queries: Optional[list[str]]  # Queries to run on GraphRAG
 
     # NEW: Scope Detection (Phase A - Out-of-domain handling)
-    scope_status: Optional[str]     # "in_scope", "partial_scope", "out_of_scope"
+    scope_status: Optional[str]  # "in_scope", "partial_scope", "out_of_scope"
     scope_confidence: Optional[float]  # 0.0-1.0 confidence in scope detection
-    subject_concepts: Optional[List[str]]  # Subject-specific concepts (may be out of scope)
-    pedagogy_concepts: Optional[List[str]]  # Pedagogical concepts (always from KG)
+    subject_concepts: Optional[list[str]]  # Subject-specific concepts (may be out of scope)
+    pedagogy_concepts: Optional[list[str]]  # Pedagogical concepts (always from KG)
 
     # ========================================
     # RETRIEVER OUTPUT
     # ========================================
-    graphrag_results: Optional[List[Dict[str, Any]]]  # Results from GraphRAG searches
-    retrieved_nodes: Optional[List[Dict[str, Any]]]   # All retrieved nodes
-    retrieved_relationships: Optional[List[Dict[str, Any]]]  # All relationships
-    recommendations: Optional[List[Dict[str, Any]]]   # Educational recommendations
+    graphrag_results: Optional[list[dict[str, Any]]]  # Results from GraphRAG searches
+    retrieved_nodes: Optional[list[dict[str, Any]]]  # All retrieved nodes
+    retrieved_relationships: Optional[list[dict[str, Any]]]  # All relationships
+    recommendations: Optional[list[dict[str, Any]]]  # Educational recommendations
     retrieval_confidence: Optional[str]  # Confidence from GraphRAG
     # NEW Phase 1: Curated media from sidecar JSON (optional, backward compatible)
-    curated_media: Optional[Dict[str, Any]]  # Videos, resources, citations
+    curated_media: Optional[dict[str, Any]]  # Videos, resources, citations
 
     # NEW Phase A: External resources for out-of-scope queries
-    external_resources: Optional[Dict[str, Any]]  # Wikipedia, OER, Semantic Scholar results
+    external_resources: Optional[dict[str, Any]]  # Wikipedia, OER, Semantic Scholar results
 
     # ========================================
     # CORE 2 #9 — Corrective RAG (Retrieval Grading)
@@ -119,40 +126,40 @@ class AgentState(TypedDict, total=False):
     # feature flag is off (default), these stay None and the rest of the
     # pipeline behaves byte-identically to pre-#9. Writer / Critic read them
     # additively — a None value is interpreted as "no grading was performed".
-    retrieval_grade: Optional[str]              # "relevant" | "ambiguous" | "irrelevant"
-    retrieval_grade_reason: Optional[str]       # 1-line LLM rationale (for traces)
-    retrieval_attempts: Optional[int]           # Number of retrieval passes done so far (1-N)
-    retrieval_rewritten_query: Optional[str]    # Grader's suggested query rewrite, if any
-    retrieval_warning: Optional[bool]           # True iff all attempts ended non-relevant
+    retrieval_grade: Optional[str]  # "relevant" | "ambiguous" | "irrelevant"
+    retrieval_grade_reason: Optional[str]  # 1-line LLM rationale (for traces)
+    retrieval_attempts: Optional[int]  # Number of retrieval passes done so far (1-N)
+    retrieval_rewritten_query: Optional[str]  # Grader's suggested query rewrite, if any
+    retrieval_warning: Optional[bool]  # True iff all attempts ended non-relevant
 
     # ========================================
     # WRITER OUTPUT
     # ========================================
     lesson_plan_draft: Optional[str]  # Generated lesson plan
-    lesson_plan_structured: Optional[Dict[str, Any]]  # Structured version
-    sources_cited: Optional[List[str]]  # Sources used in lesson plan
+    lesson_plan_structured: Optional[dict[str, Any]]  # Structured version
+    sources_cited: Optional[list[str]]  # Sources used in lesson plan
 
     # ========================================
     # CRITIC OUTPUT
     # ========================================
-    critique: Optional[str]          # Critic's feedback
+    critique: Optional[str]  # Critic's feedback
     critique_score: Optional[float]  # Quality score (0-1)
-    approved: bool                   # Whether critic approved
+    approved: bool  # Whether critic approved
     revision_instructions: Optional[str]  # What to fix if not approved
 
     # ========================================
     # METADATA
     # ========================================
-    revision_count: int              # Number of revision cycles
-    max_revisions: int               # Maximum allowed revisions
-    current_step: str                # Current step in pipeline
-    error: Optional[str]             # Error message if any
+    revision_count: int  # Number of revision cycles
+    max_revisions: int  # Maximum allowed revisions
+    current_step: str  # Current step in pipeline
+    error: Optional[str]  # Error message if any
 
     # ========================================
     # FINAL OUTPUT
     # ========================================
     final_lesson_plan: Optional[str]  # Approved final lesson plan
-    final_metadata: Optional[Dict[str, Any]]  # Final metadata
+    final_metadata: Optional[dict[str, Any]]  # Final metadata
 
 
 def create_initial_state(
@@ -161,11 +168,13 @@ def create_initial_state(
     language: str = "it",
     session_id: Optional[str] = None,
     max_revisions: int = 2,
-    educational_profile: Optional[Dict[str, Any]] = None,
+    educational_profile: Optional[dict[str, Any]] = None,
     teacher_provided_context: Optional[str] = None,
-    conversation_history: Optional[List[Dict[str, str]]] = None,
+    conversation_history: Optional[list[dict[str, str]]] = None,
     conversation_summary: Optional[str] = None,
     raw_user_turn: Optional[str] = None,
+    pedagogical_intent: Optional[str] = None,
+    refinement_instruction: Optional[str] = None,
 ) -> AgentState:
     """
     Create initial state for a new lesson planning request.
@@ -215,11 +224,12 @@ def create_initial_state(
         language=language,
         session_id=session_id,
         educational_profile=educational_profile,
+        pedagogical_intent=pedagogical_intent,
+        refinement_instruction=refinement_instruction,
         teacher_provided_context=teacher_provided_context,
         conversation_history=conversation_history,
         conversation_summary=conversation_summary,
         raw_user_turn=raw_user_turn,
-
         # Planner (empty)
         plan=None,
         query_intent=None,
@@ -232,7 +242,6 @@ def create_initial_state(
         scope_confidence=None,
         subject_concepts=None,
         pedagogy_concepts=None,
-
         # Retriever (empty)
         graphrag_results=None,
         retrieved_nodes=None,
@@ -249,24 +258,20 @@ def create_initial_state(
         retrieval_attempts=None,
         retrieval_rewritten_query=None,
         retrieval_warning=None,
-
         # Writer (empty)
         lesson_plan_draft=None,
         lesson_plan_structured=None,
         sources_cited=None,
-
         # Critic (empty)
         critique=None,
         critique_score=None,
         approved=False,
         revision_instructions=None,
-
         # Metadata
         revision_count=0,
         max_revisions=max_revisions,
         current_step="start",
         error=None,
-
         # Final (empty)
         final_lesson_plan=None,
         final_metadata=None,
@@ -276,25 +281,27 @@ def create_initial_state(
 @dataclass
 class RetrievalPlan:
     """Structured plan for what to retrieve from GraphRAG"""
+
     lesson_type: str
-    key_concepts: List[str]
-    search_queries: List[str]
+    key_concepts: list[str]
+    search_queries: list[str]
     target_grade: Optional[str] = None
-    special_needs: Optional[List[str]] = None
+    special_needs: Optional[list[str]] = None
     time_constraints: Optional[str] = None
 
 
 @dataclass
 class LessonPlanStructure:
     """Structured lesson plan output"""
+
     title: str
     grade_level: str
     duration: str
-    learning_objectives: List[str]
-    materials: List[str]
+    learning_objectives: list[str]
+    materials: list[str]
     introduction: str
-    main_activities: List[Dict[str, str]]
+    main_activities: list[dict[str, str]]
     assessment: str
-    differentiation: Dict[str, List[str]]
-    sources: List[str]
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    differentiation: dict[str, list[str]]
+    sources: list[str]
+    metadata: dict[str, Any] = field(default_factory=dict)

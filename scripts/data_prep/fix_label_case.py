@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Fix case-variant duplicate labels in Neo4j (one-time remediation)"""
 
-from neo4j import GraphDatabase
-from dotenv import load_dotenv
 import os
+
+from dotenv import load_dotenv
+from neo4j import GraphDatabase
 
 load_dotenv()
 uri = os.getenv('NEO4J_URI')

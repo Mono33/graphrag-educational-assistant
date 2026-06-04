@@ -13,8 +13,9 @@ Required env vars:
     LANGFUSE_HOST or LANGFUSE_BASE_URL   optional, defaults to https://cloud.langfuse.com
 """
 
-import os
 import logging
+import os
+
 from langfuse import Langfuse
 
 logger = logging.getLogger(__name__)

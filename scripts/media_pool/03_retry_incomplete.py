@@ -17,13 +17,13 @@ Usage:
 """
 
 import argparse
-import sys
 import os
+import sys
 
 # Allow running from repo root
 sys.path.insert(0, os.path.join(os.path.dirname(__file__)))
 
-from schema import load_pool, load_checkpoint, save_checkpoint
+from schema import load_checkpoint, load_pool, save_checkpoint
 
 POOL_PATH_TPL = "data/media/kg_{domain}_media_pool.json"
 CKPT_PATH_TPL = "data/media/checkpoint_{domain}.json"

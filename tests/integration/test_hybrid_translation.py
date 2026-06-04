@@ -4,12 +4,13 @@ Test script for Hybrid Translation (Solution 3)
 Tests dictionary coverage and OpenAI fallback
 """
 
-from aix.retrieval.multilingual_text2cypher import MultilingualText2Cypher
 import logging
+
+from aix.retrieval.multilingual_text2cypher import MultilingualText2Cypher
 
 # Enable logging to see the hybrid logic
 logging.basicConfig(
-    level=logging.INFO, 
+    level=logging.INFO,
     format='%(levelname)s - %(message)s'
 )
 
@@ -36,16 +37,16 @@ print('=' * 80)
 for i, query in enumerate(test_queries, 1):
     print(f'\n📝 Query {i}: {query}')
     print('-' * 80)
-    
+
     # Translate with hybrid approach
     enhanced = translator.enhance_italian_query(query, domain='neuro')
-    
+
     # Remove context prefix for display
     if ': ' in enhanced:
         display = enhanced.split(': ', 1)[1]
     else:
         display = enhanced
-    
+
     print(f'✅ Translated: {display}')
     print()
 

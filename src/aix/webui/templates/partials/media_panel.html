@@ -39,7 +39,7 @@
   {# ── Header ───────────────────────────────────────────────────────── #}
   <div class="aix-side-pane-header">
     <div class="aix-side-pane-title">
-      <wa-icon name="photo-film" style="color:var(--aix-teal);"></wa-icon>
+      <wa-icon name="photo-film" class="aix-color-teal"></wa-icon>
       <span>Risorse multimediali</span>
     </div>
     <span class="aix-pill aix-pill-neutral">{{ total }}</span>
@@ -50,11 +50,11 @@
 
   {% if total == 0 %}
     {# ── Empty / placeholder state ─────────────────────────────────── #}
-    <div class="aix-empty-state" style="padding:18px 16px;">
+    <div class="aix-empty-state aix-p-18-16">
       <div class="aix-empty-state-icon">
         <wa-icon name="photo-film"></wa-icon>
       </div>
-      <p class="aix-empty-state-body" style="margin:0;">
+      <p class="aix-empty-state-body m-0">
         Le risorse multimediali appariranno qui dopo che il Retriever
         Agent avrà interrogato il database.
       </p>
@@ -65,8 +65,8 @@
     {% if videos %}
       <details class="aix-media-section" open>
         <summary>
-          <span style="display:inline-flex; align-items:center; gap:6px;">
-            <wa-icon name="video" style="font-size:0.85rem;"></wa-icon>
+          <span class="aix-irow-6">
+            <wa-icon name="video" class="aix-fs-085"></wa-icon>
             Video curati
           </span>
           <span class="aix-pill aix-pill-neutral">{{ videos | length }}</span>
@@ -78,12 +78,12 @@
               {% if url %}
                 <a href="{{ url }}" target="_blank" rel="noopener noreferrer"
                    class="aix-media-item-title-row">
-                  <wa-icon name="play" style="font-size:0.7rem; margin-top:3px;"></wa-icon>
+                  <wa-icon name="play" class="aix-fs-xs aix-mt-3px"></wa-icon>
                   <span class="line-clamp-2">{{ v.get('title') or 'Video' }}</span>
                 </a>
               {% else %}
-                <span class="aix-media-item-title-row" style="color:var(--aix-text-primary);">
-                  <wa-icon name="magnifying-glass" style="font-size:0.7rem; margin-top:3px;"></wa-icon>
+                <span class="aix-media-item-title-row aix-color-primary">
+                  <wa-icon name="magnifying-glass" class="aix-fs-xs aix-mt-3px"></wa-icon>
                   <span class="line-clamp-2">{{ v.get('title') or v.get('search_query') or 'Video' }}</span>
                 </span>
               {% endif %}
@@ -100,8 +100,8 @@
     {% if citations %}
       <details class="aix-media-section" {% if not videos %}open{% endif %}>
         <summary>
-          <span style="display:inline-flex; align-items:center; gap:6px;">
-            <wa-icon name="newspaper" style="font-size:0.85rem;"></wa-icon>
+          <span class="aix-irow-6">
+            <wa-icon name="newspaper" class="aix-fs-085"></wa-icon>
             Articoli scientifici
           </span>
           <span class="aix-pill aix-pill-neutral">{{ citations | length }}</span>
@@ -109,10 +109,10 @@
         <ul class="aix-media-list">
           {% for c in citations[:5] %}
             <li class="aix-media-item">
-              <div style="font-weight:600; color:var(--aix-text-primary);" class="line-clamp-2">
+              <div class="aix-color-primary aix-fw-600 line-clamp-2">
                 {{ c.get('title') or 'Articolo' }}
               </div>
-              <div class="aix-media-item-meta" style="margin-left:0;">
+              <div class="aix-media-item-meta ml-0">
                 {% set authors = c.get('authors') or [] %}
                 {% if authors %}
                   {{ authors[:2] | join(', ') }}{% if authors | length > 2 %} et al.{% endif %}
@@ -122,7 +122,7 @@
               </div>
               {% if c.get('doi') %}
                 <a href="https://doi.org/{{ c.doi }}" target="_blank" rel="noopener noreferrer"
-                   style="font-size:11px;">
+                   class="aix-fs-11">
                   DOI: {{ c.doi }}
                 </a>
               {% endif %}
@@ -136,8 +136,8 @@
     {% if resources or textbooks %}
       <details class="aix-media-section" {% if not videos and not citations %}open{% endif %}>
         <summary>
-          <span style="display:inline-flex; align-items:center; gap:6px;">
-            <wa-icon name="book" style="font-size:0.85rem;"></wa-icon>
+          <span class="aix-irow-6">
+            <wa-icon name="book" class="aix-fs-085"></wa-icon>
             OER &amp; Manuali
           </span>
           <span class="aix-pill aix-pill-neutral">{{ (resources | length) + (textbooks | length) }}</span>
@@ -149,18 +149,18 @@
               {% if url %}
                 <a href="{{ url }}" target="_blank" rel="noopener noreferrer"
                    class="aix-media-item-title-row">
-                  <wa-icon name="link" style="font-size:0.7rem; margin-top:3px;"></wa-icon>
+                  <wa-icon name="link" class="aix-fs-xs aix-mt-3px"></wa-icon>
                   <span class="line-clamp-2">{{ r.get('title') or 'Risorsa' }}</span>
                 </a>
               {% else %}
-                <span style="color:var(--aix-text-primary);">{{ r.get('title') or 'Risorsa' }}</span>
+                <span class="aix-color-primary">{{ r.get('title') or 'Risorsa' }}</span>
               {% endif %}
             </li>
           {% endfor %}
           {% for t in textbooks[:3] %}
             <li class="aix-media-item">
-              <div style="display:flex; align-items:flex-start; gap:6px; font-weight:600; color:var(--aix-text-primary);">
-                <wa-icon name="book" style="font-size:0.7rem; margin-top:3px;"></wa-icon>
+              <div class="aix-irow-6 aix-color-primary aix-items-start aix-fw-600">
+                <wa-icon name="book" class="aix-fs-xs aix-mt-3px"></wa-icon>
                 <span class="line-clamp-2">
                   {{ t.get('title') or 'Libro' }}{% if t.get('chapter') %} — {{ t.chapter }}{% endif %}
                 </span>
@@ -179,14 +179,13 @@
     {% if web_links %}
       <details class="aix-media-section" {% if not videos and not citations and not resources and not textbooks %}open{% endif %}>
         <summary>
-          <span style="display:inline-flex; align-items:center; gap:6px;">
-            <wa-icon name="magnifying-glass" style="font-size:0.85rem;"></wa-icon>
+          <span class="aix-irow-6">
+            <wa-icon name="magnifying-glass" class="aix-fs-085"></wa-icon>
             Ricerca web
           </span>
           <span class="aix-pill aix-pill-neutral">{{ web_links | length }}</span>
         </summary>
-        <p style="font-size:10.5px; color:var(--aix-text-tertiary); font-style:italic;
-                  margin:4px 0 8px; padding:0 2px;">
+        <p class="aix-footnote-sm aix-footnote-web-hint">
           Risultati live via DuckDuckGo per i concetti chiave della lezione.
         </p>
         <ul class="aix-media-list">
@@ -194,11 +193,11 @@
             <li class="aix-media-item">
               <a href="{{ w.get('url') }}" target="_blank" rel="noopener noreferrer"
                  class="aix-media-item-title-row">
-                <wa-icon name="arrow-up-right-from-square" style="font-size:0.65rem; margin-top:3px; flex-shrink:0;"></wa-icon>
+                <wa-icon name="arrow-up-right-from-square" class="aix-fs-2xs aix-mt-3px shrink-0"></wa-icon>
                 <span class="line-clamp-2">{{ w.get('title') or w.get('url') }}</span>
               </a>
               {% if w.get('snippet') %}
-                <span class="aix-media-item-meta" style="margin-left:0; font-style:italic;">
+                <span class="aix-media-item-meta ml-0 italic">
                   {{ w.snippet[:120] }}{% if w.snippet | length > 120 %}…{% endif %}
                 </span>
               {% endif %}
@@ -210,8 +209,7 @@
 
   {% endif %}
 
-  <p style="font-size:10.5px; color:var(--aix-text-tertiary); font-style:italic;
-            margin:12px 0 0; padding-top:10px; border-top:1px solid var(--aix-border-soft);">
+  <p class="aix-footnote-sm aix-footnote-bottom">
     I link aprono in una nuova scheda. Le risorse sono già citate
     inline nel piano della lezione.
   </p>

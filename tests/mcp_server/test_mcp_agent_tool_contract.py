@@ -21,16 +21,16 @@ runs in Phase 4 ``--phase4-verify``).
 
 from __future__ import annotations
 
-from typing import Any, AsyncIterator, Dict, List
+from collections.abc import AsyncIterator
+from typing import Any
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Canned event stream — mirrors the shape ``test_agent_routes.test_agent_run_happy_path``
 # uses, so MCP and HTTP wrappers exercise the same fixture.
 # ---------------------------------------------------------------------------
-_CANNED_EVENTS: List[Dict[str, Any]] = [
+_CANNED_EVENTS: list[dict[str, Any]] = [
     {
         "kind": "planner",
         "payload": {
@@ -104,8 +104,8 @@ def _patch_stream_agent_events(monkeypatch) -> None:
                 meta=e.get("meta", {}),
             )
 
-    import aix.webui.agent.service as service_mod
     import aix.mcp.tools.agent_tools as agent_tools_mod
+    import aix.webui.agent.service as service_mod
 
     monkeypatch.setattr(service_mod, "stream_agent_events", _fake_stream)
     # The MCP tool imports lazily inside the function body (line 219 of
@@ -189,8 +189,9 @@ async def test_agent_run_lesson_plan_validates_query(mcp_client):
 @pytest.mark.asyncio
 async def test_agent_run_lesson_plan_propagates_runtime_error(mcp_client, monkeypatch):
     """An ``error`` StreamEvent → tool failure (FastMCP isError=true)."""
-    from aix.webui.agent.service import StreamEvent
     from fastmcp.exceptions import ToolError
+
+    from aix.webui.agent.service import StreamEvent
 
     async def _failing_stream(**_kwargs):
         yield StreamEvent(kind="error", error="Knowledge Graph unreachable")

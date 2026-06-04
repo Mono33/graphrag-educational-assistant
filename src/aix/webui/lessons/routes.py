@@ -71,11 +71,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
-
-from sqlalchemy import func
 
 from aix.api.schemas.educational_profile import (
     CLASS_FEATURE_LABELS,
@@ -83,6 +81,7 @@ from aix.api.schemas.educational_profile import (
     FORNITURE_MOBILITY_LABELS,
     GRADE_LABELS,
     OWN_DEVICE_LABELS,
+    PEDAGOGICAL_INTENT_OPTIONS,
     STUDENT_ATTR_LABELS,
 )
 from aix.webui.agent import run_agent_stream
@@ -90,8 +89,8 @@ from aix.webui.auth.dependencies import optional_current_user
 from aix.webui.auth.models import User
 from aix.webui.db import get_async_session
 from aix.webui.lessons.display import lesson_to_row
-from aix.webui.lessons.models import Lesson, LessonMessage
-from aix.webui.lessons.schemas import form_to_profile_dict
+from aix.webui.lessons.models import Lesson, LessonMessage, SavedProfile
+from aix.webui.lessons.schemas import form_to_profile_dict, profile_to_form_values
 from aix.webui.lessons.uploads import delete_upload, save_upload
 
 logger = logging.getLogger(__name__)
@@ -121,7 +120,7 @@ router = APIRouter(prefix="/webui", tags=["webui-lessons"])
 _ACTIVE_RUNS: set[uuid.UUID] = set()
 
 
-def _label_dicts() -> dict[str, dict[str, str]]:
+def _label_dicts() -> dict[str, Any]:
     """Bundle of Italian labels passed into every lesson template."""
     return {
         "GRADE_LABELS": GRADE_LABELS,
@@ -130,11 +129,13 @@ def _label_dicts() -> dict[str, dict[str, str]]:
         "STUDENT_ATTR_LABELS": STUDENT_ATTR_LABELS,
         "FORNITURE_MOBILITY_LABELS": FORNITURE_MOBILITY_LABELS,
         "OWN_DEVICE_LABELS": OWN_DEVICE_LABELS,
+        "PEDAGOGICAL_INTENT_OPTIONS": PEDAGOGICAL_INTENT_OPTIONS,
     }
 
 
 async def _load_chat_messages(
-    session: AsyncSession, lesson_id: uuid.UUID,
+    session: AsyncSession,
+    lesson_id: uuid.UUID,
 ) -> list[dict[str, Any]]:
     """
     Load all ``LessonMessage`` rows for a lesson and shape them into the
@@ -158,36 +159,36 @@ async def _load_chat_messages(
     )
     out: list[dict[str, Any]] = []
     for msg in result.scalars().all():
-        out.append({
-            "id": msg.id,
-            "role": msg.role,
-            "content_md": msg.content_md or "",
-            # Pre-render assistant markdown — Jinja sees ready-to-paint HTML.
-            # User messages render as plain text inside the bubble (no
-            # markdown — teacher's typed query, escape-safe via Jinja's
-            # default autoescape).
-            "content_html": (
-                _markdown_to_html(msg.content_md or "")
-                if msg.role == "assistant" else None
-            ),
-            "turn_index": msg.turn_index,
-            "agent_kind": msg.agent_kind,
-            "meta_json": msg.meta_json or {},
-            "created_at": msg.created_at,
-        })
+        out.append(
+            {
+                "id": msg.id,
+                "role": msg.role,
+                "content_md": msg.content_md or "",
+                # Pre-render assistant markdown — Jinja sees ready-to-paint HTML.
+                # User messages render as plain text inside the bubble (no
+                # markdown — teacher's typed query, escape-safe via Jinja's
+                # default autoescape).
+                "content_html": (
+                    _markdown_to_html(msg.content_md or "") if msg.role == "assistant" else None
+                ),
+                "turn_index": msg.turn_index,
+                "agent_kind": msg.agent_kind,
+                "meta_json": msg.meta_json or {},
+                "created_at": msg.created_at,
+            }
+        )
     return out
 
 
 def _bounce_to_login(target_path: str) -> RedirectResponse:
     """Redirect anonymous users to /auth/login with ?next= so they come back."""
-    return RedirectResponse(
-        f"/auth/login?next={target_path}", status_code=303
-    )
+    return RedirectResponse(f"/auth/login?next={target_path}", status_code=303)
 
 
 # ----------------------------------------------------------------------------
 # GET /webui/lessons — lesson history list
 # ----------------------------------------------------------------------------
+
 
 @router.get(
     "/lessons",
@@ -219,21 +220,19 @@ async def lesson_list(
         return _bounce_to_login("/webui/lessons")
 
     result = await session.execute(
-        select(Lesson)
-        .where(Lesson.owner_id == user.id)
-        .order_by(Lesson.updated_at.desc())
+        select(Lesson).where(Lesson.owner_id == user.id).order_by(Lesson.updated_at.desc())
     )
     lessons = list(result.scalars().all())
 
-    rows = [lesson_to_row(l) for l in lessons]
+    rows = [lesson_to_row(lesson) for lesson in lessons]
 
     # Aggregate stats for the one-liner subtitle ("7 lezioni · 0 bozze · …").
     stats = {
-        "total":    len(rows),
-        "draft":    sum(1 for r in rows if r["status"] == "draft"),
-        "running":  sum(1 for r in rows if r["status"] == "running"),
+        "total": len(rows),
+        "draft": sum(1 for r in rows if r["status"] == "draft"),
+        "running": sum(1 for r in rows if r["status"] == "running"),
         "complete": sum(1 for r in rows if r["status"] == "complete"),
-        "error":    sum(1 for r in rows if r["status"] == "error"),
+        "error": sum(1 for r in rows if r["status"] == "error"),
     }
 
     # Distinct filter values, derived from the rows we already have. Sorted
@@ -243,22 +242,22 @@ async def lesson_list(
         return sorted({v for v in values if v})
 
     filters = {
-        "subjects":     _distinct(r["subject"] for r in rows),
-        "classes":      _distinct(r["group_title"] for r in rows),
+        "subjects": _distinct(r["subject"] for r in rows),
+        "classes": _distinct(r["group_title"] for r in rows),
         "disabilities": _distinct(d for r in rows for d in (r["disabilities"] or [])),
     }
 
     return templates.TemplateResponse(
         "pages/lesson_list.html",
         {
-            "request":     request,
-            "user":        user,
-            "lessons":     lessons,         # legacy context var, kept for compat
-            "rows":        rows,            # new shape for the brand template
-            "stats":       stats,
-            "filters":     filters,
-            "active_nav":  "lessons",
-            "title":       "Le mie lezioni · AixLearning",
+            "request": request,
+            "user": user,
+            "lessons": lessons,  # legacy context var, kept for compat
+            "rows": rows,  # new shape for the brand template
+            "stats": stats,
+            "filters": filters,
+            "active_nav": "lessons",
+            "title": "Le mie lezioni · AixLearning",
         },
     )
 
@@ -266,6 +265,7 @@ async def lesson_list(
 # ----------------------------------------------------------------------------
 # DELETE /webui/lesson/{id} — delete a lesson
 # ----------------------------------------------------------------------------
+
 
 @router.delete(
     "/lesson/{lesson_id}",
@@ -300,6 +300,7 @@ async def lesson_delete(
 # GET /webui/lesson/{id}/card-fragment — full lesson card (non-SSE)
 # ----------------------------------------------------------------------------
 
+
 @router.get(
     "/lesson/{lesson_id}/card-fragment",
     response_class=HTMLResponse,
@@ -331,9 +332,18 @@ async def lesson_card_fragment(
         logger.warning("[card-fragment] 404 lesson_id=%s user_id=%s", lesson_id, user.id)
         raise HTTPException(status_code=404, detail="Lezione non trovata")
 
+    # After phase 1 (planner-only run) the lesson is reset to "draft".
+    # The sseClose handler would try to fetch the lesson card, but there's
+    # nothing to show yet — the intent selection card is already in the DOM
+    # from the SSE events.  Return empty so nothing is appended.
+    if lesson.status == "draft":
+        return HTMLResponse(content="", status_code=200)
+
     logger.info(
         "[card-fragment] rendering lesson_id=%s status=%s plan_len=%s",
-        lesson_id, lesson.status, len(lesson.lesson_plan_md or ""),
+        lesson_id,
+        lesson.status,
+        len(lesson.lesson_plan_md or ""),
     )
     return templates.TemplateResponse(
         "partials/chat_lesson_card.html",
@@ -349,6 +359,7 @@ async def lesson_card_fragment(
 # ----------------------------------------------------------------------------
 # GET /webui/lesson/{id}/chat-input-fragment — chat input partial (state-driven)
 # ----------------------------------------------------------------------------
+
 
 @router.get(
     "/lesson/{lesson_id}/chat-input-fragment",
@@ -389,14 +400,13 @@ async def lesson_chat_input_fragment(
     )
     lesson = result.scalar_one_or_none()
     if lesson is None:
-        logger.warning(
-            "[chat-input-fragment] 404 lesson_id=%s user_id=%s", lesson_id, user.id
-        )
+        logger.warning("[chat-input-fragment] 404 lesson_id=%s user_id=%s", lesson_id, user.id)
         raise HTTPException(status_code=404, detail="Lezione non trovata")
 
     logger.info(
         "[chat-input-fragment] rendering lesson_id=%s status=%s",
-        lesson_id, lesson.status,
+        lesson_id,
+        lesson.status,
     )
     return templates.TemplateResponse(
         "partials/chat_input.html",
@@ -416,6 +426,7 @@ async def lesson_chat_input_fragment(
 # GET /webui/lesson/new — render the form
 # ----------------------------------------------------------------------------
 
+
 @router.get(
     "/lesson/new",
     response_class=HTMLResponse,
@@ -424,10 +435,42 @@ async def lesson_chat_input_fragment(
 async def lesson_new_get(
     request: Request,
     user: Optional[User] = Depends(optional_current_user),
+    session: AsyncSession = Depends(get_async_session),
+    topic: Optional[str] = None,
+    domain: Optional[str] = None,
+    profile_id: Optional[uuid.UUID] = None,
 ) -> Response:
     """Show the EducationalProfile form. Anon users are bounced to login."""
     if user is None:
         return _bounce_to_login("/webui/lesson/new")
+
+    # F6: "What's Next?" pre-fill — ?topic=X&domain=Y carries context forward
+    prefill: dict[str, Any] = {}
+    if topic:
+        prefill["specific_topic"] = topic.strip()
+    if domain and domain in {"neuro", "udl", "all"}:
+        prefill["domain"] = domain
+
+    # SavedProfile pre-fill — ?profile_id=UUID loads a saved profile and
+    # expands it into the flat form_values dict via profile_to_form_values().
+    if profile_id:
+        sp_result = await session.execute(
+            select(SavedProfile).where(
+                SavedProfile.id == profile_id,
+                SavedProfile.owner_id == user.id,
+            )
+        )
+        sp = sp_result.scalar_one_or_none()
+        if sp is not None:
+            prefill = {**profile_to_form_values(sp.profile_json), **prefill}
+
+    # Load all saved profiles for the selector at the top of the form.
+    sp_all = await session.execute(
+        select(SavedProfile)
+        .where(SavedProfile.owner_id == user.id)
+        .order_by(SavedProfile.created_at.desc())
+    )
+    saved_profiles = list(sp_all.scalars().all())
 
     return templates.TemplateResponse(
         "pages/lesson_new.html",
@@ -439,7 +482,8 @@ async def lesson_new_get(
             # CORE 2 #6.6 P5.3 — drives the navbar's underline on "Crea lezione".
             "active_nav": "new",
             "form_errors": None,
-            "form_values": {},
+            "form_values": prefill,
+            "saved_profiles": saved_profiles,
             **_label_dicts(),
         },
     )
@@ -448,6 +492,7 @@ async def lesson_new_get(
 # ----------------------------------------------------------------------------
 # POST /webui/lesson — validate + persist
 # ----------------------------------------------------------------------------
+
 
 @router.post(
     "/lesson",
@@ -496,6 +541,11 @@ async def lesson_create(
         profile_dict = form_to_profile_dict(form)
     except ValidationError as exc:
         logger.info("Lesson form validation failed: %s", exc.errors())
+        sp_all_err = await session.execute(
+            select(SavedProfile)
+            .where(SavedProfile.owner_id == user.id)
+            .order_by(SavedProfile.created_at.desc())
+        )
         return templates.TemplateResponse(
             "pages/lesson_new.html",
             {
@@ -512,6 +562,7 @@ async def lesson_create(
                     for err in exc.errors()
                 ],
                 "form_values": form_values_for_redisplay,
+                "saved_profiles": list(sp_all_err.scalars().all()),
                 **_label_dicts(),
             },
             status_code=422,
@@ -540,17 +591,19 @@ async def lesson_create(
 
     logger.info(
         "📝 Lesson created: id=%s owner=%s domain=%s title=%r",
-        lesson.id, user.id, lesson.domain, lesson.title,
+        lesson.id,
+        user.id,
+        lesson.domain,
+        lesson.title,
     )
 
-    return RedirectResponse(
-        url=f"/webui/lesson/{lesson.id}", status_code=303
-    )
+    return RedirectResponse(url=f"/webui/lesson/{lesson.id}", status_code=303)
 
 
 # ----------------------------------------------------------------------------
 # GET /webui/lesson/{lesson_id} — chat workspace
 # ----------------------------------------------------------------------------
+
 
 @router.get(
     "/lesson/{lesson_id}",
@@ -603,16 +656,44 @@ async def lesson_show(
     # we don't persist scores / duration on the row today, so the card
     # surfaces only what we know (approval-by-presence, lesson length).
     # P4 will add proper run metadata persistence.
-    meta_for_replay = (
-        {"approved": True, "revision_count": 0}
-        if lesson.status == "complete"
-        else {}
-    )
+    meta_for_replay = {"approved": True, "revision_count": 0} if lesson.status == "complete" else {}
 
     # Multi-turn history for the chat transcript (#10.3d). Returns []
     # for legacy / fresh lessons → templates fall back to the legacy
     # single-bubble layout (chat_user_message.html + state-driven block).
     messages = await _load_chat_messages(session, lesson.id)
+
+    # F6: "What's Next?" — adjacent KG concepts for completed lessons.
+    # Runs in a sync threadpool to keep the async route non-blocking.
+    # Returns [] gracefully on Neo4j errors or missing topic.
+    adjacent_concepts: list[dict] = []
+    if lesson.status == "complete":
+        profile_j = lesson.educational_profile_json or {}
+        concept_name = profile_j.get("specific_topic") or profile_j.get("subject_area")
+        if concept_name:
+            import asyncio
+
+            try:
+                import os
+
+                from neo4j import GraphDatabase
+
+                from aix.retrieval.graph_retriever import HybridGraphRetriever
+
+                neo4j_uri = os.environ.get("NEO4J_URI", "bolt://localhost:7687")
+                neo4j_user = os.environ.get("NEO4J_USERNAME", "neo4j")
+                neo4j_pass = os.environ.get("NEO4J_PASSWORD", "")
+                _driver = GraphDatabase.driver(neo4j_uri, auth=(neo4j_user, neo4j_pass))
+                _retriever = HybridGraphRetriever(_driver, domain=lesson.domain or "all")
+                adjacent_concepts = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: _retriever.get_concept_neighbors(
+                        concept_name, domain=lesson.domain or "all", limit=5
+                    ),
+                )
+                _driver.close()
+            except Exception as _e:
+                logger.warning("[lesson_show] what_next failed: %s", _e)
 
     return templates.TemplateResponse(
         "pages/lesson_show.html",
@@ -631,6 +712,7 @@ async def lesson_show(
             # ("I'm inside one of my lessons") and is the same convention the
             # Library list uses (active_nav="lessons").
             "active_nav": "lessons",
+            "adjacent_concepts": adjacent_concepts,
             **_label_dicts(),
         },
     )
@@ -639,6 +721,7 @@ async def lesson_show(
 # ----------------------------------------------------------------------------
 # POST /webui/lesson/{id}/run — start a new agent run (P2)
 # ----------------------------------------------------------------------------
+
 
 @router.post(
     "/lesson/{lesson_id}/run",
@@ -707,11 +790,7 @@ async def lesson_run(
     # Capture the user's new query if present.
     form = await request.form()
     query_raw = form.get("query")
-    new_query = (
-        query_raw.strip()
-        if isinstance(query_raw, str) and query_raw.strip()
-        else None
-    )
+    new_query = query_raw.strip() if isinstance(query_raw, str) and query_raw.strip() else None
 
     if new_query is not None:
         # Server-side validation mirroring the textarea ``minlength=3`` /
@@ -756,16 +835,91 @@ async def lesson_run(
         )
 
     # ── Multi-turn mode detection (#10.3c) ────────────────────────────
+    # Computed early so the phase-1/phase-2 logic below can branch on it.
     is_follow_up = lesson.status in ("complete", "error")
     mode = "follow_up" if is_follow_up else "new"
+
+    # ── Chat-based pedagogical intent — two-phase flow ───────────────
+    # Phase 1 (planner-only): first new-run on a draft lesson, before the
+    # teacher has confirmed an intent from the chat card.  We flag this
+    # with __planner_only__ in profile_json so the SSE generator knows to
+    # stop after the planner and render the intent selection card.
+    #
+    # Phase 2 (full run): the teacher clicked a chip in the intent card
+    # and the POST carries intent_confirmed=1.  We store the chosen intent
+    # in profile_json and run the full pipeline.  No new LessonMessage is
+    # written for phase 2 — the user turn was already recorded in phase 1.
+    #
+    # Refinement runs and follow-up turns bypass phase 1 entirely.
+    # ─────────────────────────────────────────────────────────────────────
+    intent_confirmed = form.get("intent_confirmed") == "1"
+    is_phase1 = (mode == "new") and (not intent_confirmed)
+
+    if is_phase1:
+        _prof = dict(lesson.educational_profile_json or {})
+        _prof["__planner_only__"] = True
+        lesson.educational_profile_json = _prof
+    elif intent_confirmed:
+        _intent_code_raw = form.get("pedagogical_intent_code")
+        _intent_code = (
+            _intent_code_raw.strip()
+            if isinstance(_intent_code_raw, str) and _intent_code_raw.strip()
+            else None
+        )
+        if _intent_code and _intent_code != "skip":
+            _intent_detail_raw = form.get("pedagogical_intent_detail")
+            _intent_detail = (
+                _intent_detail_raw.strip()
+                if isinstance(_intent_detail_raw, str) and _intent_detail_raw.strip()
+                else None
+            )
+            _prof = dict(lesson.educational_profile_json or {})
+            _prof.pop("__planner_only__", None)
+            _prof["pedagogical_intent"] = (
+                f"{_intent_code}: {_intent_detail}" if _intent_detail else _intent_code
+            )
+            lesson.educational_profile_json = _prof
+
+    # ── F3b: SAM guided refinement instruction ────────────────────────
+    # Optional: refinement_code (one of the predefined options) +
+    # refinement_detail (freetext). Stored transiently in profile_json
+    # as "__refinement__" so the service layer can pop it without a
+    # DB schema change. Only set on follow-up "Raffina" runs.
+    refinement_code_raw = form.get("refinement_code")
+    refinement_detail_raw = form.get("refinement_detail")
+    refinement_code = (
+        refinement_code_raw.strip()
+        if isinstance(refinement_code_raw, str) and refinement_code_raw.strip()
+        else None
+    )
+    refinement_detail = (
+        refinement_detail_raw.strip()
+        if isinstance(refinement_detail_raw, str) and refinement_detail_raw.strip()
+        else None
+    )
+    if refinement_code:
+        _REFINEMENT_PROMPTS = {
+            "simplify": "Reduce length by ~30%, simplify vocabulary, keep only essential concepts",
+            "deepen": "Add scientific depth, more precise terminology, nuanced examples",
+            "more_activities": "Replace passive sections with at least 2 interactive activities or exercises",
+            "adapt_class": "Re-calibrate to the class profile: BES accommodations, time constraint, available tech",
+        }
+        if refinement_code == "custom" and refinement_detail:
+            refinement_instruction = refinement_detail
+        else:
+            base = _REFINEMENT_PROMPTS.get(refinement_code, "")
+            refinement_instruction = f"{base} ({refinement_detail})" if refinement_detail else base
+        # Store transiently in profile_json so service.py can read it
+        profile = dict(lesson.educational_profile_json or {})
+        profile["__refinement__"] = refinement_instruction
+        lesson.educational_profile_json = profile
 
     # Backfill turn 1 from legacy fields if this is a follow-up on a
     # pre-#10.3 lesson. One-time, idempotent — guarded by a count probe
     # so subsequent follow-ups skip cleanly.
     if is_follow_up:
         existing_msg_count = await session.scalar(
-            select(func.count(LessonMessage.id))
-            .where(LessonMessage.lesson_id == lesson.id)
+            select(func.count(LessonMessage.id)).where(LessonMessage.lesson_id == lesson.id)
         )
         if (
             (existing_msg_count or 0) == 0
@@ -785,32 +939,39 @@ async def lesson_run(
             # have been overwritten with ``new_query`` above. We undo that
             # for the backfill window only — see the assignment guard below.
             backfill_user_query = (
-                new_query is None and lesson.teacher_query
+                new_query is None
+                and lesson.teacher_query
                 or _legacy_query_for_backfill(lesson, new_query)
             )
-            session.add(LessonMessage(
-                lesson_id=lesson.id,
-                role="user",
-                content_md=backfill_user_query,
-                turn_index=1,
-            ))
-            session.add(LessonMessage(
-                lesson_id=lesson.id,
-                role="assistant",
-                content_md=lesson.lesson_plan_md,
-                turn_index=1,
-                agent_kind="writer",
-                meta_json={"approved": True, "backfilled": True},
-            ))
+            session.add(
+                LessonMessage(
+                    lesson_id=lesson.id,
+                    role="user",
+                    content_md=backfill_user_query,
+                    turn_index=1,
+                )
+            )
+            session.add(
+                LessonMessage(
+                    lesson_id=lesson.id,
+                    role="assistant",
+                    content_md=lesson.lesson_plan_md,
+                    turn_index=1,
+                    agent_kind="writer",
+                    meta_json={"approved": True, "backfilled": True},
+                )
+            )
             await session.flush()
 
     # ── Compute the next turn_index for the user message we're about to
     # persist. MAX(turn_index) + 1 keeps the ordering invariant. For a
     # brand-new lesson with no rows yet, MAX returns NULL → 0 + 1 = 1.
-    latest_turn = await session.scalar(
-        select(func.max(LessonMessage.turn_index))
-        .where(LessonMessage.lesson_id == lesson.id)
-    ) or 0
+    latest_turn = (
+        await session.scalar(
+            select(func.max(LessonMessage.turn_index)).where(LessonMessage.lesson_id == lesson.id)
+        )
+        or 0
+    )
     new_turn_index = latest_turn + 1
 
     # The query we persist for THIS turn. ``new_query`` is preferred (the
@@ -819,12 +980,18 @@ async def lesson_run(
     # above already guarantees at least one is non-empty.
     user_msg_content = new_query or lesson.teacher_query
 
-    session.add(LessonMessage(
-        lesson_id=lesson.id,
-        role="user",
-        content_md=user_msg_content,
-        turn_index=new_turn_index,
-    ))
+    # Phase 2 (intent_confirmed) is not a new user turn — the user message
+    # was already persisted in phase 1. Skip to avoid a duplicate row that
+    # would cause _persist_assistant_turn to match the wrong turn_index.
+    if not intent_confirmed:
+        session.add(
+            LessonMessage(
+                lesson_id=lesson.id,
+                role="user",
+                content_md=user_msg_content,
+                turn_index=new_turn_index,
+            )
+        )
 
     # Flip status optimistically so the chat conversation partial we
     # return immediately renders the live SSE pane (rather than the input
@@ -845,9 +1012,12 @@ async def lesson_run(
     await session.refresh(lesson)
 
     logger.info(
-        "▶️  Lesson run accepted: id=%s owner=%s mode=%s turn=%s "
-        "has_new_query=%s uploads=%s",
-        lesson.id, user.id, mode, new_turn_index, bool(new_query),
+        "▶️  Lesson run accepted: id=%s owner=%s mode=%s turn=%s has_new_query=%s uploads=%s",
+        lesson.id,
+        user.id,
+        mode,
+        new_turn_index,
+        bool(new_query),
         len(lesson.uploaded_files_json or []),
     )
 
@@ -894,6 +1064,7 @@ def _legacy_query_for_backfill(lesson: Lesson, new_query: Optional[str]) -> str:
 # ----------------------------------------------------------------------------
 # POST /webui/lesson/{id}/upload — chat attachment add (P3)
 # ----------------------------------------------------------------------------
+
 
 @router.post(
     "/lesson/{lesson_id}/upload",
@@ -949,9 +1120,7 @@ async def lesson_upload(
     filename = getattr(up, "filename", None) or "upload"
 
     try:
-        manifest, _entry = save_upload(
-            lesson_id, filename, content, lesson.uploaded_files_json
-        )
+        manifest, _entry = save_upload(lesson_id, filename, content, lesson.uploaded_files_json)
         lesson.uploaded_files_json = manifest
         await session.commit()
         await session.refresh(lesson)
@@ -1021,6 +1190,7 @@ async def lesson_upload_delete(
 # GET /webui/lesson/{id}/stream — SSE feed of agent events (P2)
 # ----------------------------------------------------------------------------
 
+
 @router.get(
     "/lesson/{lesson_id}/stream",
     name="webui_lesson_stream",
@@ -1074,17 +1244,17 @@ async def lesson_stream(
             # Send the same small placeholder used by the live run path.
             # chat_pane.html's htmx:sseClose handler fetches the full card
             # via GET /card-fragment after the stream closes.
-            lid = str(lesson.id)
+            str(lesson.id)
             yield {
                 "event": "final",
                 "data": (
-                    f'<div id="lesson-card-loading" class="flex items-start gap-3">'
-                    f'<div class="flex-shrink-0 w-9 h-9 rounded-full bg-slate-800 text-white'
-                    f' flex items-center justify-center ring-2 ring-white shadow-sm">'
-                    f'<wa-icon name="book-open" style="font-size:1rem;"></wa-icon></div>'
-                    f'<div class="flex-1 min-w-0"><div class="rounded-xl border border-slate-200'
-                    f' bg-white shadow-sm px-4 py-3 text-sm text-slate-500 animate-pulse">'
-                    f'Caricamento lezione…</div></div></div>'
+                    '<div id="lesson-card-loading" class="flex items-start gap-3">'
+                    '<div class="flex-shrink-0 w-9 h-9 rounded-full bg-slate-800 text-white'
+                    ' flex items-center justify-center ring-2 ring-white shadow-sm">'
+                    '<wa-icon name="book-open" style="font-size:1rem;"></wa-icon></div>'
+                    '<div class="flex-1 min-w-0"><div class="rounded-xl border border-slate-200'
+                    ' bg-white shadow-sm px-4 py-3 text-sm text-slate-500 animate-pulse">'
+                    "Caricamento lezione…</div></div></div>"
                 ),
             }
             yield terminal_marker
@@ -1094,7 +1264,8 @@ async def lesson_stream(
             yield {
                 "event": "error",
                 "data": _render_partial(
-                    request, "partials/chat_error.html",
+                    request,
+                    "partials/chat_error.html",
                     {"lesson": lesson, "error": lesson.error_message or "Errore sconosciuto"},
                 ),
             }
@@ -1105,13 +1276,11 @@ async def lesson_stream(
             yield {
                 "event": "error",
                 "data": _render_partial(
-                    request, "partials/chat_error.html",
+                    request,
+                    "partials/chat_error.html",
                     {
                         "lesson": lesson,
-                        "error": (
-                            "Esecuzione non avviata. Invia prima un messaggio "
-                            "dalla chat."
-                        ),
+                        "error": ("Esecuzione non avviata. Invia prima un messaggio dalla chat."),
                     },
                 ),
             }
@@ -1125,7 +1294,8 @@ async def lesson_stream(
             yield {
                 "event": "error",
                 "data": _render_partial(
-                    request, "partials/chat_error.html",
+                    request,
+                    "partials/chat_error.html",
                     {
                         "lesson": lesson,
                         "error": (
@@ -1136,6 +1306,88 @@ async def lesson_stream(
                 ),
             }
             yield terminal_marker
+            return
+
+        # ── Phase 1: planner-only run + intent selection card ────────────
+        # Triggered when the teacher submits their first query on a draft
+        # lesson.  We run only the Planner, show its card, then show the
+        # intent selection card and let the SSE stream end.  The teacher
+        # picks an intent from the card → POST /run with intent_confirmed=1
+        # → Phase 2 (full pipeline) starts.
+        _profile_j = lesson.educational_profile_json or {}
+        if _profile_j.get("__planner_only__"):
+            _ACTIVE_RUNS.add(lesson.id)
+            try:
+                from aix.agent.agents.planner_agent import PlannerAgent
+                from aix.api.schemas.educational_profile import (
+                    PEDAGOGICAL_INTENT_OPTIONS as _INTENT_OPTS,
+                )
+
+                # Pop the flag so a reconnect doesn't re-trigger phase 1
+                _updated_profile = dict(_profile_j)
+                _updated_profile.pop("__planner_only__", None)
+                lesson.educational_profile_json = _updated_profile
+
+                _planner = PlannerAgent()
+                _plan = await _planner.plan(
+                    query=lesson.teacher_query or "",
+                    domain=lesson.domain or "neuro",
+                    language="it",
+                )
+
+                _planner_payload = {
+                    "query_intent": _plan.query_intent,
+                    "intent_label": _plan.query_intent,
+                    "key_concepts": _plan.key_concepts,
+                    "search_queries": _plan.search_queries,
+                    "lesson_type": _plan.lesson_type,
+                    "target_grade": _plan.target_grade,
+                    "reasoning": _plan.reasoning,
+                    "nodes_count": 0,
+                    "scope_status": _plan.scope_status,
+                }
+                yield {
+                    "event": "card",
+                    "data": _render_partial(
+                        request,
+                        "partials/chat_planner_card.html",
+                        {"payload": _planner_payload, "lesson": lesson},
+                    ),
+                }
+                yield {
+                    "event": "card",
+                    "data": _render_partial(
+                        request,
+                        "partials/chat_intent_card.html",
+                        {
+                            "lesson": lesson,
+                            "PEDAGOGICAL_INTENT_OPTIONS": _INTENT_OPTS,
+                        },
+                    ),
+                }
+
+                # Reset to draft — teacher needs to confirm intent before
+                # the full run proceeds.
+                lesson.status = "draft"
+                await session.commit()
+
+            except Exception as _exc:
+                logger.exception("[stream] phase1 failed lesson_id=%s", lesson.id)
+                _msg = str(_exc)[:480]
+                lesson.status = "error"
+                lesson.error_message = _msg
+                await session.commit()
+                yield {
+                    "event": "error",
+                    "data": _render_partial(
+                        request,
+                        "partials/chat_error.html",
+                        {"lesson": lesson, "error": _msg},
+                    ),
+                }
+            finally:
+                _ACTIVE_RUNS.discard(lesson.id)
+                yield terminal_marker
             return
 
         _ACTIVE_RUNS.add(lesson.id)
@@ -1158,7 +1410,9 @@ async def lesson_stream(
                 if sse_message is not None:
                     logger.info(
                         "[stream] → SSE lesson_id=%s kind=%s event=%s",
-                        lesson.id, event.kind, sse_message["event"],
+                        lesson.id,
+                        event.kind,
+                        sse_message["event"],
                     )
                     yield sse_message
         finally:
@@ -1174,6 +1428,7 @@ async def lesson_stream(
 # ----------------------------------------------------------------------------
 # Writer token stream — live typewriter endpoint
 # ----------------------------------------------------------------------------
+
 
 @router.get(
     "/lesson/{lesson_id}/writer-stream",
@@ -1236,6 +1491,7 @@ async def lesson_writer_stream(
 # ----------------------------------------------------------------------------
 # Inline profile editing (P2 phase 2)
 # ----------------------------------------------------------------------------
+
 
 @router.get(
     "/lesson/{lesson_id}/profile",
@@ -1359,7 +1615,10 @@ async def lesson_profile_save(
 
     logger.info(
         "✏️  Profile updated inline: lesson_id=%s owner=%s domain=%s title=%r",
-        lesson.id, user.id, lesson.domain, lesson.title,
+        lesson.id,
+        user.id,
+        lesson.domain,
+        lesson.title,
     )
 
     return templates.TemplateResponse(
@@ -1372,6 +1631,7 @@ async def lesson_profile_save(
 # GET /webui/lesson/{id}/export — download lesson as MD or TXT
 # GET /webui/lesson/{id}/print  — print-friendly page (browser → PDF)
 # ----------------------------------------------------------------------------
+
 
 @router.get(
     "/lesson/{lesson_id}/export",
@@ -1408,13 +1668,14 @@ async def lesson_export(
 
     if format == "txt":
         import re
+
         text = lesson.lesson_plan_md
         text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)  # links
-        text = re.sub(r"!\[[^\]]*\]\([^)]+\)", "", text)       # images
-        text = re.sub(r"#{1,6}\s*", "", text)                   # headings
-        text = re.sub(r"\*{1,3}([^*]+)\*{1,3}", r"\1", text)   # bold/italic
+        text = re.sub(r"!\[[^\]]*\]\([^)]+\)", "", text)  # images
+        text = re.sub(r"#{1,6}\s*", "", text)  # headings
+        text = re.sub(r"\*{1,3}([^*]+)\*{1,3}", r"\1", text)  # bold/italic
         text = re.sub(r"`{1,3}[^`]*`{1,3}", lambda m: m.group().strip("`"), text)  # code
-        text = re.sub(r"_{1,2}([^_]+)_{1,2}", r"\1", text)     # underscores
+        text = re.sub(r"_{1,2}([^_]+)_{1,2}", r"\1", text)  # underscores
         text = re.sub(r"^\s*[-*+]\s+", "• ", text, flags=re.MULTILINE)  # bullets
         return Response(
             content=text,
@@ -1422,7 +1683,9 @@ async def lesson_export(
             headers={"Content-Disposition": f'attachment; filename="{slug}.txt"'},
         )
 
-    raise HTTPException(status_code=400, detail="Formato non supportato. Usa ?format=md o ?format=txt")
+    raise HTTPException(
+        status_code=400, detail="Formato non supportato. Usa ?format=md o ?format=txt"
+    )
 
 
 @router.get(
@@ -1461,6 +1724,7 @@ async def lesson_print(
 # SSE event translation (P2 phase 2)
 # ----------------------------------------------------------------------------
 
+
 def _stream_event_to_sse(
     request: Request,
     lesson: Lesson,
@@ -1489,7 +1753,8 @@ def _stream_event_to_sse(
         return {
             "event": "card",
             "data": _render_partial(
-                request, "partials/chat_planner_card.html",
+                request,
+                "partials/chat_planner_card.html",
                 {"payload": event.payload, "lesson": lesson},
             ),
         }
@@ -1498,7 +1763,8 @@ def _stream_event_to_sse(
         return {
             "event": "card",
             "data": _render_partial(
-                request, "partials/chat_retriever_pending.html",
+                request,
+                "partials/chat_retriever_pending.html",
                 {"payload": event.payload, "lesson": lesson},
             ),
         }
@@ -1508,11 +1774,13 @@ def _stream_event_to_sse(
         # in #chat-cards via beforeend) AND the media panel (OOB → htmx
         # extracts and replaces #media-panel separately).
         retriever_html = _render_partial(
-            request, "partials/chat_retriever_card.html",
+            request,
+            "partials/chat_retriever_card.html",
             {"payload": event.payload},
         )
         media_html = _render_partial(
-            request, "partials/media_panel.html",
+            request,
+            "partials/media_panel.html",
             {"media": (event.payload or {}).get("media") or {}, "oob": True},
         )
         return {
@@ -1534,7 +1802,8 @@ def _stream_event_to_sse(
         return {
             "event": "card",
             "data": _render_partial(
-                request, "partials/chat_writer_pending.html",
+                request,
+                "partials/chat_writer_pending.html",
                 {"payload": event.payload, "lesson": lesson},
             ),
         }
@@ -1543,7 +1812,8 @@ def _stream_event_to_sse(
         return {
             "event": "card",
             "data": _render_partial(
-                request, "partials/chat_critic_pending.html",
+                request,
+                "partials/chat_critic_pending.html",
                 {"payload": event.payload, "lesson": lesson},
             ),
         }
@@ -1555,7 +1825,8 @@ def _stream_event_to_sse(
         return {
             "event": "card",
             "data": _render_partial(
-                request, "partials/chat_writer_card.html",
+                request,
+                "partials/chat_writer_card.html",
                 {
                     "payload": event.payload,
                     "lesson_plan_md": event.lesson_plan_md or "",
@@ -1568,7 +1839,8 @@ def _stream_event_to_sse(
         return {
             "event": "card",
             "data": _render_partial(
-                request, "partials/chat_critic_card.html",
+                request,
+                "partials/chat_critic_card.html",
                 {"payload": event.payload},
             ),
         }
@@ -1585,16 +1857,17 @@ def _stream_event_to_sse(
         # contract), so the partial renders the right state inside the OOB
         # wrapper.
         placeholder = (
-            f'<div id="lesson-card-loading" class="flex items-start gap-3">'
-            f'<div class="flex-shrink-0 w-9 h-9 rounded-full bg-slate-800 text-white'
-            f' flex items-center justify-center ring-2 ring-white shadow-sm">'
-            f'<wa-icon name="book-open" style="font-size:1rem;"></wa-icon></div>'
-            f'<div class="flex-1 min-w-0"><div class="rounded-xl border border-slate-200'
-            f' bg-white shadow-sm px-4 py-3 text-sm text-slate-500 animate-pulse">'
-            f'Caricamento lezione finalizzata…</div></div></div>'
+            '<div id="lesson-card-loading" class="flex items-start gap-3">'
+            '<div class="flex-shrink-0 w-9 h-9 rounded-full bg-slate-800 text-white'
+            ' flex items-center justify-center ring-2 ring-white shadow-sm">'
+            '<wa-icon name="book-open" style="font-size:1rem;"></wa-icon></div>'
+            '<div class="flex-1 min-w-0"><div class="rounded-xl border border-slate-200'
+            ' bg-white shadow-sm px-4 py-3 text-sm text-slate-500 animate-pulse">'
+            "Caricamento lezione finalizzata…</div></div></div>"
         )
         oob_input = _render_partial(
-            request, "partials/chat_input.html",
+            request,
+            "partials/chat_input.html",
             {"lesson": lesson, "_oob": True},
         )
         return {
@@ -1608,11 +1881,13 @@ def _stream_event_to_sse(
         # so re-rendering the input now lands the user back on the active
         # "Riprova" affordance.
         error_card = _render_partial(
-            request, "partials/chat_error.html",
+            request,
+            "partials/chat_error.html",
             {"lesson": lesson, "error": event.error or "Errore sconosciuto"},
         )
         oob_input = _render_partial(
-            request, "partials/chat_input.html",
+            request,
+            "partials/chat_input.html",
             {"lesson": lesson, "_oob": True},
         )
         return {
@@ -1623,6 +1898,109 @@ def _stream_event_to_sse(
     # Unknown kind — log and skip rather than 500-ing the stream.
     logger.warning("[stream] unhandled StreamEvent.kind=%r", event.kind)
     return None
+
+
+# ----------------------------------------------------------------------------
+# GET /webui/profiles — saved-profile selector partial (htmx target)
+# POST /webui/profiles — create a named saved profile from form data
+# DELETE /webui/profiles/{profile_id} — delete a saved profile
+# ----------------------------------------------------------------------------
+
+
+@router.get(
+    "/profiles",
+    response_class=HTMLResponse,
+    name="webui_profiles_list",
+)
+async def saved_profiles_list(
+    request: Request,
+    user: Optional[User] = Depends(optional_current_user),
+    session: AsyncSession = Depends(get_async_session),
+) -> Response:
+    """Return the saved-profiles selector partial (used by htmx after create/delete)."""
+    if user is None:
+        raise HTTPException(status_code=401)
+
+    result = await session.execute(
+        select(SavedProfile)
+        .where(SavedProfile.owner_id == user.id)
+        .order_by(SavedProfile.created_at.desc())
+    )
+    saved_profiles = list(result.scalars().all())
+    return templates.TemplateResponse(
+        "partials/saved_profiles.html",
+        {"request": request, "saved_profiles": saved_profiles},
+    )
+
+
+@router.post(
+    "/profiles",
+    response_class=HTMLResponse,
+    name="webui_profiles_create",
+)
+async def saved_profiles_create(
+    request: Request,
+    user: Optional[User] = Depends(optional_current_user),
+    session: AsyncSession = Depends(get_async_session),
+) -> Response:
+    """Save the current form state as a named profile."""
+    if user is None:
+        raise HTTPException(status_code=401)
+
+    form = await request.form()
+    name_raw = form.get("profile_name")
+    name = name_raw.strip() if isinstance(name_raw, str) and name_raw.strip() else None
+    if not name:
+        raise HTTPException(status_code=422, detail="Nome profilo obbligatorio")
+
+    try:
+        profile_dict = form_to_profile_dict(form)
+    except Exception as exc:
+        logger.warning("SavedProfile form parse failed: %s", exc)
+        raise HTTPException(status_code=422, detail="Profilo non valido") from exc
+
+    sp = SavedProfile(owner_id=user.id, name=name, profile_json=profile_dict)
+    session.add(sp)
+    await session.commit()
+
+    result = await session.execute(
+        select(SavedProfile)
+        .where(SavedProfile.owner_id == user.id)
+        .order_by(SavedProfile.created_at.desc())
+    )
+    saved_profiles = list(result.scalars().all())
+    return templates.TemplateResponse(
+        "partials/saved_profiles.html",
+        {"request": request, "saved_profiles": saved_profiles},
+    )
+
+
+@router.delete(
+    "/profiles/{profile_id}",
+    name="webui_profiles_delete",
+)
+async def saved_profiles_delete(
+    profile_id: uuid.UUID,
+    user: Optional[User] = Depends(optional_current_user),
+    session: AsyncSession = Depends(get_async_session),
+) -> Response:
+    """Delete a saved profile and return the updated partial."""
+    if user is None:
+        raise HTTPException(status_code=401)
+
+    result = await session.execute(
+        select(SavedProfile).where(
+            SavedProfile.id == profile_id,
+            SavedProfile.owner_id == user.id,
+        )
+    )
+    sp = result.scalar_one_or_none()
+    if sp is None:
+        raise HTTPException(status_code=404)
+
+    await session.delete(sp)
+    await session.commit()
+    return Response(status_code=204)
 
 
 # ----------------------------------------------------------------------------
@@ -1655,9 +2033,7 @@ def _render_partial(request: Request, template_name: str, ctx: dict) -> str:
     here so each event is exactly one ``data:`` line — robust against both
     the spec and every htmx-SSE version we've tested.
     """
-    rendered = templates.get_template(template_name).render(
-        {"request": request, **ctx}
-    )
+    rendered = templates.get_template(template_name).render({"request": request, **ctx})
     # Collapse the raw HTML to a single line. This loses indentation but
     # preserves text node whitespace via the elements' own block layout.
     return " ".join(rendered.split())

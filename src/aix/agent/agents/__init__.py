@@ -9,15 +9,9 @@ Each agent has a specialized role in the lesson planning pipeline:
 - GraphUpdaterAgent: (Phase 3) Updates knowledge graph with new content
 """
 
+from aix.agent.agents.critic_agent import CriticAgent
 from aix.agent.agents.planner_agent import PlannerAgent
 from aix.agent.agents.retriever_agent import RetrieverAgent
 from aix.agent.agents.writer_agent import WriterAgent
-from aix.agent.agents.critic_agent import CriticAgent
 
-__all__ = [
-    "PlannerAgent",
-    "RetrieverAgent",
-    "WriterAgent",
-    "CriticAgent"
-]
-
+__all__ = ["PlannerAgent", "RetrieverAgent", "WriterAgent", "CriticAgent"]

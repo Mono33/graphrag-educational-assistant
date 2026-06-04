@@ -134,13 +134,17 @@ select = [
 ignore = [
     "E501",  # line too long (let the formatter handle wrapping)
     "B008",  # function call in default arg (FastAPI Depends() pattern is intentional)
-    "UP007", # `Optional[X]` vs `X | None` — keep both styles during transition
+    "UP007", # Union[X, Y] vs X | Y — keep both styles during transition
+    "UP045", # Optional[X] vs X | None — keep both styles (new name for UP007 in ruff >=0.6)
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["F401", "F811"]  # allow unused-import / redefined-fixture in tests
-"apps/**/*.py" = ["E402"]           # imports after sys.path manipulation (legacy; safe to allow)
-"scripts/**/*.py" = ["E402", "T20"] # scripts are allowed to print
+"tests/**/*.py" = ["F401", "F811"]          # allow unused-import / redefined-fixture in tests
+"apps/**/*.py" = ["E402"]                    # imports after sys.path manipulation (legacy; safe to allow)
+"scripts/**/*.py" = ["E402", "T20"]          # scripts are allowed to print
+"src/aix/api/main.py" = ["E402"]             # intentional deferred imports for soft-loading optional subsystems
+"src/aix/agent/agents/critic_agent.py" = ["E402"]  # imports follow module-level constants that depend on os.getenv
+"src/aix/agent/graph/nodes.py" = ["E402"]           # RetrievalGraderAgent imported eagerly after helper to fail fast
 
 [tool.ruff.format]
 quote-style = "double"

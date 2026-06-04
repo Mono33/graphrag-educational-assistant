@@ -59,13 +59,17 @@ def _log_tls_remediation(base_url: str, exc: BaseException) -> None:
         "its root CA into the venv's certifi bundle, "
         "(4) on Windows, run `python -m pip install --upgrade pip-system-certs` to "
         "let Python trust the OS certificate store.",
-        base_url, exc,
+        base_url,
+        exc,
     )
 
 
 def _probe_enabled() -> bool:
     return (os.getenv("AIX_LLM_PROBE_ENABLED") or "true").strip().lower() in (
-        "1", "true", "yes", "on"
+        "1",
+        "true",
+        "yes",
+        "on",
     )
 
 
@@ -140,29 +144,37 @@ async def _probe_once() -> None:
         logger.error(
             "[llm_probe] ❌ Cannot connect to LLM endpoint %s (%s: %s). "
             "Check internet/VPN/firewall. Agent runs will fail with 'Connection error.'",
-            base_url, exc.__class__.__name__, exc,
+            base_url,
+            exc.__class__.__name__,
+            exc,
         )
         return
     except httpx.ReadTimeout as exc:
         logger.error(
             "[llm_probe] ❌ Read timeout against %s after %.1fs (%s). "
             "Endpoint reachable but unresponsive — likely upstream incident.",
-            base_url, _PROBE_TIMEOUT_S, exc,
+            base_url,
+            _PROBE_TIMEOUT_S,
+            exc,
         )
         return
     except Exception as exc:  # noqa: BLE001 — defensive catch-all
         logger.error(
             "[llm_probe] ❌ Unexpected probe failure against %s (%s: %s). "
             "Falling back to opaque 'Connection error.' if agent runs are attempted.",
-            base_url, exc.__class__.__name__, exc,
+            base_url,
+            exc.__class__.__name__,
+            exc,
         )
         return
 
     if resp.status_code == 200:
         logger.info(
-            "[llm_probe] ✅ LLM endpoint reachable: %s status=200 elapsed=%dms "
-            "model=%r api_key=%s",
-            base_url, elapsed_ms, model, _redact(api_key),
+            "[llm_probe] ✅ LLM endpoint reachable: %s status=200 elapsed=%dms model=%r api_key=%s",
+            base_url,
+            elapsed_ms,
+            model,
+            _redact(api_key),
         )
         return
 
@@ -171,16 +183,20 @@ async def _probe_once() -> None:
             "[llm_probe] ❌ Authentication failed (HTTP %d) against %s — API key %s is "
             "rejected. Agent runs will fail. Verify OPENROUTER_API_KEY / OPENAI_API_KEY "
             "in .env (key may be revoked, expired, or scoped to a different project).",
-            resp.status_code, base_url, _redact(api_key),
+            resp.status_code,
+            base_url,
+            _redact(api_key),
         )
         return
 
     # Any other 4xx/5xx — log the body preview so the cause is obvious.
     body_preview = (resp.text or "")[:240]
     logger.warning(
-        "[llm_probe] ⚠️ LLM endpoint returned HTTP %d against %s elapsed=%dms — "
-        "body preview: %r",
-        resp.status_code, base_url, elapsed_ms, body_preview,
+        "[llm_probe] ⚠️ LLM endpoint returned HTTP %d against %s elapsed=%dms — body preview: %r",
+        resp.status_code,
+        base_url,
+        elapsed_ms,
+        body_preview,
     )
 
 

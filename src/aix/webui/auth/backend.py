@@ -35,7 +35,6 @@ from fastapi_users.authentication import (
 
 from aix.webui.auth.manager import _AUTH_SECRET
 
-
 # Cookie name. Distinct from the API session names (none yet) so we don't
 # collide with a future SSO cookie shipped by the public /api/v1 surface.
 _COOKIE_NAME = os.getenv("WEBUI_COOKIE_NAME", "aix_webui_auth")

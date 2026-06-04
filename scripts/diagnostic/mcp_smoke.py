@@ -67,7 +67,7 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 
 def _ensure_pythonpath() -> None:
@@ -134,7 +134,7 @@ async def _print_listing() -> None:
     print()
 
 
-async def _call_tool(name: str, arguments: Dict[str, Any]) -> None:
+async def _call_tool(name: str, arguments: dict[str, Any]) -> None:
     from aix.mcp import build_mcp_server
 
     mcp = build_mcp_server()
@@ -186,7 +186,7 @@ async def _phase2_verify() -> None:
         else:
             chunks = [result]
 
-        out: List[Any] = []
+        out: list[Any] = []
         for chunk in chunks:
             text = getattr(chunk, "text", None) or getattr(chunk, "content", None)
             if text is None:
@@ -209,7 +209,7 @@ async def _phase2_verify() -> None:
                     if not isinstance(d, dict):
                         continue
                     name = d.get("domain", "?")
-                    extras: List[str] = []
+                    extras: list[str] = []
                     if "label_categories" in d:
                         extras.append(f"label_categories={len(d.get('label_categories') or {})}")
                     if "methodology_categories" in d:
@@ -436,7 +436,7 @@ async def _phase4_verify() -> None:
     print(f"\nTool surface: {len(seen)} total, agent.run_lesson_plan present (OK)")
 
     query = "Crea una breve lezione sull'attenzione selettiva per la scuola primaria"
-    print(f"\nRunning agent (max_revisions=0, domain=neuro):")
+    print("\nRunning agent (max_revisions=0, domain=neuro):")
     print(f"   query={query!r}")
     print("   This will take ~30-90 seconds (LLM round-trips).")
     print("-" * 72)
@@ -479,7 +479,7 @@ async def _phase4_verify() -> None:
     if lesson_md:
         first_lines = "\n    ".join(lesson_md.splitlines()[:3])
         print(f"    preview:\n    {first_lines}")
-    print(f"\n  meta:")
+    print("\n  meta:")
     print(f"    duration_seconds      = {meta.get('duration_seconds')}")
     print(f"    approved              = {meta.get('approved')}")
     print(f"    revision_count        = {meta.get('revision_count')}")
@@ -487,12 +487,12 @@ async def _phase4_verify() -> None:
     print(f"    recommendations_count = {meta.get('recommendations_count')}")
     print(f"    media_counts          = {meta.get('media_counts')}")
     print(f"    search_queries_count  = {meta.get('search_queries_count')}")
-    print(f"\n  planner:")
+    print("\n  planner:")
     print(f"    intent_label   = {planner.get('intent_label')!r}")
     print(f"    scope_label    = {planner.get('scope_label')!r}")
     print(f"    key_concepts   = {planner.get('key_concepts')}")
     print(f"    search_queries = {len(planner.get('search_queries') or [])} queries")
-    print(f"\n  retriever:")
+    print("\n  retriever:")
     print(f"    nodes_count           = {retriever.get('nodes_count')}")
     print(f"    relationships_count   = {retriever.get('relationships_count')}")
     print(f"    recommendations_count = {retriever.get('recommendations_count')}")
@@ -589,7 +589,7 @@ async def _phase5_verify(
                 f"Body: {r.text[:160]}"
             )
         else:
-            print(f"[2/5] Unauth /mcp/: 401 (auth correctly enforced)")
+            print("[2/5] Unauth /mcp/: 401 (auth correctly enforced)")
 
         # 3. Login via /auth/jwt/login (form-encoded).
         try:
@@ -705,7 +705,7 @@ async def _read_resource(uri: str) -> None:
             print(text)
 
 
-async def _render_prompt(name: str, arguments: Dict[str, Any]) -> None:
+async def _render_prompt(name: str, arguments: dict[str, Any]) -> None:
     """Render an MCP prompt template and pretty-print the message envelope."""
     from aix.mcp import build_mcp_server
 
@@ -731,7 +731,7 @@ async def _render_prompt(name: str, arguments: Dict[str, Any]) -> None:
         print(repr(result))
         return
 
-    serialisable: List[Dict[str, Any]] = []
+    serialisable: list[dict[str, Any]] = []
     for m in messages:
         if hasattr(m, "model_dump"):
             serialisable.append(m.model_dump())
@@ -976,7 +976,7 @@ def main() -> None:
         return
 
     if args.render_prompt:
-        prompt_args: Dict[str, Any] = {}
+        prompt_args: dict[str, Any] = {}
         if args.topic is not None:
             prompt_args["topic"] = args.topic
         if args.render_prompt == "educational-query":
@@ -998,7 +998,7 @@ def main() -> None:
         asyncio.run(_print_listing())
         return
 
-    arguments: Dict[str, Any]
+    arguments: dict[str, Any]
     if args.call.startswith("media."):
         arguments = {}
         if args.call == "media.lookup_curated":

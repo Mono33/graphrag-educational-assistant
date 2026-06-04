@@ -91,19 +91,19 @@
 
       <header class="aix-agent-card-header aix-agent-card-header--retriever">
         <div class="aix-agent-card-title">
-          <strong>Retriever Agent</strong>
-          <span class="aix-agent-card-role">· interroga il Knowledge Graph e i media curati</span>
+          <strong>Ricerca nel Knowledge Graph</strong>
+          <span class="aix-agent-card-role">· {{ p.get('nodes_count', 0) }} concetti trovati</span>
         </div>
-        <span class="aix-pill aix-pill-neutral">retrieve</span>
+        <span class="aix-arched-phase">Knowledge Retrieval</span>
       </header>
 
-      <div class="aix-agent-card-body" style="display:flex; flex-direction:column; gap:12px;">
+      <div class="aix-agent-card-body aix-col-12">
 
         {# Tool-call header: shows we explicitly hit GraphRAG #}
         <div class="aix-tool-pill">
-          <wa-icon name="wrench" style="font-size:0.8rem;"></wa-icon>
+          <wa-icon name="wrench" class="aix-fs-08"></wa-icon>
           <code>graphrag.search</code>
-          <span style="color:var(--aix-border-medium);">·</span>
+          <span class="aix-color-border-medium">·</span>
           <span>{{ p.get('retrieval_confidence') or 'medium' }} confidence</span>
         </div>
 
@@ -132,7 +132,7 @@
         {# Top-N concept titles #}
         {% if p.get('top_concepts') %}
           <div>
-            <div class="aix-section-label" style="margin-bottom:6px;">
+            <div class="aix-section-label mb-1.5">
               Concetti più rilevanti recuperati
             </div>
             <div class="aix-chip-row">
@@ -275,10 +275,9 @@
           <div class="aix-outcome-callout aix-outcome-callout--{{ _variant }}">
 
             {# ── Header: icon + headline + Tentativi badge ───────────── #}
-            <div style="display:flex; align-items:baseline; justify-content:space-between;
-                        gap:8px; flex-wrap:wrap;">
+            <div class="flex items-baseline justify-between flex-wrap gap-2">
               <span class="aix-outcome-callout-headline">
-                <span style="font-size:14px; line-height:1;">{{ _icon }}</span>
+                <span class="aix-fs-14 aix-lh-1">{{ _icon }}</span>
                 <span>{{ _headline }}</span>
               </span>
               {# CORE 2 #9.UX-2 — "Tentativi: N/M" badge.
@@ -307,8 +306,7 @@
                 (UDL) e variabilità dell'apprendimento, non nel contenuto
                 disciplinare specifico. Per questa richiesta ho integrato:
               </p>
-              <ul class="aix-outcome-callout-body"
-                  style="margin:6px 0 0 18px; padding:0; font-size:13px; line-height:1.5;">
+              <ul class="aix-outcome-callout-body aix-fs-13 aix-outcome-list">
                 <li>
                   <strong>Pedagogia &amp; profilo apprendenti</strong> dal KG:
                   {{ p.get('nodes_count', 0) }} concetti,
@@ -365,12 +363,12 @@
                *what query the system reformulated to*. The attempt
                index is included when known (>1) for traceability. #}
             {% if p.get('retrieval_rewritten_query') %}
-              <div style="margin-top:8px; font-size:11.5px; color:var(--aix-text-secondary);">
-                <span style="font-style:italic; color:var(--aix-text-tertiary);">
+              <div class="aix-fs-11-5 aix-color-secondary mt-2">
+                <span class="aix-color-tertiary italic">
                   Query riformulata{% if (p.get('retrieval_attempts') or 0) > 1 %}
                     al {{ p.retrieval_attempts }}° tentativo{% endif %}:
                 </span>
-                <code style="margin-left:4px;">{{ p.retrieval_rewritten_query }}</code>
+                <code class="aix-ml-4px">{{ p.retrieval_rewritten_query }}</code>
               </div>
             {% endif %}
 
@@ -391,7 +389,7 @@
           </div>
         {% endif %}
 
-        <p style="font-size:12px; font-style:italic; color:var(--aix-text-tertiary); margin:0;">
+        <p class="aix-footnote m-0">
           I dettagli completi (video curati, articoli, manuali OER) sono
           disponibili nel pannello "Risorse multimediali" a destra.
         </p>
@@ -408,7 +406,7 @@
        generic label when ``domain_label_short`` is unknown so legacy
        state diffs render identically to pre-#9.UX-5. #}
     <div class="aix-agent-footer-label">
-      <wa-icon name="diagram-project" style="font-size:0.75rem;"></wa-icon>
+      <wa-icon name="diagram-project" class="aix-fs-sm"></wa-icon>
       {% if p.get('domain_label_short') %}
         <span>Fonte: Knowledge graph della didattica {{ p.domain_label_short }} + risorse multimediali curate</span>
       {% else %}

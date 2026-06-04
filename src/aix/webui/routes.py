@@ -47,7 +47,7 @@ from aix.webui.lessons.display import (
     lesson_to_row,
     today_label_it,
 )
-from aix.webui.lessons.models import Lesson
+from aix.webui.lessons.models import Lesson, SavedProfile
 
 logger = logging.getLogger(__name__)
 
@@ -64,9 +64,8 @@ logger = logging.getLogger(__name__)
 # table — no new endpoints, no schema changes, no agent / SSE touches.
 # ---------------------------------------------------------------------------
 
-async def _build_dashboard_context(
-    session: AsyncSession, user: Optional[User]
-) -> dict[str, Any]:
+
+async def _build_dashboard_context(session: AsyncSession, user: Optional[User]) -> dict[str, Any]:
     """
     Assemble the dashboard's per-section context.
 
@@ -80,18 +79,18 @@ async def _build_dashboard_context(
         - activity       : last 5 activity events derived from updated_at
     """
     empty: dict[str, Any] = {
-        "lesson_count":   0,
-        "resume_lesson":  None,
+        "lesson_count": 0,
+        "resume_lesson": None,
         "recent_lessons": [],
-        "activity":       [],
-        "today_label":    today_label_it(),
+        "activity": [],
+        "today_label": today_label_it(),
     }
     if user is None:
         return empty
 
-    total = await session.scalar(
-        select(func.count(Lesson.id)).where(Lesson.owner_id == user.id)
-    ) or 0
+    total = (
+        await session.scalar(select(func.count(Lesson.id)).where(Lesson.owner_id == user.id)) or 0
+    )
 
     resume_q = await session.execute(
         select(Lesson)
@@ -102,28 +101,31 @@ async def _build_dashboard_context(
     resume = resume_q.scalar_one_or_none()
 
     recent_q = await session.execute(
-        select(Lesson)
-        .where(Lesson.owner_id == user.id)
-        .order_by(Lesson.updated_at.desc())
-        .limit(3)
+        select(Lesson).where(Lesson.owner_id == user.id).order_by(Lesson.updated_at.desc()).limit(3)
     )
     recent = list(recent_q.scalars().all())
 
     activity_q = await session.execute(
-        select(Lesson)
-        .where(Lesson.owner_id == user.id)
-        .order_by(Lesson.updated_at.desc())
-        .limit(5)
+        select(Lesson).where(Lesson.owner_id == user.id).order_by(Lesson.updated_at.desc()).limit(5)
     )
     activity_rows = list(activity_q.scalars().all())
 
+    profiles_q = await session.execute(
+        select(SavedProfile)
+        .where(SavedProfile.owner_id == user.id)
+        .order_by(SavedProfile.created_at.desc())
+    )
+    saved_profiles = list(profiles_q.scalars().all())
+
     return {
-        "lesson_count":   int(total),
-        "resume_lesson":  lesson_to_row(resume) if resume is not None else None,
-        "recent_lessons": [lesson_to_row(l) for l in recent],
-        "activity":       [activity_event_for_lesson(l) for l in activity_rows],
-        "today_label":    today_label_it(),
+        "lesson_count": int(total),
+        "resume_lesson": lesson_to_row(resume) if resume is not None else None,
+        "recent_lessons": [lesson_to_row(lesson) for lesson in recent],
+        "activity": [activity_event_for_lesson(lesson) for lesson in activity_rows],
+        "today_label": today_label_it(),
+        "saved_profiles": saved_profiles,
     }
+
 
 # Resolve template + static directories relative to this package, so the webui
 # works regardless of where uvicorn is launched from.

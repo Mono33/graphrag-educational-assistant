@@ -18,7 +18,6 @@ import json
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Minimal MCP "initialize" envelope — the very first request a real client
 # sends. We use it as our auth probe because:

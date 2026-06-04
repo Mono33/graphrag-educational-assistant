@@ -8,8 +8,8 @@ import json
 import logging
 import os
 import re
-from typing import Optional, Dict, Any
 from dataclasses import dataclass
+from typing import Optional
 
 # Fast, cheap model for the Critic — it only outputs ~300 tokens of structured
 # JSON; using the full LLM_MODEL is overkill and adds 25+ seconds of prefill.
@@ -18,7 +18,7 @@ from dataclasses import dataclass
 _CRITIC_MODEL: Optional[str] = (
     os.getenv("AIX_CRITIC_MODEL")
     or os.getenv("TEXT2CYPHER_MODEL")
-    or None          # None → build_completion_kwargs uses self.model (LLM_MODEL)
+    or None  # None → build_completion_kwargs uses self.model (LLM_MODEL)
 )
 
 # Critic reads back the lesson it just received — truncate to avoid massive
@@ -40,24 +40,28 @@ def _truncate_lesson_for_critic(text: str) -> str:
     omitted = len(text) - _CRITIC_LESSON_MAX_CHARS
     return text[:head] + f"\n\n...[{omitted} chars omitted for brevity]...\n\n" + text[-tail:]
 
-from openai import AsyncOpenAI
-from aix.core.config import config as app_config, extract_response_content
 
+from openai import AsyncOpenAI
+
+from aix.agent.agents.retriever_agent import RetrievalResult
 from aix.agent.prompts.critic_prompt import (
     get_critic_prompts,
     is_lesson_intent,
-    CRITIC_SYSTEM_PROMPT,
-    CRITIC_USER_TEMPLATE,
 )
-from aix.agent.agents.retriever_agent import RetrievalResult
+from aix.core.config import config as app_config
+from aix.core.config import extract_response_content
 
 # Optional domain extensions - fails gracefully if not available
 try:
     from aix.agent.configs.domain_prompts import get_domain_extension
+
     DOMAIN_EXTENSIONS_AVAILABLE = True
 except ImportError:
     DOMAIN_EXTENSIONS_AVAILABLE = False
-    get_domain_extension = lambda d, a: ""  # Fallback: no extension
+
+    def get_domain_extension(d, a):
+        return ""  # Fallback: no extension
+
 
 logger = logging.getLogger(__name__)
 
@@ -92,14 +96,15 @@ def _extract_json(content: str) -> dict:
 @dataclass
 class CritiqueResult:
     """Result of a lesson plan critique"""
-    scores: Dict[str, int]
+
+    scores: dict[str, int]
     average_score: float
     decision: str  # "APPROVE" or "REVISE"
     strengths: list
     weaknesses: list
     revision_instructions: Optional[str]
     summary: str
-    
+
     @property
     def approved(self) -> bool:
         return self.decision == "APPROVE"
@@ -108,30 +113,30 @@ class CritiqueResult:
 class CriticAgent:
     """
     Critic Agent - Reviews and evaluates lesson plans.
-    
+
     Responsibilities:
     1. Evaluate lesson plans on multiple criteria
     2. Verify content is grounded in retrieved evidence
     3. Decide whether to approve or request revision
     4. Provide specific feedback for improvements
     """
-    
+
     def __init__(self, model: str = "gpt-4o"):
         """
         Initialize the Critic Agent.
-        
+
         Args:
             model: OpenAI model to use for evaluation
         """
         self.model = model
         self._client: Optional[AsyncOpenAI] = None
-    
+
     def _get_client(self) -> AsyncOpenAI:
         """Lazy initialization of OpenAI client"""
         if self._client is None:
             self._client = app_config.openai.get_async_client()
         return self._client
-    
+
     async def critique(
         self,
         lesson_plan: str,
@@ -141,11 +146,11 @@ class CriticAgent:
         max_revisions: int = 2,
         domain: str = "neuro",
         language: str = "it",
-        query_intent: str = "lesson_creation"
+        query_intent: str = "lesson_creation",
     ) -> CritiqueResult:
         """
         Critique content and decide whether to approve.
-        
+
         Args:
             lesson_plan: The content to review (lesson plan or informational content)
             teacher_query: Original teacher request
@@ -155,17 +160,18 @@ class CriticAgent:
             domain: Knowledge domain
             language: Language of the content
             query_intent: Detected query intent for appropriate evaluation
-            
+
         Returns:
             CritiqueResult with scores, decision, and feedback
         """
-        content_type = "lesson plan" if is_lesson_intent(query_intent) else f"{query_intent} content"
-        
-        logger.info(
-            f"[CriticAgent] Reviewing {content_type} "
-            f"(revision {revision_count}/{max_revisions})..."
+        content_type = (
+            "lesson plan" if is_lesson_intent(query_intent) else f"{query_intent} content"
         )
-        
+
+        logger.info(
+            f"[CriticAgent] Reviewing {content_type} (revision {revision_count}/{max_revisions})..."
+        )
+
         # Auto-approve if max revisions reached
         if revision_count >= max_revisions:
             logger.info("[CriticAgent] Max revisions reached, auto-approving")
@@ -176,11 +182,11 @@ class CriticAgent:
                 strengths=["Multiple revision cycles completed"],
                 weaknesses=[],
                 revision_instructions=None,
-                summary="Auto-approved after maximum revision cycles"
+                summary="Auto-approved after maximum revision cycles",
             )
-        
+
         client = self._get_client()
-        
+
         # Get intent-specific prompts
         system_prompt, user_template = get_critic_prompts(query_intent)
 
@@ -204,7 +210,9 @@ class CriticAgent:
 
         logger.debug(
             "[CriticAgent] input sizes: lesson=%d→%d chars, context=%d chars, model=%s",
-            len(lesson_plan), len(lesson_for_critic), len(context_text),
+            len(lesson_plan),
+            len(lesson_for_critic),
+            len(context_text),
             _CRITIC_MODEL or "LLM_MODEL",
         )
 
@@ -217,7 +225,7 @@ class CriticAgent:
                 revision_count=revision_count,
                 max_revisions=max_revisions,
                 domain=domain,
-                language="Italian" if language == "it" else "English"
+                language="Italian" if language == "it" else "English",
             )
         else:
             user_prompt = user_template.format(
@@ -228,7 +236,7 @@ class CriticAgent:
                 revision_count=revision_count,
                 max_revisions=max_revisions,
                 domain=domain,
-                language="Italian" if language == "it" else "English"
+                language="Italian" if language == "it" else "English",
             )
 
         try:
@@ -247,14 +255,14 @@ class CriticAgent:
             response = await client.chat.completions.create(
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
+                    {"role": "user", "content": user_prompt},
                 ],
-                **completion_kwargs
+                **completion_kwargs,
             )
 
             content = extract_response_content(response, logger)
             critique_data = _extract_json(content)
-            
+
             result = CritiqueResult(
                 scores=critique_data.get("scores", {}),
                 average_score=critique_data.get("average_score", 3.0),
@@ -262,16 +270,15 @@ class CriticAgent:
                 strengths=critique_data.get("strengths", []),
                 weaknesses=critique_data.get("weaknesses", []),
                 revision_instructions=critique_data.get("revision_instructions"),
-                summary=critique_data.get("summary", "")
+                summary=critique_data.get("summary", ""),
             )
-            
+
             logger.info(
-                f"[CriticAgent] Decision: {result.decision} "
-                f"(score: {result.average_score:.1f})"
+                f"[CriticAgent] Decision: {result.decision} (score: {result.average_score:.1f})"
             )
-            
+
             return result
-            
+
         except json.JSONDecodeError as e:
             # CORE 2 #11a (2026-05-09): structured parse-error log + env-gated
             # behaviour. The legacy default is ``approve`` (today's silent
@@ -285,7 +292,9 @@ class CriticAgent:
             mode = (os.getenv("AIX_CRITIC_PARSE_ERROR_BEHAVIOR") or "approve").strip().lower()
             logger.error(
                 "event=agent_parse_error agent=critic mode=%s err=%s raw_preview=%r",
-                mode, e, raw_preview,
+                mode,
+                e,
+                raw_preview,
             )
 
             if mode == "raise":
@@ -319,12 +328,12 @@ class CriticAgent:
                 strengths=[],
                 weaknesses=["Could not parse critique response"],
                 revision_instructions=None,
-                summary="Approved due to parsing error"
+                summary="Approved due to parsing error",
             )
         except Exception as e:
             logger.error(f"[CriticAgent] Critique failed: {e}")
             raise
-    
+
     def critique_sync(
         self,
         lesson_plan: str,
@@ -333,12 +342,19 @@ class CriticAgent:
         revision_count: int = 0,
         max_revisions: int = 2,
         domain: str = "neuro",
-        language: str = "it"
+        language: str = "it",
     ) -> CritiqueResult:
         """Synchronous version of critique()"""
         import asyncio
-        return asyncio.run(self.critique(
-            lesson_plan, teacher_query, retrieval_result,
-            revision_count, max_revisions, domain, language
-        ))
 
+        return asyncio.run(
+            self.critique(
+                lesson_plan,
+                teacher_query,
+                retrieval_result,
+                revision_count,
+                max_revisions,
+                domain,
+                language,
+            )
+        )

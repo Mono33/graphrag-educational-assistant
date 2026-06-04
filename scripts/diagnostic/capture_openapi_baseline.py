@@ -22,7 +22,6 @@ import argparse
 import os
 import sys
 from pathlib import Path
-from typing import List, Tuple
 
 
 def _import_app():
@@ -41,12 +40,12 @@ def _import_app():
     return app
 
 
-def _collect_paths(app) -> Tuple[str, str, List[Tuple[str, str, List[str]]]]:
+def _collect_paths(app) -> tuple[str, str, list[tuple[str, str, list[str]]]]:
     """Return (title, version, [(method, path, tags)]) sorted alphabetically."""
     spec = app.openapi()
     title = str(spec.get("info", {}).get("title", "<unknown>"))
     version = str(spec.get("info", {}).get("version", "<unknown>"))
-    rows: List[Tuple[str, str, List[str]]] = []
+    rows: list[tuple[str, str, list[str]]] = []
     for path, methods in spec.get("paths", {}).items():
         for method, op in methods.items():
             if method.lower() not in {"get", "post", "put", "patch", "delete"}:
@@ -59,7 +58,7 @@ def _collect_paths(app) -> Tuple[str, str, List[Tuple[str, str, List[str]]]]:
 
 def _format(title: str, version: str, rows, label: str) -> str:
     width_path = max((len(p) for _, p, _ in rows), default=20) + 2
-    lines: List[str] = [
+    lines: list[str] = [
         f"TITLE  : {title}",
         f"VERSION: {version}",
     ]

@@ -565,8 +565,8 @@ Cite all sources (Knowledge Graph methodologies + external content) in the `*Fon
 At the end of EVERY response, include:
 
 ---
-⚠️ **Nota sulle fonti**: Il contenuto disciplinare (argomento specifico) proviene da fonti esterne 
-(Wikipedia, pubblicazioni accademiche) e non è stato verificato dal Knowledge Graph FEM. 
+⚠️ **Nota sulle fonti**: Il contenuto disciplinare (argomento specifico) proviene da fonti esterne
+(Wikipedia, pubblicazioni accademiche) e non è stato verificato dal Knowledge Graph FEM.
 Le strategie pedagogiche sono basate sul Knowledge Graph di neuroscienze dell'apprendimento.
 
 ### Language
@@ -671,18 +671,21 @@ INTENT_USER_TEMPLATES = {
 def get_writer_prompts(intent: str, scope_status: str = "in_scope") -> tuple:
     """
     Get the appropriate system and user prompts for a given intent and scope.
-    
+
     Args:
         intent: Query intent (lesson_creation, definition, etc.)
         scope_status: Scope status ("in_scope", "partial_scope", "out_of_scope")
-        
+
     Returns:
         Tuple of (system_prompt, user_template)
     """
     # NEW Phase A: Use hybrid prompts for out-of-scope queries
-    if scope_status in ("partial_scope", "out_of_scope") and intent in ("lesson_creation", "activity_design"):
+    if scope_status in ("partial_scope", "out_of_scope") and intent in (
+        "lesson_creation",
+        "activity_design",
+    ):
         return WRITER_SYSTEM_PROMPT_HYBRID, WRITER_USER_TEMPLATE_HYBRID
-    
+
     # Standard intent-based prompts for in-scope queries
     system_prompt = INTENT_SYSTEM_PROMPTS.get(intent, WRITER_SYSTEM_PROMPT_LESSON)
     user_template = INTENT_USER_TEMPLATES.get(intent, WRITER_USER_TEMPLATE_LESSON)
@@ -692,60 +695,62 @@ def get_writer_prompts(intent: str, scope_status: str = "in_scope") -> tuple:
 def format_external_resources(external_resources: dict) -> tuple:
     """
     Format external resources for inclusion in hybrid prompts.
-    
+
     Args:
         external_resources: Dict with wikipedia, papers, oer_textbooks, etc.
-        
+
     Returns:
         Tuple of (wikipedia_content, papers_content, oer_content)
     """
     # Format Wikipedia content
     wikipedia_content = "Nessun contenuto Wikipedia disponibile."
-    wiki_items = external_resources.get('wikipedia', [])
+    wiki_items = external_resources.get("wikipedia", [])
     if wiki_items:
         wiki_lines = []
         for w in wiki_items[:2]:
             wiki_lines.append(f"**{w.get('title', 'N/A')}**")
-            wiki_lines.append(w.get('summary', '')[:400])
-            if w.get('url'):
+            wiki_lines.append(w.get("summary", "")[:400])
+            if w.get("url"):
                 wiki_lines.append(f"Fonte: {w['url']}")
             wiki_lines.append("")
-        wikipedia_content = '\n'.join(wiki_lines)
-    
+        wikipedia_content = "\n".join(wiki_lines)
+
     # Format academic papers
     papers_content = "Nessun paper accademico disponibile."
-    papers = external_resources.get('papers', [])
+    papers = external_resources.get("papers", [])
     if papers:
         paper_lines = []
         for p in papers[:3]:
-            authors = ', '.join(p.get('authors', [])[:2])
-            if len(p.get('authors', [])) > 2:
-                authors += ' et al.'
-            year = p.get('year', 'N/A')
-            title = p.get('title', 'N/A')
+            authors = ", ".join(p.get("authors", [])[:2])
+            if len(p.get("authors", [])) > 2:
+                authors += " et al."
+            year = p.get("year", "N/A")
+            title = p.get("title", "N/A")
             paper_lines.append(f"- **{title}** ({authors}, {year})")
-            if p.get('abstract'):
+            if p.get("abstract"):
                 paper_lines.append(f"  {p['abstract'][:200]}...")
-        papers_content = '\n'.join(paper_lines)
-    
+        papers_content = "\n".join(paper_lines)
+
     # Format OER Textbooks (Domain Expert Approved)
     oer_content = "Nessun libro di testo aperto disponibile."
-    textbooks = external_resources.get('oer_textbooks', [])
+    textbooks = external_resources.get("oer_textbooks", [])
     if textbooks:
         oer_lines = ["**📚 Risorse OER (approvate da esperti di dominio):**"]
         for t in textbooks[:3]:
-            title = t.get('title', 'N/A')
-            source = t.get('source', 'OER')
-            url = t.get('url', '')
-            license_type = t.get('license', 'CC BY')
-            
+            title = t.get("title", "N/A")
+            source = t.get("source", "OER")
+            url = t.get("url", "")
+            license_type = t.get("license", "CC BY")
+
             if url:
-                oer_lines.append(f"- **[{title}]({url})** (Fonte: {source}, Licenza: {license_type})")
+                oer_lines.append(
+                    f"- **[{title}]({url})** (Fonte: {source}, Licenza: {license_type})"
+                )
             else:
                 oer_lines.append(f"- **{title}** (Fonte: {source}, Licenza: {license_type})")
-            
-            if t.get('description'):
+
+            if t.get("description"):
                 oer_lines.append(f"  {t['description'][:150]}...")
-        oer_content = '\n'.join(oer_lines)
-    
+        oer_content = "\n".join(oer_lines)
+
     return wikipedia_content, papers_content, oer_content

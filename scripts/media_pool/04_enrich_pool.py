@@ -51,7 +51,7 @@ def _load_rejected_ids(domain: str) -> dict:
     path = os.path.join(MEDIA_DIR, _REJECTED_FILE_TMPL.format(domain=domain))
     if not os.path.exists(path):
         return {}
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -306,7 +306,7 @@ def enrich_pool(
         return
 
     # Read metadata header to preserve it
-    with open(pool_path, "r", encoding="utf-8") as f:
+    with open(pool_path, encoding="utf-8") as f:
         meta_header = json.load(f)
     model = meta_header.get("generated_by", "unknown")
     save_pool(pool_path, domain, model, entries)

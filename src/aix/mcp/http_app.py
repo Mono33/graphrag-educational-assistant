@@ -42,7 +42,6 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +94,7 @@ def _build_jwt_verifier():
     """
     try:
         from fastmcp.server.auth.providers.jwt import JWTVerifier
+
         from aix.webui.auth.manager import _AUTH_SECRET
     except Exception as exc:  # pragma: no cover - defensive
         logger.warning("[MCP] Could not build JWTVerifier: %s", exc)
@@ -147,8 +147,7 @@ def build_mcp_http_app():
         # consult mcp.auth — see the module docstring above.
         mcp.auth = verifier
         logger.info(
-            "[MCP] HTTP app: JWT Bearer auth ENABLED "
-            "(HS256, aud=fastapi-users:auth, mount=%s)",
+            "[MCP] HTTP app: JWT Bearer auth ENABLED (HS256, aud=fastapi-users:auth, mount=%s)",
             MCP_MOUNT_PATH,
         )
     else:

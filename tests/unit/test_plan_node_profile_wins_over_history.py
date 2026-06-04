@@ -30,7 +30,6 @@ from aix.agent.agents.planner_agent import RetrievalPlan
 from aix.agent.graph import nodes as plan_nodes
 from aix.agent.graph.state import create_initial_state
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

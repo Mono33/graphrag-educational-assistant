@@ -104,6 +104,7 @@ _CONTEXT_MANAGER: Optional[Any] = None
 # DB path resolution
 # ---------------------------------------------------------------------------
 
+
 def _resolve_db_path() -> Path:
     """
     Default: ``<repo_root>/data/agent_threads.db``.
@@ -119,20 +120,21 @@ def _resolve_db_path() -> Path:
         # a plain filesystem path (or ``:memory:``).
         for prefix in ("sqlite+aiosqlite:///", "sqlite:///"):
             if override.startswith(prefix):
-                return Path(override[len(prefix):])
+                return Path(override[len(prefix) :])
         return Path(override)
 
     # Default location, mirroring the webui DB convention. Resolve relative
     # to the package root so the path is stable regardless of cwd uvicorn
     # was launched from.
-    package_dir = Path(__file__).resolve().parents[3]   # …/src/aix → …/src
-    repo_root = package_dir.parent                       # …/graphaixlearning
+    package_dir = Path(__file__).resolve().parents[3]  # …/src/aix → …/src
+    repo_root = package_dir.parent  # …/graphaixlearning
     return repo_root / "data" / "agent_threads.db"
 
 
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 async def get_checkpointer() -> Optional[Any]:
     """
@@ -187,9 +189,9 @@ async def get_checkpointer() -> Optional[Any]:
             db_path.parent.mkdir(parents=True, exist_ok=True)
         except OSError as exc:
             logger.warning(
-                "[checkpointer] cannot create parent dir for %s: %s; "
-                "skipping checkpointer init",
-                db_path, exc,
+                "[checkpointer] cannot create parent dir for %s: %s; skipping checkpointer init",
+                db_path,
+                exc,
             )
             return None
 
@@ -203,7 +205,8 @@ async def get_checkpointer() -> Optional[Any]:
         except Exception as exc:  # noqa: BLE001 — surface any backend init failure
             logger.exception(
                 "[checkpointer] failed to open AsyncSqliteSaver at %s: %s",
-                db_path, exc,
+                db_path,
+                exc,
             )
             return None
 

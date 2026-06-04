@@ -20,52 +20,54 @@ Phase 4: External APIs for real-time content (dynamic, fresh)
 Phase 5: AI Image Generation (DALL-E 3, Mermaid.js, Canva for educational diagrams)
 """
 
-from .media_lookup import MediaLookup, MediaContent
-from .resource_lookup import (
-    ResourceLookup, 
-    ResourceCollection, 
-    ExpertResource,
-    ResourceType,
-    AudienceLevel
-)
-from .image_generator import ImageGenerator, GeneratedImage, DiagramType
-from .mermaid_generator import MermaidGenerator, MermaidResult, MermaidDiagramType
 from .canva_generator import CanvaGenerator, CanvaResult
-from .diagram_factory import (
-    DiagramFactory, 
-    DiagramResult, 
+from .diagram_factory import (  # Alias
+    DiagramFactory,
+    DiagramGeneratorFactory,
+    DiagramResult,
     GeneratorType,
-    DiagramGeneratorFactory  # Alias
+)
+from .image_generator import DiagramType, GeneratedImage, ImageGenerator
+from .media_lookup import MediaContent, MediaLookup
+from .mermaid_generator import MermaidDiagramType, MermaidGenerator, MermaidResult
+from .resource_lookup import (
+    AudienceLevel,
+    ExpertResource,
+    ResourceCollection,
+    ResourceLookup,
+    ResourceType,
 )
 
 __all__ = [
     # Media Lookup (Phase 0)
-    'MediaLookup', 
-    'MediaContent',
-    
+    "MediaLookup",
+    "MediaContent",
     # Resource Lookup (Phase 0b - Expert-Vetted)
-    'ResourceLookup',
-    'ResourceCollection',
-    'ExpertResource',
-    'ResourceType',
-    'AudienceLevel',
+    "ResourceLookup",
+    "ResourceCollection",
+    "ExpertResource",
+    "ResourceType",
+    "AudienceLevel",
 ]
 
-_EXTERNAL_API_EXPORTS = frozenset({
-    "ExternalMediaAPI",
-    "ExternalAPIs",
-    "YouTubeVideo",
-    "WikipediaSummary",
-    "SemanticScholarPaper",
-    "RateLimiter",
-    "USER_AGENT",
-})
+_EXTERNAL_API_EXPORTS = frozenset(
+    {
+        "ExternalMediaAPI",
+        "ExternalAPIs",
+        "YouTubeVideo",
+        "WikipediaSummary",
+        "SemanticScholarPaper",
+        "RateLimiter",
+        "USER_AGENT",
+    }
+)
 
 
 def __getattr__(name: str):
     """Lazy-load external_apis so `python -m aix.agent.media.external_apis` runs without RuntimeWarning."""
     if name in _EXTERNAL_API_EXPORTS:
         from . import external_apis as _ext
+
         return getattr(_ext, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
@@ -73,33 +75,27 @@ def __getattr__(name: str):
 # Re-append external API names to __all__ (kept in one place for readers)
 __all__ = __all__ + [
     # External APIs (Phase 4)
-    'ExternalMediaAPI',
-    'ExternalAPIs',  # Alias
-    'YouTubeVideo',
-    'WikipediaSummary', 
-    'SemanticScholarPaper',
-    'RateLimiter',
-    'USER_AGENT',
-    
+    "ExternalMediaAPI",
+    "ExternalAPIs",  # Alias
+    "YouTubeVideo",
+    "WikipediaSummary",
+    "SemanticScholarPaper",
+    "RateLimiter",
+    "USER_AGENT",
     # DALL-E Generator (Phase 5)
-    'ImageGenerator',
-    'GeneratedImage',
-    'DiagramType',
-    
+    "ImageGenerator",
+    "GeneratedImage",
+    "DiagramType",
     # Mermaid Generator (Phase 5 - FREE)
-    'MermaidGenerator',
-    'MermaidResult',
-    'MermaidDiagramType',
-    
+    "MermaidGenerator",
+    "MermaidResult",
+    "MermaidDiagramType",
     # Canva Generator (Phase 5 - Coming Soon)
-    'CanvaGenerator',
-    'CanvaResult',
-    
+    "CanvaGenerator",
+    "CanvaResult",
     # Diagram Factory (Unified Interface)
-    'DiagramFactory',
-    'DiagramGeneratorFactory',  # Alias
-    'DiagramResult',
-    'GeneratorType',
+    "DiagramFactory",
+    "DiagramGeneratorFactory",  # Alias
+    "DiagramResult",
+    "GeneratorType",
 ]
-
-

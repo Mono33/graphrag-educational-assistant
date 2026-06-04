@@ -10,13 +10,14 @@ Run from the repo root:
     python apps/cli/run_agent.py --domain neuro --language it
 """
 
-import asyncio
 import argparse
+import asyncio
 import logging
-import sys
 import os
+import sys
 
 from dotenv import load_dotenv
+
 load_dotenv()
 
 # Verify OpenAI API key
@@ -50,28 +51,28 @@ def print_result(result):
     print("\n" + "=" * 60)
     print("📊 RESULTS")
     print("=" * 60)
-    
+
     print(f"\n✅ Success: {result.success}")
     print(f"📝 Approved: {result.approved}")
     print(f"🔄 Revisions: {result.revision_count}")
     print(f"📦 Nodes Used: {result.nodes_used}")
     print(f"💡 Recommendations: {result.recommendations_used}")
-    
+
     if result.scores:
         print(f"\n📈 Scores: {result.scores}")
-    
+
     if result.critique_summary:
         print(f"\n🔍 Critique: {result.critique_summary[:200]}...")
-    
+
     if result.error:
         print(f"\n❌ Error: {result.error}")
-    
+
     if result.lesson_plan:
         print("\n" + "=" * 60)
         print("📄 GENERATED LESSON PLAN")
         print("=" * 60)
         print(result.lesson_plan)
-        
+
         # Offer to save
         save = input("\n💾 Save lesson plan to file? (y/n): ").strip().lower()
         if save == 'y':
@@ -83,34 +84,34 @@ def print_result(result):
 
 async def run_interactive(domain: str, language: str, max_revisions: int):
     """Run interactive testing loop"""
-    
+
     orchestrator = AgentOrchestrator(
         domain=domain,
         language=language,
         max_revisions=max_revisions
     )
-    
-    print(f"🔧 Configuration:")
+
+    print("🔧 Configuration:")
     print(f"   Domain: {domain}")
     print(f"   Language: {language}")
     print(f"   Max Revisions: {max_revisions}")
-    
+
     while True:
         print("\n" + "-" * 60)
         print("Enter your query (or 'quit' to exit, 'help' for examples):")
         query = input("📝 > ").strip()
-        
+
         if not query:
             continue
-        
+
         if query.lower() in ['quit', 'exit', 'q']:
             print("\n👋 Goodbye!")
             break
-        
+
         if query.lower() == 'help':
             print_examples()
             continue
-        
+
         if query.lower() == 'switch':
             domain = input("New domain (neuro/udl): ").strip() or domain
             language = input("New language (it/en): ").strip() or language
@@ -121,10 +122,10 @@ async def run_interactive(domain: str, language: str, max_revisions: int):
             )
             print(f"✅ Switched to domain={domain}, language={language}")
             continue
-        
+
         print("\n⏳ Processing... (this may take 30-60 seconds)")
         print("   Pipeline: Planner → Retriever → Writer → Critic")
-        
+
         try:
             result = await orchestrator.create_lesson_plan(query)
             print_result(result)
@@ -137,7 +138,7 @@ def print_examples():
     """Print example queries"""
     print("\n📚 Example Queries:")
     print("-" * 40)
-    
+
     examples = [
         ("Lesson Creation", "Crea una lezione sulla motivazione per studenti con ADHD"),
         ("Activity Design", "Attività di 30 minuti sulla metacognizione per la scuola media"),
@@ -146,11 +147,11 @@ def print_examples():
         ("Definition", "Cosa significa growth mindset?"),
         ("English Query", "Design a lesson on attention strategies for high school"),
     ]
-    
+
     for category, query in examples:
         print(f"\n🔹 {category}:")
         print(f"   \"{query}\"")
-    
+
     print("\n💡 Commands:")
     print("   'switch' - Change domain/language")
     print("   'quit'   - Exit the program")
@@ -158,17 +159,17 @@ def print_examples():
 
 async def run_single_query(query: str, domain: str, language: str, max_revisions: int):
     """Run a single query (non-interactive mode)"""
-    
+
     orchestrator = AgentOrchestrator(
         domain=domain,
         language=language,
         max_revisions=max_revisions
     )
-    
+
     print(f"\n🔧 Configuration: domain={domain}, language={language}")
     print(f"📝 Query: {query}")
     print("\n⏳ Processing...")
-    
+
     result = await orchestrator.create_lesson_plan(query)
     print_result(result)
 
@@ -208,12 +209,12 @@ def main():
         action="store_true",
         help="Enable verbose logging"
     )
-    
+
     args = parser.parse_args()
-    
+
     setup_logging(args.verbose)
     print_header()
-    
+
     if args.query:
         # Non-interactive mode
         asyncio.run(run_single_query(

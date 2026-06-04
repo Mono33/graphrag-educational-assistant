@@ -6,6 +6,7 @@ config.py - Configuration settings for the GraphRAG text2cypher module.
 import os
 from dataclasses import dataclass
 from typing import Optional
+
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -15,6 +16,7 @@ load_dotenv()
 @dataclass
 class Neo4jConfig:
     """Neo4j database configuration"""
+
     uri: str = "bolt://localhost:7687"
     user: str = "neo4j"
     password: str = ""
@@ -25,6 +27,7 @@ class Neo4jConfig:
 @dataclass
 class OpenAIConfig:
     """OpenAI-compatible API configuration (supports OpenRouter and OpenAI)"""
+
     api_key: str = ""
     base_url: str = "https://openrouter.ai/api/v1"
     model: str = "openai/gpt-4o"  # OpenRouter model ID format
@@ -34,11 +37,13 @@ class OpenAIConfig:
     def get_client(self):
         """Return a configured OpenAI-compatible client (sync)"""
         from openai import OpenAI
+
         return OpenAI(api_key=self.api_key, base_url=self.base_url)
 
     def get_async_client(self):
         """Return a configured OpenAI-compatible client (async)"""
         from openai import AsyncOpenAI
+
         return AsyncOpenAI(api_key=self.api_key, base_url=self.base_url)
 
     def is_reasoning_model(self) -> bool:
@@ -51,13 +56,19 @@ class OpenAIConfig:
         - Return thinking content in reasoning_content field  (DeepSeek R1, Claude via OpenRouter)
         """
         m = self.model.lower()
-        return any(x in m for x in (
-            "o1", "o3", "o4",
-            "deepseek-r1", "deepseek/deepseek-r1",
-            "thinking",
-            "claude-sonnet-4",  # Claude Sonnet 4.x supports extended thinking via OpenRouter
-            "claude-opus-4",    # Claude Opus 4.x supports extended thinking via OpenRouter
-        ))
+        return any(
+            x in m
+            for x in (
+                "o1",
+                "o3",
+                "o4",
+                "deepseek-r1",
+                "deepseek/deepseek-r1",
+                "thinking",
+                "claude-sonnet-4",  # Claude Sonnet 4.x supports extended thinking via OpenRouter
+                "claude-opus-4",  # Claude Opus 4.x supports extended thinking via OpenRouter
+            )
+        )
 
     def build_completion_kwargs(
         self,
@@ -87,10 +98,19 @@ class OpenAIConfig:
         m_lower = model.lower()
         kwargs: dict = {"model": model}
         is_o_series = any(x in m_lower for x in ("o1", "o3", "o4"))
-        is_thinking = any(x in m_lower for x in (
-            "o1", "o3", "o4", "deepseek-r1", "deepseek/deepseek-r1", "thinking",
-            "claude-sonnet-4", "claude-opus-4",
-        ))
+        is_thinking = any(
+            x in m_lower
+            for x in (
+                "o1",
+                "o3",
+                "o4",
+                "deepseek-r1",
+                "deepseek/deepseek-r1",
+                "thinking",
+                "claude-sonnet-4",
+                "claude-opus-4",
+            )
+        )
 
         if is_o_series:
             kwargs["max_completion_tokens"] = max_tokens
@@ -136,6 +156,7 @@ class OpenAIConfig:
 @dataclass
 class Text2CypherConfig:
     """Text2Cypher module configuration"""
+
     max_query_length: int = 1000
     default_limit: int = 20
     enable_query_validation: bool = True
@@ -165,6 +186,7 @@ class EmbeddingConfig:
         - Graph structure still matters for finding connected concepts
         - Research shows 40/60 split optimal for Q&A over knowledge graphs
     """
+
     mode: str = "node2vec"  # "node2vec" | "hybrid_semantic" | "openai_only"
 
     # Embedding model — OpenRouter format (provider/model)
@@ -205,9 +227,8 @@ class Config:
 
         # OpenRouter / OpenAI-compatible configuration
         # Prefer OPENROUTER_API_KEY; fall back to OPENAI_API_KEY for backward compat
-        self.openai.api_key = (
-            os.getenv("OPENROUTER_API_KEY")
-            or os.getenv("OPENAI_API_KEY", self.openai.api_key)
+        self.openai.api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv(
+            "OPENAI_API_KEY", self.openai.api_key
         )
         self.openai.base_url = os.getenv("OPENROUTER_BASE_URL", self.openai.base_url)
         self.openai.model = os.getenv("LLM_MODEL", self.openai.model)
@@ -220,23 +241,25 @@ class Config:
             self.text2cypher.default_limit = int(os.getenv("TEXT2CYPHER_DEFAULT_LIMIT"))
 
         if os.getenv("TEXT2CYPHER_ENABLE_VALIDATION"):
-            self.text2cypher.enable_query_validation = os.getenv("TEXT2CYPHER_ENABLE_VALIDATION").lower() == "true"
+            self.text2cypher.enable_query_validation = (
+                os.getenv("TEXT2CYPHER_ENABLE_VALIDATION").lower() == "true"
+            )
 
         if os.getenv("TEXT2CYPHER_ENABLE_EXECUTION"):
-            self.text2cypher.enable_query_execution = os.getenv("TEXT2CYPHER_ENABLE_EXECUTION").lower() == "true"
+            self.text2cypher.enable_query_execution = (
+                os.getenv("TEXT2CYPHER_ENABLE_EXECUTION").lower() == "true"
+            )
 
         self.text2cypher.log_level = os.getenv("LOG_LEVEL", self.text2cypher.log_level)
-        self.text2cypher.model = (
-            os.getenv("TEXT2CYPHER_MODEL")
-            or os.getenv("LLM_MODEL", self.text2cypher.model)
+        self.text2cypher.model = os.getenv("TEXT2CYPHER_MODEL") or os.getenv(
+            "LLM_MODEL", self.text2cypher.model
         )
 
         # Embedding configuration
         self.embedding.mode = os.getenv("EMBEDDING_MODE", self.embedding.mode)
         # Read EMBEDDING_MODEL first; fall back to old OPENAI_EMBEDDING_MODEL for backward compat
-        self.embedding.embedding_model = (
-            os.getenv("EMBEDDING_MODEL")
-            or os.getenv("OPENAI_EMBEDDING_MODEL", self.embedding.embedding_model)
+        self.embedding.embedding_model = os.getenv("EMBEDDING_MODEL") or os.getenv(
+            "OPENAI_EMBEDDING_MODEL", self.embedding.embedding_model
         )
 
         if os.getenv("EMBEDDING_NODE2VEC_WEIGHT"):
@@ -246,11 +269,12 @@ class Config:
             self.embedding.semantic_threshold = float(os.getenv("EMBEDDING_SEMANTIC_THRESHOLD"))
 
         if os.getenv("EMBEDDING_CACHE_EMBEDDINGS"):
-            self.embedding.cache_embeddings = os.getenv("EMBEDDING_CACHE_EMBEDDINGS").lower() == "true"
+            self.embedding.cache_embeddings = (
+                os.getenv("EMBEDDING_CACHE_EMBEDDINGS").lower() == "true"
+            )
 
         self.embedding.embeddings_cache_dir = os.getenv(
-            "EMBEDDINGS_CACHE_DIR",
-            self.embedding.embeddings_cache_dir
+            "EMBEDDINGS_CACHE_DIR", self.embedding.embeddings_cache_dir
         )
 
     def validate(self) -> tuple[bool, list[str]]:
@@ -293,6 +317,7 @@ def extract_response_content(response, logger=None) -> str:
         The assistant's final text content.
     """
     import logging as _logging
+
     _log = logger or _logging.getLogger(__name__)
 
     message = response.choices[0].message
@@ -300,6 +325,8 @@ def extract_response_content(response, logger=None) -> str:
 
     reasoning = getattr(message, "reasoning_content", None)
     if reasoning:
-        _log.debug(f"[ThinkingTokens] {len(reasoning)} chars of reasoning:\n{reasoning[:500]}{'...' if len(reasoning) > 500 else ''}")
+        _log.debug(
+            f"[ThinkingTokens] {len(reasoning)} chars of reasoning:\n{reasoning[:500]}{'...' if len(reasoning) > 500 else ''}"
+        )
 
     return content

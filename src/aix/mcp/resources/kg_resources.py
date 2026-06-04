@@ -31,7 +31,7 @@ in any of the resources, so reads stay sub-second even on a cold process.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List
+from typing import Any
 
 from fastmcp import FastMCP
 
@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Lazy backing-component singletons (mirrors aix.mcp.tools.kg_tools pattern).
 # ---------------------------------------------------------------------------
-_MEDIA_LOOKUPS: Dict[str, Any] = {}
+_MEDIA_LOOKUPS: dict[str, Any] = {}
 
 _VALID_DOMAINS = ("neuro", "udl")
 
@@ -55,7 +55,7 @@ def _get_media_lookup(domain: str):
     return _MEDIA_LOOKUPS[domain]
 
 
-def _domain_schema_dict(domain: str) -> Dict[str, Any]:
+def _domain_schema_dict(domain: str) -> dict[str, Any]:
     """Build a serializable schema snapshot for a single domain.
 
     Mirrors the shape returned by the ``kg.get_schema`` tool so clients get
@@ -83,7 +83,7 @@ def _domain_schema_dict(domain: str) -> Dict[str, Any]:
     }
 
 
-def _media_stats_for_domain(domain: str) -> Dict[str, Any]:
+def _media_stats_for_domain(domain: str) -> dict[str, Any]:
     """Compute curated-media coverage stats for a single domain.
 
     Iterates the in-memory media mapping (already loaded by ``MediaLookup``)
@@ -158,7 +158,7 @@ def register(mcp: FastMCP) -> None:
         mime_type="application/json",
         tags={"kg", "schema", "metadata"},
     )
-    def kg_schema() -> Dict[str, Any]:
+    def kg_schema() -> dict[str, Any]:
         return {
             "domains": [_domain_schema_dict(d) for d in _VALID_DOMAINS],
         }
@@ -176,7 +176,7 @@ def register(mcp: FastMCP) -> None:
         mime_type="application/json",
         tags={"kg", "concepts", "discovery"},
     )
-    def kg_concepts(domain: str) -> Dict[str, Any]:
+    def kg_concepts(domain: str) -> dict[str, Any]:
         domain_norm = (domain or "").strip().lower()
         if domain_norm not in _VALID_DOMAINS:
             return {
@@ -186,7 +186,7 @@ def register(mcp: FastMCP) -> None:
                 "count": 0,
             }
         media = _get_media_lookup(domain_norm)
-        all_concepts: List[str] = list(media.get_all_concepts() or [])
+        all_concepts: list[str] = list(media.get_all_concepts() or [])
         return {
             "domain": domain_norm,
             "count": len(all_concepts),
@@ -208,10 +208,10 @@ def register(mcp: FastMCP) -> None:
         mime_type="application/json",
         tags={"methodology", "metadata", "education"},
     )
-    def methodology_list() -> Dict[str, Any]:
+    def methodology_list() -> dict[str, Any]:
         from aix.domains import get_domain_config
 
-        out: Dict[str, Any] = {}
+        out: dict[str, Any] = {}
         for domain in _VALID_DOMAINS:
             config = get_domain_config(domain)
             if config is None:
@@ -241,7 +241,7 @@ def register(mcp: FastMCP) -> None:
         mime_type="application/json",
         tags={"media", "stats", "metadata"},
     )
-    def media_stats() -> Dict[str, Any]:
+    def media_stats() -> dict[str, Any]:
         return {
             "domains": [_media_stats_for_domain(d) for d in _VALID_DOMAINS],
         }

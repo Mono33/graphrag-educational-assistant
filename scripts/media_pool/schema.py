@@ -5,9 +5,9 @@ Pool entry dataclasses and JSON serialization for the verified media pool.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field, asdict
-from typing import Optional, List, Dict, Any
+from dataclasses import asdict, dataclass, field
 from datetime import date
+from typing import Any, Optional
 
 
 @dataclass
@@ -33,7 +33,7 @@ class VideoEntry:
 @dataclass
 class CitationEntry:
     title: str
-    authors: List[str]
+    authors: list[str]
     doi: str
     doi_url: str
     rights_status: str  # "open_access_paper"
@@ -57,11 +57,11 @@ class WikipediaEntry:
 class ConceptEntry:
     concept_name: str
     domain: str
-    videos: List[VideoEntry] = field(default_factory=list)
-    citations: List[CitationEntry] = field(default_factory=list)
+    videos: list[VideoEntry] = field(default_factory=list)
+    citations: list[CitationEntry] = field(default_factory=list)
     wikipedia: Optional[WikipediaEntry] = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         d = {
             "concept_name": self.concept_name,
             "domain": self.domain,
@@ -75,17 +75,17 @@ class ConceptEntry:
         return bool(self.videos or self.citations or self.wikipedia)
 
 
-def load_pool(path: str) -> Dict[str, Dict]:
+def load_pool(path: str) -> dict[str, dict]:
     """Load existing pool from disk. Returns empty dict if file doesn't exist."""
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             data = json.load(f)
         return data.get("entries", {})
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
 
 
-def save_pool(path: str, domain: str, model: str, entries: Dict[str, Dict]) -> None:
+def save_pool(path: str, domain: str, model: str, entries: dict[str, dict]) -> None:
     """Write the full pool dict to disk atomically via temp file."""
     import os
     import tempfile
@@ -103,16 +103,16 @@ def save_pool(path: str, domain: str, model: str, entries: Dict[str, Dict]) -> N
     os.replace(tmp_path, path)
 
 
-def load_checkpoint(path: str) -> Dict[str, str]:
+def load_checkpoint(path: str) -> dict[str, str]:
     """Load checkpoint dict {concept_name: 'done'}. Returns empty dict if missing."""
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             return json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
 
 
-def save_checkpoint(path: str, checkpoint: Dict[str, str]) -> None:
+def save_checkpoint(path: str, checkpoint: dict[str, str]) -> None:
     import os
     import tempfile
 

@@ -36,7 +36,7 @@
 {% if not user %}
 
   {# ── Anonymous landing — keep auth flow untouched, just rebrand the hero ── #}
-  <section class="aix-card p-10 max-w-3xl mx-auto text-center" style="margin-top:48px;">
+  <section class="aix-card p-10 max-w-3xl mx-auto text-center aix-mt-12">
     <h1 class="aix-page-title">Benvenuta su AixLearning</h1>
     <p class="aix-text-muted mt-3 mb-6 max-w-xl mx-auto">
       Crea lezioni personalizzate per la tua classe, con un agente
@@ -61,8 +61,7 @@
       {# Left half: greeting #}
       <div class="flex flex-col justify-center">
         {% if dashboard.today_label %}
-          <div style="color:var(--aix-teal); font-size:13px; font-weight:500;
-                      margin-bottom:8px;">
+          <div class="aix-color-teal aix-fs-13 aix-label-hint">
             {{ dashboard.today_label }}
           </div>
         {% endif %}
@@ -92,14 +91,14 @@
           <div class="aix-section-label">RIPRENDI DA DOVE ERI RIMASTO</div>
           <div class="aix-card aix-card-stripe-warning mt-3 p-4 flex items-center gap-4">
             <div class="flex-1 min-w-0">
-              <div class="aix-card-title" style="font-size:18px;">
+              <div class="aix-card-title aix-fs-18">
                 {{ dashboard.resume_lesson.title }}
               </div>
-              <div class="aix-text-muted mt-1" style="font-size:13px;">
+              <div class="aix-text-muted mt-1 aix-fs-13">
                 Ultimo aggiornamento: {{ dashboard.resume_lesson.updated_rel }}
                 <span class="aix-footer-sep mx-1">·</span>
                 Stato:
-                <span class="{{ dashboard.resume_lesson.pill_class }} aix-pill" style="margin-left:2px;">
+                <span class="{{ dashboard.resume_lesson.pill_class }} aix-pill aix-ml-2px">
                   {{ dashboard.resume_lesson.status_label }}
                 </span>
               </div>
@@ -110,21 +109,21 @@
             </a>
           </div>
           {% if dashboard.lesson_count > 1 %}
-            <a href="/webui/lessons" class="aix-link mt-3" style="font-size:13px;">
+            <a href="/webui/lessons" class="aix-link mt-3 aix-fs-13">
               oppure apri un'altra lezione →
             </a>
           {% endif %}
         {% else %}
           <div class="aix-section-label">PRIMI PASSI</div>
           <div class="aix-card aix-card-stripe-teal mt-3 p-4">
-            <div class="aix-card-title" style="font-size:18px;">
+            <div class="aix-card-title aix-fs-18">
               Compila il profilo della classe
             </div>
-            <p class="aix-text-muted mt-1" style="font-size:13px;">
+            <p class="aix-text-muted mt-1 aix-fs-13">
               Bastano pochi dati: classe, materia, durata e BES.
               L'agente fa il resto.
             </p>
-            <a href="/webui/lesson/new" class="aix-link mt-3 inline-block" style="font-size:13px;">
+            <a href="/webui/lesson/new" class="aix-link mt-3 inline-block aix-fs-13">
               Inizia ora →
             </a>
           </div>
@@ -142,44 +141,44 @@
     <a href="/webui/lesson/new" class="aix-card p-5 flex items-center gap-4
                                        no-underline aix-row-hover">
       <span class="aix-icon-circle aix-icon-circle--teal aix-icon-on-dark">
-        <wa-icon name="circle-plus" style="font-size:20px;"></wa-icon>
+        <wa-icon name="circle-plus" class="aix-fs-20"></wa-icon>
       </span>
       <div class="flex-1">
-        <div class="aix-card-title" style="font-size:18px;">Nuova lezione</div>
-        <div class="aix-text-muted mt-1" style="font-size:13px;">
+        <div class="aix-card-title aix-fs-18">Nuova lezione</div>
+        <div class="aix-text-muted mt-1 aix-fs-13">
           Parti dal profilo classe e obiettivi didattici
         </div>
-        <span class="aix-link" style="font-size:13px;">Apri →</span>
+        <span class="aix-link aix-fs-13">Apri →</span>
       </div>
     </a>
 
     <a href="/webui/lessons" class="aix-card p-5 flex items-center gap-4
                                     no-underline aix-row-hover">
       <span class="aix-icon-circle aix-icon-circle--navy aix-icon-on-dark">
-        <wa-icon name="books" style="font-size:20px;"></wa-icon>
+        <wa-icon name="books" class="aix-fs-20"></wa-icon>
       </span>
       <div class="flex-1">
-        <div class="aix-card-title" style="font-size:18px;">
+        <div class="aix-card-title aix-fs-18">
           Le mie lezioni{% if dashboard.lesson_count %} ({{ dashboard.lesson_count }}){% endif %}
         </div>
-        <div class="aix-text-muted mt-1" style="font-size:13px;">
+        <div class="aix-text-muted mt-1 aix-fs-13">
           Sfoglia l'archivio completo delle tue lezioni
         </div>
-        <span class="aix-link-navy" style="font-size:13px;">Apri →</span>
+        <span class="aix-link-navy aix-fs-13">Apri →</span>
       </div>
     </a>
 
     <a href="/docs" class="aix-card p-5 flex items-center gap-4
                           no-underline aix-row-hover">
       <span class="aix-icon-circle aix-icon-circle--amber aix-icon-on-dark">
-        <wa-icon name="magnifying-glass" style="font-size:20px;"></wa-icon>
+        <wa-icon name="magnifying-glass" class="aix-fs-20"></wa-icon>
       </span>
       <div class="flex-1">
-        <div class="aix-card-title" style="font-size:18px;">Esplora materiali</div>
-        <div class="aix-text-muted mt-1" style="font-size:13px;">
+        <div class="aix-card-title aix-fs-18">Esplora materiali</div>
+        <div class="aix-text-muted mt-1 aix-fs-13">
           Cerca e riutilizza contenuti, attività e risorse
         </div>
-        <span class="aix-link-amber" style="font-size:13px;">Apri →</span>
+        <span class="aix-link-amber aix-fs-13">Apri →</span>
       </div>
     </a>
 
@@ -204,10 +203,10 @@
       <div class="aix-card p-5">
         <div class="flex items-center justify-between mb-3">
           <div class="flex items-center gap-2">
-            <wa-icon name="wand-magic-sparkles" style="color:var(--aix-amber); font-size:16px;"></wa-icon>
-            <h2 class="aix-card-title" style="font-size:18px;">Suggerimenti per te</h2>
+            <wa-icon name="wand-magic-sparkles" class="aix-fs-16 aix-color-amber-base"></wa-icon>
+            <h2 class="aix-card-title aix-fs-18">Suggerimenti per te</h2>
           </div>
-          <a href="/webui/" class="aix-link" style="font-size:12px;">
+          <a href="/webui/" class="aix-link aix-fs-12">
             Aggiorna suggerimenti ↻
           </a>
         </div>
@@ -218,11 +217,10 @@
         ] %}
         {% for s in suggestions %}
           <a href="/webui/lesson/new?prompt={{ s | urlencode }}"
-             class="aix-row-hover flex items-center gap-3 px-2 py-2 no-underline"
-             style="color:var(--aix-text-primary);">
-            <wa-icon name="lightbulb" style="color:var(--aix-amber); font-size:14px;"></wa-icon>
-            <span class="flex-1" style="font-size:14px;">{{ s }}</span>
-            <wa-icon name="chevron-right" style="color:var(--aix-text-tertiary); font-size:12px;"></wa-icon>
+             class="aix-row-hover flex items-center gap-3 px-2 py-2 no-underline aix-color-primary">
+            <wa-icon name="lightbulb" class="aix-fs-14 aix-color-amber-base"></wa-icon>
+            <span class="flex-1 aix-fs-14">{{ s }}</span>
+            <wa-icon name="chevron-right" class="aix-color-tertiary aix-fs-12"></wa-icon>
           </a>
         {% endfor %}
       </div>
@@ -230,16 +228,15 @@
       {# LE TUE ULTIME LEZIONI — real data from dashboard.recent_lessons #}
       <div class="aix-card p-5">
         <div class="flex items-center justify-between mb-3">
-          <h2 class="aix-card-title" style="font-size:18px;">Le tue ultime lezioni</h2>
-          <a href="/webui/lessons" class="aix-link" style="font-size:12px;">
+          <h2 class="aix-card-title aix-fs-18">Le tue ultime lezioni</h2>
+          <a href="/webui/lessons" class="aix-link aix-fs-12">
             Vedi tutte →
           </a>
         </div>
         {% if dashboard.recent_lessons %}
           {% for row in dashboard.recent_lessons %}
             <a href="/webui/lesson/{{ row.id }}"
-               class="aix-lesson-row aix-row-hover px-2 no-underline"
-               style="color:var(--aix-text-primary);">
+               class="aix-lesson-row aix-row-hover px-2 no-underline aix-color-primary">
               <span class="aix-dot {{ row.dot_class }}"></span>
               <div class="flex-1 min-w-0">
                 <div class="aix-lesson-row-title truncate">{{ row.title }}</div>
@@ -254,13 +251,13 @@
                 </div>
               </div>
               <span class="aix-pill {{ row.pill_class }} flex-shrink-0">{{ row.status_label }}</span>
-              <span class="aix-text-subtle flex-shrink-0" style="font-size:12px; min-width:48px; text-align:right;">
+              <span class="aix-text-subtle flex-shrink-0 aix-fs-12 aix-time-stamp">
                 {{ row.updated_short }}
               </span>
             </a>
           {% endfor %}
         {% else %}
-          <div class="text-center py-6 aix-text-muted" style="font-size:13px;">
+          <div class="text-center py-6 aix-text-muted aix-fs-13">
             Nessuna lezione ancora.
             <a href="/webui/lesson/new" class="aix-link">Crea la prima →</a>
           </div>
@@ -281,8 +278,8 @@
       #}
       <div class="aix-card p-5">
         <div class="flex items-center gap-2 mb-3">
-          <wa-icon name="bookmark" style="color:var(--aix-text-tertiary); font-size:14px;"></wa-icon>
-          <h2 class="aix-section-label" style="font-size:12px;">MODELLI RAPIDI</h2>
+          <wa-icon name="bookmark" class="aix-color-tertiary aix-fs-14"></wa-icon>
+          <h2 class="aix-section-label aix-fs-12">MODELLI RAPIDI</h2>
         </div>
         {% set templates = [
           ('lezione_5e',           'Lezione 5E (Neuro)',          'Engage · Explore · Explain · Elaborate · Evaluate', 'planner',   'diagram-project'),
@@ -292,18 +289,77 @@
         ] %}
         {% for tpl_key, name, desc, color, icon in templates %}
           <a href="/webui/lesson/new?template={{ tpl_key }}"
-             class="aix-row-hover flex items-center gap-3 px-2 py-2 no-underline"
-             style="color:var(--aix-text-primary);">
+             class="aix-row-hover flex items-center gap-3 px-2 py-2 no-underline aix-color-primary">
             <span class="aix-icon-circle aix-icon-circle--sm aix-icon-circle--{{ color }} aix-icon-on-dark">
-              <wa-icon name="{{ icon }}" style="font-size:14px;"></wa-icon>
+              <wa-icon name="{{ icon }}" class="aix-fs-14"></wa-icon>
             </span>
             <div class="flex-1 min-w-0">
-              <div class="aix-lesson-row-title truncate" style="font-size:14px;">{{ name }}</div>
-              <div class="aix-lesson-row-meta truncate" style="font-size:12px;">{{ desc }}</div>
+              <div class="aix-lesson-row-title truncate aix-fs-14">{{ name }}</div>
+              <div class="aix-lesson-row-meta truncate aix-fs-12">{{ desc }}</div>
             </div>
-            <wa-icon name="chevron-right" style="color:var(--aix-text-tertiary); font-size:12px;"></wa-icon>
+            <wa-icon name="chevron-right" class="aix-color-tertiary aix-fs-12"></wa-icon>
           </a>
         {% endfor %}
+      </div>
+
+      {# PROFILI SALVATI — saved EducationalProfile presets #}
+      <div class="aix-card p-5" id="dashboard-saved-profiles">
+        <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center gap-2">
+            <wa-icon name="bookmark" class="aix-color-teal aix-fs-14"></wa-icon>
+            <h2 class="aix-card-title aix-fs-16">Profili classe salvati</h2>
+          </div>
+          <a href="/webui/lesson/new" class="aix-link aix-fs-12">
+            + Nuovo profilo
+          </a>
+        </div>
+
+        {% if dashboard.saved_profiles %}
+          <div class="flex flex-col gap-2">
+            {% for sp in dashboard.saved_profiles %}
+            <div class="flex items-center gap-2 px-2 py-2 rounded aix-profile-row">
+              <div class="flex-1 min-w-0">
+                <div class="aix-fs-13 aix-color-primary aix-fw-600 truncate">
+                  {{ sp.name }}
+                </div>
+                {# Show key profile details as a compact one-liner #}
+                {% set _g = sp.profile_json.get('group') or {} %}
+                {% set _ep = sp.profile_json %}
+                {% set _details = [] %}
+                {% if _g.get('grade') %}{% set _ = _details.append(_g.grade) %}{% endif %}
+                {% if _ep.get('subject_area') %}{% set _ = _details.append(_ep.subject_area) %}{% endif %}
+                {% if _g.get('students_number') %}{% set _ = _details.append(_g.students_number ~ ' studenti') %}{% endif %}
+                {% if _g.get('disabilities') %}{% set _ = _details.append('BES') %}{% endif %}
+                {% if _details %}
+                <div class="aix-fs-11 aix-color-tertiary">
+                  {{ _details | join(' · ') }}
+                </div>
+                {% endif %}
+              </div>
+              <a href="/webui/lesson/new?profile_id={{ sp.id }}"
+                 class="aix-btn aix-btn-outline aix-btn-sm flex-shrink-0 aix-fs-11 aix-px-compact">
+                Nuova lezione
+              </a>
+              <button type="button"
+                      class="aix-saved-profile-delete flex-shrink-0 aix-btn-icon-sm"
+                      aria-label="Elimina profilo {{ sp.name }}"
+                      hx-delete="/webui/profiles/{{ sp.id }}"
+                      hx-target="#dashboard-saved-profiles"
+                      hx-swap="outerHTML"
+                      hx-confirm="Eliminare il profilo «{{ sp.name }}»?">
+                <wa-icon name="x-mark" class="aix-fs-2xs aix-pe-none"></wa-icon>
+              </button>
+            </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="text-center py-4 aix-text-muted aix-fs-13">
+            Nessun profilo salvato.
+            <a href="/webui/lesson/new" class="aix-link">
+              Salvane uno dalla pagina Crea lezione →
+            </a>
+          </div>
+        {% endif %}
       </div>
 
       {#
@@ -313,23 +369,21 @@
       #}
       <div class="aix-card p-5">
         <div class="flex items-center gap-2 mb-3">
-          <wa-icon name="clock-rotate-left" style="color:var(--aix-text-tertiary); font-size:14px;"></wa-icon>
-          <h2 class="aix-card-title" style="font-size:18px;">Attività recente</h2>
+          <wa-icon name="clock-rotate-left" class="aix-color-tertiary aix-fs-14"></wa-icon>
+          <h2 class="aix-card-title aix-fs-18">Attività recente</h2>
         </div>
         {% if dashboard.activity %}
           {% for ev in dashboard.activity %}
             <a href="/webui/lesson/{{ ev.lesson_id }}"
-               class="aix-row-hover flex items-start gap-3 px-2 py-2 no-underline"
-               style="color:var(--aix-text-primary);">
-              <span class="aix-text-subtle flex-shrink-0"
-                    style="font-size:12px; min-width:64px;">
+               class="aix-row-hover flex items-start gap-3 px-2 py-2 no-underline aix-color-primary">
+              <span class="aix-text-subtle flex-shrink-0 aix-fs-12 aix-min-w-64px">
                 {{ ev.rel }}
               </span>
-              <span class="flex-1" style="font-size:13px;">{{ ev.description }}</span>
+              <span class="flex-1 aix-fs-13">{{ ev.description }}</span>
             </a>
           {% endfor %}
         {% else %}
-          <div class="text-center py-4 aix-text-muted" style="font-size:13px;">
+          <div class="text-center py-4 aix-text-muted aix-fs-13">
             Nessuna attività recente.
           </div>
         {% endif %}

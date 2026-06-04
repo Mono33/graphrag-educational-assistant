@@ -54,22 +54,23 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
     reset_password_token_secret = _AUTH_SECRET
     verification_token_secret = _AUTH_SECRET
 
-    async def on_after_register(
-        self, user: User, request: Optional[Request] = None
-    ) -> None:
+    async def on_after_register(self, user: User, request: Optional[Request] = None) -> None:
         # Audit hook: useful in deployment when shipped to GlitchTip.
         # Keep PII minimal — log the user id, never the password or full email
         # (logged email is fine for dev; tighten via redactor in CORE 6 if
         # required by policy).
         logger.info(
             "👤 User registered: id=%s email=%s display_name=%s",
-            user.id, user.email, user.display_name,
+            user.id,
+            user.email,
+            user.display_name,
         )
 
 
 # ----------------------------------------------------------------------------
 # FastAPI dependencies
 # ----------------------------------------------------------------------------
+
 
 async def get_user_db(
     session: AsyncSession = Depends(get_async_session),

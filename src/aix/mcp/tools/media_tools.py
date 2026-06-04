@@ -46,7 +46,7 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import asdict, is_dataclass
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Literal, Optional
 
 from fastmcp import FastMCP
 from pydantic import BaseModel, Field
@@ -71,12 +71,11 @@ class MediaCuratedSummary(BaseModel):
         description="Whether curated media was found for this concept name "
         "(possibly via fuzzy match)."
     )
-    counts: Dict[str, int] = Field(
+    counts: dict[str, int] = Field(
         default_factory=dict,
-        description="Per-kind item counts (videos, images, resources, "
-        "citations, open_textbooks).",
+        description="Per-kind item counts (videos, images, resources, citations, open_textbooks).",
     )
-    items: Dict[str, List[Dict[str, Any]]] = Field(
+    items: dict[str, list[dict[str, Any]]] = Field(
         default_factory=dict,
         description="Per-kind list of items (each item is a dict-form of "
         "the underlying dataclass).",
@@ -89,7 +88,7 @@ class MediaCuratedResult(BaseModel):
     domain: DomainLiteral
     requested: int
     matched: int
-    by_concept: List[MediaCuratedSummary]
+    by_concept: list[MediaCuratedSummary]
 
 
 class MediaErrorResult(BaseModel):
@@ -106,9 +105,9 @@ class MediaErrorResult(BaseModel):
 # ---------------------------------------------------------------------------
 # Lazy backing-component singletons.
 # ---------------------------------------------------------------------------
-_MEDIA_LOOKUPS: Dict[str, Any] = {}
-_EXTERNAL_API: Dict[str, Any] = {}  # single-key dict ('default') for symmetry
-_MERMAID_GENERATOR: Dict[str, Any] = {}
+_MEDIA_LOOKUPS: dict[str, Any] = {}
+_EXTERNAL_API: dict[str, Any] = {}  # single-key dict ('default') for symmetry
+_MERMAID_GENERATOR: dict[str, Any] = {}
 
 
 def _get_media_lookup(domain: str):
@@ -141,7 +140,7 @@ def _get_mermaid_generator():
     return _MERMAID_GENERATOR["default"]
 
 
-def _to_dict(item: Any) -> Dict[str, Any]:
+def _to_dict(item: Any) -> dict[str, Any]:
     """Best-effort conversion of a dataclass / Pydantic model / dict to dict."""
     if is_dataclass(item):
         return asdict(item)
@@ -173,7 +172,7 @@ def register(mcp: FastMCP) -> None:
         tags={"media", "curated", "offline"},
     )
     def media_lookup_curated(
-        concepts: List[str],
+        concepts: list[str],
         domain: DomainLiteral = "neuro",
     ) -> MediaCuratedResult:
         """Return curated media bundles for a list of concept names.
@@ -187,7 +186,7 @@ def register(mcp: FastMCP) -> None:
             raise ValueError("`concepts` must be a non-empty list of strings")
 
         lookup = _get_media_lookup(domain)
-        summaries: List[MediaCuratedSummary] = []
+        summaries: list[MediaCuratedSummary] = []
         matched = 0
 
         for name in concepts:
@@ -226,9 +225,7 @@ def register(mcp: FastMCP) -> None:
                         "images": [_to_dict(i) for i in content.images],
                         "resources": [_to_dict(r) for r in content.resources],
                         "citations": [_to_dict(c) for c in content.citations],
-                        "open_textbooks": [
-                            _to_dict(t) for t in content.open_textbooks
-                        ],
+                        "open_textbooks": [_to_dict(t) for t in content.open_textbooks],
                     },
                 )
             )
@@ -256,7 +253,7 @@ def register(mcp: FastMCP) -> None:
         query: str,
         max_results: int = 5,
         language: str = "en",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Search YouTube for educational videos.
 
         Args:
@@ -311,7 +308,7 @@ def register(mcp: FastMCP) -> None:
         max_results: int = 5,
         year_from: Optional[int] = None,
         open_access_only: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Search Semantic Scholar for academic papers.
 
         Args:
@@ -350,9 +347,7 @@ def register(mcp: FastMCP) -> None:
             "count": len(papers),
             "year_from": year_from,
             "open_access_only": open_access_only,
-            "api_key_present": bool(
-                os.environ.get("SEMANTIC_SCHOLAR_API_KEY")
-            ),
+            "api_key_present": bool(os.environ.get("SEMANTIC_SCHOLAR_API_KEY")),
             "papers": [_to_dict(p) for p in papers],
         }
 
@@ -371,7 +366,7 @@ def register(mcp: FastMCP) -> None:
         query: str,
         max_results: int = 5,
         language: str = "en",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Search Open Educational Resource catalogues.
 
         Args:
@@ -431,9 +426,9 @@ def register(mcp: FastMCP) -> None:
             "comparison",
             "process",
         ] = "mindmap",
-        related_concepts: Optional[List[str]] = None,
+        related_concepts: Optional[list[str]] = None,
         validate: bool = True,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Generate a Mermaid.js diagram for an educational concept.
 
         Args:

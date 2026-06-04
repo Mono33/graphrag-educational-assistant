@@ -17,25 +17,25 @@ Default α = 0.4 (40% structure, 60% semantics) - optimized for educational Q&A
 """
 
 import asyncio
+import json
 import logging
-import re
 import os
 import pickle
-import json
-import numpy as np
-from typing import List, Dict, Optional, Tuple, Any
-from dataclasses import dataclass, asdict
-from neo4j import GraphDatabase, Driver
-from collections import defaultdict
+import re
 import time
-from functools import lru_cache
-from sklearn.metrics.pairwise import cosine_similarity
+from collections import defaultdict
+from dataclasses import asdict, dataclass
+from typing import Any, Optional
 
-# Import domain configuration system
-from aix.domains import get_domain_config
+import numpy as np
+from neo4j import Driver, GraphDatabase
+from sklearn.metrics.pairwise import cosine_similarity
 
 # Import config for embedding settings
 from aix.core.config import config as app_config
+
+# Import domain configuration system
+from aix.domains import get_domain_config
 
 logger = logging.getLogger(__name__)
 
@@ -44,21 +44,22 @@ logger = logging.getLogger(__name__)
 # SEMANTIC EMBEDDER (OpenAI text-embedding-3-small)
 # ============================================================================
 
+
 class SemanticEmbedder:
     """OpenAI-based semantic embedder for hybrid retrieval.
-    
+
     Provides text embeddings using OpenAI's text-embedding-3-small model.
     Supports caching to avoid redundant API calls.
-    
+
     Usage:
         embedder = SemanticEmbedder(domain="neuro")
         query_embedding = embedder.embed_query("What is intrinsic motivation?")
         similarity = embedder.compute_similarity(query_embedding, node_embedding)
     """
-    
+
     def __init__(self, domain: str = "all", cache_dir: str = None):
         """Initialize semantic embedder.
-        
+
         Args:
             domain: Domain for cache isolation ("neuro", "udl", "all")
             cache_dir: Directory for embedding cache (default: artifacts/embeddings_cache)
@@ -66,165 +67,159 @@ class SemanticEmbedder:
         self.domain = domain
         self.cache_dir = cache_dir or app_config.embedding.embeddings_cache_dir
         self.model = app_config.embedding.embedding_model
-        
+
         # OpenAI client (lazy loaded)
         self._openai_client = None
-        
+
         # Node embeddings cache (loaded from file or built on-demand)
-        self.node_embeddings: Dict[str, np.ndarray] = {}
+        self.node_embeddings: dict[str, np.ndarray] = {}
         self.embeddings_loaded = False
-        
+
         # Pre-built matrix for vectorized similarity (built lazily)
         self._embedding_matrix: Optional[np.ndarray] = None
-        self._embedding_names: List[str] = []
-        
+        self._embedding_names: list[str] = []
+
         # Ensure cache directory exists
         os.makedirs(self.cache_dir, exist_ok=True)
-        
+
         # Try to load cached embeddings
         self._load_cached_embeddings()
-    
+
     @property
     def openai_client(self):
         """Lazy-load OpenRouter-compatible client"""
         if self._openai_client is None:
             try:
                 self._openai_client = app_config.openai.get_client()
-                logger.info(f"[SemanticEmbedder] Client initialized via {app_config.openai.base_url} (model: {self.model})")
+                logger.info(
+                    f"[SemanticEmbedder] Client initialized via {app_config.openai.base_url} (model: {self.model})"
+                )
             except Exception as e:
                 logger.error(f"[SemanticEmbedder] Failed to initialize client: {e}")
                 raise
         return self._openai_client
-    
+
     def _get_cache_path(self) -> str:
         """Get path to cached embeddings file"""
         return os.path.join(self.cache_dir, f"{self.domain}_openai_embeddings.json")
-    
+
     def _load_cached_embeddings(self) -> bool:
         """Load cached node embeddings from file"""
         cache_path = self._get_cache_path()
-        
+
         if os.path.exists(cache_path):
             try:
-                with open(cache_path, 'r') as f:
+                with open(cache_path) as f:
                     data = json.load(f)
-                
+
                 # Convert lists back to numpy arrays
-                self.node_embeddings = {
-                    name: np.array(emb) for name, emb in data.items()
-                }
+                self.node_embeddings = {name: np.array(emb) for name, emb in data.items()}
                 self.embeddings_loaded = True
-                logger.info(f"[SemanticEmbedder] Loaded {len(self.node_embeddings)} cached embeddings for {self.domain}")
+                logger.info(
+                    f"[SemanticEmbedder] Loaded {len(self.node_embeddings)} cached embeddings for {self.domain}"
+                )
                 return True
             except Exception as e:
                 logger.warning(f"[SemanticEmbedder] Failed to load cache: {e}")
-        
+
         return False
-    
+
     def _save_cached_embeddings(self):
         """Save node embeddings to cache file"""
         if not self.node_embeddings:
             return
-        
+
         cache_path = self._get_cache_path()
         try:
             # Convert numpy arrays to lists for JSON serialization
-            data = {
-                name: emb.tolist() for name, emb in self.node_embeddings.items()
-            }
-            
-            with open(cache_path, 'w') as f:
+            data = {name: emb.tolist() for name, emb in self.node_embeddings.items()}
+
+            with open(cache_path, "w") as f:
                 json.dump(data, f)
-            
+
             logger.info(f"[SemanticEmbedder] Saved {len(self.node_embeddings)} embeddings to cache")
         except Exception as e:
             logger.warning(f"[SemanticEmbedder] Failed to save cache: {e}")
-    
+
     def embed_text(self, text: str) -> Optional[np.ndarray]:
         """Embed a single text string using OpenAI.
-        
+
         Args:
             text: Text to embed
-            
+
         Returns:
             Numpy array of embedding, or None if failed
         """
         try:
-            response = self.openai_client.embeddings.create(
-                model=self.model,
-                input=text
-            )
+            response = self.openai_client.embeddings.create(model=self.model, input=text)
             embedding = np.array(response.data[0].embedding)
             return embedding
         except Exception as e:
             logger.error(f"[SemanticEmbedder] Failed to embed text: {e}")
             return None
-    
-    def embed_texts(self, texts: List[str]) -> Dict[str, np.ndarray]:
+
+    def embed_texts(self, texts: list[str]) -> dict[str, np.ndarray]:
         """Embed multiple texts in batch (more efficient).
-        
+
         Args:
             texts: List of texts to embed
-            
+
         Returns:
             Dictionary mapping text -> embedding
         """
         if not texts:
             return {}
-        
+
         try:
             # Batch embed (max 2048 per request for OpenAI)
             batch_size = 100
             all_embeddings = {}
-            
+
             for i in range(0, len(texts), batch_size):
-                batch = texts[i:i + batch_size]
-                response = self.openai_client.embeddings.create(
-                    model=self.model,
-                    input=batch
-                )
-                
+                batch = texts[i : i + batch_size]
+                response = self.openai_client.embeddings.create(model=self.model, input=batch)
+
                 for j, data in enumerate(response.data):
                     text = batch[j]
                     all_embeddings[text] = np.array(data.embedding)
-            
+
             return all_embeddings
         except Exception as e:
             logger.error(f"[SemanticEmbedder] Batch embedding failed: {e}")
             return {}
-    
+
     def embed_query(self, query: str) -> Optional[np.ndarray]:
         """Embed a query (alias for embed_text with logging)"""
         logger.debug(f"[SemanticEmbedder] Embedding query: {query[:50]}...")
         return self.embed_text(query)
-    
+
     def get_or_embed(self, text: str) -> Optional[np.ndarray]:
         """Get embedding from cache or generate via API (cache-first).
-        
+
         Checks node_embeddings cache first to avoid redundant API calls
         for known node names. Falls back to API for unknown texts.
         """
         if text in self.node_embeddings:
             logger.debug(f"[SemanticEmbedder] Cache hit for: {text[:50]}")
             return self.node_embeddings[text]
-        
+
         logger.debug(f"[SemanticEmbedder] Cache miss, calling API for: {text[:50]}")
         embedding = self.embed_text(text)
         if embedding is not None:
             self.node_embeddings[text] = embedding
         return embedding
-    
-    def batch_embed_uncached(self, texts: List[str]) -> Dict[str, np.ndarray]:
+
+    def batch_embed_uncached(self, texts: list[str]) -> dict[str, np.ndarray]:
         """Batch embed only texts not already in cache (single API call).
-        
+
         Returns dict of text→embedding for all requested texts (cached + new).
         """
         if not texts:
             return {}
-        
+
         uncached = [t for t in texts if t and t not in self.node_embeddings]
         cached_count = len(texts) - len(uncached)
-        
+
         if uncached:
             logger.info(
                 f"[SemanticEmbedder] Batch embedding {len(uncached)} uncached texts "
@@ -234,116 +229,118 @@ class SemanticEmbedder:
             for text, emb in new_embeddings.items():
                 self.node_embeddings[text] = emb
         else:
-            logger.info(
-                f"[SemanticEmbedder] All {len(texts)} texts found in cache — 0 API calls"
-            )
-        
+            logger.info(f"[SemanticEmbedder] All {len(texts)} texts found in cache — 0 API calls")
+
         return {t: self.node_embeddings[t] for t in texts if t in self.node_embeddings}
-    
-    def get_node_embedding(self, node_name: str, node_description: str = "") -> Optional[np.ndarray]:
+
+    def get_node_embedding(
+        self, node_name: str, node_description: str = ""
+    ) -> Optional[np.ndarray]:
         """Get embedding for a node (from cache or generate).
-        
+
         Args:
             node_name: Node name
             node_description: Optional description for richer embedding
-            
+
         Returns:
             Embedding vector
         """
         # Check cache first
         if node_name in self.node_embeddings:
             return self.node_embeddings[node_name]
-        
+
         # Generate embedding
         text = node_name
         if node_description:
             text = f"{node_name}: {node_description}"
-        
+
         embedding = self.embed_text(text)
-        
+
         if embedding is not None:
             self.node_embeddings[node_name] = embedding
             # Save to cache periodically
             if len(self.node_embeddings) % 50 == 0:
                 self._save_cached_embeddings()
-        
+
         return embedding
-    
+
     def compute_similarity(self, embedding1: np.ndarray, embedding2: np.ndarray) -> float:
         """Compute cosine similarity between two embeddings.
-        
+
         Args:
             embedding1: First embedding vector
             embedding2: Second embedding vector
-            
+
         Returns:
             Similarity score (0.0 to 1.0)
         """
         if embedding1 is None or embedding2 is None:
             return 0.0
-        
+
         # Reshape for sklearn cosine_similarity
         e1 = embedding1.reshape(1, -1)
         e2 = embedding2.reshape(1, -1)
-        
+
         similarity = cosine_similarity(e1, e2)[0][0]
         return float(max(0.0, similarity))  # Clamp to positive
-    
-    def compute_all_similarities(self, query_embedding: np.ndarray, threshold: float = 0.0) -> List[Tuple[str, float]]:
+
+    def compute_all_similarities(
+        self, query_embedding: np.ndarray, threshold: float = 0.0
+    ) -> list[tuple[str, float]]:
         """Vectorized similarity against ALL cached node embeddings in one call.
-        
+
         Replaces the per-node loop with a single matrix operation.
         ~100x faster than calling compute_similarity() in a loop.
-        
+
         Args:
             query_embedding: Query embedding vector
             threshold: Minimum similarity to include (default 0.0 = all)
-            
+
         Returns:
             List of (node_name, similarity) tuples, sorted descending
         """
         if query_embedding is None or not self.node_embeddings:
             return []
-        
-        if not hasattr(self, '_embedding_matrix') or self._embedding_matrix is None:
+
+        if not hasattr(self, "_embedding_matrix") or self._embedding_matrix is None:
             self._build_embedding_matrix()
-        
+
         query = query_embedding.reshape(1, -1)
         similarities = cosine_similarity(query, self._embedding_matrix)[0]
-        
+
         results = []
         for idx, sim in enumerate(similarities):
             if sim >= threshold:
                 results.append((self._embedding_names[idx], float(max(0.0, sim))))
-        
+
         results.sort(key=lambda x: x[1], reverse=True)
         return results
-    
+
     def _build_embedding_matrix(self):
         """Pre-build the stacked matrix and name index for vectorized lookups."""
         if not self.node_embeddings:
             self._embedding_matrix = None
             self._embedding_names = []
             return
-        
+
         self._embedding_names = list(self.node_embeddings.keys())
-        self._embedding_matrix = np.stack([
-            self.node_embeddings[name] for name in self._embedding_names
-        ])
+        self._embedding_matrix = np.stack(
+            [self.node_embeddings[name] for name in self._embedding_names]
+        )
         logger.info(f"[SemanticEmbedder] Built embedding matrix: {self._embedding_matrix.shape}")
-    
+
     def precompute_node_embeddings(self, neo4j_driver: Driver, domain: str = None):
         """Pre-compute embeddings for all nodes in the graph.
-        
+
         Call this once to build the embedding cache.
-        
+
         Args:
             neo4j_driver: Neo4j driver for fetching nodes
             domain: Optional domain filter
         """
         domain = domain or self.domain
         logger.info(f"[SemanticEmbedder] Pre-computing embeddings for domain: {domain}")
-        
+
         try:
             with neo4j_driver.session() as session:
                 # Fetch all nodes with name and description
@@ -360,184 +357,260 @@ class SemanticEmbedder:
                     RETURN n.name AS name, n.description AS description
                     """
                     result = session.run(query)
-                
+
                 nodes = []
                 for record in result:
                     name = record["name"]
                     desc = record["description"] or ""
                     if name:
                         nodes.append((name, desc))
-                
+
                 logger.info(f"[SemanticEmbedder] Found {len(nodes)} nodes to embed")
-                
+
                 # Prepare texts for batch embedding
                 texts = [f"{name}: {desc}" if desc else name for name, desc in nodes]
-                
+
                 # Batch embed
                 embeddings = self.embed_texts(texts)
-                
+
                 # Map back to node names
-                for (name, desc), text in zip(nodes, texts):
+                for (name, _desc), text in zip(nodes, texts, strict=False):
                     if text in embeddings:
                         self.node_embeddings[name] = embeddings[text]
-                
+
                 # Save cache
                 self._save_cached_embeddings()
                 self.embeddings_loaded = True
-                
-                logger.info(f"[SemanticEmbedder] Pre-computed {len(self.node_embeddings)} node embeddings")
-                
+
+                logger.info(
+                    f"[SemanticEmbedder] Pre-computed {len(self.node_embeddings)} node embeddings"
+                )
+
         except Exception as e:
             logger.error(f"[SemanticEmbedder] Pre-computation failed: {e}")
+
 
 @dataclass
 class RetrievedContext:
     """Structured output for retrieved educational context"""
-    nodes: List[Dict[str, Any]]
-    triples: List[Tuple[str, str, str]]  # (source_name, rel_type, target_name)
-    facets: Dict[str, Dict[str, int]]  # {label_counts, rel_counts}
-    metadata: Dict[str, Any]  # {graph_count, semantic_count, timings, limits_applied}
+
+    nodes: list[dict[str, Any]]
+    triples: list[tuple[str, str, str]]  # (source_name, rel_type, target_name)
+    facets: dict[str, dict[str, int]]  # {label_counts, rel_counts}
+    metadata: dict[str, Any]  # {graph_count, semantic_count, timings, limits_applied}
+
 
 class HybridGraphRetriever:
     """Hybrid retriever combining graph traversal with semantic search
-    
+
     Supports three embedding modes:
     - "node2vec": Graph structure only (default, backward compatible)
     - "hybrid_semantic": Node2Vec + OpenAI text embeddings
     - "openai_only": OpenAI embeddings only
-    
+
     The embedding mode is controlled by EMBEDDING_MODE in config/env.
     """
-    
-    def __init__(self, neo4j_driver: Driver, use_vectors: bool = False, domain: str = "all", config: Optional[Dict] = None):
+
+    def __init__(
+        self,
+        neo4j_driver: Driver,
+        use_vectors: bool = False,
+        domain: str = "all",
+        config: Optional[dict] = None,
+    ):
         self.neo4j_driver = neo4j_driver
         self.use_vectors = use_vectors
         self.domain = domain
-        
+
         # Configuration with defaults
         self.config = config or {}
-        self.max_nodes = self.config.get('max_nodes', 15)
-        self.max_edges = self.config.get('max_edges', 30)
-        self.expand_neighbors = self.config.get('expand_neighbors', True)
-        self.neighbor_depth = self.config.get('neighbor_depth', 1)
-        
+        self.max_nodes = self.config.get("max_nodes", 15)
+        self.max_edges = self.config.get("max_edges", 30)
+        self.expand_neighbors = self.config.get("expand_neighbors", True)
+        self.neighbor_depth = self.config.get("neighbor_depth", 1)
+
         # Embedding mode configuration
         self.embedding_mode = app_config.embedding.mode
         self.node2vec_weight = app_config.embedding.node2vec_weight  # α
         self.semantic_weight = 1.0 - self.node2vec_weight  # 1-α
         self.semantic_threshold = app_config.embedding.semantic_threshold
-        
+
         logger.info(f"[HybridGraphRetriever] Embedding mode: {self.embedding_mode}")
         if self.embedding_mode == "hybrid_semantic":
-            logger.info(f"[HybridGraphRetriever] Weights: α={self.node2vec_weight:.2f} (Node2Vec), β={self.semantic_weight:.2f} (Semantic)")
-        
+            logger.info(
+                f"[HybridGraphRetriever] Weights: α={self.node2vec_weight:.2f} (Node2Vec), β={self.semantic_weight:.2f} (Semantic)"
+            )
+
         # Node2Vec integration
         self.node2vec_model = None
         self.node_embeddings = None
         self.node_index = None
         self.reverse_index = None
         self.node2vec_loaded = False
-        
+
         # Semantic embedder (for hybrid_semantic and openai_only modes)
         self.semantic_embedder: Optional[SemanticEmbedder] = None
-        
+
         # Load Node2Vec model if vectors are enabled (and mode needs it)
         if self.use_vectors and self.embedding_mode in ["node2vec", "hybrid_semantic"]:
             self._load_node2vec_model(domain=domain)
-        
+
         # Initialize semantic embedder for hybrid/openai modes
         if self.use_vectors and self.embedding_mode in ["hybrid_semantic", "openai_only"]:
             self._init_semantic_embedder(domain=domain)
-        
+
         # Educational domain boosts - now loaded dynamically from domain configs
         # This combines boosts from all domains for "all" queries, or uses domain-specific boosts
         self.domain_boosts = self._load_domain_boosts()
-        
+
         # Schema typo corrections (from your audit)
-        self.schema_corrections = {
-            'TeachingApproch': 'TeachingApproach'  # Fix the typo
-        }
-        
+        self.schema_corrections = {"TeachingApproch": "TeachingApproach"}  # Fix the typo
+
         # Whitelist for neighbor expansion (focus on educational relevance)
         # UDL labels are loaded dynamically from domain config after set definition
         self.expansion_labels = {
             # Neuro domain labels (UPDATED from neuro_audit_report.json - Nov 2025)
             # Includes all top labels + hub nodes + critical cognitive/affective processes
-            
             # Core cognitive processes (most frequent + high connectivity)
-            'Attention', 'ExecutiveFunctions', 'CriticalThinking', 'WorkingMemory',
-            'Metacognition', 'SelfRegulation', 'CognitiveControl', 'CognitiveProcesses',
-            'CognitiveFlexibility', 'PrefrontalCortexActivation',
-            
+            "Attention",
+            "ExecutiveFunctions",
+            "CriticalThinking",
+            "WorkingMemory",
+            "Metacognition",
+            "SelfRegulation",
+            "CognitiveControl",
+            "CognitiveProcesses",
+            "CognitiveFlexibility",
+            "PrefrontalCortexActivation",
             # Memory systems
-            'Memory', 'WorkingMemory', 'LongTermMemory', 'MemorySystems', 'MemoryEncoding',
-            'MemoryProcesses', 'Consolidation', 'MemoryStabilization', 'MemoryAccessibility',
-            
+            "Memory",
+            "LongTermMemory",
+            "MemorySystems",
+            "MemoryEncoding",
+            "MemoryProcesses",
+            "Consolidation",
+            "MemoryStabilization",
+            "MemoryAccessibility",
             # Motivation & engagement
-            'Motivation', 'IntrinsicMotivation', 'ExtrinsicMotivation', 'LearningEngagement',
-            'KnowledgeConstructionAttention', 'OptimalAttentionalNetworkActivation',
-            'LearningMotivation', 'AcademicMotivation',
-            
+            "Motivation",
+            "IntrinsicMotivation",
+            "ExtrinsicMotivation",
+            "LearningEngagement",
+            "KnowledgeConstructionAttention",
+            "OptimalAttentionalNetworkActivation",
+            "LearningMotivation",
+            "AcademicMotivation",
             # Creativity & innovation
-            'Creativity', 'CreativityInnovation', 'IdeaGeneration', 'CreativeOutcomes',
-            
+            "Creativity",
+            "CreativityInnovation",
+            "IdeaGeneration",
+            "CreativeOutcomes",
             # Emotional & affective
-            'EmotionalRegulation', 'EmotionalWellBeing', 'PositiveEmotions', 'NegativeEmotions',
-            'AffectiveProcesses', 'AffectiveMotivationalModulation', 'EmotionCognitionInteraction',
-            
+            "EmotionalRegulation",
+            "EmotionalWellBeing",
+            "PositiveEmotions",
+            "NegativeEmotions",
+            "AffectiveProcesses",
+            "AffectiveMotivationalModulation",
+            "EmotionCognitionInteraction",
             # Mindset & growth
-            'Mindset', 'GrowthMindset', 'FixedMindset', 'MindsetFlexibility', 'MindsetAttitudes',
-            'BrainAdaptability', 'Neuroplasticity',
-            
+            "Mindset",
+            "GrowthMindset",
+            "FixedMindset",
+            "MindsetFlexibility",
+            "MindsetAttitudes",
+            "BrainAdaptability",
+            "Neuroplasticity",
             # Stress & coping
-            'PositiveStressEustress', 'NegativeStressDistress', 'StressResponse',
-            'AdaptiveCoping', 'MaladaptiveCoping', 'Resilience', 'Vulnerability',
-            
+            "PositiveStressEustress",
+            "NegativeStressDistress",
+            "StressResponse",
+            "AdaptiveCoping",
+            "MaladaptiveCoping",
+            "Resilience",
+            "Vulnerability",
             # Social processes
-            'SocialCognition', 'SocialLearning', 'SocialDevelopment', 'Communication',
-            'SocialEmotions', 'SocialDimension',
-            
+            "SocialCognition",
+            "SocialLearning",
+            "SocialDevelopment",
+            "Communication",
+            "SocialEmotions",
+            "SocialDimension",
             # Learning outcomes & development
-            'LearningOutcomes', 'LearningDevelopment', 'LearningPerformance', 'LearningDepth',
-            'LearningQuality', 'DeepLearning', 'LongTermLearning', 'PersonalGrowth',
-            
+            "LearningOutcomes",
+            "LearningDevelopment",
+            "LearningPerformance",
+            "LearningDepth",
+            "LearningQuality",
+            "DeepLearning",
+            "LongTermLearning",
+            "PersonalGrowth",
             # Teaching & educational support
-            'TeachingPractices', 'EducationalSupport', 'EducationalEnvironment',
-            'InstructionalScaffolding',
-            
+            "TeachingPractices",
+            "EducationalSupport",
+            "EducationalEnvironment",
+            "InstructionalScaffolding",
             # Thinking & reasoning
-            'HigherOrderThinking', 'LowerOrderThinking', 'ProblemSolving', 'Reasoning',
-            'ReflectiveThinking', 'AdaptiveThinking', 'CriticalThinking',
-            
+            "HigherOrderThinking",
+            "LowerOrderThinking",
+            "ProblemSolving",
+            "Reasoning",
+            "ReflectiveThinking",
+            "AdaptiveThinking",
             # Executive functions & planning
-            'Planning', 'Monitoring', 'Evaluation', 'MetacognitiveMonitoring',
-            'MetacognitiveControl', 'AttentionalControl',
-            
+            "Planning",
+            "Monitoring",
+            "Evaluation",
+            "MetacognitiveMonitoring",
+            "MetacognitiveControl",
+            "AttentionalControl",
             # Strengths & abilities
-            'Strengths', 'CognitiveStrengths', 'MotorFunction', 'SensoryProcessing',
-            
+            "Strengths",
+            "CognitiveStrengths",
+            "MotorFunction",
+            "SensoryProcessing",
             # Special needs & disabilities (present in audit)
-            'LanguageProcessing', 'ReadingAcquisition', 'ReadingFluency', 'ProcessingSpeed',
-            'LiteracySkills', 'OrthographicMapping', 'NumberSense', 'NumericalCognition',
-            'MathematicalLiteracy', 'SpatialProcessing', 'SpatialCognition',
-            
+            "LanguageProcessing",
+            "ReadingAcquisition",
+            "ReadingFluency",
+            "ProcessingSpeed",
+            "LiteracySkills",
+            "OrthographicMapping",
+            "NumberSense",
+            "NumericalCognition",
+            "MathematicalLiteracy",
+            "SpatialProcessing",
+            "SpatialCognition",
             # Neuroscience concepts
-            'CognitiveNeuroscience', 'NeuralResources', 'HemisphericSpecialization',
-            'NeuroimagingEvidence', 'AmygdalaHippocampusInteraction',
-            
+            "CognitiveNeuroscience",
+            "NeuralResources",
+            "HemisphericSpecialization",
+            "NeuroimagingEvidence",
+            "AmygdalaHippocampusInteraction",
             # Cognitive biases & myths
-            'CognitiveBias', 'CognitiveBiases', 'LearningStyles', 'MultipleIntelligences',
-            'WeOnlyUse10OfOurBrain', 'CriticalPeriodsAreAbsolute', 'PeopleAreAnalyticalOrCreative',
-            
+            "CognitiveBias",
+            "CognitiveBiases",
+            "LearningStyles",
+            "MultipleIntelligences",
+            "WeOnlyUse10OfOurBrain",
+            "CriticalPeriodsAreAbsolute",
+            "PeopleAreAnalyticalOrCreative",
             # Educational theory
-            'EducationalTheory', 'EvidenceBasedInstruction', 'CognitivePsychology',
-            
+            "EducationalTheory",
+            "EvidenceBasedInstruction",
+            "CognitivePsychology",
             # Decision making & judgment
-            'DecisionMaking', 'JudgmentBelief', 'Assessment', 'SelfEvaluation', 'Expectations',
-            
+            "DecisionMaking",
+            "JudgmentBelief",
+            "Assessment",
+            "SelfEvaluation",
+            "Expectations",
             # Applied cognition
-            'AppliedCognition', 'InformationLiteracy', 'KnowledgeIntegration',
-            'KnowledgeOfCognition', 'SelfRegulatedLearning'
+            "AppliedCognition",
+            "InformationLiteracy",
+            "KnowledgeIntegration",
+            "KnowledgeOfCognition",
+            "SelfRegulatedLearning",
         }
 
         # Dynamically add UDL labels from domain config (March 2026 — 271 unique labels)
@@ -550,9 +623,9 @@ class HybridGraphRetriever:
         except Exception as e:
             logger.warning(f"⚠️  Could not load UDL expansion labels from domain config: {e}")
 
-    def _load_domain_boosts(self) -> Dict[str, float]:
+    def _load_domain_boosts(self) -> dict[str, float]:
         """Load domain boosts from domain configs
-        
+
         Returns:
             Dict mapping label names to boost values
         """
@@ -560,32 +633,32 @@ class HybridGraphRetriever:
         try:
             udl_config = get_domain_config("udl")
             neuro_config = get_domain_config("neuro")
-            
+
             combined_boosts = {}
-            
+
             # Add UDL boosts
             if udl_config:
                 udl_boosts = udl_config.get_retrieval_boosts()
-                for label, boost in udl_boosts.get('label_boosts', {}).items():
+                for label, boost in udl_boosts.get("label_boosts", {}).items():
                     combined_boosts[label] = boost
-            
+
             # Add Neuro boosts (may overlap with UDL, that's okay)
             if neuro_config:
                 neuro_boosts = neuro_config.get_retrieval_boosts()
-                for label, boost in neuro_boosts.get('label_boosts', {}).items():
+                for label, boost in neuro_boosts.get("label_boosts", {}).items():
                     combined_boosts[label] = boost
-            
+
             if combined_boosts:
                 logger.info(f"✅ Loaded domain boosts from configs: {len(combined_boosts)} labels")
                 return combined_boosts
-        
+
         except Exception as e:
             logger.warning(f"⚠️  Could not load domain boosts from configs: {e}, using fallback")
-        
+
         # ============================================================================
         # 🧹 CLEANUP TODO: The following fallback dictionary can be SAFELY REMOVED
         # after confirming the domain config refactoring works correctly.
-        # 
+        #
         # WHAT TO REMOVE:
         #   - The entire fallback return block below (~50 lines)
         #   - UDL boosts → Now in domains/udl_domain.py → get_retrieval_boosts()
@@ -594,49 +667,48 @@ class HybridGraphRetriever:
         # ESTIMATED LINES SAVED: ~50 lines
         # DATE MARKED: Nov 2025
         # ============================================================================
-        
+
         # 🧹 BACKUP - Fallback to hardcoded boosts if domain configs fail
         logger.info("Using fallback domain boosts (hardcoded)")
         return {
             # UDL domain labels
-            'StudentWithSpecialNeeds': 2.0,
-            'PedagogicalMethodology': 2.0,
-            'StudentCharacteristic': 1.5,
-            'Context': 1.5,
-            'Lighting': 1.2,
-            'Colour': 1.2,
-            'Furniture': 1.2,
-            'Acoustic': 1.2,
-            'InteractiveBoard': 1.3,
-            'EnvironmentalBarrier': 1.1,
-            'EnvironmentalSupport': 1.1,
-            
-            # Neuro domain labels  
-            'Attention': 2.2,
-            'CriticalThinking': 2.0,
-            'ExtrinsicMotivation': 2.0,
-            'ExecutiveFunctions': 2.1,
-            'IntrinsicMotivation': 2.0,
-            'LearningOutcomes': 1.8,
-            'TeachingPractices': 1.8,
-            'LearningDevelopment': 1.7,
-            'NegativeStressDistress': 1.7,
-            'Motivation': 1.6,
-            'CognitiveFlexibility': 2.0,
-            'Creativity': 1.8,
-            'Memory': 1.7,
-            'WorkingMemory': 1.7,
-            'Metacognition': 1.6,
-            'EmotionalRegulation': 1.6,
-            'GrowthMindset': 1.7,
-            'FixedMindset': 1.5,
-            'Mindset': 1.6,
-            'PositiveStressEustress': 1.6
+            "StudentWithSpecialNeeds": 2.0,
+            "PedagogicalMethodology": 2.0,
+            "StudentCharacteristic": 1.5,
+            "Context": 1.5,
+            "Lighting": 1.2,
+            "Colour": 1.2,
+            "Furniture": 1.2,
+            "Acoustic": 1.2,
+            "InteractiveBoard": 1.3,
+            "EnvironmentalBarrier": 1.1,
+            "EnvironmentalSupport": 1.1,
+            # Neuro domain labels
+            "Attention": 2.2,
+            "CriticalThinking": 2.0,
+            "ExtrinsicMotivation": 2.0,
+            "ExecutiveFunctions": 2.1,
+            "IntrinsicMotivation": 2.0,
+            "LearningOutcomes": 1.8,
+            "TeachingPractices": 1.8,
+            "LearningDevelopment": 1.7,
+            "NegativeStressDistress": 1.7,
+            "Motivation": 1.6,
+            "CognitiveFlexibility": 2.0,
+            "Creativity": 1.8,
+            "Memory": 1.7,
+            "WorkingMemory": 1.7,
+            "Metacognition": 1.6,
+            "EmotionalRegulation": 1.6,
+            "GrowthMindset": 1.7,
+            "FixedMindset": 1.5,
+            "Mindset": 1.6,
+            "PositiveStressEustress": 1.6,
         }
-    
+
     def _load_node2vec_model(self, domain: str = "all", model_path: str = None):
         """Load pre-trained Node2Vec model and embeddings with domain awareness
-        
+
         Args:
             domain: Domain to load model for ('udl', 'neuro', 'all')
             model_path: Optional explicit model path (overrides domain-based path)
@@ -645,55 +717,61 @@ class HybridGraphRetriever:
             # Use domain-specific path if not explicitly provided
             if model_path is None:
                 model_path = f"artifacts/node2vec/{domain}_node2vec"
-            
+
             logger.info(f"Loading Node2Vec model for domain: {domain} from {model_path}")
-            
+
             # Load Node2Vec model
             model_file = f"{model_path}_model.pkl"
             if os.path.exists(model_file):
-                with open(model_file, 'rb') as f:
+                with open(model_file, "rb") as f:
                     self.node2vec_model = pickle.load(f)
                 logger.info(f"Node2Vec model loaded successfully (domain: {domain})")
             else:
                 logger.warning(f"Node2Vec model file not found: {model_file}")
-                logger.warning(f"To train Node2Vec for {domain}, run: python train_node2vec.py {domain}")
+                logger.warning(
+                    f"To train Node2Vec for {domain}, run: python train_node2vec.py {domain}"
+                )
                 return False
-            
+
             # Load embeddings and indices
             embeddings_file = f"{model_path}_embeddings.npz"
             if os.path.exists(embeddings_file):
                 data = np.load(embeddings_file, allow_pickle=True)
-                self.node_embeddings = data['embeddings']
-                self.node_index = data['node_index'].item()
-                self.reverse_index = data['reverse_index'].item()
+                self.node_embeddings = data["embeddings"]
+                self.node_index = data["node_index"].item()
+                self.reverse_index = data["reverse_index"].item()
                 self.node2vec_loaded = True
                 logger.info(f"Node2Vec embeddings loaded: {len(self.node_embeddings)} nodes")
                 return True
             else:
                 logger.warning(f"Node2Vec embeddings file not found: {embeddings_file}")
                 return False
-                
+
         except Exception as e:
             logger.error(f"Failed to load Node2Vec model: {e}")
             self.node2vec_loaded = False
             return False
-    
+
     def _init_semantic_embedder(self, domain: str = "all"):
         """Initialize OpenAI semantic embedder for hybrid mode.
-        
+
         Args:
             domain: Domain for embedding cache
         """
         try:
             self.semantic_embedder = SemanticEmbedder(domain=domain)
-            
+
             # Check if we have cached embeddings
             if not self.semantic_embedder.embeddings_loaded:
                 logger.info(f"[SemanticEmbedder] No cached embeddings found for {domain}")
-                logger.info(f"[SemanticEmbedder] Run 'python -m graph_retriever --precompute {domain}' to pre-compute")
+                logger.info(
+                    f"[SemanticEmbedder] Run 'python -m graph_retriever --precompute {domain}' to pre-compute"
+                )
             else:
-                logger.info(f"[SemanticEmbedder] Loaded {len(self.semantic_embedder.node_embeddings)} cached embeddings")
-            
+                logger.info(
+                    f"[SemanticEmbedder] Loaded {len(self.semantic_embedder.node_embeddings)} cached embeddings"
+                )
+
         except Exception as e:
             logger.error(f"Failed to initialize semantic embedder: {e}")
             self.semantic_embedder = None
@@ -701,8 +779,10 @@ class HybridGraphRetriever:
             if self.embedding_mode == "hybrid_semantic":
                 logger.warning("[SemanticEmbedder] Falling back to node2vec mode")
                 self.embedding_mode = "node2vec"
-    
-    async def retrieve(self, query: str, cypher_result: Dict, semantic_query: str = None) -> RetrievedContext:
+
+    async def retrieve(
+        self, query: str, cypher_result: dict, semantic_query: str = None
+    ) -> RetrievedContext:
         """Main retrieval method combining graph and semantic search.
 
         Args:
@@ -721,7 +801,9 @@ class HybridGraphRetriever:
             graph_start = time.time()
             graph_nodes = await self._graph_traversal(cypher_result, query)
             graph_time = time.time() - graph_start
-            logger.info(f"[Perf] Graph traversal + expansion: {graph_time:.2f}s ({len(graph_nodes)} nodes)")
+            logger.info(
+                f"[Perf] Graph traversal + expansion: {graph_time:.2f}s ({len(graph_nodes)} nodes)"
+            )
 
             # Phase 2: Semantic search (breadth, optional)
             # Uses translated English query so embeddings match English node names.
@@ -731,69 +813,71 @@ class HybridGraphRetriever:
                 semantic_start = time.time()
                 semantic_nodes = await self._semantic_search(_semantic_query, graph_nodes)
                 semantic_time = time.time() - semantic_start
-                logger.info(f"[Perf] Semantic search: {semantic_time:.2f}s ({len(semantic_nodes)} nodes)")
-            
+                logger.info(
+                    f"[Perf] Semantic search: {semantic_time:.2f}s ({len(semantic_nodes)} nodes)"
+                )
+
             # Phase 3: Fusion and ranking
             fusion_start = time.time()
             ranked_nodes, triples = self._fuse_results(graph_nodes, semantic_nodes)
             fusion_time = time.time() - fusion_start
-            
+
             # Phase 4: Build final context
             context_start = time.time()
             facets = self._build_facets(ranked_nodes, triples)
             context_time = time.time() - context_start
-            
+
             total_time = time.time() - start_time
-            
+
             logger.info(
                 f"[Perf] Total retrieval: {total_time:.2f}s "
                 f"(graph={graph_time:.2f}s, semantic={semantic_time:.2f}s, "
                 f"fusion={fusion_time:.2f}s) — "
                 f"{len(ranked_nodes)} nodes, {len(triples)} triples"
             )
-            
+
             metadata = {
-                'graph_count': len(graph_nodes),
-                'semantic_count': len(semantic_nodes),
-                'total_nodes': len(ranked_nodes),
-                'total_triples': len(triples),
-                'embedding_mode': getattr(self, 'embedding_mode', 'node2vec'),
-                'timings': {
-                    'graph_traversal': graph_time,
-                    'semantic_search': semantic_time,
-                    'fusion': fusion_time,
-                    'context_building': context_time,
-                    'total': total_time
+                "graph_count": len(graph_nodes),
+                "semantic_count": len(semantic_nodes),
+                "total_nodes": len(ranked_nodes),
+                "total_triples": len(triples),
+                "embedding_mode": getattr(self, "embedding_mode", "node2vec"),
+                "timings": {
+                    "graph_traversal": graph_time,
+                    "semantic_search": semantic_time,
+                    "fusion": fusion_time,
+                    "context_building": context_time,
+                    "total": total_time,
                 },
-                'limits_applied': {
-                    'max_nodes': self.max_nodes,
-                    'max_edges': self.max_edges,
-                    'use_vectors': self.use_vectors
-                }
+                "limits_applied": {
+                    "max_nodes": self.max_nodes,
+                    "max_edges": self.max_edges,
+                    "use_vectors": self.use_vectors,
+                },
             }
-            
+
             return RetrievedContext(
-                nodes=ranked_nodes[:self.max_nodes],
-                triples=triples[:self.max_edges],
+                nodes=ranked_nodes[: self.max_nodes],
+                triples=triples[: self.max_edges],
                 facets=facets,
-                metadata=metadata
+                metadata=metadata,
             )
-            
+
         except Exception as e:
             logger.error(f"Retrieval failed: {e}")
             # Fallback to graph-only results
             return await self._fallback_retrieval(cypher_result, str(e))
-    
-    async def _graph_traversal(self, cypher_result: Dict, query: str = "") -> List[Dict]:
+
+    async def _graph_traversal(self, cypher_result: dict, query: str = "") -> list[dict]:
         """Execute Cypher query and retrieve curriculum nodes with neighbor expansion"""
         try:
             # CRITICAL FIX: Use fallback query if available (when relationship query failed)
-            if cypher_result.get('used_fallback', False) and cypher_result.get('fallback_query'):
-                cypher_query = cypher_result.get('fallback_query', '')
-                logger.info(f"[FALLBACK MODE] Using fallback query instead of original")
+            if cypher_result.get("used_fallback", False) and cypher_result.get("fallback_query"):
+                cypher_query = cypher_result.get("fallback_query", "")
+                logger.info("[FALLBACK MODE] Using fallback query instead of original")
             else:
-                cypher_query = cypher_result.get('cypher_query', '')
-            
+                cypher_query = cypher_result.get("cypher_query", "")
+
             if not cypher_query:
                 logger.warning("No Cypher query provided for graph traversal")
                 return []
@@ -814,75 +898,91 @@ class HybridGraphRetriever:
             if records:
                 sample_keys = list(dict(records[0]).keys())
                 logger.info(f"[DEBUG FALLBACK] First row keys: {sample_keys}")
-                logger.info(f"[DEBUG FALLBACK] Checking cases: has_label_cols={any(k in sample_keys for k in ['node_labels', 'source_labels', 'target_labels'])}, has_dots={any('.' in k for k in sample_keys)}, has_name={('name' in sample_keys)}, has_category_or_desc={any(k in sample_keys for k in ['category', 'description'])}")
-                
+                logger.info(
+                    f"[DEBUG FALLBACK] Checking cases: has_label_cols={any(k in sample_keys for k in ['node_labels', 'source_labels', 'target_labels'])}, has_dots={any('.' in k for k in sample_keys)}, has_name={('name' in sample_keys)}, has_category_or_desc={any(k in sample_keys for k in ['category', 'description'])}"
+                )
+
                 # CASE 1: Full node objects with explicit labels (NEW FORMAT)
                 # Pattern: RETURN m, labels(m) as node_labels OR RETURN m as concept, labels(m) as node_labels (UNION fix)
-                if any(k in sample_keys for k in ['node_labels', 'source_labels', 'target_labels']):
+                if any(k in sample_keys for k in ["node_labels", "source_labels", "target_labels"]):
                     for rec in records:
                         row = dict(rec)
-                        
+
                         # Process nodes with labels
                         for key, value in row.items():
-                            if key in ['node_labels', 'source_labels', 'target_labels']:
+                            if key in ["node_labels", "source_labels", "target_labels"]:
                                 continue  # Skip label columns themselves
-                            
+
                             # Check if this is a Neo4j Node object
-                            if hasattr(value, '__iter__') and hasattr(value, 'get'):
+                            if hasattr(value, "__iter__") and hasattr(value, "get"):
                                 try:
                                     node_dict = dict(value)
-                                    
+
                                     # Get labels from corresponding label column
-                                    if 'node_labels' in row:
-                                        node_dict['labels'] = row['node_labels']
-                                    elif key == 'concept':  # UNION fix: standardized column name for simple queries
-                                        if 'node_labels' in row:
-                                            node_dict['labels'] = row['node_labels']
-                                    elif key == 'source':  # UNION fix: standardized column name for relationship queries
-                                        if 'source_labels' in row:
-                                            node_dict['labels'] = row['source_labels']
-                                    elif key == 'target':  # UNION fix: standardized column name for relationship queries
-                                        if 'target_labels' in row:
-                                            node_dict['labels'] = row['target_labels']
-                                    elif key == 'm' or key == 'n':
-                                        if 'source_labels' in row:
-                                            node_dict['labels'] = row['source_labels']
-                                        elif 'node_labels' in row:
-                                            node_dict['labels'] = row['node_labels']
+                                    if "node_labels" in row:
+                                        node_dict["labels"] = row["node_labels"]
+                                    elif (
+                                        key == "concept"
+                                    ):  # UNION fix: standardized column name for simple queries
+                                        if "node_labels" in row:
+                                            node_dict["labels"] = row["node_labels"]
+                                    elif (
+                                        key == "source"
+                                    ):  # UNION fix: standardized column name for relationship queries
+                                        if "source_labels" in row:
+                                            node_dict["labels"] = row["source_labels"]
+                                    elif (
+                                        key == "target"
+                                    ):  # UNION fix: standardized column name for relationship queries
+                                        if "target_labels" in row:
+                                            node_dict["labels"] = row["target_labels"]
+                                    elif key == "m" or key == "n":
+                                        if "source_labels" in row:
+                                            node_dict["labels"] = row["source_labels"]
+                                        elif "node_labels" in row:
+                                            node_dict["labels"] = row["node_labels"]
                                     else:
                                         # Fallback: try to extract from node object
-                                        if hasattr(value, 'labels'):
-                                            node_dict['labels'] = list(value.labels)
+                                        if hasattr(value, "labels"):
+                                            node_dict["labels"] = list(value.labels)
                                         else:
-                                            node_dict['labels'] = []
-                                    
+                                            node_dict["labels"] = []
+
                                     initial_nodes.append(self._normalize_node(node_dict))
                                 except Exception as e:
                                     logger.warning(f"Could not process full node object: {e}")
-                
+
                 # CASE 2: Scalar projections (legacy format) - fallback
                 elif any("." in k for k in sample_keys):
                     initial_nodes = self._records_to_nodes(records, alias_labels)
-                
+
                 # CASE 3: Pure scalar fallback results (from fallback definition queries)
                 # Pattern: {name: "Emotions", category: "Affective Processes"}
-                elif 'name' in sample_keys and any(k in sample_keys for k in ['category', 'description']):
-                    logger.info(f"[CASE 3 TRIGGERED] Detected fallback scalar results with keys: {sample_keys}")
-                    logger.info(f"[CASE 3] alias_labels extracted: {alias_labels}")  # Debug: show extracted labels
+                elif "name" in sample_keys and any(
+                    k in sample_keys for k in ["category", "description"]
+                ):
+                    logger.info(
+                        f"[CASE 3 TRIGGERED] Detected fallback scalar results with keys: {sample_keys}"
+                    )
+                    logger.info(
+                        f"[CASE 3] alias_labels extracted: {alias_labels}"
+                    )  # Debug: show extracted labels
                     for rec in records:
                         row = dict(rec)
-                        if 'name' in row:
+                        if "name" in row:
                             # Try to infer label from query or use generic
                             inferred_label = None
                             # Check ALL aliases (not just specific ones) - take the first valid label
-                            for alias, label in alias_labels.items():
-                                if label and label != '':  # Any valid label
+                            for _alias, label in alias_labels.items():
+                                if label and label != "":  # Any valid label
                                     inferred_label = label
                                     break
-                            
+
                             if not inferred_label:
-                                inferred_label = 'Concept'  # Generic fallback (will be added to neuro_labels)
-                            
+                                inferred_label = (
+                                    "Concept"  # Generic fallback (will be added to neuro_labels)
+                                )
+
                             node = {
                                 "id": f"{inferred_label}:{row['name']}",
                                 "name": row["name"],
@@ -890,25 +990,31 @@ class HybridGraphRetriever:
                                 "labels": [inferred_label] if inferred_label else [],
                                 "description": row.get("description", ""),
                                 "rel_type": "",
-                                "source_node": {}
+                                "source_node": {},
                             }
                             initial_nodes.append(self._normalize_node(node))
-                            logger.info(f"Parsed fallback scalar: {row['name']} as {inferred_label}")
-                
+                            logger.info(
+                                f"Parsed fallback scalar: {row['name']} as {inferred_label}"
+                            )
+
                 # CASE 4: Aliased scalar projections (from domain few-shot examples)
                 # Pattern: RETURN a.name AS challenge, m.name AS strategy, labels(m) AS strategy_type
                 # Detects rows with string values (node names) and optional list values (labels)
                 elif any(isinstance(dict(records[0]).get(k), str) for k in sample_keys):
-                    logger.info(f"[CASE 4] Handling aliased scalar results with keys: {sample_keys}")
+                    logger.info(
+                        f"[CASE 4] Handling aliased scalar results with keys: {sample_keys}"
+                    )
 
                     # Parse RETURN clause to map column aliases → query variable
                     return_map = self._parse_return_aliases(corrected_query)
 
                     # Parse MATCH relationship patterns: (src_var)-[:REL_TYPE]->(tgt_var)
                     import re as _re
+
                     rel_patterns = _re.findall(
-                        r'\((\w+)(?::\w[\w]*)?(?:\s*\{[^}]*\})?\)\s*-\[(?:\w*):(\w+)\]->\s*\((\w+)(?::\w[\w]*)?(?:\s*\{[^}]*\})?\)',
-                        corrected_query, _re.IGNORECASE
+                        r"\((\w+)(?::\w[\w]*)?(?:\s*\{[^}]*\})?\)\s*-\[(?:\w*):(\w+)\]->\s*\((\w+)(?::\w[\w]*)?(?:\s*\{[^}]*\})?\)",
+                        corrected_query,
+                        _re.IGNORECASE,
                     )
                     # rel_patterns: list of (src_var, rel_type, tgt_var)
                     logger.debug(f"[CASE 4] Relationship patterns found: {rel_patterns}")
@@ -921,7 +1027,7 @@ class HybridGraphRetriever:
 
                     # Build per-column label map from alias_labels
                     col_to_label = {
-                        col_alias: alias_labels.get(query_var, '')
+                        col_alias: alias_labels.get(query_var, "")
                         for col_alias, query_var in return_map.items()
                     }
 
@@ -953,22 +1059,24 @@ class HybridGraphRetriever:
                             if not isinstance(val, str) or not val:
                                 continue
 
-                            node_label = col_to_label.get(col_name, '')
+                            node_label = col_to_label.get(col_name, "")
 
                             # Use per-column labels() list if available
                             list_col = col_to_list_col.get(col_name)
                             list_labels = []
                             if list_col and isinstance(row.get(list_col), (list, tuple)):
-                                list_labels = [str(l) for l in row[list_col]]
+                                list_labels = [str(lbl) for lbl in row[list_col]]
 
                             node = {
                                 "id": f"{node_label}:{val}" if node_label else val,
                                 "name": val,
                                 "category": "",
-                                "labels": list_labels if list_labels else ([node_label] if node_label else []),
+                                "labels": list_labels
+                                if list_labels
+                                else ([node_label] if node_label else []),
                                 "description": "",
                                 "rel_type": "",
-                                "source_node": {}
+                                "source_node": {},
                             }
                             created_nodes[col_name] = node
 
@@ -977,10 +1085,10 @@ class HybridGraphRetriever:
                         for tgt_col, (rel_type, src_col) in target_cols_rel.items():
                             if tgt_col in created_nodes and src_col in created_nodes:
                                 src_node = created_nodes[src_col]
-                                created_nodes[tgt_col]['rel_type'] = rel_type
-                                created_nodes[tgt_col]['source_node'] = {
-                                    'name': src_node['name'],
-                                    'labels': src_node['labels'],
+                                created_nodes[tgt_col]["rel_type"] = rel_type
+                                created_nodes[tgt_col]["source_node"] = {
+                                    "name": src_node["name"],
+                                    "labels": src_node["labels"],
                                 }
 
                         for node in created_nodes.values():
@@ -990,7 +1098,7 @@ class HybridGraphRetriever:
                             # target.source_node for triple extraction.
                             # Fallback: if no rel_patterns were found, we have no
                             # targeting info → add all nodes to avoid empty results.
-                            if not rel_patterns or node.get('rel_type'):
+                            if not rel_patterns or node.get("rel_type"):
                                 initial_nodes.append(self._normalize_node(node))
 
                 # CASE 5: Simple node objects without explicit labels
@@ -1000,8 +1108,8 @@ class HybridGraphRetriever:
                         for v in row.values():
                             try:
                                 props = dict(v)
-                                if hasattr(v, 'labels'):
-                                    props['labels'] = list(v.labels)
+                                if hasattr(v, "labels"):
+                                    props["labels"] = list(v.labels)
                                 initial_nodes.append(self._normalize_node(props))
                             except Exception:
                                 pass
@@ -1020,14 +1128,14 @@ class HybridGraphRetriever:
         except Exception as e:
             logger.error(f"Graph traversal failed: {e}")
             return []
-    
+
     def _apply_schema_corrections(self, cypher_query: str) -> str:
         """Apply schema typo corrections to Cypher query"""
         corrected_query = cypher_query
         for typo, correct in self.schema_corrections.items():
             corrected_query = corrected_query.replace(typo, correct)
         return corrected_query
-    
+
     def _parse_return_aliases(self, cypher_query: str) -> dict:
         """Map RETURN column aliases back to query variable aliases.
 
@@ -1035,21 +1143,24 @@ class HybridGraphRetriever:
         returns {'challenge': 'a', 'strategy': 'm', 'strategy_type': 'm'}
         """
         import re
+
         result = {}
         # re.DOTALL so .*? crosses newlines in multi-line RETURN clauses
-        return_match = re.search(r'RETURN\s+(.*?)(?:\s+LIMIT|\s+ORDER|\s*$)', cypher_query, re.IGNORECASE | re.DOTALL)
+        return_match = re.search(
+            r"RETURN\s+(.*?)(?:\s+LIMIT|\s+ORDER|\s*$)", cypher_query, re.IGNORECASE | re.DOTALL
+        )
         if not return_match:
             return result
         return_clause = return_match.group(1)
-        for part in return_clause.split(','):
+        for part in return_clause.split(","):
             part = part.strip()
-            as_match = re.search(r'AS\s+(\w+)\s*$', part, re.IGNORECASE)
+            as_match = re.search(r"AS\s+(\w+)\s*$", part, re.IGNORECASE)
             if not as_match:
                 continue
             col_alias = as_match.group(1)
             # Extract query variable: 'a.name' → 'a', 'labels(m)' → 'm', 'type(r)' → 'r'
-            expr = part[:as_match.start()].strip()
-            var_match = re.match(r'(\w+)\.', expr) or re.match(r'\w+\((\w+)\)', expr)
+            expr = part[: as_match.start()].strip()
+            var_match = re.match(r"(\w+)\.", expr) or re.match(r"\w+\((\w+)\)", expr)
             if var_match:
                 result[col_alias] = var_match.group(1)
         return result
@@ -1058,12 +1169,14 @@ class HybridGraphRetriever:
         """
         From patterns like (m:PedagogicalMethodology) or (s:StudentWithSpecialNeeds),
         build {'m': 'PedagogicalMethodology', 's': 'StudentWithSpecialNeeds'}.
-        
+
         Now also handles property filters: (t:TeachingPractices {domain: "neuro"})
         """
         alias_labels = {}
         # Updated regex to handle optional property filters {domain: "..."}
-        for alias, label in re.findall(r'\(\s*([A-Za-z_]\w*)\s*:\s*([A-Za-z][A-Za-z0-9_]*)(?:\s*\{[^}]*\})?\s*\)', cypher_query):
+        for alias, label in re.findall(
+            r"\(\s*([A-Za-z_]\w*)\s*:\s*([A-Za-z][A-Za-z0-9_]*)(?:\s*\{[^}]*\})?\s*\)", cypher_query
+        ):
             alias_labels[alias] = label
         return alias_labels
 
@@ -1094,13 +1207,13 @@ class HybridGraphRetriever:
                         "labels": [label] if label else [],
                         "description": props.get("description", ""),
                         "rel_type": "",
-                        "source_node": {}
+                        "source_node": {},
                     }
                     nodes.append(node)
 
         return nodes
-    
-    async def _expand_neighbors(self, nodes: List[Dict], session, query: str = "") -> List[Dict]:
+
+    async def _expand_neighbors(self, nodes: list[dict], session, query: str = "") -> list[dict]:
         """
         Expand nodes with their educational neighbors (structural + vector-based).
 
@@ -1117,18 +1230,18 @@ class HybridGraphRetriever:
         seen_node_ids = set()
 
         for node in nodes:
-            node_id = node.get('id') or node.get('name')
+            node_id = node.get("id") or node.get("name")
             if node_id and node_id not in seen_node_ids:
-                if node.get('rel_type') and node.get('source_node'):
-                    node['hop_distance'] = 1
-                    node['retrieval_stage'] = 'structural_neighbor'
-                    if 'triple_source_name' not in node:
-                        src_name = node.get('source_node', {}).get('name', '')
-                        node['triple_source_name'] = src_name
-                        node['triple_target_name'] = node.get('name', '')
+                if node.get("rel_type") and node.get("source_node"):
+                    node["hop_distance"] = 1
+                    node["retrieval_stage"] = "structural_neighbor"
+                    if "triple_source_name" not in node:
+                        src_name = node.get("source_node", {}).get("name", "")
+                        node["triple_source_name"] = src_name
+                        node["triple_target_name"] = node.get("name", "")
                 else:
-                    node['hop_distance'] = 0
-                    node['retrieval_stage'] = 'direct_query'
+                    node["hop_distance"] = 0
+                    node["retrieval_stage"] = "direct_query"
                 expanded_nodes.append(self._normalize_node(node))
                 initial_nodes.append(node)
                 seen_node_ids.add(node_id)
@@ -1137,13 +1250,13 @@ class HybridGraphRetriever:
         all_structural = await self._batch_get_educational_neighbors(nodes)
 
         for node in nodes:
-            node_name = node.get('name', '')
+            node_name = node.get("name", "")
             for neighbor in all_structural.get(node_name, []):
-                neighbor_id = neighbor.get('id') or neighbor.get('name')
+                neighbor_id = neighbor.get("id") or neighbor.get("name")
                 if neighbor_id and neighbor_id not in seen_node_ids:
-                    neighbor['source'] = 'structural'
-                    neighbor['hop_distance'] = 1
-                    neighbor['retrieval_stage'] = 'structural_neighbor'
+                    neighbor["source"] = "structural"
+                    neighbor["hop_distance"] = 1
+                    neighbor["retrieval_stage"] = "structural_neighbor"
                     expanded_nodes.append(self._normalize_node(neighbor))
                     seen_node_ids.add(neighbor_id)
 
@@ -1151,11 +1264,11 @@ class HybridGraphRetriever:
             if self.node2vec_loaded and self.use_vectors:
                 vector_neighbors = await self._get_vector_neighbors(node, seen_node_ids)
                 for neighbor in vector_neighbors:
-                    neighbor_id = neighbor.get('id') or neighbor.get('name')
+                    neighbor_id = neighbor.get("id") or neighbor.get("name")
                     if neighbor_id and neighbor_id not in seen_node_ids:
-                        neighbor['source'] = 'vector'
-                        neighbor['hop_distance'] = 2
-                        neighbor['retrieval_stage'] = 'vector_neighbor'
+                        neighbor["source"] = "vector"
+                        neighbor["hop_distance"] = 2
+                        neighbor["retrieval_stage"] = "vector_neighbor"
                         expanded_nodes.append(self._normalize_node(neighbor))
                         seen_node_ids.add(neighbor_id)
 
@@ -1164,9 +1277,7 @@ class HybridGraphRetriever:
 
         if expanded_only:
             filtered_expanded = self._filter_semantic_nodes_by_relevance(
-                expanded_only,
-                initial_nodes,
-                query
+                expanded_only, initial_nodes, query
             )
             logger.info(
                 f"[P1 Filter] Structural+Vector neighbors: {len(expanded_only)} → Filtered: {len(filtered_expanded)}"
@@ -1174,12 +1285,12 @@ class HybridGraphRetriever:
             return initial_nodes + filtered_expanded
         else:
             return expanded_nodes
-    
-    def _get_educational_neighbors(self, node: Dict, session) -> List[Dict]:
+
+    def _get_educational_neighbors(self, node: dict, session) -> list[dict]:
         """Get educationally relevant neighbors of a node"""
         try:
-            node_labels = node.get('labels', [])
-            node_name = node.get('name', '')
+            node_labels = node.get("labels", [])
+            node_name = node.get("name", "")
             if not node_labels or not node_name:
                 return []
 
@@ -1199,25 +1310,25 @@ class HybridGraphRetriever:
                 neighbor_query,
                 node_name=node_name,
                 relevant_labels=list(self.expansion_labels),
-                limit=5
+                limit=5,
             )
 
             neighbors = []
             for record in result:
                 # n and source_node are Neo4j Node objects — capture labels explicitly
-                n_node = record['n']
-                s_node = record['source_node']
-                rel_start_name = record['rel_start_name']  # actual Neo4j arrow start
+                n_node = record["n"]
+                s_node = record["source_node"]
+                rel_start_name = record["rel_start_name"]  # actual Neo4j arrow start
 
                 neighbor = dict(n_node)
-                neighbor_name = neighbor.get('name', '')
-                neighbor['labels'] = list(getattr(n_node, 'labels', []))
-                neighbor['rel_type'] = record['rel_type']
+                neighbor_name = neighbor.get("name", "")
+                neighbor["labels"] = list(getattr(n_node, "labels", []))
+                neighbor["rel_type"] = record["rel_type"]
 
                 src = dict(s_node)
-                src['labels'] = list(getattr(s_node, 'labels', []))
+                src["labels"] = list(getattr(s_node, "labels", []))
                 # source_node = expansion start (kept for graph_path display in explainability)
-                neighbor['source_node'] = src
+                neighbor["source_node"] = src
 
                 # Determine actual Neo4j relationship direction for correct triple building.
                 # rel_start_name is the name of the node that is the real "from" of the arrow.
@@ -1226,16 +1337,16 @@ class HybridGraphRetriever:
                 # If it matches the neighbor, the arrow goes backward (traversal was against arrow):
                 #   (neighbor)-[:REL]->(expansion_node)  →  triple: (neighbor, REL, expansion_node)
                 if rel_start_name == node_name:
-                    neighbor['triple_source_name'] = node_name
-                    neighbor['triple_target_name'] = neighbor_name
+                    neighbor["triple_source_name"] = node_name
+                    neighbor["triple_target_name"] = neighbor_name
                 else:
                     # Arrow goes from neighbor to expansion node — swap for correct direction
-                    neighbor['triple_source_name'] = neighbor_name
-                    neighbor['triple_target_name'] = node_name
+                    neighbor["triple_source_name"] = neighbor_name
+                    neighbor["triple_target_name"] = node_name
 
                 # give a stable id (helps dedup + ranking)
-                label_for_id = neighbor['labels'][0] if neighbor.get('labels') else ''
-                neighbor['id'] = f"{label_for_id}:{neighbor_name}"
+                label_for_id = neighbor["labels"][0] if neighbor.get("labels") else ""
+                neighbor["id"] = f"{label_for_id}:{neighbor_name}"
                 neighbors.append(neighbor)
 
             return neighbors
@@ -1244,7 +1355,7 @@ class HybridGraphRetriever:
             logger.error(f"Error getting neighbors for {node.get('name', 'unknown')}: {e}")
             return []
 
-    async def _batch_get_educational_neighbors(self, nodes: List[Dict]) -> Dict[str, List[Dict]]:
+    async def _batch_get_educational_neighbors(self, nodes: list[dict]) -> dict[str, list[dict]]:
         """Batch-fetch educational neighbors for all nodes in a single Neo4j query.
 
         Fix 3: replaces N sequential session.run() calls (one per node) with 1 query
@@ -1253,12 +1364,12 @@ class HybridGraphRetriever:
         Returns:
             Dict mapping source node name → list of neighbor dicts.
         """
-        node_names: List[str] = []
-        name_to_label: Dict[str, str] = {}
-        name_to_node: Dict[str, Dict] = {}
+        node_names: list[str] = []
+        name_to_label: dict[str, str] = {}
+        name_to_node: dict[str, dict] = {}
         for node in nodes:
-            name = node.get('name', '')
-            labels = node.get('labels', [])
+            name = node.get("name", "")
+            labels = node.get("labels", [])
             if name and labels:
                 node_names.append(name)
                 name_to_label[name] = labels[0]
@@ -1270,7 +1381,7 @@ class HybridGraphRetriever:
         relevant_labels = list(self.expansion_labels)
         limit = len(node_names) * 5
 
-        def _sync_batch(names: List[str]) -> List[Dict]:
+        def _sync_batch(names: list[str]) -> list[dict]:
             batch_query = """
             MATCH (source)-[r]-(n)
             WHERE source.name IN $node_names
@@ -1291,13 +1402,15 @@ class HybridGraphRetriever:
                     relevant_labels=relevant_labels,
                     limit=limit,
                 ):
-                    rows.append({
-                        'source_name':     record['source_name'],
-                        'neighbor_node':   dict(record['neighbor_node']),
-                        'neighbor_labels': record['neighbor_labels'],
-                        'rel_type':        record['rel_type'],
-                        'rel_start_name':  record['rel_start_name'],
-                    })
+                    rows.append(
+                        {
+                            "source_name": record["source_name"],
+                            "neighbor_node": dict(record["neighbor_node"]),
+                            "neighbor_labels": record["neighbor_labels"],
+                            "rel_type": record["rel_type"],
+                            "rel_start_name": record["rel_start_name"],
+                        }
+                    )
             return rows
 
         try:
@@ -1306,32 +1419,32 @@ class HybridGraphRetriever:
             logger.error(f"[Fix3] Batch neighbor fetch failed: {e}")
             return {}
 
-        result: Dict[str, List[Dict]] = {name: [] for name in node_names}
+        result: dict[str, list[dict]] = {name: [] for name in node_names}
         for row in rows:
-            source_name = row['source_name']
+            source_name = row["source_name"]
             if source_name not in result:
                 continue
 
-            neighbor = row['neighbor_node']
-            neighbor_name = neighbor.get('name', '')
-            neighbor['labels'] = row['neighbor_labels']
-            neighbor['rel_type'] = row['rel_type']
-            rel_start_name = row['rel_start_name']
+            neighbor = row["neighbor_node"]
+            neighbor_name = neighbor.get("name", "")
+            neighbor["labels"] = row["neighbor_labels"]
+            neighbor["rel_type"] = row["rel_type"]
+            rel_start_name = row["rel_start_name"]
 
             if rel_start_name == source_name:
-                neighbor['triple_source_name'] = source_name
-                neighbor['triple_target_name'] = neighbor_name
+                neighbor["triple_source_name"] = source_name
+                neighbor["triple_target_name"] = neighbor_name
             else:
-                neighbor['triple_source_name'] = neighbor_name
-                neighbor['triple_target_name'] = source_name
+                neighbor["triple_source_name"] = neighbor_name
+                neighbor["triple_target_name"] = source_name
 
-            source_label = name_to_label.get(source_name, '')
-            neighbor['source_node'] = {
-                'name': source_name,
-                'labels': [source_label] if source_label else [],
+            source_label = name_to_label.get(source_name, "")
+            neighbor["source_node"] = {
+                "name": source_name,
+                "labels": [source_label] if source_label else [],
             }
-            label_for_id = neighbor['labels'][0] if neighbor.get('labels') else ''
-            neighbor['id'] = f"{label_for_id}:{neighbor_name}"
+            label_for_id = neighbor["labels"][0] if neighbor.get("labels") else ""
+            neighbor["id"] = f"{label_for_id}:{neighbor_name}"
             result[source_name].append(neighbor)
 
         total = sum(len(v) for v in result.values())
@@ -1340,183 +1453,182 @@ class HybridGraphRetriever:
         )
         return result
 
-    async def _get_vector_neighbors(self, node: Dict, seen_node_ids: set) -> List[Dict]:
+    async def _get_vector_neighbors(self, node: dict, seen_node_ids: set) -> list[dict]:
         """Get vector-based neighbors using Node2Vec similarity.
-        
+
         Uses batch Neo4j lookup instead of sequential per-node queries.
         """
         try:
-            node_name = node.get('name', '')
+            node_name = node.get("name", "")
             if not node_name or not self.node2vec_loaded or self.node_embeddings is None:
                 return []
-            
+
             # Find similar concepts using embeddings (cache-first, no API calls for cached nodes)
             similar_concepts = self._find_similar_concepts(node_name, top_k=8)
-            
+
             # Collect names to fetch, excluding already-seen nodes
-            names_to_fetch = [
-                name for name, _ in similar_concepts
-                if name not in seen_node_ids
-            ]
-            
+            names_to_fetch = [name for name, _ in similar_concepts if name not in seen_node_ids]
+
             # Batch fetch from Neo4j (1 query instead of N sequential queries)
             all_details = await self._batch_get_node_details(names_to_fetch)
-            
+
             vector_neighbors = []
             for similar_name, similarity_score in similar_concepts:
                 if similar_name in seen_node_ids:
                     continue
-                
+
                 node_details = all_details.get(similar_name)
                 if node_details:
-                    labels = node_details.get('labels', [])
+                    labels = node_details.get("labels", [])
                     if any(label in self.expansion_labels for label in labels):
-                        node_details['vector_similarity'] = similarity_score
-                        node_details['rel_type'] = 'VECTOR_SIMILAR'
-                        node_details['source_node'] = node
+                        node_details["vector_similarity"] = similarity_score
+                        node_details["rel_type"] = "VECTOR_SIMILAR"
+                        node_details["source_node"] = node
                         vector_neighbors.append(node_details)
-            
+
             return vector_neighbors
-            
+
         except Exception as e:
             logger.error(f"Error getting vector neighbors for {node.get('name', 'unknown')}: {e}")
             return []
-    
-    def _normalize_node(self, node: Dict) -> Dict:
+
+    def _normalize_node(self, node: dict) -> dict:
         """Normalize node data for consistent format
-        
+
         Preserves hop_distance and retrieval_stage if present (for Graph Coverage metric).
         """
         normalized = {
-            'id': node.get('id', ''),
-            'name': node.get('name', ''),
-            'category': node.get('category', ''),
-            'labels': node.get('labels', []),
-            'description': node.get('description', ''),
-            'rel_type': node.get('rel_type', ''),
-            'source_node': node.get('source_node', {})
+            "id": node.get("id", ""),
+            "name": node.get("name", ""),
+            "category": node.get("category", ""),
+            "labels": node.get("labels", []),
+            "description": node.get("description", ""),
+            "rel_type": node.get("rel_type", ""),
+            "source_node": node.get("source_node", {}),
         }
-        
+
         # Preserve hop tracking metadata (backward compatible - only add if present)
-        if 'hop_distance' in node:
-            normalized['hop_distance'] = node['hop_distance']
-        if 'retrieval_stage' in node:
-            normalized['retrieval_stage'] = node['retrieval_stage']
-        if 'source' in node:
-            normalized['source'] = node['source']
-        if 'semantic_score' in node:
-            normalized['semantic_score'] = node['semantic_score']
-        if 'vector_similarity' in node:
-            normalized['vector_similarity'] = node['vector_similarity']
-        
+        if "hop_distance" in node:
+            normalized["hop_distance"] = node["hop_distance"]
+        if "retrieval_stage" in node:
+            normalized["retrieval_stage"] = node["retrieval_stage"]
+        if "source" in node:
+            normalized["source"] = node["source"]
+        if "semantic_score" in node:
+            normalized["semantic_score"] = node["semantic_score"]
+        if "vector_similarity" in node:
+            normalized["vector_similarity"] = node["vector_similarity"]
+
         return normalized
-    
-    async def _semantic_search(self, query: str, existing_nodes: List[Dict]) -> List[Dict]:
+
+    async def _semantic_search(self, query: str, existing_nodes: list[dict]) -> list[dict]:
         """
         Enhanced semantic search using Node2Vec embeddings.
-        
+
         Now passes initial nodes to semantic search for relevance filtering.
         """
         try:
             # Get existing node names to avoid duplicates
-            existing_names = {node.get('name', '') for node in existing_nodes}
-            
+            existing_names = {node.get("name", "") for node in existing_nodes}
+
             semantic_nodes = []
-            
+
             if self.node2vec_loaded and self.use_vectors:
                 # Use Node2Vec for semantic similarity (with relevance filtering)
                 semantic_nodes = await self._node2vec_semantic_search(
-                    query, 
-                    existing_names, 
-                    initial_nodes=existing_nodes  # Pass for label filtering
+                    query,
+                    existing_names,
+                    initial_nodes=existing_nodes,  # Pass for label filtering
                 )
             else:
                 # Fallback to keyword-based search
                 semantic_nodes = await self._keyword_semantic_search(query, existing_names)
-            
+
             return semantic_nodes
-            
+
         except Exception as e:
             logger.error(f"Semantic search failed: {e}")
             return []
-    
-    async def _node2vec_semantic_search(self, query: str, existing_names: set, initial_nodes: List[Dict] = None) -> List[Dict]:
+
+    async def _node2vec_semantic_search(
+        self, query: str, existing_names: set, initial_nodes: list[dict] = None
+    ) -> list[dict]:
         """
         Node2Vec-based semantic search for educational concepts.
-        
-        Now includes relevance filtering to remove semantically similar but contextually 
+
+        Now includes relevance filtering to remove semantically similar but contextually
         irrelevant nodes (e.g., 'Attention' for 'motivation' queries).
         Uses batch Neo4j lookup for efficiency.
-        
+
         Args:
             query: Natural language query
             existing_names: Set of already retrieved node names
             initial_nodes: Initial nodes from Cypher query (for label filtering)
-        
+
         Returns:
             List of relevant semantic nodes
         """
         try:
             # Extract key concepts from query
             query_concepts = self._extract_query_concepts(query)
-            
+
             # Phase 1: Collect all similar concepts across all query concepts
-            all_similar: List[Tuple[str, str, float]] = []
+            all_similar: list[tuple[str, str, float]] = []
             seen_concepts = set()
-            
+
             for concept in query_concepts:
                 if concept in seen_concepts:
                     continue
                 seen_concepts.add(concept)
-                
+
                 similar_concepts = self._find_similar_concepts(concept, top_k=15)
-                
+
                 for similar_name, similarity_score in similar_concepts:
                     if similar_name not in existing_names:
                         all_similar.append((concept, similar_name, similarity_score))
-            
+
             if not all_similar:
                 return []
-            
+
             # Phase 2: Batch fetch all node details in 1 Neo4j query
             unique_names = list({name for _, name, _ in all_similar})
             all_details = await self._batch_get_node_details(unique_names)
-            
+
             # Phase 3: Build semantic nodes from fetched details
             semantic_nodes = []
             for concept, similar_name, similarity_score in all_similar:
                 node_details = all_details.get(similar_name)
                 if node_details:
                     node_copy = dict(node_details)
-                    node_copy['semantic_score'] = similarity_score
-                    node_copy['query_concept'] = concept
-                    node_copy['hop_distance'] = 2
-                    node_copy['retrieval_stage'] = 'semantic_search'
+                    node_copy["semantic_score"] = similarity_score
+                    node_copy["query_concept"] = concept
+                    node_copy["hop_distance"] = 2
+                    node_copy["retrieval_stage"] = "semantic_search"
                     semantic_nodes.append(self._normalize_node(node_copy))
-            
+
             # Sort by semantic score
-            semantic_nodes.sort(key=lambda x: x.get('semantic_score', 0), reverse=True)
-            
+            semantic_nodes.sort(key=lambda x: x.get("semantic_score", 0), reverse=True)
+
             # P1 FIX: Filter irrelevant nodes by label relevance
             filtered_nodes = self._filter_semantic_nodes_by_relevance(
-                semantic_nodes, 
-                initial_nodes or [],
-                query
+                semantic_nodes, initial_nodes or [], query
             )
-            
-            logger.info(f"[P1 Filter] Node2Vec candidates: {len(semantic_nodes)} → Filtered: {len(filtered_nodes)}")
-            
+
+            logger.info(
+                f"[P1 Filter] Node2Vec candidates: {len(semantic_nodes)} → Filtered: {len(filtered_nodes)}"
+            )
+
             return filtered_nodes[:20]
-            
+
         except Exception as e:
             logger.error(f"Node2Vec semantic search failed: {e}")
             return []
-    
-    async def _keyword_semantic_search(self, query: str, existing_names: set) -> List[Dict]:
+
+    async def _keyword_semantic_search(self, query: str, existing_names: set) -> list[dict]:
         """Fallback keyword-based semantic search"""
         try:
             semantic_nodes = []
-            
+
             with self.neo4j_driver.session() as session:
                 # Search in node descriptions and names
                 semantic_query = """
@@ -1524,8 +1636,8 @@ class HybridGraphRetriever:
                 WHERE n.description IS NOT NULL OR n.name IS NOT NULL
                 AND NOT n.name IN $existing_names
                 AND any(label IN labels(n) WHERE label IN $relevant_labels)
-                RETURN n, 
-                       CASE 
+                RETURN n,
+                       CASE
                          WHEN toLower(n.description) CONTAINS toLower($query_text) THEN 0.8
                          WHEN toLower(n.name) CONTAINS toLower($query_text) THEN 0.6
                          ELSE 0.2
@@ -1533,129 +1645,176 @@ class HybridGraphRetriever:
                 ORDER BY relevance_score DESC
                 LIMIT 10
                 """
-                
+
                 result = session.run(
                     semantic_query,
                     query_text=query,
                     existing_names=list(existing_names),
-                    relevant_labels=list(self.expansion_labels)
+                    relevant_labels=list(self.expansion_labels),
                 )
-                
+
                 for record in result:
-                    node = dict(record['n'])
-                    node['semantic_score'] = record['relevance_score']
-                    node['hop_distance'] = 2  # Keyword semantic search = 2 hops
-                    node['retrieval_stage'] = 'keyword_semantic'
+                    node = dict(record["n"])
+                    node["semantic_score"] = record["relevance_score"]
+                    node["hop_distance"] = 2  # Keyword semantic search = 2 hops
+                    node["retrieval_stage"] = "keyword_semantic"
                     semantic_nodes.append(self._normalize_node(node))
-            
+
             return semantic_nodes
-            
+
         except Exception as e:
             logger.error(f"Keyword semantic search failed: {e}")
             return []
-    
-    def _extract_query_concepts(self, query: str) -> List[str]:
+
+    def _extract_query_concepts(self, query: str) -> list[str]:
         """Extract educational concepts from query for Node2Vec similarity"""
         # Simple concept extraction - can be enhanced with NLP
         concepts = []
-        
+
         # Common educational terms to look for
         educational_terms = [
-            'adhd', 'autism', 'blind', 'deaf', 'cognitive', 'physical', 'disability',
-            'cooperative', 'learning', 'methodology', 'pedagogical', 'strategy',
-            'motivation', 'attention', 'visual', 'hearing', 'impairment'
+            "adhd",
+            "autism",
+            "blind",
+            "deaf",
+            "cognitive",
+            "physical",
+            "disability",
+            "cooperative",
+            "learning",
+            "methodology",
+            "pedagogical",
+            "strategy",
+            "motivation",
+            "attention",
+            "visual",
+            "hearing",
+            "impairment",
         ]
-        
+
         query_lower = query.lower()
         for term in educational_terms:
             if term in query_lower:
                 concepts.append(term)
-        
+
         # If no specific terms found, use the whole query
         if not concepts:
             concepts = [query]
-        
+
         return concepts
-    
-    def _detect_query_intent(self, query: str) -> Dict[str, bool]:
+
+    def _detect_query_intent(self, query: str) -> dict[str, bool]:
         """
         🆕 PHASE 1 - Solution 5.1: Detect user intent from query text.
-        
+
         This helps adapt filtering thresholds based on what the user is asking for.
-        
+
         Args:
             query: Natural language query
-            
+
         Returns:
             Dict with intent flags (is_comparison, is_exploratory, etc.)
         """
         if not query:
             return {
-                'is_comparison': False,
-                'is_exploratory': False,
-                'is_relationship': False,
-                'is_definition': False
+                "is_comparison": False,
+                "is_exploratory": False,
+                "is_relationship": False,
+                "is_definition": False,
             }
-        
+
         query_lower = query.lower()
-        
+
         intent = {
-            'is_comparison': any(word in query_lower for word in [
-                'difference', 'compare', 'vs', 'versus', 'between', 'contrast',
-                'differenza', 'confronto'  # Italian
-            ]),
-            'is_exploratory': any(word in query_lower for word in [
-                'all', 'every', 'any', 'list', 'what are', 'which',
-                'tutti', 'quali', 'elenco'  # Italian
-            ]),
-            'is_relationship': any(word in query_lower for word in [
-                'how does', 'affect', 'influence', 'impact', 'relate', 'connect',
-                'come', 'influenza', 'influisce', 'collega'  # Italian
-            ]),
-            'is_definition': any(word in query_lower for word in [
-                'what is', 'define', 'meaning', 'means',
-                'cosa è', 'significa', 'definizione'  # Italian
-            ])
+            "is_comparison": any(
+                word in query_lower
+                for word in [
+                    "difference",
+                    "compare",
+                    "vs",
+                    "versus",
+                    "between",
+                    "contrast",
+                    "differenza",
+                    "confronto",  # Italian
+                ]
+            ),
+            "is_exploratory": any(
+                word in query_lower
+                for word in [
+                    "all",
+                    "every",
+                    "any",
+                    "list",
+                    "what are",
+                    "which",
+                    "tutti",
+                    "quali",
+                    "elenco",
+                ]  # Italian
+            ),
+            "is_relationship": any(
+                word in query_lower
+                for word in [
+                    "how does",
+                    "affect",
+                    "influence",
+                    "impact",
+                    "relate",
+                    "connect",
+                    "come",
+                    "influenza",
+                    "influisce",
+                    "collega",  # Italian
+                ]
+            ),
+            "is_definition": any(
+                word in query_lower
+                for word in [
+                    "what is",
+                    "define",
+                    "meaning",
+                    "means",
+                    "cosa è",
+                    "significa",
+                    "definizione",
+                ]  # Italian
+            ),
         }
-        
+
         return intent
-    
-    def _get_adaptive_threshold(
-        self, 
-        query: str, 
-        domain: str, 
-        initial_labels: List[str]
-    ) -> float:
+
+    def _get_adaptive_threshold(self, query: str, domain: str, initial_labels: list[str]) -> float:
         """
         🆕 PHASE 1 - Solution 1.2: Calculate adaptive threshold based on query type and domain.
-        
+
         Different query types need different levels of permissiveness:
         - Exploratory queries: Lower threshold (more results)
         - Comparison queries: Lower threshold (need both sides)
         - Definition queries: Higher threshold (focused results)
-        
+
         🆕 HYBRID MODE OPTIMIZATION:
         In hybrid_semantic mode, OpenAI embeddings already provide semantic filtering,
         so we use a lower base threshold (0.50) to avoid double-filtering.
-        
+
         Args:
             query: Natural language query
             domain: Domain filter ('udl', 'neuro', 'all')
             initial_labels: Labels from initial query results
-            
+
         Returns:
             Adaptive threshold (e.g., 0.50-0.85 depending on mode)
         """
         # 🆕 Check embedding mode - use lower threshold for hybrid mode
-        is_hybrid_mode = getattr(self, 'embedding_mode', 'node2vec') == 'hybrid_semantic'
-        
+        is_hybrid_mode = getattr(self, "embedding_mode", "node2vec") == "hybrid_semantic"
+
         if is_hybrid_mode:
             # Hybrid mode: OpenAI embeddings already do semantic filtering
             # Use lower threshold to avoid over-filtering
             base_threshold = 0.50
             min_threshold = 0.45
             max_threshold = 0.70
-            logger.debug(f"[P1+] Hybrid mode detected, using lower base threshold (0.50)")
+            logger.debug("[P1+] Hybrid mode detected, using lower base threshold (0.50)")
         else:
             # Node2Vec only mode: Need stricter P1 filter for semantic relevance
             # Get domain-specific similarity threshold using domain config
@@ -1672,174 +1831,183 @@ class HybridGraphRetriever:
                 base_threshold = 0.75  # Default
             min_threshold = 0.60
             max_threshold = 0.85
-        
+
         # Detect query intent
         intent = self._detect_query_intent(query)
-        
+
         # Adjust based on query type
-        if intent['is_exploratory']:
+        if intent["is_exploratory"]:
             # Exploratory query - be more inclusive
             adjustment = -0.05
-            logger.debug(f"[P1+] Exploratory query detected, lowering threshold")
-        elif intent['is_comparison']:
+            logger.debug("[P1+] Exploratory query detected, lowering threshold")
+        elif intent["is_comparison"]:
             # Comparison query - be more permissive for cross-label nodes
             adjustment = -0.10
-            logger.debug(f"[P1+] Comparison query detected, lowering threshold significantly")
-        elif intent['is_relationship']:
+            logger.debug("[P1+] Comparison query detected, lowering threshold significantly")
+        elif intent["is_relationship"]:
             # Relationship query - medium permissiveness
             adjustment = -0.05
-            logger.debug(f"[P1+] Relationship query detected, slightly lowering threshold")
-        elif intent['is_definition']:
+            logger.debug("[P1+] Relationship query detected, slightly lowering threshold")
+        elif intent["is_definition"]:
             # Definition query - be more strict (keep current threshold)
             adjustment = 0.0
-            logger.debug(f"[P1+] Definition query detected, keeping base threshold")
+            logger.debug("[P1+] Definition query detected, keeping base threshold")
         else:
             # Default - slightly more permissive
             adjustment = -0.03
-        
+
         # Number of initial labels - fewer labels = be more permissive
         if len(initial_labels) <= 2:
             adjustment -= 0.02
-            logger.debug(f"[P1+] Few initial labels ({len(initial_labels)}), further lowering threshold")
-        
+            logger.debug(
+                f"[P1+] Few initial labels ({len(initial_labels)}), further lowering threshold"
+            )
+
         final_threshold = base_threshold + adjustment
-        
+
         # Ensure threshold stays in reasonable range (mode-dependent)
         final_threshold = max(min_threshold, min(max_threshold, final_threshold))
-        
+
         mode_label = "hybrid" if is_hybrid_mode else "node2vec"
-        logger.info(f"[P1+] Adaptive threshold: {final_threshold:.2f} "
-                   f"(base={base_threshold:.2f}, adjustment={adjustment:.2f}, mode={mode_label})")
-        
+        logger.info(
+            f"[P1+] Adaptive threshold: {final_threshold:.2f} "
+            f"(base={base_threshold:.2f}, adjustment={adjustment:.2f}, mode={mode_label})"
+        )
+
         return final_threshold
-    
+
     def _split_pascal_case(self, text: str) -> str:
         """
         🆕 PHASE 1 - Helper: Split PascalCase/camelCase strings into separate words.
-        
+
         Examples:
             'IntrinsicMotivation' → 'Intrinsic Motivation'
             'PositiveStressEustress' → 'Positive Stress Eustress'
-        
+
         Args:
             text: PascalCase or camelCase string
-            
+
         Returns:
             Space-separated words
         """
-        return re.sub(r'(?<!^)(?=[A-Z])', ' ', text)
-    
+        return re.sub(r"(?<!^)(?=[A-Z])", " ", text)
+
     def _are_labels_similar(self, label_a: str, label_b: str) -> bool:
         """
         🆕 PHASE 1 - Solution 2.1: Check if two labels are similar.
-        
+
         Uses two methods:
         1. Substring matching (fast) - check for common words
         2. Edit distance (Levenshtein) - catch typos/variations
-        
+
         Examples:
             'PositiveStressEustress' ↔ 'StressResponse' → True (shared 'Stress')
             'IntrinsicMotivation' ↔ 'Motivation' → True (shared 'Motivation')
             'Attention' ↔ 'Memory' → False (no overlap)
-        
+
         Args:
             label_a: First label
             label_b: Second label
-            
+
         Returns:
             True if labels are similar, False otherwise
         """
         label_a_lower = label_a.lower()
         label_b_lower = label_b.lower()
-        
+
         # Method 1: Substring matching (fast)
         # Split PascalCase labels into words
         words_a = set(self._split_pascal_case(label_a).lower().split())
         words_b = set(self._split_pascal_case(label_b).lower().split())
-        
+
         # Check for word overlap
         overlap = words_a & words_b
         if len(overlap) > 0:
-            logger.debug(f"[P1+] Labels similar via word overlap: {label_a} ↔ {label_b} ({overlap})")
+            logger.debug(
+                f"[P1+] Labels similar via word overlap: {label_a} ↔ {label_b} ({overlap})"
+            )
             return True
-        
+
         # Method 2: Levenshtein distance (for typos/variations)
         from difflib import SequenceMatcher
+
         similarity = SequenceMatcher(None, label_a_lower, label_b_lower).ratio()
         if similarity > 0.70:
-            logger.debug(f"[P1+] Labels similar via edit distance: {label_a} ↔ {label_b} ({similarity:.2f})")
+            logger.debug(
+                f"[P1+] Labels similar via edit distance: {label_a} ↔ {label_b} ({similarity:.2f})"
+            )
             return True
-        
+
         return False
-    
+
     def _filter_semantic_nodes_by_relevance(
-        self, 
-        semantic_nodes: List[Dict], 
-        initial_nodes: List[Dict],
-        query: str = ""
-    ) -> List[Dict]:
+        self, semantic_nodes: list[dict], initial_nodes: list[dict], query: str = ""
+    ) -> list[dict]:
         """
         🎯 P1 FIX + PHASE 1 ENHANCEMENTS: Filter semantically similar nodes by label relevance.
-        
+
         Original P1 Solution: Keep only nodes that:
         1. Share at least one label with initial query results, OR
         2. Have very high semantic similarity (>0.8), OR
         3. Belong to a broad category that's relevant across domains
-        
+
         PHASE 1 ENHANCEMENTS (Quick Wins):
         ✅ Solution 1.2: Adaptive semantic threshold (query/domain-aware)
         ✅ Solution 2.1: Label similarity matching (handle label variations)
         ✅ Solution 3.1: Multi-tier thresholds (HIGH/MEDIUM/LOW confidence)
         ✅ Solution 5.1: Query intent detection (comparison vs definition)
-        
+
         Args:
             semantic_nodes: Candidates from Node2Vec semantic search
             initial_nodes: Initial nodes from Cypher query (for label extraction)
             query: Natural language query (for intent detection)
-        
+
         Returns:
             Filtered list of relevant semantic nodes
         """
         if not initial_nodes or not semantic_nodes:
             return semantic_nodes  # No filtering if no initial nodes
-        
+
         # Extract labels from initial nodes
         initial_labels = set()
         for node in initial_nodes:
-            labels = node.get('labels', [])
+            labels = node.get("labels", [])
             if isinstance(labels, list):
                 initial_labels.update(labels)
             elif isinstance(labels, str):
                 initial_labels.add(labels)
-        
+
         if not initial_labels:
             logger.warning("[P1 Filter] No labels found in initial nodes, skipping filter")
             return semantic_nodes
-        
+
         logger.info(f"[P1 Filter] Initial labels: {sorted(list(initial_labels))[:5]}")
-        
+
         # 🆕 PHASE 1: Get adaptive threshold based on query intent
         adaptive_threshold = self._get_adaptive_threshold(query, self.domain, list(initial_labels))
-        
+
         # 🆕 HYBRID MODE: Use lower tier thresholds
-        is_hybrid_mode = getattr(self, 'embedding_mode', 'node2vec') == 'hybrid_semantic'
+        is_hybrid_mode = getattr(self, "embedding_mode", "node2vec") == "hybrid_semantic"
         medium_tier_floor = 0.40 if is_hybrid_mode else 0.65  # Lower for hybrid
-        
+
         # Filter semantic nodes with PHASE 1 enhancements
         filtered = []
         rejected = []
-        
+
         for node in semantic_nodes:
-            node_labels = node.get('labels', [])
+            node_labels = node.get("labels", [])
             if isinstance(node_labels, str):
                 node_labels = [node_labels]
-            
-            semantic_score = node.get('semantic_score', 0.0)
+
+            semantic_score = node.get("semantic_score", 0.0)
 
             # Structural neighbors (hop_distance=1) bypass semantic threshold entirely.
             # Their relevance is validated by the Neo4j edge itself — the KG schema defines
             # which nodes are meaningfully connected, so embedding distance is redundant here.
-            if node.get('hop_distance') == 1 and node.get('retrieval_stage') == 'structural_neighbor':
+            if (
+                node.get("hop_distance") == 1
+                and node.get("retrieval_stage") == "structural_neighbor"
+            ):
                 filtered.append(node)
                 logger.debug(
                     f"[P1+] ✅ KEEP (STRUCTURAL): {node.get('name')} "
@@ -1849,7 +2017,7 @@ class HybridGraphRetriever:
 
             # Signal 1: Direct label match (backward compatible)
             has_shared_label = any(label in initial_labels for label in node_labels)
-            
+
             # 🆕 Signal 2: Similar label match (Solution 2.1)
             has_similar_label = False
             if not has_shared_label:
@@ -1857,18 +2025,23 @@ class HybridGraphRetriever:
                     for initial_label in initial_labels:
                         if self._are_labels_similar(node_label, initial_label):
                             has_similar_label = True
-                            logger.debug(f"[P1+] Similar label match: {node_label} ≈ {initial_label}")
+                            logger.debug(
+                                f"[P1+] Similar label match: {node_label} ≈ {initial_label}"
+                            )
                             break
                     if has_similar_label:
                         break
-            
+
             # Signal 3: Broad category (backward compatible)
             broad_categories = {
-                'LearningDevelopment', 'TeachingPractices', 'CognitiveProcesses',
-                'InstructionalStrategies', 'AssessmentMethods'
+                "LearningDevelopment",
+                "TeachingPractices",
+                "CognitiveProcesses",
+                "InstructionalStrategies",
+                "AssessmentMethods",
             }
             is_broad_category = any(label in broad_categories for label in node_labels)
-            
+
             # 🆕 PHASE 1 - Solution 3.1: Multi-Tier Thresholds
             # Tier 1: HIGH confidence (above adaptive threshold)
             if semantic_score > adaptive_threshold:
@@ -1878,7 +2051,7 @@ class HybridGraphRetriever:
                     f"(score={semantic_score:.3f} > {adaptive_threshold:.2f})"
                 )
                 continue
-            
+
             # Tier 2: MEDIUM confidence (medium_tier_floor to adaptive_threshold)
             # Require additional signal (label match OR similar label OR broad category)
             if medium_tier_floor <= semantic_score <= adaptive_threshold:
@@ -1907,7 +2080,7 @@ class HybridGraphRetriever:
                         f"(score={semantic_score:.3f}, labels={node_labels})"
                     )
                 continue
-            
+
             # Tier 3: LOW confidence (below medium_tier_floor)
             # Only keep if strong label match or broad category
             if semantic_score < medium_tier_floor:
@@ -1929,32 +2102,34 @@ class HybridGraphRetriever:
                         f"[P1+] ❌ REJECT (LOW): {node.get('name')} "
                         f"(score={semantic_score:.3f}, labels={node_labels})"
                     )
-        
+
         # Log summary
         if rejected:
-            rejected_names = [n.get('name', 'Unknown') for n in rejected[:5]]
+            rejected_names = [n.get("name", "Unknown") for n in rejected[:5]]
             logger.info(
                 f"[P1+] Rejected {len(rejected)} irrelevant nodes "
                 f"(e.g., {', '.join(rejected_names)}...)"
             )
-        
-        logger.info(f"[P1+] Filtered: {len(semantic_nodes)} → {len(filtered)} nodes "
-                   f"(rejected {len(rejected)})")
-        
+
+        logger.info(
+            f"[P1+] Filtered: {len(semantic_nodes)} → {len(filtered)} nodes "
+            f"(rejected {len(rejected)})"
+        )
+
         return filtered
-    
-    def _find_similar_concepts(self, concept: str, top_k: int = 10) -> List[Tuple[str, float]]:
+
+    def _find_similar_concepts(self, concept: str, top_k: int = 10) -> list[tuple[str, float]]:
         """Find most similar concepts using embeddings.
-        
+
         Supports three modes:
         - node2vec: Graph structure similarity only
         - hybrid_semantic: Combines Node2Vec (α) + OpenAI semantic (1-α)
         - openai_only: OpenAI semantic similarity only
-        
+
         Args:
             concept: Concept name to find similar nodes for
             top_k: Number of results to return
-            
+
         Returns:
             List of (node_name, similarity_score) tuples
         """
@@ -1966,91 +2141,96 @@ class HybridGraphRetriever:
         else:
             # Default: node2vec only (backward compatible)
             return self._find_similar_concepts_node2vec(concept, top_k)
-    
-    def _find_similar_concepts_node2vec(self, concept: str, top_k: int = 10) -> List[Tuple[str, float]]:
+
+    def _find_similar_concepts_node2vec(
+        self, concept: str, top_k: int = 10
+    ) -> list[tuple[str, float]]:
         """Find similar concepts using Node2Vec embeddings only (original method)."""
         if not self.node2vec_loaded or self.node_embeddings is None:
             return []
-        
+
         try:
             # Try to find exact match first
             if concept in self.node_index:
                 concept_idx = self.node_index[concept]
                 concept_embedding = self.node_embeddings[concept_idx].reshape(1, -1)
-                
+
                 # Calculate cosine similarities
                 similarities = cosine_similarity(concept_embedding, self.node_embeddings)[0]
-                
+
                 # Get top-k similar concepts
-                similar_indices = np.argsort(similarities)[::-1][1:top_k+1]  # Exclude self
-                
+                similar_indices = np.argsort(similarities)[::-1][1 : top_k + 1]  # Exclude self
+
                 results = []
                 for idx in similar_indices:
                     similar_name = self.reverse_index[idx]
                     similarity_score = float(similarities[idx])
                     results.append((similar_name, similarity_score))
-                
+
                 return results
-            
+
             # If no exact match, try fuzzy matching
             return self._fuzzy_concept_search(concept, top_k)
-            
+
         except Exception as e:
             logger.error(f"Error finding similar concepts for '{concept}': {e}")
             return []
-    
-    def _find_similar_concepts_semantic(self, concept: str, top_k: int = 10) -> List[Tuple[str, float]]:
+
+    def _find_similar_concepts_semantic(
+        self, concept: str, top_k: int = 10
+    ) -> list[tuple[str, float]]:
         """Find similar concepts using OpenAI semantic embeddings only."""
         if self.semantic_embedder is None:
             logger.warning("[Semantic] Semantic embedder not initialized, falling back to node2vec")
             return self._find_similar_concepts_node2vec(concept, top_k)
-        
+
         try:
             # Get query embedding (cache-first to avoid redundant API calls)
             query_embedding = self.semantic_embedder.get_or_embed(concept)
             if query_embedding is None:
                 logger.warning(f"[Semantic] Failed to embed concept: {concept}")
                 return self._find_similar_concepts_node2vec(concept, top_k)
-            
+
             # Vectorized similarity against all cached node embeddings
             all_sims = self.semantic_embedder.compute_all_similarities(
                 query_embedding, threshold=self.semantic_threshold
             )
             similarities = [
-                (name, sim) for name, sim in all_sims
-                if name.lower() != concept.lower()
+                (name, sim) for name, sim in all_sims if name.lower() != concept.lower()
             ]
-            
+
             return similarities[:top_k]
-            
+
         except Exception as e:
             logger.error(f"[Semantic] Error in semantic search for '{concept}': {e}")
             return self._find_similar_concepts_node2vec(concept, top_k)
-    
-    def _find_similar_concepts_hybrid(self, concept: str, top_k: int = 10) -> List[Tuple[str, float]]:
+
+    def _find_similar_concepts_hybrid(
+        self, concept: str, top_k: int = 10
+    ) -> list[tuple[str, float]]:
         """Find similar concepts using hybrid scoring: α*Node2Vec + (1-α)*Semantic.
-        
+
         This combines:
         - Node2Vec: Captures graph structure (neighbors, paths, clusters)
         - OpenAI Semantic: Captures text meaning (multilingual, synonyms)
-        
+
         Formula: final_score = α * node2vec_score + β * semantic_score
         where α = node2vec_weight (default 0.4), β = 1-α (default 0.6)
         """
         α = self.node2vec_weight
         β = self.semantic_weight
-        
+
         logger.debug(f"[Hybrid] Finding similar to '{concept}' with α={α:.2f}, β={β:.2f}")
-        
+
         # Get Node2Vec similarities
-        node2vec_scores: Dict[str, float] = {}
+        node2vec_scores: dict[str, float] = {}
         if self.node2vec_loaded and self.node_embeddings is not None:
             try:
                 if concept in self.node_index:
                     concept_idx = self.node_index[concept]
                     concept_embedding = self.node_embeddings[concept_idx].reshape(1, -1)
                     similarities = cosine_similarity(concept_embedding, self.node_embeddings)[0]
-                    
+
                     for idx, score in enumerate(similarities):
                         node_name = self.reverse_index[idx]
                         if node_name.lower() != concept.lower():
@@ -2060,12 +2240,12 @@ class HybridGraphRetriever:
                     fuzzy_results = self._fuzzy_concept_search(concept, top_k * 3)
                     for name, score in fuzzy_results:
                         node2vec_scores[name] = score
-                        
+
             except Exception as e:
                 logger.warning(f"[Hybrid] Node2Vec search failed: {e}")
-        
+
         # Get Semantic similarities (vectorized — single matrix operation)
-        semantic_scores: Dict[str, float] = {}
+        semantic_scores: dict[str, float] = {}
         if self.semantic_embedder is not None:
             try:
                 query_embedding = self.semantic_embedder.get_or_embed(concept)
@@ -2078,41 +2258,42 @@ class HybridGraphRetriever:
                             semantic_scores[node_name] = sim
             except Exception as e:
                 logger.warning(f"[Hybrid] Semantic search failed: {e}")
-        
+
         # Combine scores: all unique node names
         all_nodes = set(node2vec_scores.keys()) | set(semantic_scores.keys())
-        
+
         if not all_nodes:
             logger.warning(f"[Hybrid] No similar concepts found for '{concept}'")
             return []
-        
+
         # Calculate hybrid scores
         hybrid_results = []
         for node_name in all_nodes:
             n2v_score = node2vec_scores.get(node_name, 0.0)
             sem_score = semantic_scores.get(node_name, 0.0)
-            
+
             # Hybrid formula: α * node2vec + β * semantic
             hybrid_score = α * n2v_score + β * sem_score
-            
+
             # Only include if at least one score is significant
             if n2v_score >= 0.3 or sem_score >= self.semantic_threshold:
                 hybrid_results.append((node_name, hybrid_score, n2v_score, sem_score))
-        
+
         # Sort by hybrid score (descending)
         hybrid_results.sort(key=lambda x: x[1], reverse=True)
-        
+
         # Log top results for debugging
         if hybrid_results:
             top_3 = hybrid_results[:3]
-            logger.debug(f"[Hybrid] Top 3 for '{concept}': " + 
-                        ", ".join([f"{n}(h={h:.2f},n={nv:.2f},s={s:.2f})" 
-                                   for n, h, nv, s in top_3]))
-        
+            logger.debug(
+                f"[Hybrid] Top 3 for '{concept}': "
+                + ", ".join([f"{n}(h={h:.2f},n={nv:.2f},s={s:.2f})" for n, h, nv, s in top_3])
+            )
+
         # Return (name, hybrid_score) tuples
         return [(name, score) for name, score, _, _ in hybrid_results[:top_k]]
-    
-    def _fuzzy_concept_search(self, concept: str, top_k: int = 10) -> List[Tuple[str, float]]:
+
+    def _fuzzy_concept_search(self, concept: str, top_k: int = 10) -> list[tuple[str, float]]:
         """Fuzzy search for concepts when exact match not found"""
         try:
             # Find concepts that contain the search term
@@ -2120,10 +2301,10 @@ class HybridGraphRetriever:
             for node_name in self.node_index.keys():
                 if concept.lower() in node_name.lower():
                     matching_concepts.append(node_name)
-            
+
             if not matching_concepts:
                 return []
-            
+
             # Get similarities for all matching concepts
             all_similarities = []
             for match_concept in matching_concepts:
@@ -2131,14 +2312,14 @@ class HybridGraphRetriever:
                     concept_idx = self.node_index[match_concept]
                     concept_embedding = self.node_embeddings[concept_idx].reshape(1, -1)
                     similarities = cosine_similarity(concept_embedding, self.node_embeddings)[0]
-                    
+
                     # Get top similarities for this concept
-                    similar_indices = np.argsort(similarities)[::-1][1:top_k+1]
+                    similar_indices = np.argsort(similarities)[::-1][1 : top_k + 1]
                     for idx in similar_indices:
                         similar_name = self.reverse_index[idx]
                         similarity_score = similarities[idx]
                         all_similarities.append((similar_name, similarity_score))
-            
+
             # Sort and deduplicate
             all_similarities.sort(key=lambda x: x[1], reverse=True)
             seen = set()
@@ -2149,14 +2330,14 @@ class HybridGraphRetriever:
                     seen.add(name)
                     if len(results) >= top_k:
                         break
-            
+
             return results
-            
+
         except Exception as e:
             logger.error(f"Fuzzy concept search failed: {e}")
             return []
-    
-    async def _get_node_details(self, node_name: str) -> Optional[Dict]:
+
+    async def _get_node_details(self, node_name: str) -> Optional[dict]:
         """Get full node details from Neo4j"""
         try:
             with self.neo4j_driver.session() as session:
@@ -2165,79 +2346,82 @@ class HybridGraphRetriever:
                 RETURN n, labels(n) as labels
                 LIMIT 1
                 """
-                
+
                 result = session.run(query, node_name=node_name)
                 record = result.single()
-                
+
                 if record:
-                    node = dict(record['n'])
-                    node['labels'] = record['labels']
+                    node = dict(record["n"])
+                    node["labels"] = record["labels"]
                     return node
-                
+
                 return None
-                
+
         except Exception as e:
             logger.error(f"Error getting node details for '{node_name}': {e}")
             return None
-    
-    async def _batch_get_node_details(self, node_names: List[str]) -> Dict[str, Dict]:
+
+    async def _batch_get_node_details(self, node_names: list[str]) -> dict[str, dict]:
         """Batch fetch node details from Neo4j (1 query, non-blocking via to_thread)."""
         if not node_names:
             return {}
 
-        def _sync_fetch(names: List[str]) -> Dict[str, Dict]:
+        def _sync_fetch(names: list[str]) -> dict[str, dict]:
             query = """
             MATCH (n)
             WHERE n.name IN $names
             RETURN n, labels(n) as labels
             """
-            details: Dict[str, Dict] = {}
+            details: dict[str, dict] = {}
             with self.neo4j_driver.session() as session:
                 for record in session.run(query, names=names):
-                    node = dict(record['n'])
-                    node['labels'] = record['labels']
-                    name = node.get('name', '')
+                    node = dict(record["n"])
+                    node["labels"] = record["labels"]
+                    name = node.get("name", "")
                     if name and name not in details:
                         details[name] = node
             return details
 
         try:
             details = await asyncio.to_thread(_sync_fetch, node_names)
-            logger.debug(
-                f"[Batch Neo4j] Fetched {len(details)}/{len(node_names)} nodes in 1 query"
-            )
+            logger.debug(f"[Batch Neo4j] Fetched {len(details)}/{len(node_names)} nodes in 1 query")
             return details
         except Exception as e:
             logger.error(f"Batch node details failed: {e}")
             return {}
-    
-    def _fuse_results(self, graph_nodes: List[Dict], semantic_nodes: List[Dict]) -> Tuple[List[Dict], List[Tuple[str, str, str]]]:
+
+    def _fuse_results(
+        self, graph_nodes: list[dict], semantic_nodes: list[dict]
+    ) -> tuple[list[dict], list[tuple[str, str, str]]]:
         """Fuse and rank results from multiple sources (graph, structural, vector, semantic)"""
         # Combine all nodes
         all_nodes = []
-        
+
         # Add graph nodes (already have source assigned)
         for node in graph_nodes:
-            source = node.get('source', 'graph')
-            node['rank_score'] = self._calculate_rank_score(node, source=source)
+            source = node.get("source", "graph")
+            node["rank_score"] = self._calculate_rank_score(node, source=source)
             all_nodes.append(node)
-        
+
         # Add semantic nodes with lower priority
         for node in semantic_nodes:
-            node['source'] = 'semantic'
-            node['rank_score'] = self._calculate_rank_score(node, source='semantic')
+            node["source"] = "semantic"
+            node["rank_score"] = self._calculate_rank_score(node, source="semantic")
             all_nodes.append(node)
-        
+
         # Deduplicate by node name/id, keeping highest scoring version
         unique_nodes = {}
         for node in all_nodes:
-            node_id = node.get('id') or node.get('name', '')
+            node_id = node.get("id") or node.get("name", "")
             if node_id:
-                if node_id not in unique_nodes or node['rank_score'] > unique_nodes[node_id]['rank_score']:
+                if (
+                    node_id not in unique_nodes
+                    or node["rank_score"] > unique_nodes[node_id]["rank_score"]
+                ):
                     unique_nodes[node_id] = node
-        
+
         # Sort by rank score
-        ranked_nodes = sorted(unique_nodes.values(), key=lambda x: x['rank_score'], reverse=True)
+        ranked_nodes = sorted(unique_nodes.values(), key=lambda x: x["rank_score"], reverse=True)
 
         # Extract triples from relationships
         triples = self._extract_triples(ranked_nodes)
@@ -2245,7 +2429,7 @@ class HybridGraphRetriever:
         # Fix 4: batch-query Neo4j for any additional edges between final nodes
         # (catches pairs where both endpoints are semantic/vector nodes — _extract_triples
         # requires rel_type pre-set on nodes, so those edges are otherwise invisible)
-        node_names = [n.get('name', '') for n in ranked_nodes if n.get('name')]
+        node_names = [n.get("name", "") for n in ranked_nodes if n.get("name")]
         extra_triples = self._fetch_node_relationships(node_names)
         if extra_triples:
             existing = set(triples)
@@ -2259,35 +2443,35 @@ class HybridGraphRetriever:
                 logger.info(f"[Fix4] Batch query added {added} cross-node edge(s) to triples")
 
         return ranked_nodes, triples
-    
-    def _calculate_rank_score(self, node: Dict, source: str = 'graph') -> float:
+
+    def _calculate_rank_score(self, node: dict, source: str = "graph") -> float:
         """Calculate ranking score for a node with Node2Vec enhancements"""
         # Base score by source
-        if source == 'graph':
+        if source == "graph":
             base_score = 1.0
-        elif source == 'structural':
+        elif source == "structural":
             base_score = 0.8
-        elif source == 'vector':
+        elif source == "vector":
             base_score = 0.6
         else:  # semantic
             base_score = 0.5
-        
+
         # Apply domain boosts
-        labels = node.get('labels', [])
-        domain_boost = max([self.domain_boosts.get(l, 1.0) for l in labels], default=1.0)
-        
+        labels = node.get("labels", [])
+        domain_boost = max([self.domain_boosts.get(lbl, 1.0) for lbl in labels], default=1.0)
+
         # Apply semantic score if available
-        semantic_score = node.get('semantic_score', 1.0)
-        
+        semantic_score = node.get("semantic_score", 1.0)
+
         # Apply vector similarity boost if available
-        vector_boost = node.get('vector_similarity', 1.0)
-        
+        vector_boost = node.get("vector_similarity", 1.0)
+
         # Calculate final score
         final_score = base_score * domain_boost * semantic_score * vector_boost
-        
+
         return final_score
-    
-    def _extract_triples(self, nodes: List[Dict]) -> List[Tuple[str, str, str]]:
+
+    def _extract_triples(self, nodes: list[dict]) -> list[tuple[str, str, str]]:
         """Extract relationship triples from nodes.
 
         Uses triple_source_name / triple_target_name when present — these reflect the
@@ -2298,18 +2482,18 @@ class HybridGraphRetriever:
         triples = []
 
         for node in nodes:
-            rel_type = node.get('rel_type', '')
+            rel_type = node.get("rel_type", "")
             if not rel_type:
                 continue
 
-            if 'triple_source_name' in node and 'triple_target_name' in node:
+            if "triple_source_name" in node and "triple_target_name" in node:
                 # Direction-corrected path: set by _get_educational_neighbors
-                source_name = node['triple_source_name']
-                target_name = node['triple_target_name']
-            elif 'source_node' in node:
+                source_name = node["triple_source_name"]
+                target_name = node["triple_target_name"]
+            elif "source_node" in node:
                 # Fallback: expansion-direction convention (CASE 4 and other paths)
-                source_name = node['source_node'].get('name', '')
-                target_name = node.get('name', '')
+                source_name = node["source_node"].get("name", "")
+                target_name = node.get("name", "")
             else:
                 continue
 
@@ -2317,8 +2501,8 @@ class HybridGraphRetriever:
                 triples.append((source_name, rel_type, target_name))
 
         return triples
-    
-    def _fetch_node_relationships(self, node_names: List[str]) -> List[Tuple[str, str, str]]:
+
+    def _fetch_node_relationships(self, node_names: list[str]) -> list[tuple[str, str, str]]:
         """Batch Neo4j query: find all directed relationships between any two nodes in the set.
 
         Bounded by max_nodes (≤20) so latency is ~20-50ms. Only runs real KG edges —
@@ -2343,56 +2527,107 @@ class HybridGraphRetriever:
             logger.warning(f"[Fix4] Batch relationship query failed: {e}")
             return []
 
-    def _build_facets(self, nodes: List[Dict], triples: List[Tuple[str, str, str]]) -> Dict[str, Dict[str, int]]:
+    def _build_facets(
+        self, nodes: list[dict], triples: list[tuple[str, str, str]]
+    ) -> dict[str, dict[str, int]]:
         """Build facet summaries for the retrieved context"""
         # Count by label
         label_counts = defaultdict(int)
         for node in nodes:
-            labels = node.get('labels', [])
+            labels = node.get("labels", [])
             for label in labels:
                 label_counts[label] += 1
-        
+
         # Count by relationship type
         rel_counts = defaultdict(int)
-        for source, rel_type, target in triples:
+        for _source, rel_type, _target in triples:
             rel_counts[rel_type] += 1
-        
-        return {
-            'label_counts': dict(label_counts),
-            'rel_counts': dict(rel_counts)
-        }
-    
-    async def _fallback_retrieval(self, cypher_result: Dict, error: str) -> RetrievedContext:
+
+        return {"label_counts": dict(label_counts), "rel_counts": dict(rel_counts)}
+
+    async def _fallback_retrieval(self, cypher_result: dict, error: str) -> RetrievedContext:
         """Fallback retrieval when main retrieval fails"""
         logger.warning(f"Using fallback retrieval due to error: {error}")
-        
+
         # Return basic context from cypher result
-        nodes = cypher_result.get('results', [])
+        nodes = cypher_result.get("results", [])
         normalized_nodes = [self._normalize_node(node) for node in nodes]
-        
+
         return RetrievedContext(
-            nodes=normalized_nodes[:self.max_nodes],
+            nodes=normalized_nodes[: self.max_nodes],
             triples=[],
-            facets={'label_counts': {}, 'rel_counts': {}},
+            facets={"label_counts": {}, "rel_counts": {}},
             metadata={
-                'graph_count': len(nodes),
-                'semantic_count': 0,
-                'total_nodes': len(normalized_nodes),
-                'total_triples': 0,
-                'error': error,
-                'fallback_used': True,
-                'timings': {'total': 0}
-            }
+                "graph_count": len(nodes),
+                "semantic_count": 0,
+                "total_nodes": len(normalized_nodes),
+                "total_triples": 0,
+                "error": error,
+                "fallback_used": True,
+                "timings": {"total": 0},
+            },
         )
+
+    def get_concept_neighbors(
+        self,
+        concept_name: str,
+        domain: str = "all",
+        limit: int = 5,
+    ) -> list[dict]:
+        """Public wrapper for F6 "What's Next?" panel.
+
+        Returns up to ``limit`` adjacent KG concepts with their relationship
+        type so the UI can render bridging cards. Gracefully returns [] on
+        any error so the caller never crashes.
+        """
+        try:
+            with self.neo4j_driver.session() as session:
+                cypher = """
+                MATCH (source {name: $concept_name})-[r]-(n)
+                WHERE any(l IN labels(n) WHERE l IN $relevant_labels)
+                  AND ($domain = 'all' OR any(l IN labels(source) WHERE l CONTAINS $domain_upper)
+                       OR any(l IN labels(n) WHERE l CONTAINS $domain_upper))
+                RETURN DISTINCT
+                    n.name AS name,
+                    labels(n) AS labels,
+                    type(r)   AS rel_type,
+                    n.description AS description
+                LIMIT $limit
+                """
+                domain_upper = domain.upper() if domain and domain != "all" else ""
+                result = session.run(
+                    cypher,
+                    concept_name=concept_name,
+                    relevant_labels=list(self.expansion_labels),
+                    domain=domain,
+                    domain_upper=domain_upper,
+                    limit=limit,
+                )
+                neighbors = []
+                for record in result:
+                    neighbors.append(
+                        {
+                            "name": record["name"],
+                            "labels": list(record["labels"] or []),
+                            "rel_type": record["rel_type"],
+                            "description": record["description"] or "",
+                        }
+                    )
+                return neighbors
+        except Exception as exc:
+            logger.warning("[get_concept_neighbors] %s: %s", concept_name, exc)
+            return []
+
 
 # Integration helper for your existing pipeline
 class EnhancedMultilingualText2Cypher:
     """Enhanced version that includes hybrid retrieval"""
-    
-    def __init__(self, use_vectors: bool = False, domain: str = "all", config: Optional[Dict] = None):
+
+    def __init__(
+        self, use_vectors: bool = False, domain: str = "all", config: Optional[dict] = None
+    ):
         from aix.retrieval.multilingual_text2cypher import MultilingualText2Cypher
-        from aix.core.config import config as app_config
-        
+
         self.domain = domain
         self.use_vectors = use_vectors
         self.text2cypher = MultilingualText2Cypher()
@@ -2400,12 +2635,12 @@ class EnhancedMultilingualText2Cypher:
             neo4j_driver=self.text2cypher.pipeline.converter.schema_extractor.driver,
             use_vectors=use_vectors,
             domain=domain,
-            config=config
+            config=config,
         )
-    
-    async def process_query_with_retrieval(self, query: str, domain: str = None, **kwargs) -> Dict:
+
+    async def process_query_with_retrieval(self, query: str, domain: str = None, **kwargs) -> dict:
         """Process query with full hybrid retrieval pipeline
-        
+
         Args:
             query: Natural language query
             domain: Domain filter ('udl', 'neuro', 'all', or None). If None, uses the domain set during initialization.
@@ -2414,7 +2649,7 @@ class EnhancedMultilingualText2Cypher:
         # Use provided domain or fall back to initialization domain
         if domain is None:
             domain = self.domain
-        
+
         # Step 1: Text2Cypher (now with domain support)
         # Fix 4: run the synchronous LLM + Cypher execution in a thread so the event
         # loop stays free for concurrent asyncio.gather() calls in the retriever.
@@ -2426,205 +2661,217 @@ class EnhancedMultilingualText2Cypher:
         # Use the translated English query for semantic search when available.
         # The Italian query produces zero semantic matches against English node names.
         # enhanced_query is set by multilingual_text2cypher when translation occurred.
-        translated_query = cypher_result.get('enhanced_query') or query
-        retrieval_result = await self.graph_retriever.retrieve(query, cypher_result, semantic_query=translated_query)
-        
+        translated_query = cypher_result.get("enhanced_query") or query
+        retrieval_result = await self.graph_retriever.retrieve(
+            query, cypher_result, semantic_query=translated_query
+        )
+
         # Step 3: Build Educational Context (uses real retrieval, domain-aware)
         try:
             from aix.retrieval.context_builder import EducationalContextBuilder
+
             context_builder = EducationalContextBuilder(domain=domain)
-            
+
             # Convert retrieval_result to dict format expected by context_builder
             # Convert triples (tuples) to dicts with keys: relationship, source, target
             triples_as_dicts = [
-                {'relationship': rel_type, 'source': source, 'target': target}
+                {"relationship": rel_type, "source": source, "target": target}
                 for source, rel_type, target in retrieval_result.triples
             ]
-            
+
             retrieval_dict = {
-                'nodes': retrieval_result.nodes,
-                'triples': triples_as_dicts,
-                'metadata': retrieval_result.metadata
+                "nodes": retrieval_result.nodes,
+                "triples": triples_as_dicts,
+                "metadata": retrieval_result.metadata,
             }
-            
+
             # Determine educational context based on domain using domain config
             domain_config = get_domain_config(domain)
             if domain_config:
                 educational_context = domain_config.get_educational_context_type()
-            elif domain == 'udl':
+            elif domain == "udl":
                 # Backward compatibility
-                educational_context = 'special_needs'  # UDL focuses on disabilities/adaptations
-            elif domain == 'neuro':
+                educational_context = "special_needs"  # UDL focuses on disabilities/adaptations
+            elif domain == "neuro":
                 # Backward compatibility
-                educational_context = 'neuroscience'   # Neuro focuses on cognitive processes
+                educational_context = "neuroscience"  # Neuro focuses on cognitive processes
             else:
-                educational_context = 'general'        # Cross-domain or unspecified
-            
+                educational_context = "general"  # Cross-domain or unspecified
+
             educational_context_obj = await context_builder.build_context(
                 retrieval_dict,
                 query,
-                {
-                    'educational_context': educational_context,
-                    'original_query': query
-                },
-                max_methodologies=kwargs.get('max_methodologies', 10)
+                {"educational_context": educational_context, "original_query": query},
+                max_methodologies=kwargs.get("max_methodologies", 10),
             )
-            
+
             # Convert to dict for display/serialization
             educational_context_dict = asdict(educational_context_obj)
-            
+
             # Clean up the confidence fields - convert from "ConfidenceLevel.HIGH" to "HIGH"
-            if 'confidence_assessment' in educational_context_dict:
-                conf = str(educational_context_dict['confidence_assessment'])
-                educational_context_dict['confidence_assessment'] = conf.replace('ConfidenceLevel.', '')
-            
-            for methodology in educational_context_dict.get('primary_methodologies', []):
-                if 'confidence' in methodology and methodology['confidence']:
-                    conf = str(methodology['confidence'])
-                    methodology['confidence'] = conf.replace('ConfidenceLevel.', '')
-            
-            for methodology in educational_context_dict.get('supporting_methodologies', []):
-                if 'confidence' in methodology and methodology['confidence']:
-                    conf = str(methodology['confidence'])
-                    methodology['confidence'] = conf.replace('ConfidenceLevel.', '')
-            
+            if "confidence_assessment" in educational_context_dict:
+                conf = str(educational_context_dict["confidence_assessment"])
+                educational_context_dict["confidence_assessment"] = conf.replace(
+                    "ConfidenceLevel.", ""
+                )
+
+            for methodology in educational_context_dict.get("primary_methodologies", []):
+                if "confidence" in methodology and methodology["confidence"]:
+                    conf = str(methodology["confidence"])
+                    methodology["confidence"] = conf.replace("ConfidenceLevel.", "")
+
+            for methodology in educational_context_dict.get("supporting_methodologies", []):
+                if "confidence" in methodology and methodology["confidence"]:
+                    conf = str(methodology["confidence"])
+                    methodology["confidence"] = conf.replace("ConfidenceLevel.", "")
+
         except Exception as e:
             logger.error(f"Context building failed: {e}")
             import traceback
+
             logger.error(traceback.format_exc())
             educational_context_obj = None
             educational_context_dict = {}
 
         return {
-            'original_query': query,
-            'domain': domain,  # Include domain in result
-            'cypher_result': cypher_result,
-            'retrieval_result': retrieval_result,
-            'combined_context': self._build_context(retrieval_result),
-            'educational_context': educational_context_dict,  # Dict for display
-            'educational_context_obj': educational_context_obj  # Object for LLM chain
+            "original_query": query,
+            "domain": domain,  # Include domain in result
+            "cypher_result": cypher_result,
+            "retrieval_result": retrieval_result,
+            "combined_context": self._build_context(retrieval_result),
+            "educational_context": educational_context_dict,  # Dict for display
+            "educational_context_obj": educational_context_obj,  # Object for LLM chain
         }
-    
+
     def _build_context(self, retrieval_result: RetrievedContext) -> str:
         """Build human-readable context from retrieval results"""
         context_parts = []
-        
+
         # Add node summaries
         if retrieval_result.nodes:
             context_parts.append("## Educational Context")
             for i, node in enumerate(retrieval_result.nodes[:10], 1):
-                context_parts.append(f"{i}. **{node.get('name', 'Unknown')}** ({node.get('category', 'Unknown')})")
-        
+                context_parts.append(
+                    f"{i}. **{node.get('name', 'Unknown')}** ({node.get('category', 'Unknown')})"
+                )
+
         # Add relationship summaries
         if retrieval_result.triples:
             context_parts.append("\n## Key Relationships")
             for source, rel_type, target in retrieval_result.triples[:10]:
                 context_parts.append(f"- {source} → {rel_type} → {target}")
-        
+
         # Add facet summary
         if retrieval_result.facets:
             context_parts.append("\n## Summary")
-            label_counts = retrieval_result.facets.get('label_counts', {})
+            label_counts = retrieval_result.facets.get("label_counts", {})
             if label_counts:
-                context_parts.append("**Node Types:** " + ", ".join([f"{label} ({count})" for label, count in label_counts.items()]))
-        
+                context_parts.append(
+                    "**Node Types:** "
+                    + ", ".join([f"{label} ({count})" for label, count in label_counts.items()])
+                )
+
         return "\n".join(context_parts)
-    
+
     def close(self):
         """Close all connections"""
         self.text2cypher.close()
 
+
 # Testing function
 async def test_hybrid_retriever():
     """Test the hybrid retriever with sample queries"""
-    from aix.core.config import config
-    
+
     # Initialize enhanced processor with Node2Vec
     processor = EnhancedMultilingualText2Cypher(use_vectors=True)
-    
+
     # Test queries
     test_queries = [
         "Ci sono strategie per i ragazzi ipovedenti?",
         "Il mio studente ha l'ADHD, cosa posso fare?",
         "Metodologie per studenti senza motivazione personale?",
         "Come aiutare studenti con disturbi dello spettro autistico?",
-        "Esistono tecniche per includere studenti con disabilità fisica?"
+        "Esistono tecniche per includere studenti con disabilità fisica?",
     ]
-    
+
     try:
         for query in test_queries:
-            print(f"\n{'='*80}")
+            print(f"\n{'=' * 80}")
             print(f"Query: {query}")
-            print('='*80)
-            
+            print("=" * 80)
+
             result = await processor.process_query_with_retrieval(query)
-            
+
             # Show Cypher result
-            cypher_result = result['cypher_result']
+            cypher_result = result["cypher_result"]
             print(f"\n🔍 Generated Cypher: {cypher_result['cypher_query']}")
             print(f"✅ Valid: {cypher_result['metadata'].get('is_valid', False)}")
-            
+
             # Show retrieval result
-            retrieval_result = result['retrieval_result']
+            retrieval_result = result["retrieval_result"]
             print(f"\n📊 Retrieved {len(retrieval_result.nodes)} nodes")
             print(f"🔗 Retrieved {len(retrieval_result.triples)} relationships")
-            
+
             # Show metadata
             metadata = retrieval_result.metadata
             print(f"\n⏱️  Timings: {metadata.get('timings', {})}")
-            print(f"📈 Counts: Graph={metadata.get('graph_count', 0)}, Semantic={metadata.get('semantic_count', 0)}")
-            
+            print(
+                f"📈 Counts: Graph={metadata.get('graph_count', 0)}, Semantic={metadata.get('semantic_count', 0)}"
+            )
+
             # Show sample nodes
             if retrieval_result.nodes:
-                print(f"\n📝 Sample Nodes:")
+                print("\n📝 Sample Nodes:")
                 for i, node in enumerate(retrieval_result.nodes[:3], 1):
-                    print(f"  {i}. {node.get('name', 'Unknown')} ({node.get('category', 'Unknown')})")
-            
+                    print(
+                        f"  {i}. {node.get('name', 'Unknown')} ({node.get('category', 'Unknown')})"
+                    )
+
             # Show sample triples
             if retrieval_result.triples:
-                print(f"\n🔗 Sample Relationships:")
+                print("\n🔗 Sample Relationships:")
                 for i, (source, rel, target) in enumerate(retrieval_result.triples[:3], 1):
                     print(f"  {i}. {source} → {rel} → {target}")
-    
+
     finally:
         processor.close()
 
+
 def precompute_embeddings(domain: str = "neuro"):
     """Pre-compute OpenAI embeddings for all nodes in a domain.
-    
+
     This should be run once to build the embedding cache before using hybrid_semantic mode.
     Cost estimate: ~$0.01 for 544 nodes (text-embedding-3-small is $0.02/1M tokens)
-    
+
     Args:
         domain: Domain to pre-compute embeddings for ("neuro", "udl", "all")
     """
     from aix.core.config import config as app_config
-    
+
     print(f"🔄 Pre-computing OpenAI embeddings for domain: {domain}")
     print(f"📦 Model: {app_config.embedding.embedding_model}")
     print(f"💾 Cache dir: {app_config.embedding.embeddings_cache_dir}")
-    
+
     # Initialize Neo4j driver
-    from neo4j import GraphDatabase
+
     driver = GraphDatabase.driver(
-        app_config.neo4j.uri,
-        auth=(app_config.neo4j.user, app_config.neo4j.password)
+        app_config.neo4j.uri, auth=(app_config.neo4j.user, app_config.neo4j.password)
     )
-    
+
     try:
         # Test connection
         with driver.session() as session:
             result = session.run("MATCH (n) RETURN count(n) as count")
             count = result.single()["count"]
             print(f"✅ Connected to Neo4j - {count} total nodes")
-        
+
         # Initialize embedder and pre-compute
         embedder = SemanticEmbedder(domain=domain)
         embedder.precompute_node_embeddings(driver, domain=domain)
-        
+
         print(f"\n✅ Pre-computed {len(embedder.node_embeddings)} embeddings")
         print(f"💾 Saved to: {embedder._get_cache_path()}")
-        
+
     except Exception as e:
         print(f"❌ Error: {e}")
         raise
@@ -2634,19 +2881,19 @@ def precompute_embeddings(domain: str = "neuro"):
 
 if __name__ == "__main__":
     import sys
-    
+
     if len(sys.argv) > 1:
         command = sys.argv[1]
-        
+
         if command == "--precompute":
             # Pre-compute embeddings: python graph_retriever.py --precompute neuro
             domain = sys.argv[2] if len(sys.argv) > 2 else "neuro"
             precompute_embeddings(domain)
-        
+
         elif command == "--test":
             # Run tests: python graph_retriever.py --test
             asyncio.run(test_hybrid_retriever())
-        
+
         elif command == "--help":
             print("""
 graph_retriever.py - Hybrid Graph Retriever for Educational Knowledge Graph
@@ -2655,10 +2902,10 @@ Usage:
     python graph_retriever.py --precompute [domain]
         Pre-compute OpenAI embeddings for hybrid_semantic mode
         domain: "neuro" (default), "udl", or "all"
-    
+
     python graph_retriever.py --test
         Run test queries with hybrid retrieval
-    
+
 Environment Variables:
     EMBEDDING_MODE: "node2vec" (default), "hybrid_semantic", or "openai_only"
     EMBEDDING_NODE2VEC_WEIGHT: Weight for Node2Vec (default: 0.4)
@@ -2667,10 +2914,10 @@ Environment Variables:
 Example:
     # Step 1: Pre-compute embeddings (once)
     python graph_retriever.py --precompute neuro
-    
+
     # Step 2: Set hybrid mode in .env
     EMBEDDING_MODE=hybrid_semantic
-    
+
     # Step 3: Run Streamlit app
     streamlit run apps/streamlit/main.py
             """)

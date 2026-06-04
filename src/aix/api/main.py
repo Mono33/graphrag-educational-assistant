@@ -22,9 +22,8 @@ import asyncio
 import logging
 import os
 import sys
-import time
+from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
-from contextlib import asynccontextmanager, AsyncExitStack
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -48,8 +47,7 @@ from aix.api.schemas import HealthResponse
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -88,7 +86,9 @@ def _warm_schema(domain: str) -> None:
         schema = t.pipeline.converter.schema_extractor.extract_schema(domain=domain)
         Text2CypherConverter._schema_cache[domain] = schema
         t.pipeline.converter.schema_info = schema
-        Text2CypherConverter._prompt_cache[domain] = t.pipeline.converter._create_prompt_template(domain=domain)
+        Text2CypherConverter._prompt_cache[domain] = t.pipeline.converter._create_prompt_template(
+            domain=domain
+        )
         logger.info(f"✅ Schema cache warmed for domain='{domain}'")
     except Exception as e:
         logger.warning(f"⚠️ Schema cache warm-up failed for domain='{domain}': {e}")
@@ -104,7 +104,7 @@ def _warm_schema(domain: str) -> None:
 # block the public /api/v1 surface from coming up.
 _mcp_http_app = None
 try:
-    from aix.mcp.http_app import build_mcp_http_app, MCP_MOUNT_PATH
+    from aix.mcp.http_app import MCP_MOUNT_PATH, build_mcp_http_app
 
     _mcp_http_app = build_mcp_http_app()
     if _mcp_http_app is None:
@@ -121,29 +121,29 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("🚀 Starting GraphRAG Educational API...")
     logger.info(f"📦 Version: {__version__}")
-    
+
     # Test Neo4j connection
     try:
-        from aix.core.config import config
         from neo4j import GraphDatabase
+
+        from aix.core.config import config
+
         driver_kwargs = {
             "auth": (config.neo4j.user, config.neo4j.password),
         }
         if not config.neo4j.encrypted:
             driver_kwargs["encrypted"] = config.neo4j.encrypted
-        driver = GraphDatabase.driver(
-            config.neo4j.uri,
-            **driver_kwargs
-        )
+        driver = GraphDatabase.driver(config.neo4j.uri, **driver_kwargs)
         driver.verify_connectivity()
         driver.close()
         logger.info("✅ Neo4j connection verified")
     except Exception as e:
         logger.warning(f"⚠️ Neo4j connection check failed: {e}")
-    
+
     # Check domain configs
     try:
         from aix.domains import get_domain_config
+
         neuro_config = get_domain_config("neuro")
         udl_config = get_domain_config("udl")
         loaded = []
@@ -171,6 +171,7 @@ async def lifespan(app: FastAPI):
     def _warm_graphrag_tool(domain: str) -> None:
         try:
             from aix.agent.tools.graphrag_tool import GraphRAGTool
+
             GraphRAGTool(domain=domain)._ensure_initialized()
             logger.info(f"🔥 GraphRAGTool warm for domain='{domain}'")
         except Exception as e:
@@ -190,6 +191,7 @@ async def lifespan(app: FastAPI):
     # public /api/v1 surface from coming up.
     try:
         from aix.webui.db import init_db as _webui_init_db
+
         await _webui_init_db()
     except Exception as e:
         logger.warning(f"⚠️ WebUI DB init failed (auth + lessons disabled): {e}")
@@ -203,6 +205,7 @@ async def lifespan(app: FastAPI):
     # the background — never blocks startup, never fails the API.
     try:
         from aix.core.connectivity_probe import schedule_startup_probe
+
         await schedule_startup_probe()
     except Exception as e:  # noqa: BLE001
         logger.debug("⚠️ LLM connectivity probe scheduling failed: %s", e)
@@ -246,7 +249,7 @@ This API provides educational context from a neuroscience and pedagogy knowledge
 - Return methodologies, evidence, and recommendations based on teacher queries
 
 ### Integration
-DEV team can call `POST /api/v1/context` with a query and receive structured data 
+DEV team can call `POST /api/v1/context` with a query and receive structured data
 ready to inject into their prompt templates.
 
 ### Response Structure
@@ -277,7 +280,7 @@ context = response.json()
     version=__version__,
     lifespan=lifespan,
     docs_url="/docs",
-    redoc_url="/redoc"
+    redoc_url="/redoc",
 )
 
 # ---------------------------------------------------------------------------
@@ -313,6 +316,7 @@ app.include_router(context_router, prefix="/api/v1")
 # break the existing /api/v1/context surface from coming up.
 try:
     from aix.api.routes import agent_router
+
     app.include_router(agent_router, prefix="/api/v1")
     logger.info("✅ Agent JSON+SSE API mounted at /api/v1/agent/*")
 except Exception as exc:  # noqa: BLE001
@@ -324,6 +328,7 @@ except Exception as exc:  # noqa: BLE001
 # (ADR-0001) and CORE 2 subtask #6.6 in ClickUp_Agentic_GraphRAG_Update.md.
 try:
     from aix.webui import router as webui_router
+
     app.include_router(webui_router)
     logger.info("✅ Path C webui mounted at /webui/")
 except ImportError as exc:
@@ -409,7 +414,7 @@ async def root():
         "version": __version__,
         "description": "Knowledge graph context for educational queries",
         "docs": "/docs",
-        "health": "/api/v1/health"
+        "health": "/api/v1/health",
     }
 
 
@@ -417,52 +422,48 @@ async def root():
 async def health_check():
     """
     Health check endpoint
-    
+
     Returns the status of the API and its dependencies
     """
     neo4j_connected = False
     domain_configs = []
-    
+
     # Check Neo4j
     try:
-        from aix.core.config import config
         from neo4j import GraphDatabase
+
+        from aix.core.config import config
+
         driver = GraphDatabase.driver(
-            config.neo4j.uri,
-            auth=(config.neo4j.user, config.neo4j.password)
+            config.neo4j.uri, auth=(config.neo4j.user, config.neo4j.password)
         )
         driver.verify_connectivity()
         driver.close()
         neo4j_connected = True
     except Exception:
         pass
-    
+
     # Check domain configs
     try:
         from aix.domains import get_domain_config
+
         if get_domain_config("neuro"):
             domain_configs.append("neuro")
         if get_domain_config("udl"):
             domain_configs.append("udl")
     except Exception:
         pass
-    
+
     return HealthResponse(
         status="healthy" if neo4j_connected else "degraded",
         neo4j_connected=neo4j_connected,
         version=__version__,
-        domain_configs_loaded=domain_configs
+        domain_configs_loaded=domain_configs,
     )
 
 
 # Run with: python -m api.main
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(
-        "api.main:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=True,
-        log_level="info"
-    )
 
+    uvicorn.run("api.main:app", host="0.0.0.0", port=8000, reload=True, log_level="info")

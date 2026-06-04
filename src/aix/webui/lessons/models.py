@@ -55,11 +55,18 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Any, List, Optional
+from typing import Any, Optional
 
 from fastapi_users_db_sqlalchemy.generics import GUID
 from sqlalchemy import (
-    JSON, DateTime, ForeignKey, Index, Integer, String, Text, func,
+    JSON,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -115,9 +122,7 @@ class Lesson(Base):
     # column is just the manifest (id, filename, mime, size, text_excerpt,
     # stored_name). The Writer prompt receives a joined excerpt as
     # ``teacher_provided_context``; nothing here goes into the KG.
-    uploaded_files_json: Mapped[Optional[list[Any]]] = mapped_column(
-        JSON, nullable=True
-    )
+    uploaded_files_json: Mapped[Optional[list[Any]]] = mapped_column(JSON, nullable=True)
 
     status: Mapped[str] = mapped_column(String(24), default="draft", nullable=False)
 
@@ -144,11 +149,50 @@ class Lesson(Base):
     # to do ``lesson.messages`` instead of an explicit query. Ordered by
     # turn_index so the chat pane gets them in the right order without an
     # extra ``order_by`` on every consumer.
-    messages: Mapped[List["LessonMessage"]] = relationship(
+    messages: Mapped[list[LessonMessage]] = relationship(
         "LessonMessage",
         back_populates="lesson",
         cascade="all, delete-orphan",
         order_by="LessonMessage.turn_index, LessonMessage.created_at",
+    )
+
+
+class SavedProfile(Base):
+    """
+    A named EducationalProfile preset the teacher can reuse across lessons.
+
+    Saved from the lesson creation form via POST /webui/profiles (includes the
+    current form values).  Loaded back via GET /webui/lesson/new?profile_id={id}
+    which pre-fills the form.  No relationship to Lesson — profiles are
+    independent library entries owned by the user.
+    """
+
+    __tablename__ = "saved_profile"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        GUID,
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+
+    owner_id: Mapped[uuid.UUID] = mapped_column(
+        GUID,
+        ForeignKey("user.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+
+    # Short human-readable name chosen by the teacher (e.g. "Classe 3A Fisica").
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+
+    # Profile fields in the same nested shape as Lesson.educational_profile_json
+    # (i.e. an EducationalProfile-compatible dict).
+    profile_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
     )
 
 
@@ -190,7 +234,7 @@ class LessonMessage(Base):
         ForeignKey("lesson.id", ondelete="CASCADE"),
         nullable=False,
     )
-    lesson: Mapped["Lesson"] = relationship("Lesson", back_populates="messages")
+    lesson: Mapped[Lesson] = relationship("Lesson", back_populates="messages")
 
     # ``user`` | ``assistant``. We keep ``system`` reserved for future
     # summary-buffer rows (#10.4) but don't emit them yet — V1 keeps the
@@ -217,17 +261,13 @@ class LessonMessage(Base):
     #   {approved, revision_count, scores, nodes_count, recommendations_count,
     #    media_counts, search_queries_count, duration_seconds}
     # For user messages this is None.
-    meta_json: Mapped[Optional[dict[str, Any]]] = mapped_column(
-        JSON, nullable=True
-    )
+    meta_json: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
 
     # LangGraph checkpoint id snapshotted at this turn (CORE 2 #10.3 future
     # use — regenerate via aupdate_state branches from this checkpoint).
     # Optional because V1 doesn't populate it for the simple replay path;
     # regenerate-from-history will set it when that branch lands.
-    checkpoint_id: Mapped[Optional[str]] = mapped_column(
-        String(128), nullable=True
-    )
+    checkpoint_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

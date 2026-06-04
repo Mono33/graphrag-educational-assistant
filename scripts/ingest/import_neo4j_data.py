@@ -4,11 +4,11 @@ import_neo4j_data.py - Import Neo4j Knowledge Graph Data
 Imports nodes and relationships from a JSON export file to a Neo4j instance.
 """
 
-import json
 import argparse
-from datetime import datetime
+import json
+from typing import Any
+
 from neo4j import GraphDatabase
-from typing import Dict, List, Any
 
 
 def clear_domain(session, domain: str):
@@ -30,24 +30,24 @@ def clear_all(session):
     print(f"🗑️  Cleared entire database - deleted {summary.counters.nodes_deleted} nodes")
 
 
-def create_node(session, node: Dict[str, Any]) -> bool:
+def create_node(session, node: dict[str, Any]) -> bool:
     """Create a single node with its labels and properties"""
     labels = node.get("_labels", ["Concept"])
-    
+
     # Remove internal export fields
     props = {k: v for k, v in node.items() if not k.startswith("_")}
-    
+
     # Build label string
     label_str = ":".join(labels)
-    
+
     # Create node with MERGE to avoid duplicates
     query = f"""
     MERGE (n:{label_str} {{name: $name, domain: $domain}})
     SET n += $props
     """
-    
+
     try:
-        session.run(query, 
+        session.run(query,
                    name=props.get("name", "Unknown"),
                    domain=props.get("domain", "unknown"),
                    props=props)
@@ -57,13 +57,13 @@ def create_node(session, node: Dict[str, Any]) -> bool:
         return False
 
 
-def create_relationship(session, rel: Dict[str, Any]) -> bool:
+def create_relationship(session, rel: dict[str, Any]) -> bool:
     """Create a single relationship between nodes"""
     source = rel["source"]
     target = rel["target"]
     rel_type = rel["type"]
     rel_props = rel.get("properties", {})
-    
+
     # Match source and target by name and domain, then create relationship
     query = f"""
     MATCH (a {{name: $source_name, domain: $source_domain}})
@@ -71,7 +71,7 @@ def create_relationship(session, rel: Dict[str, Any]) -> bool:
     MERGE (a)-[r:{rel_type}]->(b)
     SET r += $rel_props
     """
-    
+
     try:
         session.run(query,
                    source_name=source["name"],
@@ -85,28 +85,28 @@ def create_relationship(session, rel: Dict[str, Any]) -> bool:
         return False
 
 
-def import_from_json(uri: str, user: str, password: str, input_file: str, 
+def import_from_json(uri: str, user: str, password: str, input_file: str,
                      clear: bool = False, clear_domain_name: str = None):
     """Import graph data from JSON file"""
-    
+
     # Load export file
     print(f"📂 Loading export file: {input_file}")
-    with open(input_file, 'r', encoding='utf-8') as f:
+    with open(input_file, encoding='utf-8') as f:
         data = json.load(f)
-    
+
     metadata = data.get("metadata", {})
     nodes = data.get("nodes", [])
     relationships = data.get("relationships", [])
-    
+
     print(f"   📊 Source: {metadata.get('source_uri', 'unknown')}")
     print(f"   📅 Export date: {metadata.get('export_date', 'unknown')}")
     print(f"   📦 Nodes to import: {len(nodes)}")
     print(f"   🔗 Relationships to import: {len(relationships)}")
-    
+
     # Connect to target Neo4j
     print(f"\n🔗 Connecting to target Neo4j: {uri}")
     driver = GraphDatabase.driver(uri, auth=(user, password))
-    
+
     try:
         with driver.session() as session:
             # Clear if requested
@@ -114,7 +114,7 @@ def import_from_json(uri: str, user: str, password: str, input_file: str,
                 clear_all(session)
             elif clear_domain_name:
                 clear_domain(session, clear_domain_name)
-            
+
             # Import nodes
             print(f"\n📥 Importing {len(nodes)} nodes...")
             node_success = 0
@@ -124,7 +124,7 @@ def import_from_json(uri: str, user: str, password: str, input_file: str,
                 if i % 100 == 0:
                     print(f"   Progress: {i}/{len(nodes)} nodes...")
             print(f"   ✅ Imported {node_success}/{len(nodes)} nodes")
-            
+
             # Import relationships
             print(f"\n📥 Importing {len(relationships)} relationships...")
             rel_success = 0
@@ -134,11 +134,11 @@ def import_from_json(uri: str, user: str, password: str, input_file: str,
                 if i % 100 == 0:
                     print(f"   Progress: {i}/{len(relationships)} relationships...")
             print(f"   ✅ Imported {rel_success}/{len(relationships)} relationships")
-            
-            print(f"\n✅ Import complete!")
+
+            print("\n✅ Import complete!")
             print(f"   📊 Nodes: {node_success}/{len(nodes)}")
             print(f"   🔗 Relationships: {rel_success}/{len(relationships)}")
-            
+
     finally:
         driver.close()
 
@@ -151,10 +151,10 @@ def main():
     parser.add_argument("--input", required=True, help="Input JSON file")
     parser.add_argument("--clear", action="store_true", help="Clear entire database before import")
     parser.add_argument("--clear-domain", help="Clear specific domain before import")
-    
+
     args = parser.parse_args()
-    
-    import_from_json(args.uri, args.user, args.password, args.input, 
+
+    import_from_json(args.uri, args.user, args.password, args.input,
                      args.clear, args.clear_domain)
 
 

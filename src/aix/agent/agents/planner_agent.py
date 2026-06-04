@@ -8,13 +8,14 @@ Determines what to search in the knowledge graph.
 import json
 import logging
 import re
-from typing import Optional, Dict, Any, List
 from dataclasses import dataclass
+from typing import Optional
 
 from openai import AsyncOpenAI
-from aix.core.config import config as app_config, extract_response_content
 
 from aix.agent.prompts.planner_prompt import PLANNER_SYSTEM_PROMPT, PLANNER_USER_TEMPLATE
+from aix.core.config import config as app_config
+from aix.core.config import extract_response_content
 
 logger = logging.getLogger(__name__)
 
@@ -52,21 +53,22 @@ def _extract_json(content: str) -> dict:
 @dataclass
 class RetrievalPlan:
     """Structured plan for what to retrieve"""
+
     query_intent: str  # lesson_creation, definition, comparison, etc.
-    key_concepts: List[str]
-    search_queries: List[str]
+    key_concepts: list[str]
+    search_queries: list[str]
     lesson_type: Optional[str] = None  # Only for lesson/activity intents
     target_grade: Optional[str] = None
-    special_needs: Optional[List[str]] = None
+    special_needs: Optional[list[str]] = None
     time_constraints: Optional[str] = None
     intent_confidence: str = "MEDIUM"
     reasoning: Optional[str] = None
-    
+
     # NEW Phase A: Scope detection fields
     scope_status: str = "in_scope"  # in_scope, partial_scope, out_of_scope
-    scope_confidence: float = 1.0   # 0.0-1.0 confidence in scope detection
-    subject_concepts: Optional[List[str]] = None  # Subject-specific (may need external APIs)
-    pedagogy_concepts: Optional[List[str]] = None  # Teaching strategies from KG
+    scope_confidence: float = 1.0  # 0.0-1.0 confidence in scope detection
+    subject_concepts: Optional[list[str]] = None  # Subject-specific (may need external APIs)
+    pedagogy_concepts: Optional[list[str]] = None  # Teaching strategies from KG
 
     # CORE 2 #10 follow-up — Point (a): LLM-driven response-language detection.
     # The Planner is the canonical L1 detector because it sees the full query
@@ -76,19 +78,21 @@ class RetrievalPlan:
     # ``response_language`` when ``language_confidence`` >= MEDIUM. This keeps
     # the writer/critic on the user's actual language even on follow-up
     # queries that don't trigger the brittle stop-word heuristic.
-    response_language: Optional[str] = None  # ISO 2-letter ("it", "en", "es", "fr"); None = let caller fall back
-    language_confidence: str = "LOW"          # "HIGH" | "MEDIUM" | "LOW"
-    
+    response_language: Optional[str] = (
+        None  # ISO 2-letter ("it", "en", "es", "fr"); None = let caller fall back
+    )
+    language_confidence: str = "LOW"  # "HIGH" | "MEDIUM" | "LOW"
+
     @property
     def is_lesson_intent(self) -> bool:
         """Check if this is a lesson/activity creation intent"""
         return self.query_intent in ("lesson_creation", "activity_design")
-    
+
     @property
     def needs_external_apis(self) -> bool:
         """Check if this plan requires external API calls for subject content"""
         return self.scope_status in ("partial_scope", "out_of_scope")
-    
+
     @property
     def is_in_scope(self) -> bool:
         """Check if query is fully within Knowledge Graph scope"""
@@ -105,67 +109,80 @@ class RetrievalPlan:
         a stop-word heuristic). LOW means the LLM itself wasn't sure, so we
         keep the seed instead of risking a wrong override.
         """
-        return (
-            self.response_language is not None
-            and self.language_confidence in ("HIGH", "MEDIUM")
-        )
+        return self.response_language is not None and self.language_confidence in ("HIGH", "MEDIUM")
 
 
 class PlannerAgent:
     """
     Planner Agent - First step in the lesson planning pipeline.
-    
+
     Responsibilities:
     1. Analyze the teacher's natural language query
     2. Identify key educational concepts to search
     3. Create a structured retrieval plan
     4. Determine lesson type, grade level, and constraints
     """
-    
+
     def __init__(self, model: str = "gpt-4o"):
         """
         Initialize the Planner Agent.
-        
+
         Args:
             model: OpenAI model to use for planning
         """
         self.model = model
         self._client: Optional[AsyncOpenAI] = None
-    
+
     def _get_client(self) -> AsyncOpenAI:
         """Lazy initialization of OpenAI client"""
         if self._client is None:
             self._client = app_config.openai.get_async_client()
         return self._client
-    
+
     async def plan(
         self,
         query: str,
         domain: str = "neuro",
-        language: str = "it"
+        language: str = "it",
+        pedagogical_intent: Optional[str] = None,
     ) -> RetrievalPlan:
         """
         Analyze a teacher query and create a retrieval plan.
-        
+
         Args:
             query: Teacher's natural language query
             domain: Knowledge domain ("neuro" or "udl")
             language: Response language ("it" or "en")
-            
+
         Returns:
             RetrievalPlan with structured search parameters
         """
         logger.info(f"[PlannerAgent] Analyzing query: {query[:50]}...")
-        
+
         client = self._get_client()
-        
+
         # Format the user prompt
-        user_prompt = PLANNER_USER_TEMPLATE.format(
-            query=query,
-            domain=domain,
-            language=language
-        )
-        
+        user_prompt = PLANNER_USER_TEMPLATE.format(query=query, domain=domain, language=language)
+
+        # F4: Inject pedagogical_intent so the planner generates
+        # objective-aligned search queries and explicit learning objectives.
+        if pedagogical_intent:
+            from aix.api.schemas.educational_profile import PEDAGOGICAL_INTENT_BY_CODE
+
+            code, _, detail = pedagogical_intent.partition(": ")
+            option = PEDAGOGICAL_INTENT_BY_CODE.get(code.strip())
+            if option:
+                resolved = option["prompt"]
+                if detail.strip():
+                    resolved += f" ({detail.strip()})"
+            else:
+                resolved = pedagogical_intent
+            user_prompt = (
+                f"Teacher's pedagogical intent: {resolved}\n"
+                f"Generate lesson objectives that fulfill this intent before mapping "
+                f"concepts to the knowledge graph.\n\n"
+            ) + user_prompt
+
         try:
             # CORE 2 #11a — JSON parse hardening (2026-05-09):
             # Pass json_mode=True so OpenRouter forwards
@@ -184,18 +201,18 @@ class PlannerAgent:
             response = await client.chat.completions.create(
                 messages=[
                     {"role": "system", "content": PLANNER_SYSTEM_PROMPT},
-                    {"role": "user", "content": user_prompt}
+                    {"role": "user", "content": user_prompt},
                 ],
-                **completion_kwargs
+                **completion_kwargs,
             )
 
             # Parse JSON response (extract_response_content also logs thinking tokens)
             content = extract_response_content(response, logger)
             plan_data = _extract_json(content)
-            
+
             # Extract query intent (with fallback for backward compatibility)
             query_intent = plan_data.get("query_intent", "lesson_creation")
-            
+
             # NEW Phase A: Extract scope detection fields
             scope_status = plan_data.get("scope_status", "in_scope")
             scope_confidence = plan_data.get("scope_confidence", 1.0)
@@ -225,9 +242,7 @@ class PlannerAgent:
                         "ignoring and keeping seed language",
                         response_language_raw,
                     )
-            language_confidence = (
-                plan_data.get("language_confidence") or "LOW"
-            ).upper()
+            language_confidence = (plan_data.get("language_confidence") or "LOW").upper()
             if language_confidence not in {"HIGH", "MEDIUM", "LOW"}:
                 language_confidence = "LOW"
 
@@ -250,12 +265,15 @@ class PlannerAgent:
                 response_language=response_language,
                 language_confidence=language_confidence,
             )
-            
+
             # Enhanced logging with scope status
-            scope_emoji = {"in_scope": "✅", "partial_scope": "⚠️", "out_of_scope": "❌"}.get(scope_status, "❓")
+            scope_emoji = {"in_scope": "✅", "partial_scope": "⚠️", "out_of_scope": "❌"}.get(
+                scope_status, "❓"
+            )
             lang_part = (
                 f"lang={plan.response_language}({language_confidence}), "
-                if plan.response_language else "lang=<none>, "
+                if plan.response_language
+                else "lang=<none>, "
             )
             logger.info(
                 f"[PlannerAgent] Created plan: {lang_part}intent={plan.query_intent}, "
@@ -263,12 +281,12 @@ class PlannerAgent:
                 f"{len(plan.search_queries)} queries, "
                 f"concepts: {plan.key_concepts[:3]}..."
             )
-            
+
             if plan.needs_external_apis:
                 logger.info(f"[PlannerAgent] 🌐 External APIs needed for: {subject_concepts}")
-            
+
             return plan
-            
+
         except json.JSONDecodeError as e:
             # CORE 2 #11a (2026-05-09): structured parse-error log.
             # The marker `event=agent_parse_error agent=planner` is what
@@ -281,7 +299,8 @@ class PlannerAgent:
             raw_preview = content[:300] if "content" in dir() else "<not set>"
             logger.error(
                 "event=agent_parse_error agent=planner err=%s raw_preview=%r",
-                e, raw_preview,
+                e,
+                raw_preview,
             )
             return RetrievalPlan(
                 query_intent="lesson_creation",
@@ -289,19 +308,14 @@ class PlannerAgent:
                 search_queries=[query],
                 lesson_type="full_lesson",
                 intent_confidence="LOW",
-                reasoning="Fallback plan due to JSON parsing error"
+                reasoning="Fallback plan due to JSON parsing error",
             )
         except Exception as e:
             logger.error(f"[PlannerAgent] Planning failed: {e}")
             raise
-    
-    def plan_sync(
-        self,
-        query: str,
-        domain: str = "neuro",
-        language: str = "it"
-    ) -> RetrievalPlan:
+
+    def plan_sync(self, query: str, domain: str = "neuro", language: str = "it") -> RetrievalPlan:
         """Synchronous version of plan()"""
         import asyncio
-        return asyncio.run(self.plan(query, domain, language))
 
+        return asyncio.run(self.plan(query, domain, language))

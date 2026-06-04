@@ -7,7 +7,7 @@ allowing easy updates and domain expert review without modifying the core KG.
 
 Architecture:
     kg_neuro_neo4j.json (Core KG) ←→ kg_neuro_media_mapping.json (Media Sidecar)
-    
+
 The separation allows:
 1. Domain experts to review/improve media recommendations
 2. Independent versioning of media and knowledge
@@ -16,9 +16,9 @@ The separation allows:
 
 import json
 import logging
-from pathlib import Path
-from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class VideoResource:
     """Video resource recommendation"""
+
     title: str
     platform: str  # youtube, vimeo, etc.
     search_query: str
@@ -44,6 +45,7 @@ class VideoResource:
 @dataclass
 class ImageResource:
     """Image/diagram resource recommendation"""
+
     description: str
     search_query: str
     type: str = "diagram"  # diagram, infographic, illustration
@@ -54,6 +56,7 @@ class ImageResource:
 @dataclass
 class ExternalResource:
     """External resource link (Wikipedia, educational sites)"""
+
     title: str
     type: str  # wikipedia, educational, academic
     url: Optional[str] = None
@@ -64,8 +67,9 @@ class ExternalResource:
 @dataclass
 class Citation:
     """Academic citation/reference"""
+
     title: str
-    authors: List[str]
+    authors: list[str]
     year: Optional[int] = None
     journal: Optional[str] = None
     doi: Optional[str] = None
@@ -75,6 +79,7 @@ class Citation:
 @dataclass
 class OpenTextbook:
     """Open Educational Resource (OER) textbook reference"""
+
     title: str
     source: str  # OpenStax, DOAB, Pressbooks, OpenTextbookLibrary, BCCampus
     chapter: Optional[str] = None
@@ -86,23 +91,26 @@ class OpenTextbook:
 @dataclass
 class MediaContent:
     """Complete media content for a concept"""
+
     concept_name: str
     concept_id: str
     category: str
-    videos: List[VideoResource] = field(default_factory=list)
-    images: List[ImageResource] = field(default_factory=list)
-    resources: List[ExternalResource] = field(default_factory=list)
-    citations: List[Citation] = field(default_factory=list)
-    open_textbooks: List[OpenTextbook] = field(default_factory=list)
-    
+    videos: list[VideoResource] = field(default_factory=list)
+    images: list[ImageResource] = field(default_factory=list)
+    resources: list[ExternalResource] = field(default_factory=list)
+    citations: list[Citation] = field(default_factory=list)
+    open_textbooks: list[OpenTextbook] = field(default_factory=list)
+
     def has_content(self) -> bool:
         """Check if any media content exists"""
-        return bool(self.videos or self.images or self.resources or self.citations or self.open_textbooks)
-    
+        return bool(
+            self.videos or self.images or self.resources or self.citations or self.open_textbooks
+        )
+
     def to_context_string(self, include_citations: bool = True) -> str:
         """Format media content for Writer Agent context"""
         lines = []
-        
+
         if self.videos:
             lines.append(f"\n### 🎥 Video per '{self.concept_name}':")
             for v in self.videos[:3]:
@@ -110,15 +118,15 @@ class MediaContent:
                 if display_url:
                     lines.append(f"- [{v.title}]({display_url}) ({v.duration_hint or 'video'})")
                 else:
-                    lines.append(f"- Cerca: \"{v.search_query}\" su {v.platform}")
-        
+                    lines.append(f'- Cerca: "{v.search_query}" su {v.platform}')
+
         if self.images:
             lines.append(f"\n### 🖼️ Diagrammi/Immagini per '{self.concept_name}':")
             for img in self.images[:2]:
                 lines.append(f"- {img.description}")
                 if img.url:
                     lines.append(f"  URL: {img.url}")
-        
+
         if self.resources:
             lines.append(f"\n### 📚 Risorse per '{self.concept_name}':")
             for r in self.resources[:3]:
@@ -127,7 +135,7 @@ class MediaContent:
                     lines.append(f"- [{r.title}]({url})")
                 else:
                     lines.append(f"- {r.title} ({r.type})")
-        
+
         if include_citations and self.citations:
             lines.append(f"\n### 📖 Riferimenti scientifici per '{self.concept_name}':")
             for c in self.citations[:2]:
@@ -141,7 +149,7 @@ class MediaContent:
                 if c.doi:
                     doi_link = f"https://doi.org/{c.doi}"
                     lines.append(f"  [DOI: {c.doi}]({doi_link})")
-        
+
         if self.open_textbooks:
             lines.append(f"\n### 📚 Libri di Testo Aperti (OER) per '{self.concept_name}':")
             for t in self.open_textbooks[:2]:
@@ -152,23 +160,23 @@ class MediaContent:
                 if t.chapter:
                     lines.append(f"  Capitolo: {t.chapter}")
                 lines.append(f"  Fonte: {t.source} | Licenza: {t.license}")
-        
+
         return "\n".join(lines)
 
 
 class MediaLookup:
     """
     Media Lookup Service - Sidecar JSON lookup for concept media.
-    
+
     Loads media mapping at startup and provides fast lookup by concept name.
     The mapping is stored separately from the Neo4j KG for easy updates.
-    
+
     Usage:
         lookup = MediaLookup(domain="neuro")
         media = lookup.find_media(["Working Memory", "Metacognition"])
         context = media.to_context_string()
     """
-    
+
     def __init__(self, domain: str = "neuro", mapping_path: Optional[str] = None):
         """
         Initialize Media Lookup.
@@ -178,8 +186,8 @@ class MediaLookup:
             mapping_path: Optional custom path to media mapping JSON
         """
         self.domain = domain
-        self.media_by_concept: Dict[str, Dict] = {}
-        self.media_by_id: Dict[str, Dict] = {}
+        self.media_by_concept: dict[str, dict] = {}
+        self.media_by_id: dict[str, dict] = {}
         self.loaded = False
         self._pool_loaded = False  # True when loaded from the new verified pool format
 
@@ -198,7 +206,7 @@ class MediaLookup:
 
         self.mapping_path = mapping_path
         self._load_mapping()
-    
+
     def _load_mapping(self) -> None:
         """Load media mapping from JSON file (verified pool or legacy mapping)."""
         if not self.mapping_path.exists():
@@ -209,7 +217,7 @@ class MediaLookup:
             return
 
         try:
-            with open(self.mapping_path, "r", encoding="utf-8") as f:
+            with open(self.mapping_path, encoding="utf-8") as f:
                 data = json.load(f)
 
             # Detect format: verified pool has top-level "entries" dict keyed by concept name
@@ -221,7 +229,7 @@ class MediaLookup:
         except Exception as e:
             logger.error(f"[MediaLookup] Failed to load media mapping: {e}")
 
-    def _load_pool_format(self, data: Dict) -> None:
+    def _load_pool_format(self, data: dict) -> None:
         """Load the new verified pool format (kg_{domain}_media_pool.json)."""
         entries = data.get("entries", {})
         for concept_name, entry in entries.items():
@@ -241,7 +249,7 @@ class MediaLookup:
             f"{len(self.media_by_concept)} concepts"
         )
 
-    def _load_legacy_format(self, data: Dict) -> None:
+    def _load_legacy_format(self, data: dict) -> None:
         """Load the legacy media mapping format (kg_{domain}_media_mapping.json)."""
         concepts = data.get("concepts", [])
         for concept in concepts:
@@ -256,70 +264,66 @@ class MediaLookup:
         logger.info(
             f"[MediaLookup] Loaded legacy media mapping: {len(self.media_by_concept)} concepts"
         )
-    
+
     def find_media_for_concept(self, concept_name: str) -> Optional[MediaContent]:
         """
         Find media content for a single concept.
-        
+
         Args:
             concept_name: Name of the concept
-            
+
         Returns:
             MediaContent if found, None otherwise
         """
         if not self.loaded:
             return None
-        
+
         key = concept_name.lower().strip()
         data = self.media_by_concept.get(key)
-        
+
         if not data:
             # Try partial matching
             for stored_name, stored_data in self.media_by_concept.items():
                 if key in stored_name or stored_name in key:
                     data = stored_data
                     break
-        
+
         if not data:
             return None
-        
+
         return self._parse_media_content(data)
-    
-    def find_media(self, concept_names: List[str]) -> Dict[str, MediaContent]:
+
+    def find_media(self, concept_names: list[str]) -> dict[str, MediaContent]:
         """
         Find media for multiple concepts.
-        
+
         Args:
             concept_names: List of concept names to look up
-            
+
         Returns:
             Dictionary mapping concept names to MediaContent
         """
         result = {}
-        
+
         for name in concept_names:
             media = self.find_media_for_concept(name)
             if media and media.has_content():
                 result[name] = media
-        
+
         return result
-    
-    def get_combined_media(self, concept_names: List[str]) -> MediaContent:
+
+    def get_combined_media(self, concept_names: list[str]) -> MediaContent:
         """
         Get combined media for multiple concepts.
-        
+
         Args:
             concept_names: List of concept names
-            
+
         Returns:
             Combined MediaContent with all media from all concepts
         """
-        combined = MediaContent(
-            concept_name="Combined",
-            concept_id="combined",
-            category="Multiple"
-        )
-        
+        combined = MediaContent(concept_name="Combined", concept_id="combined", category="Multiple")
+
         for name in concept_names:
             media = self.find_media_for_concept(name)
             if media:
@@ -335,110 +339,123 @@ class MediaLookup:
                 combined.resources.extend(media.resources[:2])
                 combined.citations.extend(media.citations[:2])
                 combined.open_textbooks.extend(media.open_textbooks[:2])
-        
+
         # Deduplicate by title/description
         seen_videos = set()
         combined.videos = [
-            v for v in combined.videos 
+            v
+            for v in combined.videos
             if v.title not in seen_videos and not seen_videos.add(v.title)
         ]
-        
+
         seen_images = set()
         combined.images = [
-            i for i in combined.images 
+            i
+            for i in combined.images
             if i.description not in seen_images and not seen_images.add(i.description)
         ]
-        
+
         seen_textbooks = set()
         combined.open_textbooks = [
-            t for t in combined.open_textbooks
+            t
+            for t in combined.open_textbooks
             if t.title not in seen_textbooks and not seen_textbooks.add(t.title)
         ]
-        
+
         return combined
-    
-    def _parse_media_content(self, data: Dict) -> MediaContent:
+
+    def _parse_media_content(self, data: dict) -> MediaContent:
         """Parse raw JSON data into MediaContent dataclass (handles both pool and legacy formats)."""
         videos = []
         for v in data.get("videos", []):
             # New pool format has video_id + embed_url; skip entries without a verified date
             if self._pool_loaded and not v.get("verified_date"):
                 continue
-            videos.append(VideoResource(
-                title=v.get("title", ""),
-                platform=v.get("platform", "youtube"),
-                search_query=v.get("search_query", v.get("title", "")),
-                url=v.get("url"),
-                embed_url=v.get("embed_url"),
-                rights_status=v.get("rights_status"),
-                duration_hint=v.get("duration_hint"),
-                language=v.get("language", "en"),
-                educational_level=v.get("educational_level", "general"),
-                duration_seconds=v.get("duration_seconds"),
-                quality_score=v.get("quality_score"),
-                trusted_channel=v.get("trusted_channel", False),
-            ))
-        
+            videos.append(
+                VideoResource(
+                    title=v.get("title", ""),
+                    platform=v.get("platform", "youtube"),
+                    search_query=v.get("search_query", v.get("title", "")),
+                    url=v.get("url"),
+                    embed_url=v.get("embed_url"),
+                    rights_status=v.get("rights_status"),
+                    duration_hint=v.get("duration_hint"),
+                    language=v.get("language", "en"),
+                    educational_level=v.get("educational_level", "general"),
+                    duration_seconds=v.get("duration_seconds"),
+                    quality_score=v.get("quality_score"),
+                    trusted_channel=v.get("trusted_channel", False),
+                )
+            )
+
         images = []
-        for i in data.get('images', []):
-            images.append(ImageResource(
-                description=i.get('description', ''),
-                search_query=i.get('search_query', ''),
-                type=i.get('type', 'diagram'),
-                url=i.get('url'),
-                source=i.get('source')
-            ))
-        
+        for i in data.get("images", []):
+            images.append(
+                ImageResource(
+                    description=i.get("description", ""),
+                    search_query=i.get("search_query", ""),
+                    type=i.get("type", "diagram"),
+                    url=i.get("url"),
+                    source=i.get("source"),
+                )
+            )
+
         resources = []
-        for r in data.get('resources', []):
-            resources.append(ExternalResource(
-                title=r.get('title', ''),
-                type=r.get('type', 'educational'),
-                url=r.get('url'),
-                suggested_url=r.get('suggested_url'),
-                language=r.get('language', 'en')
-            ))
-        
+        for r in data.get("resources", []):
+            resources.append(
+                ExternalResource(
+                    title=r.get("title", ""),
+                    type=r.get("type", "educational"),
+                    url=r.get("url"),
+                    suggested_url=r.get("suggested_url"),
+                    language=r.get("language", "en"),
+                )
+            )
+
         citations = []
         for c in data.get("citations", []):
             if self._pool_loaded and not c.get("verified_date"):
                 continue
-            citations.append(Citation(
-                title=c.get("title", ""),
-                authors=c.get("authors", []),
-                year=c.get("year"),
-                journal=c.get("journal"),
-                doi=c.get("doi"),
-                abstract_snippet=c.get("abstract_snippet"),
-            ))
-        
+            citations.append(
+                Citation(
+                    title=c.get("title", ""),
+                    authors=c.get("authors", []),
+                    year=c.get("year"),
+                    journal=c.get("journal"),
+                    doi=c.get("doi"),
+                    abstract_snippet=c.get("abstract_snippet"),
+                )
+            )
+
         open_textbooks = []
-        for t in data.get('open_textbooks', []):
-            open_textbooks.append(OpenTextbook(
-                title=t.get('title', ''),
-                source=t.get('source', 'Unknown'),
-                chapter=t.get('chapter'),
-                url=t.get('url'),
-                license=t.get('license', 'CC BY 4.0'),
-                relevance=t.get('relevance')
-            ))
-        
+        for t in data.get("open_textbooks", []):
+            open_textbooks.append(
+                OpenTextbook(
+                    title=t.get("title", ""),
+                    source=t.get("source", "Unknown"),
+                    chapter=t.get("chapter"),
+                    url=t.get("url"),
+                    license=t.get("license", "CC BY 4.0"),
+                    relevance=t.get("relevance"),
+                )
+            )
+
         return MediaContent(
-            concept_name=data.get('name', ''),
-            concept_id=data.get('id', ''),
-            category=data.get('category', ''),
+            concept_name=data.get("name", ""),
+            concept_id=data.get("id", ""),
+            category=data.get("category", ""),
             videos=videos,
             images=images,
             resources=resources,
             citations=citations,
-            open_textbooks=open_textbooks
+            open_textbooks=open_textbooks,
         )
-    
-    def get_all_concepts(self) -> List[str]:
+
+    def get_all_concepts(self) -> list[str]:
         """Get list of all concepts with media mappings"""
         return list(self.media_by_concept.keys())
-    
-    def get_stats(self) -> Dict[str, int]:
+
+    def get_stats(self) -> dict[str, int]:
         """Get statistics about the media mapping."""
         if not self.loaded:
             return {"loaded": False, "concepts": 0}
@@ -446,7 +463,7 @@ class MediaLookup:
         total_videos = sum(len(c.get("videos", [])) for c in self.media_by_concept.values())
         total_citations = sum(len(c.get("citations", [])) for c in self.media_by_concept.values())
 
-        stats: Dict[str, Any] = {
+        stats: dict[str, Any] = {
             "loaded": True,
             "pool_format": self._pool_loaded,
             "concepts": len(self.media_by_concept),
@@ -458,10 +475,14 @@ class MediaLookup:
             total_wiki = sum(1 for c in self.media_by_concept.values() if c.get("wikipedia"))
             stats["total_wikipedia"] = total_wiki
         else:
-            stats["total_images"] = sum(len(c.get("images", [])) for c in self.media_by_concept.values())
-            stats["total_resources"] = sum(len(c.get("resources", [])) for c in self.media_by_concept.values())
-            stats["total_open_textbooks"] = sum(len(c.get("open_textbooks", [])) for c in self.media_by_concept.values())
+            stats["total_images"] = sum(
+                len(c.get("images", [])) for c in self.media_by_concept.values()
+            )
+            stats["total_resources"] = sum(
+                len(c.get("resources", [])) for c in self.media_by_concept.values()
+            )
+            stats["total_open_textbooks"] = sum(
+                len(c.get("open_textbooks", [])) for c in self.media_by_concept.values()
+            )
 
         return stats
-
-

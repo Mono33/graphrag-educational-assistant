@@ -10,7 +10,7 @@ Architecture:
 
 Usage:
     from aix.agent import AgentOrchestrator
-    
+
     orchestrator = AgentOrchestrator(domain="neuro")
     result = await orchestrator.create_lesson_plan(
         "Crea una lezione sulla motivazione per studenti con ADHD"
@@ -24,4 +24,3 @@ from aix.agent.orchestrator import AgentOrchestrator
 
 __all__ = ["AgentOrchestrator"]
 __version__ = "0.1.0"
-

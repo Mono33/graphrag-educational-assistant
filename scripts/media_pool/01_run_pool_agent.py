@@ -25,7 +25,7 @@ import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -33,8 +33,8 @@ from openai import OpenAI
 # Allow tool imports from the same scripts/media_pool/ subtree
 sys.path.insert(0, os.path.dirname(__file__))
 
-from schema import load_pool, save_pool, load_checkpoint, save_checkpoint
-from tools import neo4j_tool, youtube_tool, scholar_tool, wikipedia_tool
+from schema import load_checkpoint, load_pool, save_checkpoint, save_pool
+from tools import neo4j_tool, scholar_tool, wikipedia_tool, youtube_tool
 
 load_dotenv()
 
@@ -66,7 +66,7 @@ def _load_rejected_ids(domain: str) -> set[str]:
     if not os.path.exists(path):
         return set()
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             data = json.load(f)
         ids = set(data.keys()) if isinstance(data, dict) else set(data)
         logger.info("Loaded %d rejected video IDs from enrichment sidecar", len(ids))
@@ -160,7 +160,7 @@ ALL_TOOLS = [
 # Tool dispatcher
 # =============================================================================
 
-def dispatch_tool(tool_name: str, tool_args: Dict[str, Any], concept_name: str, pool_entries: Dict, domain: str = "") -> str:
+def dispatch_tool(tool_name: str, tool_args: dict[str, Any], concept_name: str, pool_entries: dict, domain: str = "") -> str:
     """Execute a tool call and return the result as a JSON string."""
     try:
         if tool_name == "query_neo4j":
@@ -193,7 +193,7 @@ def dispatch_tool(tool_name: str, tool_args: Dict[str, Any], concept_name: str, 
     return json.dumps(result, ensure_ascii=False)
 
 
-def _handle_save(args: Dict[str, Any], pool_entries: Dict) -> Dict:
+def _handle_save(args: dict[str, Any], pool_entries: dict) -> dict:
     """Add a verified entry to the in-memory pool dict."""
     entry_type = args.get("entry_type")
     concept = args.get("concept_name", "")
@@ -280,7 +280,7 @@ def run_agent_for_concept(
     client: OpenAI,
     concept_name: str,
     domain: str,
-    pool_entries: Dict,
+    pool_entries: dict,
     max_iterations: int = MAX_ITERATIONS,
 ) -> int:
     """
@@ -379,14 +379,14 @@ def _worker(
     max_iterations: int,
     pool_path: str,
     checkpoint_path: str,
-    checkpoint: Dict,
+    checkpoint: dict,
 ) -> tuple:
     """
     Process a single concept in its own thread.
     Each worker has its own local pool dict and OpenAI client.
     Results are merged into the shared pool file under a write lock.
     """
-    local_entries: Dict = {}
+    local_entries: dict = {}
     client = OpenAI(base_url=LMSTUDIO_BASE_URL, api_key="lm-studio")
 
     try:
@@ -411,7 +411,7 @@ def _worker(
 # Concept list fetcher
 # =============================================================================
 
-def fetch_concept_list(domain: str) -> List[str]:
+def fetch_concept_list(domain: str) -> list[str]:
     """
     Fetch all concept names from Neo4j for the given domain.
     Nodes have a 'domain' property with values 'neuro' or 'udl'.

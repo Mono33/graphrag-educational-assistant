@@ -13,12 +13,12 @@ Usage:
     python transform_team_data.py --team game --input GBL_Knowledge.xlsx
 """
 
-import pandas as pd
+import argparse
 import json
 import re
-import argparse
 from collections import defaultdict
-from typing import Dict, List, Tuple
+
+import pandas as pd
 
 # ============================================================================
 # LABEL TO CATEGORY MAPPING (for node categories)
@@ -31,31 +31,31 @@ LABEL_TO_CATEGORY = {
     "ExecutiveFunctions": "Executive Functions",
     "ProblemSolving": "Cognitive Skills",
     "CriticalThinking": "Higher-Order Cognition",
-    
+
     # Affective Processes
     "Emotions": "Affective States",
     "Motivation": "Motivational Types",
     "Stress": "Affective States",
     "Mindset": "Belief Systems",
-    
+
     # Metacognition
     "Metacognition": "Metacognitive Processes",
-    
+
     # Learning Processes
     "LearningOutcomes": "Educational Results",
     "SocialLearning": "Learning Processes",
     "Creativity": "Creative Processes",
-    
+
     # Support Systems
     "TeachingPractices": "Pedagogical Strategies",
     "EducationalSupport": "Support Systems",
-    
+
     # UDL-specific
     "PedagogicalMethodology": "Teaching Methods",
     "StudentWithSpecialNeeds": "Special Education",
     "StudentCharacteristic": "Student Profiles",
     "LearningEnvironment": "Environmental Factors",
-    
+
     # Neuroscience
     "Neuroplasticity": "Neuroscience Foundations",
     "SpecialEducationNeeds": "Special Education",
@@ -71,14 +71,14 @@ LABEL_TO_CATEGORY = {
 
 def sanitize_label(label: str) -> str:
     """Sanitize label to be Neo4j-compatible (no spaces, special chars)
-    
+
     Neo4j labels cannot have spaces or special characters.
     Example: "Cognitive load" → "CognitiveLoad"
              "Affective–Motivational Modulation" → "AffectiveMotivationalModulation"
-    
+
     Args:
         label: Raw label string (may have spaces, hyphens, special chars)
-    
+
     Returns:
         Neo4j-compatible label (PascalCase, no spaces)
     """
@@ -88,77 +88,77 @@ def sanitize_label(label: str) -> str:
     label = label.replace('-', ' ')  # Hyphen
     label = label.replace('/', ' ')  # Slash
     label = label.replace('_', ' ')  # Underscore
-    
+
     # Remove non-alphanumeric chars (except spaces)
     label = re.sub(r'[^\w\s]', '', label)
-    
+
     # Split by spaces, drop purely numeric tokens, and capitalize (PascalCase)
     words = [w for w in label.split() if not re.match(r'^\d+$', w)]
     pascal_case = ''.join(word.capitalize() for word in words)
-    
+
     # Normalize CamelCase boundaries: "Teachingpractices" → "TeachingPractices"
     # Splits on existing uppercase boundaries and re-capitalizes each part
     parts = re.findall(r'[A-Z][a-z]*|[a-z]+|\d+', pascal_case)
     pascal_case = ''.join(part.capitalize() for part in parts)
-    
+
     # Neo4j labels cannot start with a digit; strip any remaining leading digits
     pascal_case = re.sub(r'^\d+', '', pascal_case)
-    
+
     return pascal_case or 'GeneralConcept'
 
 
 def generate_node_id(name: str) -> str:
     """Generate semantic ID from node name
-    
+
     Example: "Selective Attention" → "concept_selective_attention"
     """
     # Convert to lowercase
     id_base = name.lower()
-    
+
     # Replace special characters with underscores
     id_base = re.sub(r'[^\w\s-]', '', id_base)  # Remove special chars except spaces and hyphens
     id_base = id_base.replace(' ', '_').replace('-', '_')
-    
+
     # Remove duplicate underscores
     id_base = re.sub(r'_+', '_', id_base)
-    
+
     # Remove leading/trailing underscores
     id_base = id_base.strip('_')
-    
+
     return f"concept_{id_base}"
 
 
 def get_node_category(label: str, original_category: str = None) -> str:
     """Get appropriate category for a node based on its label
-    
+
     Args:
         label: Consolidated label (e.g., "Attention", "Memory")
         original_category: Original category from Excel (fallback)
-    
+
     Returns:
         Specific subcategory (e.g., "Attention Types", "Memory Systems")
     """
     # Try to get from mapping
     if label in LABEL_TO_CATEGORY:
         return LABEL_TO_CATEGORY[label]
-    
+
     # Fallback to original category if provided
     if original_category and not pd.isna(original_category):
         return original_category
-    
+
     # Default fallback
     return "Cognitive Processes"
 
 
-def generate_node_description(name: str, label: str, category: str, context: List[str] = None) -> str:
+def generate_node_description(name: str, label: str, category: str, context: list[str] = None) -> str:
     """Generate educational description for a node
-    
+
     Args:
         name: Node name (e.g., "Selective Attention")
         label: Node label (e.g., "Attention")
         category: Node category (e.g., "Attention Types")
         context: List of relationship descriptions mentioning this node
-    
+
     Returns:
         Educational description
     """
@@ -166,7 +166,7 @@ def generate_node_description(name: str, label: str, category: str, context: Lis
     if context and len(context) > 0:
         # Use the first description as base (they already have good educational content)
         return context[0]
-    
+
     # Otherwise, generate based on label
     templates = {
         "Attention": f"An attentional process involving {name.lower()}, essential for selective information processing and cognitive focus.",
@@ -186,41 +186,41 @@ def generate_node_description(name: str, label: str, category: str, context: Lis
         "PedagogicalMethodology": f"A pedagogical methodology related to {name.lower()}, providing systematic approaches to teaching and learning.",
         "StudentWithSpecialNeeds": f"A special education consideration related to {name.lower()}, addressing specific learning needs and accommodations.",
     }
-    
+
     # Get template or use default
     template = templates.get(label, f"A {category.lower()} concept related to {name.lower()}, relevant to neuroscience of learning and educational practice.")
-    
+
     return template
 
 
-def validate_nodes_and_relationships(nodes: List[Dict], relationships: List[Dict]) -> Tuple[bool, List[str]]:
+def validate_nodes_and_relationships(nodes: list[dict], relationships: list[dict]) -> tuple[bool, list[str]]:
     """Validate that all relationships reference existing nodes
-    
+
     Returns:
         (is_valid, list_of_errors)
     """
     errors = []
-    
+
     # Build set of all node IDs
     node_ids = {node['ID'] for node in nodes}
-    
+
     # Check each relationship
     for idx, rel in enumerate(relationships, 1):
         from_id = rel['From_ID']
         to_id = rel['To_ID']
-        
+
         if from_id not in node_ids:
             errors.append(f"Relationship {idx}: From_ID '{from_id}' not found in nodes")
-        
+
         if to_id not in node_ids:
             errors.append(f"Relationship {idx}: To_ID '{to_id}' not found in nodes")
-    
+
     return len(errors) == 0, errors
 
 
-def generate_statistics(nodes: List[Dict], relationships: List[Dict]) -> Dict:
+def generate_statistics(nodes: list[dict], relationships: list[dict]) -> dict:
     """Generate statistics about the knowledge graph
-    
+
     Returns:
         Dictionary with statistics
     """
@@ -228,15 +228,15 @@ def generate_statistics(nodes: List[Dict], relationships: List[Dict]) -> Dict:
     label_counts = defaultdict(int)
     for node in nodes:
         label_counts[node['Label']] += 1
-    
+
     # Count relationships by type
     rel_type_counts = defaultdict(int)
     for rel in relationships:
         rel_type_counts[rel['Relationship_Type']] += 1
-    
+
     # Calculate average nodes per label
     avg_nodes_per_label = len(nodes) / len(label_counts) if label_counts else 0
-    
+
     return {
         'total_nodes': len(nodes),
         'total_relationships': len(relationships),
@@ -252,22 +252,22 @@ def generate_statistics(nodes: List[Dict], relationships: List[Dict]) -> Dict:
 # MAIN TRANSFORMATION FUNCTIONS
 # ============================================================================
 
-def extract_nodes_from_excel(df: pd.DataFrame) -> List[Dict]:
+def extract_nodes_from_excel(df: pd.DataFrame) -> list[dict]:
     """Extract unique nodes from 8-column Excel structure
-    
+
     Args:
-        df: DataFrame with columns: Category A, Concept A, Value A, Relationship, 
+        df: DataFrame with columns: Category A, Concept A, Value A, Relationship,
             Value B, Concept B, Category B, Description
-    
+
     Returns:
         List of unique nodes with deduplication
     """
-    print(f"\n📦 Extracting nodes...")
-    
+    print("\n📦 Extracting nodes...")
+
     seen_nodes = {}  # Track by ID to avoid duplicates
     node_contexts = defaultdict(list)  # Track descriptions mentioning each node
-    
-    for idx, row in df.iterrows():
+
+    for _idx, row in df.iterrows():
         # Collect context (relationship descriptions) for each node
         description = row.get('Description', '')
         if not pd.isna(description):
@@ -275,13 +275,13 @@ def extract_nodes_from_excel(df: pd.DataFrame) -> List[Dict]:
             value_b_id = generate_node_id(row['Value B'])
             node_contexts[value_a_id].append(description)
             node_contexts[value_b_id].append(description)
-        
+
         # Extract Node A
         node_a_id = generate_node_id(row['Value A'])
         if node_a_id not in seen_nodes:
             label_a = sanitize_label(row['Concept A'])  # ✅ Sanitize label
             category_a = get_node_category(label_a, row.get('Category A'))
-            
+
             seen_nodes[node_a_id] = {
                 'Label': label_a,
                 'ID': node_a_id,
@@ -289,13 +289,13 @@ def extract_nodes_from_excel(df: pd.DataFrame) -> List[Dict]:
                 'Category': category_a,
                 'Description': ''  # Will be filled later with context
             }
-        
+
         # Extract Node B
         node_b_id = generate_node_id(row['Value B'])
         if node_b_id not in seen_nodes:
             label_b = sanitize_label(row['Concept B'])  # ✅ Sanitize label
             category_b = get_node_category(label_b, row.get('Category B'))
-            
+
             seen_nodes[node_b_id] = {
                 'Label': label_b,
                 'ID': node_b_id,
@@ -303,40 +303,40 @@ def extract_nodes_from_excel(df: pd.DataFrame) -> List[Dict]:
                 'Category': category_b,
                 'Description': ''  # Will be filled later with context
             }
-    
+
     # Generate descriptions using context
     print(f"   ✅ Extracted {len(seen_nodes)} unique nodes (before deduplication: {len(df) * 2})")
-    
+
     for node_id, node in seen_nodes.items():
         context = node_contexts.get(node_id, [])
         node['Description'] = generate_node_description(
-            node['Name'], 
-            node['Label'], 
+            node['Name'],
+            node['Label'],
             node['Category'],
             context
         )
-    
+
     return list(seen_nodes.values())
 
 
-def extract_relationships_from_excel(df: pd.DataFrame) -> List[Dict]:
+def extract_relationships_from_excel(df: pd.DataFrame) -> list[dict]:
     """Extract relationships from 8-column Excel structure
-    
+
     Args:
-        df: DataFrame with columns: Category A, Concept A, Value A, Relationship, 
+        df: DataFrame with columns: Category A, Concept A, Value A, Relationship,
             Value B, Concept B, Category B, Description
-    
+
     Returns:
         List of relationships (one per row)
     """
-    print(f"\n🔗 Extracting relationships...")
-    
+    print("\n🔗 Extracting relationships...")
+
     relationships = []
-    
-    for idx, row in df.iterrows():
+
+    for _idx, row in df.iterrows():
         from_id = generate_node_id(row['Value A'])
         to_id = generate_node_id(row['Value B'])
-        
+
         relationships.append({
             'From_ID': from_id,
             'To_ID': to_id,
@@ -345,17 +345,17 @@ def extract_relationships_from_excel(df: pd.DataFrame) -> List[Dict]:
             'To_Name': row['Value B'],
             'Description': row.get('Description', '') if not pd.isna(row.get('Description')) else f"{row['Value A']} {row['Relationship'].lower().replace('_', ' ')} {row['Value B']}"
         })
-    
+
     print(f"   ✅ Extracted {len(relationships)} relationships")
-    
+
     return relationships
 
 
-def create_intermediary_excel(df_original: pd.DataFrame, nodes: List[Dict], 
-                              relationships: List[Dict], team_name: str, 
+def create_intermediary_excel(df_original: pd.DataFrame, nodes: list[dict],
+                              relationships: list[dict], team_name: str,
                               output_path: str):
     """Create 3-sheet Excel with original data, nodes, and relationships
-    
+
     Args:
         df_original: Original 8-column DataFrame
         nodes: List of node dictionaries
@@ -363,41 +363,41 @@ def create_intermediary_excel(df_original: pd.DataFrame, nodes: List[Dict],
         team_name: Name of the team (e.g., "neuro", "udl")
         output_path: Path to save Excel file
     """
-    print(f"\n📊 Creating intermediary Excel with 3 sheets...")
-    
+    print("\n📊 Creating intermediary Excel with 3 sheets...")
+
     # Create DataFrames
     df_nodes = pd.DataFrame(nodes)
     df_relationships = pd.DataFrame(relationships)
-    
+
     # Write to Excel with 3 sheets
     with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
         # Sheet 1: Original data
         df_original.to_excel(writer, sheet_name='original_data', index=False)
         print(f"   ✅ Sheet 1: 'original_data' ({len(df_original)} rows)")
-        
+
         # Sheet 2: Nodes template
         df_nodes.to_excel(writer, sheet_name=f'{team_name}_template_nodes', index=False)
         print(f"   ✅ Sheet 2: '{team_name}_template_nodes' ({len(df_nodes)} rows)")
-        
+
         # Sheet 3: Relationships template
         df_relationships.to_excel(writer, sheet_name=f'{team_name}_template_relationships', index=False)
         print(f"   ✅ Sheet 3: '{team_name}_template_relationships' ({len(df_relationships)} rows)")
-    
+
     print(f"\n💾 Saved: {output_path}")
 
 
-def create_neo4j_json(nodes: List[Dict], relationships: List[Dict], 
+def create_neo4j_json(nodes: list[dict], relationships: list[dict],
                      team_name: str, output_path: str):
     """Create Neo4j-ready JSON file
-    
+
     Args:
         nodes: List of node dictionaries
         relationships: List of relationship dictionaries
         team_name: Name of the team (for domain tagging)
         output_path: Path to save JSON file
     """
-    print(f"\n🔧 Creating Neo4j JSON...")
-    
+    print("\n🔧 Creating Neo4j JSON...")
+
     # Convert to Neo4j format
     json_data = {
         "nodes": [
@@ -427,11 +427,11 @@ def create_neo4j_json(nodes: List[Dict], relationships: List[Dict],
             for rel in relationships
         ]
     }
-    
+
     # Write JSON
     with open(output_path, 'w', encoding='utf-8') as f:
         json.dump(json_data, f, indent=2, ensure_ascii=False)
-    
+
     print(f"   ✅ Nodes: {len(json_data['nodes'])}")
     print(f"   ✅ Relationships: {len(json_data['relationships'])}")
     print(f"\n💾 Saved: {output_path}")
@@ -439,7 +439,7 @@ def create_neo4j_json(nodes: List[Dict], relationships: List[Dict],
 
 def transform_team_data(team_name: str, input_file: str, output_dir: str = "."):
     """Main transformation function - universal for all teams
-    
+
     Args:
         team_name: Name of the team (e.g., "neuro", "udl", "game")
         input_file: Path to corrected Excel file (8-column structure)
@@ -448,74 +448,74 @@ def transform_team_data(team_name: str, input_file: str, output_dir: str = "."):
     print("=" * 80)
     print(f"🚀 TRANSFORM TEAM DATA - {team_name.upper()}")
     print("=" * 80)
-    
+
     # Read input Excel
     print(f"\n📂 Reading input file: {input_file}")
     df = pd.read_excel(input_file, sheet_name=0)
     print(f"   ✅ Loaded {len(df)} rows")
-    
+
     # Validate input structure
-    expected_columns = ['Category A', 'Concept A', 'Value A', 'Relationship', 
+    expected_columns = ['Category A', 'Concept A', 'Value A', 'Relationship',
                        'Value B', 'Concept B', 'Category B', 'Description']
-    
+
     if not all(col in df.columns for col in expected_columns):
-        print(f"\n❌ ERROR: Input file must have 8 columns:")
+        print("\n❌ ERROR: Input file must have 8 columns:")
         print(f"   Expected: {expected_columns}")
         print(f"   Found: {list(df.columns)}")
         return
-    
+
     # Extract nodes and relationships
     nodes = extract_nodes_from_excel(df)
     relationships = extract_relationships_from_excel(df)
-    
+
     # Validate
-    print(f"\n🔍 Validating data...")
+    print("\n🔍 Validating data...")
     is_valid, errors = validate_nodes_and_relationships(nodes, relationships)
-    
+
     if not is_valid:
-        print(f"   ❌ Validation failed:")
+        print("   ❌ Validation failed:")
         for error in errors[:10]:  # Show first 10 errors
             print(f"      • {error}")
         if len(errors) > 10:
             print(f"      ... and {len(errors) - 10} more errors")
         return
     else:
-        print(f"   ✅ Validation passed - all relationships reference existing nodes")
-    
+        print("   ✅ Validation passed - all relationships reference existing nodes")
+
     # Generate statistics
     stats = generate_statistics(nodes, relationships)
-    
-    print(f"\n📊 STATISTICS:")
+
+    print("\n📊 STATISTICS:")
     print(f"   • Total nodes: {stats['total_nodes']}")
     print(f"   • Total relationships: {stats['total_relationships']}")
     print(f"   • Unique labels: {stats['unique_labels']}")
     print(f"   • Avg nodes per label: {stats['avg_nodes_per_label']}")
     print(f"   • Relationship types: {stats['relationship_types']}")
-    
-    print(f"\n📋 Top 10 Labels:")
+
+    print("\n📋 Top 10 Labels:")
     for i, (label, count) in enumerate(list(stats['label_distribution'].items())[:10], 1):
         print(f"   {i:2d}. {label:<30} {count:>4} nodes")
-    
+
     # Define output paths
     excel_output = f"{output_dir}/KG_{team_name.upper()}_Transformed.xlsx"
     json_output = f"{output_dir}/kg_{team_name.lower()}_neo4j.json"
-    
+
     # Create intermediary Excel
     create_intermediary_excel(df, nodes, relationships, team_name.lower(), excel_output)
-    
+
     # Create Neo4j JSON
     create_neo4j_json(nodes, relationships, team_name.lower(), json_output)
-    
+
     # Final summary
     print("\n" + "=" * 80)
     print("✅ TRANSFORMATION COMPLETE!")
     print("=" * 80)
-    
+
     print(f"""
 📁 Generated Files:
    1. {excel_output}
       └─ 3 sheets: original_data + {team_name}_template_nodes + {team_name}_template_relationships
-   
+
    2. {json_output}
       └─ Ready for Neo4j ingestion with domain='{team_name}'
 
@@ -548,16 +548,16 @@ Examples:
   python transform_team_data.py --team game --input GBL_Knowledge.xlsx
         """
     )
-    
-    parser.add_argument('--team', required=True, 
+
+    parser.add_argument('--team', required=True,
                        help='Team name (e.g., neuro, udl, game)')
     parser.add_argument('--input', required=True,
                        help='Path to corrected Excel file (8-column structure)')
     parser.add_argument('--output-dir', default='.',
                        help='Directory to save output files (default: current directory)')
-    
+
     args = parser.parse_args()
-    
+
     # Run transformation
     transform_team_data(args.team, args.input, args.output_dir)
 
