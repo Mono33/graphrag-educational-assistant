@@ -221,3 +221,6 @@ data/agent_threads.db-wal
 data/media/checkpoint_*.json
 data/media/kg_*_media_mapping*.json
 data/media/kg_*_resources.json
+
+artifacts/media_cache/
+_phase2_smoke.py

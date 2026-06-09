@@ -1,0 +1,4 @@
+# Never commit the real production env file. Only the .example.
+.env.prod
+.env.staging
+.env.local

@@ -28,6 +28,9 @@ from .diagram_factory import (  # Alias
     GeneratorType,
 )
 from .image_generator import DiagramType, GeneratedImage, ImageGenerator
+from .live_media import LiveMediaService, fetch_live_subject_resources, to_panel_media
+from .media_cache import MediaCache, make_cache_key
+from .media_config import MediaConfig
 from .media_lookup import MediaContent, MediaLookup
 from .mermaid_generator import MermaidDiagramType, MermaidGenerator, MermaidResult
 from .resource_lookup import (
@@ -42,6 +45,14 @@ __all__ = [
     # Media Lookup (Phase 0)
     "MediaLookup",
     "MediaContent",
+    # Dynamic media layer scaffolding (Dynamic_Media_Retrieval_Plan.md — Phase 0)
+    "MediaConfig",
+    "MediaCache",
+    "make_cache_key",
+    # Live media layer (Dynamic_Media_Retrieval_Plan.md — Phase 1)
+    "LiveMediaService",
+    "fetch_live_subject_resources",
+    "to_panel_media",
     # Resource Lookup (Phase 0b - Expert-Vetted)
     "ResourceLookup",
     "ResourceCollection",

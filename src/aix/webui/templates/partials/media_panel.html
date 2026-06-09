@@ -42,10 +42,15 @@
       <wa-icon name="photo-film" class="aix-color-teal"></wa-icon>
       <span>Risorse multimediali</span>
     </div>
-    <span class="aix-pill aix-pill-neutral">{{ total }}</span>
+    <span id="media-total" class="aix-pill aix-pill-neutral">{{ total }}</span>
   </div>
   <p class="aix-side-pane-subtitle">
-    Selezionate dal Retriever Agent dal database curato.
+    {% if media_live_enabled %}
+      Risorse verificate dal database curato, integrate con contenuti
+      recuperati automaticamente in tempo reale.
+    {% else %}
+      Selezionate dal Retriever Agent dal database curato.
+    {% endif %}
   </p>
 
   {% if total == 0 %}
@@ -61,56 +66,75 @@
     </div>
   {% else %}
 
-    {# ── Videos ──────────────────────────────────────────────────── #}
-    {% if videos %}
+    {# ── Videos ────────────────────────────────────────────────────
+       Single section for BOTH curated (verified pool) and dynamic (live,
+       auto-retrieved) videos. Curated items render here; the live layer
+       appends into #media-videos-live (filled by an OOB swap from the
+       /media-live fragment) so everything lives under ONE "Video" heading. #}
+    {% if videos or media_live_ready %}
       <details class="aix-media-section" open>
         <summary>
           <span class="aix-irow-6">
             <wa-icon name="video" class="aix-fs-085"></wa-icon>
-            Video curati
+            Video
           </span>
-          <span class="aix-pill aix-pill-neutral">{{ videos | length }}</span>
+          <span id="media-count-videos" class="aix-pill aix-pill-neutral">{{ videos | length }}</span>
         </summary>
-        <ul class="aix-media-list">
+        <ul id="media-videos-curated" class="aix-media-list">
           {% for v in videos[:6] %}
             {% set url = v.get('url') or v.get('suggested_url') %}
             <li class="aix-media-item">
-              {% if url %}
-                <a href="{{ url }}" target="_blank" rel="noopener noreferrer"
-                   class="aix-media-item-title-row">
-                  <wa-icon name="play" class="aix-fs-xs aix-mt-3px"></wa-icon>
-                  <span class="line-clamp-2">{{ v.get('title') or 'Video' }}</span>
-                </a>
-              {% else %}
-                <span class="aix-media-item-title-row aix-color-primary">
-                  <wa-icon name="magnifying-glass" class="aix-fs-xs aix-mt-3px"></wa-icon>
-                  <span class="line-clamp-2">{{ v.get('title') or v.get('search_query') or 'Video' }}</span>
-                </span>
-              {% endif %}
+              <div class="aix-irow-6 aix-items-start">
+                {% if url %}
+                  <a href="{{ url }}" target="_blank" rel="noopener noreferrer"
+                     class="aix-media-item-title-row">
+                    <wa-icon name="play" class="aix-fs-xs aix-mt-3px"></wa-icon>
+                    <span class="line-clamp-2">{{ v.get('title') or 'Video' }}</span>
+                  </a>
+                {% else %}
+                  <span class="aix-media-item-title-row aix-color-primary">
+                    <wa-icon name="magnifying-glass" class="aix-fs-xs aix-mt-3px"></wa-icon>
+                    <span class="line-clamp-2">{{ v.get('title') or v.get('search_query') or 'Video' }}</span>
+                  </span>
+                {% endif %}
+                <span class="aix-pill aix-pill-success aix-fs-2xs shrink-0" title="Risorsa verificata: selezionata dal database curato (rivisto da esperti)">✓ Verificato</span>
+              </div>
               {% if v.get('duration_hint') %}
                 <span class="aix-media-item-meta">{{ v.duration_hint }}</span>
               {% endif %}
             </li>
           {% endfor %}
         </ul>
+        {# Live (auto-retrieved) videos get appended here, in the SAME section. #}
+        {% if media_live_ready %}
+          <ul id="media-videos-live" class="aix-media-list"></ul>
+        {% endif %}
       </details>
     {% endif %}
 
-    {# ── Citations / scientific articles ────────────────────────── #}
-    {% if citations %}
+    {# ── Citations / scientific articles ──────────────────────────
+       Single section for BOTH curated (verified pool) and dynamic (live,
+       auto-retrieved) articles. Curated items render here; the live layer
+       appends into #media-citations-live (filled by an OOB swap from the
+       /media-live fragment) so everything lives under ONE "Articoli
+       scientifici" heading. #}
+    {% if citations or media_live_ready %}
       <details class="aix-media-section" {% if not videos %}open{% endif %}>
         <summary>
           <span class="aix-irow-6">
             <wa-icon name="newspaper" class="aix-fs-085"></wa-icon>
             Articoli scientifici
           </span>
-          <span class="aix-pill aix-pill-neutral">{{ citations | length }}</span>
+          <span id="media-count-citations" class="aix-pill aix-pill-neutral">{{ citations | length }}</span>
         </summary>
-        <ul class="aix-media-list">
+        <ul id="media-citations-curated" class="aix-media-list">
           {% for c in citations[:5] %}
             <li class="aix-media-item">
-              <div class="aix-color-primary aix-fw-600 line-clamp-2">
-                {{ c.get('title') or 'Articolo' }}
+              <div class="aix-irow-6 aix-items-start">
+                <div class="aix-color-primary aix-fw-600 line-clamp-2">
+                  {{ c.get('title') or 'Articolo' }}
+                </div>
+                <span class="aix-pill aix-pill-success aix-fs-2xs shrink-0" title="Risorsa verificata: selezionata dal database curato (rivisto da esperti)">✓ Verificato</span>
               </div>
               <div class="aix-media-item-meta ml-0">
                 {% set authors = c.get('authors') or [] %}
@@ -129,6 +153,10 @@
             </li>
           {% endfor %}
         </ul>
+        {# Live (auto-retrieved) articles get appended here, in the SAME section. #}
+        {% if media_live_ready %}
+          <ul id="media-citations-live" class="aix-media-list"></ul>
+        {% endif %}
       </details>
     {% endif %}
 
@@ -142,28 +170,34 @@
           </span>
           <span class="aix-pill aix-pill-neutral">{{ (resources | length) + (textbooks | length) }}</span>
         </summary>
-        <ul class="aix-media-list">
+        <ul id="media-oer-list" class="aix-media-list">
           {% for r in resources[:4] %}
             {% set url = r.get('url') or r.get('suggested_url') %}
             <li class="aix-media-item">
-              {% if url %}
-                <a href="{{ url }}" target="_blank" rel="noopener noreferrer"
-                   class="aix-media-item-title-row">
-                  <wa-icon name="link" class="aix-fs-xs aix-mt-3px"></wa-icon>
-                  <span class="line-clamp-2">{{ r.get('title') or 'Risorsa' }}</span>
-                </a>
-              {% else %}
-                <span class="aix-color-primary">{{ r.get('title') or 'Risorsa' }}</span>
-              {% endif %}
+              <div class="aix-irow-6 aix-items-start">
+                {% if url %}
+                  <a href="{{ url }}" target="_blank" rel="noopener noreferrer"
+                     class="aix-media-item-title-row">
+                    <wa-icon name="link" class="aix-fs-xs aix-mt-3px"></wa-icon>
+                    <span class="line-clamp-2">{{ r.get('title') or 'Risorsa' }}</span>
+                  </a>
+                {% else %}
+                  <span class="aix-color-primary">{{ r.get('title') or 'Risorsa' }}</span>
+                {% endif %}
+                <span class="aix-pill aix-pill-success aix-fs-2xs shrink-0" title="Risorsa verificata: selezionata dal database curato (rivisto da esperti)">✓ Verificato</span>
+              </div>
             </li>
           {% endfor %}
           {% for t in textbooks[:3] %}
             <li class="aix-media-item">
-              <div class="aix-irow-6 aix-color-primary aix-items-start aix-fw-600">
-                <wa-icon name="book" class="aix-fs-xs aix-mt-3px"></wa-icon>
-                <span class="line-clamp-2">
-                  {{ t.get('title') or 'Libro' }}{% if t.get('chapter') %} — {{ t.chapter }}{% endif %}
-                </span>
+              <div class="aix-irow-6 aix-items-start">
+                <div class="aix-irow-6 aix-color-primary aix-items-start aix-fw-600">
+                  <wa-icon name="book" class="aix-fs-xs aix-mt-3px"></wa-icon>
+                  <span class="line-clamp-2">
+                    {{ t.get('title') or 'Libro' }}{% if t.get('chapter') %} — {{ t.chapter }}{% endif %}
+                  </span>
+                </div>
+                <span class="aix-pill aix-pill-success aix-fs-2xs shrink-0" title="Risorsa verificata: selezionata dal database curato (rivisto da esperti)">✓ Verificato</span>
               </div>
               <div class="aix-media-item-meta">
                 {{ t.get('source') or 'OER' }}
@@ -182,13 +216,14 @@
           <span class="aix-irow-6">
             <wa-icon name="magnifying-glass" class="aix-fs-085"></wa-icon>
             Ricerca web
+            <span class="aix-pill aix-pill-warning aix-fs-2xs" title="Recuperato automaticamente in tempo reale; non verificato da esperti">auto</span>
           </span>
           <span class="aix-pill aix-pill-neutral">{{ web_links | length }}</span>
         </summary>
         <p class="aix-footnote-sm aix-footnote-web-hint">
           Risultati live via DuckDuckGo per i concetti chiave della lezione.
         </p>
-        <ul class="aix-media-list">
+        <ul id="media-web-list" class="aix-media-list">
           {% for w in web_links[:9] %}
             <li class="aix-media-item">
               <a href="{{ w.get('url') }}" target="_blank" rel="noopener noreferrer"
@@ -207,6 +242,58 @@
       </details>
     {% endif %}
 
+  {% endif %}
+
+  {# ── Live (auto-retrieved) resources — Dynamic Media Retrieval Phase 1b ──
+     A self-loading slot, rendered ONLY during an active run (media_live_ready
+     is True only in the SSE retriever swap, never on a passive page open). It
+     fires a single off-critical-path GET that enriches the panel with
+     auto-retrieved papers + Wikipedia. The response carries OOB swaps that
+     merge those items into the SAME sections above:
+       • #media-citations-live  → dynamic articles under "Articoli scientifici"
+       • #media-live-extra       → the "Enciclopedia" (Wikipedia) section
+     The slot itself is replaced in place (same id, no trigger) so it never
+     loops. Inert when the flag is off. #}
+  {% if media_live_enabled and media_live_ready and lesson_id %}
+    {# OOB target for the live "Enciclopedia" section (filled by the fragment). #}
+    <div id="media-live-extra"></div>
+    <div id="media-live-slot"
+         hx-get="/webui/lesson/{{ lesson_id }}/media-live"
+         hx-trigger="load"
+         hx-swap="outerHTML"
+         class="aix-media-live-loading aix-footnote-sm">
+      <wa-spinner class="aix-fs-085"></wa-spinner>
+      <span>Aggiorno le risorse in base alla richiesta…</span>
+    </div>
+  {% endif %}
+
+  {# ── Provenance legend + AI transparency (Dynamic Media Retrieval Phase 5) ──
+     Makes the trust model explicit: expert-verified (curated floor) vs
+     auto-retrieved (live, machine-selected). Supports the EU AI Act
+     transparency posture — auto items are labeled as AI-selected and
+     "to be verified". Shown whenever the panel has (or will load) content. #}
+  {% set has_curated = videos or citations or resources or textbooks %}
+  {# ``has_auto`` is keyed on actual/imminent live content (a run is populating
+     the panel, or web links exist) — NOT on ``media_live_enabled`` alone, so the
+     "auto" legend never shows in the empty placeholder state before any
+     auto-retrieved media exists. Flag-off is unaffected (media_live_ready is only
+     ever True during an active run's SSE swap). #}
+  {% set has_auto = media_live_ready or web_links %}
+  {% if has_curated or has_auto %}
+    <div class="aix-media-provenance">
+      {% if has_curated %}
+        <span class="aix-media-provenance-row">
+          <span class="aix-pill aix-pill-success aix-fs-2xs shrink-0">✓ Verificato</span>
+          <span>Selezionato dal database curato e rivisto da esperti.</span>
+        </span>
+      {% endif %}
+      {% if has_auto %}
+        <span class="aix-media-provenance-row">
+          <span class="aix-pill aix-pill-warning aix-fs-2xs shrink-0">auto</span>
+          <span>Recuperato automaticamente in tempo reale da sistemi di IA: da verificare prima dell'uso didattico.</span>
+        </span>
+      {% endif %}
+    </div>
   {% endif %}
 
   <p class="aix-footnote-sm aix-footnote-bottom">

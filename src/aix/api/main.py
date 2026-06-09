@@ -25,8 +25,14 @@ import sys
 from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
 
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+# Load the repo-local .env before any submodules read os.environ at import
+# time (auth manager, Sentry, CORS, MCP auth, etc.).
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+load_dotenv(_REPO_ROOT / ".env")
 
 # Add the project source root (``src/``) to sys.path so ``aix.api``,
 # ``aix.mcp``, ``aix.webui`` … all resolve via their canonical names when

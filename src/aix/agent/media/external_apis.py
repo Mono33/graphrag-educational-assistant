@@ -323,12 +323,22 @@ class ExternalMediaAPI:
                 "maxResults": max_results,
                 "relevanceLanguage": language,
                 "videoEmbeddable": "true",
+                # Classroom-safe: filter explicit results (Dynamic Media Phase 2).
+                "safeSearch": "strict",
                 "key": self.youtube_api_key,
             }
 
             async with session.get(self.YOUTUBE_SEARCH_URL, params=params) as resp:
                 if resp.status != 200:
-                    logger.warning(f"[YouTube API] Search failed: {resp.status}")
+                    # Surface the API's reason (keyInvalid / accessNotConfigured /
+                    # ipRefererBlocked / quotaExceeded …) so config issues are
+                    # diagnosable instead of an opaque status code.
+                    body = ""
+                    try:
+                        body = (await resp.text())[:400]
+                    except Exception:
+                        pass
+                    logger.warning("[YouTube API] Search failed: %s — %s", resp.status, body)
                     return self._youtube_fallback_search(query, max_results)
 
                 data = await resp.json()

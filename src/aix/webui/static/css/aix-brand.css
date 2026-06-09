@@ -1840,6 +1840,56 @@ body.aix-body {
   margin-left: 18px;
 }
 
+/* Dynamic Media Retrieval (Phase 1b) — live/auto-retrieved resources block */
+.aix-media-live-divider {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 14px 0 8px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--aix-border-soft);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--aix-text-secondary);
+}
+.aix-media-live-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  color: var(--aix-text-tertiary);
+}
+
+/* UI polish (C3) — subtle separator between the curated block and the live
+   (auto-retrieved) block inside a shared section (e.g. "Articoli scientifici").
+   Shown ONLY when the curated list AND the live list both have items, so a
+   section that is live-only never shows an orphan top border. No text label:
+   each live item already carries an "auto" badge for provenance. */
+.aix-media-list:has(li) + .aix-media-live-group:has(li) {
+  margin-top: 8px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--aix-border-soft);
+}
+
+/* Phase 5 — provenance legend (trust + EU AI Act transparency). Explains the
+   "✓ Verificato" (curated/expert) vs "auto" (live/AI-selected) badges. */
+.aix-media-provenance {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--aix-border-soft);
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--aix-text-tertiary);
+}
+.aix-media-provenance-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
 /* -----------------------------------------------------------------------------
    Lesson card metadata strip
    ----------------------------------------------------------------------------- */

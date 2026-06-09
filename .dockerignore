@@ -1,0 +1,71 @@
+# =====================================================================
+# .dockerignore — keep secrets, dev artefacts and bulk data OUT of the
+# image build context. Prevents accidental leakage and shrinks the build.
+# =====================================================================
+
+# --- secrets ----------------------------------------------------------
+.env
+.env.*
+!.env.example
+deploy/.env.prod
+deploy/.env.*
+!deploy/.env.prod.example
+
+# --- python virtual envs (never copy a host venv into the image) ------
+venv/
+.venv/
+env/
+ENV/
+**/__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+
+# --- editor / OS / vcs noise ------------------------------------------
+.git/
+.gitignore
+.gitattributes
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# --- runtime data + caches that must never bake into the image --------
+data/
+artifacts/
+logs/
+tmp/
+*.log
+*.sqlite
+*.sqlite3
+*.db
+
+# --- docs + design assets (not needed at runtime) ---------------------
+docs/
+NOTPUSHED/
+mockups/
+*.pdf
+*.docx
+*.pptx
+
+# --- node / frontend build artefacts (if any land later) --------------
+node_modules/
+.next/
+dist/
+build/
+
+# --- terminal / cursor scratch ----------------------------------------
+.cursor/
+*.terminal-output
+
+# --- exclude deploy compose files from the image itself ---------------
+# (they live on the host alongside the docker-compose.yml; no need to
+#  bake them into the runtime image)
+deploy/

@@ -1,0 +1,161 @@
+{#
+  media_live_sections.html — LIVE (auto-retrieved) media, MERGED into the
+  existing curated panel sections.
+
+  Dynamic Media Retrieval plan, Phase 1b (htmx lazy-load, off the critical path).
+
+  Returned by GET /webui/lesson/{id}/media-live. Instead of rendering its own
+  separate sections, it emits htmx out-of-band (OOB) swaps so the live items
+  land inside the SAME sections the curated pool already uses:
+
+    • #media-live-slot       → replaced in place (clears the spinner). Carries
+                               NO hx-get / hx-trigger, so it never re-fires.
+    • #media-videos-live     → the dynamic YouTube videos, appended under the
+                               single "Video" heading (curated items above them).
+    • #media-citations-live  → the dynamic scientific articles, appended under
+                               the single "Articoli scientifici" heading
+                               (curated items render above them).
+    • #media-live-extra      → the "Enciclopedia" (Wikipedia) section.
+
+  Live items are badged "auto" to distinguish them from the curated/verified
+  pool (provenance honesty — EU AI Act transparency).
+
+  Context:
+    videos     list — live YouTube videos ({title, url, channel, duration_hint})
+    citations  list — live scientific articles ({title, authors, year, journal, doi, url})
+    wikipedia  list — live Wikipedia summaries ({title, summary, url, thumbnail_url})
+#}
+{% set videos = videos or [] %}
+{% set citations = citations or [] %}
+{% set wikipedia = wikipedia or [] %}
+
+{# ── Clears the loading spinner (replaces #media-live-slot in place). ──────── #}
+<div id="media-live-slot"></div>
+
+{# ── OOB #1 — dynamic videos, merged under "Video" ───────────────────────── #}
+<ul id="media-videos-live" class="aix-media-list aix-media-live-group" hx-swap-oob="outerHTML">
+  {% for v in videos[:6] %}
+    <li class="aix-media-item">
+      {% set url = v.get('url') %}
+      <div class="aix-irow-6 aix-items-start">
+        {% if url %}
+          <a href="{{ url }}" target="_blank" rel="noopener noreferrer"
+             class="aix-media-item-title-row">
+            <wa-icon name="play" class="aix-fs-xs aix-mt-3px"></wa-icon>
+            <span class="line-clamp-2">{{ v.get('title') or 'Video' }}</span>
+          </a>
+        {% else %}
+          <span class="aix-media-item-title-row aix-color-primary">
+            <span class="line-clamp-2">{{ v.get('title') or 'Video' }}</span>
+          </span>
+        {% endif %}
+        <span class="aix-pill aix-pill-warning aix-fs-2xs shrink-0" title="Recuperato in tempo reale per questa richiesta">auto</span>
+      </div>
+      {% if v.get('channel') or v.get('duration_hint') %}
+        <span class="aix-media-item-meta ml-0">
+          {{ v.get('channel') or '' }}{% if v.get('channel') and v.get('duration_hint') %} · {% endif %}{{ v.get('duration_hint') or '' }}
+        </span>
+      {% endif %}
+    </li>
+  {% endfor %}
+</ul>
+
+{# ── OOB #2 — dynamic articles, merged under "Articoli scientifici" ─────────
+   UI polish (C4): mirror the curated article pattern exactly — the title is
+   plain text (not a link); the only link is the DOI line below. When a live
+   item happens to lack a DOI we fall back to its source URL so the resource
+   stays reachable, keeping the same single-link-below-the-title layout. #}
+<ul id="media-citations-live" class="aix-media-list aix-media-live-group" hx-swap-oob="outerHTML">
+  {% for c in citations[:5] %}
+    <li class="aix-media-item">
+      <div class="aix-irow-6 aix-items-start">
+        <div class="aix-color-primary aix-fw-600 line-clamp-2">
+          {{ c.get('title') or 'Articolo' }}
+        </div>
+        <span class="aix-pill aix-pill-warning aix-fs-2xs shrink-0" title="Recuperato in tempo reale per questa richiesta">auto</span>
+      </div>
+      <div class="aix-media-item-meta ml-0">
+        {% set authors = c.get('authors') or [] %}
+        {% if authors %}
+          {{ authors[:2] | join(', ') }}{% if authors | length > 2 %} et al.{% endif %}
+        {% endif %}
+        {% if c.get('year') %} · {{ c.year }}{% endif %}
+        {% if c.get('journal') %} · <em>{{ c.journal }}</em>{% endif %}
+      </div>
+      {% if c.get('doi') %}
+        <a href="https://doi.org/{{ c.doi }}" target="_blank" rel="noopener noreferrer"
+           class="aix-fs-11">
+          DOI: {{ c.doi }}
+        </a>
+      {% elif c.get('url') %}
+        <a href="{{ c.url }}" target="_blank" rel="noopener noreferrer"
+           class="aix-fs-11">
+          Apri la fonte
+        </a>
+      {% endif %}
+    </li>
+  {% endfor %}
+</ul>
+
+{# ── OOB #3 — "Enciclopedia" (Wikipedia). Empty div when nothing live. ─────── #}
+<div id="media-live-extra" hx-swap-oob="outerHTML">
+  {% if wikipedia %}
+    <details class="aix-media-section">
+      <summary>
+        <span class="aix-irow-6">
+          <wa-icon name="book-open" class="aix-fs-085"></wa-icon>
+          Enciclopedia
+          <span class="aix-pill aix-pill-warning aix-fs-2xs">auto</span>
+        </span>
+        <span class="aix-pill aix-pill-neutral">{{ wikipedia | length }}</span>
+      </summary>
+      <ul class="aix-media-list">
+        {% for w in wikipedia[:4] %}
+          <li class="aix-media-item">
+            <a href="{{ w.get('url') }}" target="_blank" rel="noopener noreferrer"
+               class="aix-media-item-title-row">
+              <wa-icon name="arrow-up-right-from-square" class="aix-fs-2xs aix-mt-3px shrink-0"></wa-icon>
+              <span class="line-clamp-2">{{ w.get('title') or 'Voce' }}</span>
+            </a>
+            {% if w.get('summary') %}
+              <span class="aix-media-item-meta ml-0 italic">
+                {{ w.summary[:140] }}{% if w.summary | length > 140 %}…{% endif %}
+              </span>
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    </details>
+  {% endif %}
+</div>
+
+{# ── Count reconciliation (UI polish C1 + C2) ──────────────────────────────
+   The OOB swaps above append live items into the shared "Video" / "Articoli
+   scientifici" lists, but their section pills (and the panel header total) were
+   rendered with only the CURATED counts. This runs after the swaps settle and
+   recomputes each pill from the live DOM, so counts always match what's shown.
+   It is idempotent (reads absolute DOM counts) and a no-op if elements are
+   missing. Part of the main #media-live-slot swap, so htmx executes it. #}
+<script>
+  (function () {
+    function liCount(id) {
+      var el = document.getElementById(id);
+      return el ? el.querySelectorAll('li').length : 0;
+    }
+    function setPill(id, n) {
+      var el = document.getElementById(id);
+      if (el) el.textContent = n;
+    }
+    function recount() {
+      var videos = liCount('media-videos-curated') + liCount('media-videos-live');
+      var citations = liCount('media-citations-curated') + liCount('media-citations-live');
+      var oer = liCount('media-oer-list');
+      var web = liCount('media-web-list');
+      var wikipedia = liCount('media-live-extra');
+      setPill('media-count-videos', videos);
+      setPill('media-count-citations', citations);
+      setPill('media-total', videos + citations + oer + web + wikipedia);
+    }
+    setTimeout(recount, 0);
+  })();
+</script>

@@ -1,0 +1,63 @@
+# =====================================================================
+# Caddyfile — production reverse proxy for the FEM internal pilot
+# =====================================================================
+#
+# Caddy auto-provisions a Let's Encrypt certificate on first start and
+# auto-renews it. The domain is interpolated from the ${AIX_DOMAIN} env
+# var passed in via docker-compose.prod.yml so this file is reusable
+# for staging or fallback domains.
+#
+# Routing model: a single FastAPI process (the ``app`` service) serves
+# both the public JSON+SSE API at /api/v1/* and the HTML+SSE WebUI at
+# /webui/*, plus root /, /docs, /openapi.json. Everything goes to the
+# same upstream — Caddy just wraps it in HTTPS.
+# =====================================================================
+
+{
+	# Global options block.
+	# Email is registered with Let's Encrypt for renewal notifications and
+	# certificate-recovery contact. Use a real mailbox someone monitors.
+	email {$AIX_TLS_EMAIL}
+
+	# Forward Caddy access logs to stdout so `docker compose logs caddy`
+	# captures them; Docker handles rotation via its json-file driver.
+}
+
+{$AIX_DOMAIN} {
+	# HTTP/2 + HTTP/3 are on by default. HSTS is set automatically by Caddy
+	# once the cert is issued, so the browser pins HTTPS for future visits.
+
+	# Forward original protocol + client IP so the FastAPI app can log the
+	# real source address instead of seeing the docker network gateway.
+	reverse_proxy app:8765 {
+		header_up Host {host}
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+
+		# SSE-friendly timeouts: agent runs can take 60-120s for a full
+		# planner -> retriever -> writer -> critic pipeline, plus heartbeats
+		# every 15s. Default 30s would cut long lessons mid-stream.
+		transport http {
+			read_timeout 600s
+			write_timeout 600s
+		}
+	}
+
+	# Tighten the default response shape a little. Caddy already adds many
+	# secure-by-default headers; these two extra ones lock down framing
+	# (no embedding the WebUI in a hostile iframe) and MIME sniffing.
+	header {
+		X-Frame-Options "SAMEORIGIN"
+		X-Content-Type-Options "nosniff"
+		# Remove Caddy's own Server header so we don't advertise the version.
+		-Server
+	}
+
+	# Structured access log to stdout. The "json" format is easy to grep
+	# from `docker compose logs caddy | jq`.
+	log {
+		output stdout
+		format json
+	}
+}

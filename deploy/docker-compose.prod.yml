@@ -1,0 +1,118 @@
+# =====================================================================
+# Internal Production Deployment Plan — Wave 1 item 2
+# Agentic GraphRAG production stack (FEM internal pilot)
+# =====================================================================
+#
+# Three services, single host:
+#
+#   app       FastAPI process — serves /api/v1/* (JSON+SSE) and /webui/*
+#             (HTML+SSE). NOT publicly exposed; only Caddy reaches it.
+#   postgres  Single Postgres 16 instance — backs both LANGGRAPH_DATABASE_URL
+#             (LangGraph checkpointer) and WEBUI_DATABASE_URL (auth, lessons,
+#             messages). NOT publicly exposed.
+#   caddy     Reverse proxy + auto-HTTPS via Let's Encrypt. Only the host
+#             ports 80 and 443 are publicly reachable.
+#
+# Neo4j is intentionally NOT in this compose: production uses the existing
+# external instance at ``${NEO4J_URI}`` (graph.aiforlearning.digital).
+#
+# Run from this directory:
+#     docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
+#
+# See ./README.md for the full deploy runbook (first deploy, backups,
+# rollback, log inspection).
+# =====================================================================
+
+services:
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: aix-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    # No "ports:" entry on purpose — Postgres is reachable only from
+    # the internal docker network, never the host or the public internet.
+
+  app:
+    # Build from the existing top-level Dockerfile (api target).
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: api
+      args:
+        # Caller can pass GIT_SHA via env or `--build-arg`; defaults to "dev"
+        # so the build doesn't fail on a developer laptop without git.
+        GIT_SHA: ${GIT_SHA:-dev}
+    container_name: aix-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      # required: false lets `docker compose config` validate the file
+      # without an actual .env.prod present (use --env-file .env.prod.example
+      # for interpolation). On the prod VM you MUST create deploy/.env.prod
+      # before `docker compose up`, otherwise the container starts with no
+      # NEO4J_PASSWORD / OPENROUTER_API_KEY / etc and fails loudly.
+      - path: .env.prod
+        required: false
+    environment:
+      # Compose the two database URLs from the same Postgres credentials
+      # so there is one source of truth in .env.prod. The asyncpg driver
+      # is for SQLAlchemy (webui DB); LangGraph's AsyncPostgresSaver uses
+      # the libpq scheme directly via psycopg.
+      WEBUI_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      LANGGRAPH_DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    volumes:
+      # Persist embeddings / Node2Vec artifacts so a container rebuild
+      # doesn't trigger a full re-embed of the KG.
+      - app_artifacts:/graphrag-aixlearning/artifacts
+    healthcheck:
+      # /api/v1/health verifies Neo4j connectivity + domain configs. This
+      # mirrors the Dockerfile HEALTHCHECK but keeps compose status explicit.
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8765/api/v1/health >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    # No "ports:" entry on purpose — the app is reachable only via Caddy.
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: aix-caddy
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_started
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # Caddy speaks HTTP/3 (QUIC) on UDP/443
+    environment:
+      AIX_DOMAIN: ${AIX_DOMAIN}
+      AIX_TLS_EMAIL: ${AIX_TLS_EMAIL}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data           # ACME account keys + issued certs
+      - caddy_config:/config       # Caddy auto-managed config state
+
+volumes:
+  pg_data:
+    name: aix-pg-data
+  app_artifacts:
+    name: aix-app-artifacts
+  caddy_data:
+    name: aix-caddy-data
+  caddy_config:
+    name: aix-caddy-config
