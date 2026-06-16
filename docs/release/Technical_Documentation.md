@@ -1,268 +1,281 @@
-# Agentic GraphRAG — Technical Documentation
+# Agentic GraphRAG — Documentazione Tecnica
 
-**Project:** Agentic GraphRAG — Multi-agent Lesson Planning System
+**Progetto:** Agentic GraphRAG — Sistema multi-agente per la pianificazione delle lezioni
 **Owner:** FEM AI Team
-**Document type:** Technical reference for engineering, integration, and operations
-**Version:** 1.0 (first complete draft)
-**Last updated:** May 2026
+**Tipo di documento:** Riferimento tecnico per ingegneria, integrazione e operazioni
+**Versione:** 1.2
+**Ultimo aggiornamento:** Giugno 2026
 
 ---
 
-## Table of Contents
+## Storia delle modifiche
 
-1. Introduction
-   1.1 Purpose
-   1.2 Audience
-   1.3 Scope
-   1.4 Document conventions
-   1.5 Glossary (LangGraph, RAG, KG, SSE, Critic, Planner, etc.)
+| Versione | Data | Descrizione |
+|---|---|---|
+| 0.1 | Maggio 2026 | Struttura iniziale, indice e §1 Introduzione. |
+| 1.0 | Maggio 2026 | Prima bozza completa: §2–§18 scritte e ancorate al codice |
+| 1.1 | Giugno 2026 | Aggiunto il livello media dinamici (§7.8) e le variabili `AIX_MEDIA_*` (§8.2); note sulla media-cache (§3.4/§7.5); item di test e runbook per i media live (§10.3/§16.1); riconciliazione YouTube (§7.6); indice riallineato ai titoli reali. |
+| 1.2 | Giugno 2026 | storia delle modifiche spostata in testa al documento; alleggerimenti redazionali. |
 
-2. System Overview
-   2.1 What the system does
-   2.2 Key capabilities
-   2.3 High-level architecture diagram
-   2.4 Technology stack (FastAPI, LangGraph, Neo4j, PostgreSQL, Caddy, OpenRouter, Langfuse)
+---
 
-3. Architecture
-   3.1 Logical architecture (Planner → Retriever → Writer → Critic)
-   3.2 Component responsibilities (per `src/aix/*` module)
-   3.3 Runtime architecture (FastAPI + LangGraph orchestration + Postgres checkpointer)
-   3.4 Data architecture (Neo4j KG schema, Postgres tables, agent state)
-   3.5 Sequence diagrams (sync run, streaming run, multi-turn)
-   3.6 Deployment architecture (Mode A standalone, Mode B native AixLearning)
+## Indice
 
-4. Repository Structure
-   4.1 Top-level layout
-   4.2 `src/aix/` package map (api, agent, retrieval, webui, mcp, generation, domains, core)
-   4.3 `deploy/` folder
-   4.4 `scripts/` folder
-   4.5 `tests/` folder
-   4.6 `docs/` folder
+1. Introduzione
+   1.1 Scopo
+   1.2 Destinatari
+   1.3 Ambito
+   1.4 Convenzioni del documento
+   1.5 Glossario
 
-5. API Reference
-   5.1 Public API surface (`/api/v1/*`)
-   5.2 `POST /api/v1/agent/run` — synchronous JSON contract
-   5.3 `POST /api/v1/agent/stream` — SSE event taxonomy
-   5.4 `POST /api/v1/context` — legacy GraphRAG endpoint
-   5.5 Authentication (Cookie, Bearer JWT, planned Basic Auth)
-   5.6 Error model (HTTP codes, error events, retry semantics)
-   5.7 OpenAPI / Swagger / ReDoc references
-   5.8 Versioning and stability guarantees
+2. Panoramica del sistema
+   2.1 Cosa fa il sistema
+   2.2 Capacità principali
+   2.3 Diagramma di architettura ad alto livello
+   2.4 Stack tecnologico
 
-6. Agent Pipeline (Internals)
-   6.1 LangGraph state machine
-   6.2 Planner agent
-   6.3 Retriever agent
-   6.4 Writer agent (incl. token streaming)
-   6.5 Critic agent (revision loop)
-   6.6 Checkpointer (SQLite dev / Postgres prod)
-   6.7 Multi-turn conversation memory
-   6.8 Educational profile schema
-   6.9 Domain extensions (UDL / Neuro)
+3. Architettura
+   3.1 Architettura logica (Planner → Retriever → Writer → Critic)
+   3.2 Responsabilità dei componenti (per modulo `src/aix/*`)
+   3.3 Architettura a runtime
+   3.4 Architettura dei dati
+   3.5 Diagrammi di sequenza
+   3.6 Architettura di deployment (Mode A vs Mode B)
 
-7. Retrieval Layer
-   7.1 Knowledge Graph (Neo4j) overview
-   7.2 GraphRAG retrieval strategies
-   7.3 Hybrid retrieval (vector + graph + external sources)
-   7.4 External APIs (Wikipedia, OpenAlex, YouTube, DuckDuckGo)
-   7.5 Coverage classification
+4. Struttura del repository
+   4.1 Layout di primo livello
+   4.2 Mappa del package `src/aix/`
+   4.3 Cartella `deploy/`
+   4.4 Cartella `scripts/`
+   4.5 Cartella `tests/`
+   4.6 Cartella `docs/`
 
-8. Configuration & Environment
-   8.1 `.env` reference (categorized)
-   8.2 Local development configuration
-   8.3 Production configuration (`.env.prod`)
-   8.4 Feature flags (corrective RAG, thinking effort, etc.)
-   8.5 Secret management
+5. Riferimento API
+   5.1 Panoramica della superficie API
+   5.2 Autenticazione
+   5.3 `POST /api/v1/agent/run` — JSON sincrono
+   5.4 `POST /api/v1/agent/stream` — Server-Sent Events
+   5.5 Tassonomia degli eventi SSE
+   5.6 Schema del profilo educativo
+   5.7 Endpoint legacy di contesto GraphRAG
+   5.8 Modello degli errori
 
-9. Local Development
-   9.1 Prerequisites (Python 3.11/3.12, Docker, Neo4j)
-   9.2 Initial setup (venv, requirements.txt)
-   9.3 Running the API locally
-   9.4 Running the WebUI
-   9.5 Running smoke tests
-   9.6 Code style (Ruff format/lint, replaces Black + isort + flake8)
+6. Pipeline degli agenti (interni)
+   6.1 `AgentState` — il contratto condiviso
+   6.2 Agente Planner
+   6.3 Agente Retriever
+   6.4 Agente Writer
+   6.5 Agente Critic e ciclo di revisione
+   6.6 Corrective RAG (opzionale)
+   6.7 Orchestrazione LangGraph
+   6.8 Memoria multi-turno & checkpointing
+   6.9 Sistema dei prompt
 
-10. Testing Strategy
-    10.1 Test pyramid (unit / integration / API / contract)
-    10.2 Running tests
-    10.3 Test data fixtures
-    10.4 Adding new tests
+7. Livello di retrieval
+   7.1 Approccio GraphRAG
+   7.2 Text2Cypher (multilingue)
+   7.3 Retriever ibrido sul grafo (Neo4j + Node2Vec / embeddings)
+   7.4 Context builder
+   7.5 Embeddings & artifacts
+   7.6 Fonti esterne (ibrido / out-of-scope)
+   7.7 Schema del Knowledge Graph (domini UDL & Neuro)
+   7.8 Livello media dinamici (live media)
+
+8. Configurazione & ambiente
+   8.1 Modello di configurazione
+   8.2 Riferimento variabili d'ambiente
+   8.3 Gestione dei segreti
+   8.4 Profili di configurazione (dev / staging / prod)
+
+9. Sviluppo locale
+   9.1 Prerequisiti
+   9.2 Installazione
+   9.3 Esecuzione in locale
+   9.4 Setup del Knowledge Graph
+   9.5 Flussi di sviluppo comuni
+   9.6 Note di configurazione dell'IDE
+
+10. Strategia di testing
+    10.1 Layout dei test & marker
+    10.2 Esecuzione dei test
+    10.3 Cosa è coperto vs cosa validare manualmente
+    10.4 Linting & formattazione (Ruff)
+    10.5 Aspettative di CI
 
 11. Deployment
-    11.1 Production stack (Docker Compose: app + Postgres + Caddy)
-    11.2 Dockerfile (slim Bookworm, non-root, healthcheck)
-    11.3 `requirements.lock.txt` (Linux/Python 3.12, hash-pinned)
-    11.4 Caddy reverse proxy + auto TLS
-    11.5 First deploy procedure
-    11.6 Upgrade flow
-    11.7 Backup & restore procedures
-    11.8 Rollback procedure
+    11.1 Immagine container
+    11.2 Stack di produzione (`deploy/docker-compose.prod.yml`)
+    11.3 Reverse proxy & TLS (Caddy)
+    11.4 Migrazione DB & checkpointer a PostgreSQL
+    11.5 Modalità di deployment (Mode A standalone / Mode B nativo)
+    11.6 Pipeline CI/CD
+    11.7 Rollback & recovery
 
-12. Observability
-    12.1 Langfuse traces (per agent + full pipeline)
-    12.2 GlitchTip / Sentry error monitoring
-    12.3 Health-check endpoints
-    12.4 Structured logging
-    12.5 Metrics dashboards
+12. Osservabilità
+    12.1 Tracing LLM (Langfuse)
+    12.2 Monitoraggio errori (GlitchTip / Sentry)
+    12.3 Health check
+    12.4 Connectivity probe
+    12.5 Logging strutturato
 
-13. Security
-    13.1 Authentication model (FastAPI-Users, JWT, planned Basic Auth)
-    13.2 Authorization
-    13.3 CORS policy
-    13.4 Secrets handling
+13. Sicurezza
+    13.1 Autenticazione
+    13.2 Autorizzazione
+    13.3 Politica CORS
+    13.4 Gestione dei segreti
     13.5 Rate limiting
-    13.6 Network isolation (internal Docker network)
-    13.7 EU AI Act marking (`X-AI-Generated`, Markdown comment, exports)
+    13.6 Isolamento di rete
+    13.7 Trasparenza IA & allineamento EU AI Act
 
-14. Integration Patterns
-    14.1 Mode A — Standalone WebUI
-    14.2 Mode B — Native AixLearning integration
-    14.3 Mode coexistence rules
-    14.4 Reference wrapper (`AgenticGraphRagService` pattern)
+14. Pattern di integrazione
+    14.1 Mode A — WebUI standalone
+    14.2 Mode B — integrazione nativa AixLearning
+    14.3 Regole di coesistenza tra le modalità
+    14.4 Wrapper di riferimento (pattern `AgenticGraphRagService`)
 
-15. Performance & SLOs
-    15.1 Latency budget per phase
-    15.2 Streaming first-event target
-    15.3 Cost per interaction
-    15.4 Capacity assumptions
+15. Performance & SLO
+    15.1 Budget di latenza per fase
+    15.2 Target del primo evento in streaming
+    15.3 Target SLO end-to-end (pilot)
+    15.4 Assunzioni di costo & capacità
 
-16. Operational Runbook
-    16.1 Common incidents
-    16.2 Debugging guide
+16. Runbook operativo
+    16.1 Incidenti comuni
+    16.2 Guida al debugging
     16.3 Restart / redeploy
-    16.4 Database maintenance
+    16.4 Manutenzione del database
 
-17. Roadmap & Known Limitations
-    17.1 Deferred items (CORE 3 / 4 / 5)
-    17.2 LangGraph 1.x upgrade
-    17.3 RS256 / multi-issuer JWT migration
-    17.4 Frontend evolution
+17. Roadmap & limitazioni note
+    17.1 Elementi rimandati
+    17.2 Concorrenza & scaling
+    17.3 Migrazione RS256 / JWT multi-issuer
+    17.4 Evoluzione del frontend
+    17.5 Altre limitazioni note
 
-18. Appendices
-    A. Environment variables reference (full table)
-    B. Glossary
-    C. Cross-references to internal docs
-    D. Changelog
-
----
-
-## 1. Introduction
-
-### 1.1 Purpose
-
-This document is the **technical reference** for the Agentic GraphRAG system. It describes the architecture, code organization, public API, deployment model, and operational procedures of the platform. It is intended to allow an engineer who has never seen the project to:
-
-- understand the system at a high level in a few minutes,
-- locate the right module or endpoint in the repository,
-- integrate the system from another service (e.g. AixLearning),
-- deploy, operate, and troubleshoot the system in production,
-- extend the agent pipeline, the retrieval layer, or the WebUI safely.
-
-This document is **not** a marketing piece or an executive overview. For that perspective, see the companion document `docs/release/Functional_Documentation.md`, which describes the system from a product, pedagogical, and business standpoint.
-
-### 1.2 Audience
-
-This document is written for several engineering roles. Different sections are more relevant to different readers, but the document is intended to be readable end-to-end.
-
-- **Backend engineers** who will modify, extend, or debug the agent pipeline, retrieval layer, FastAPI surface, or WebUI.
-- **Integrators / DEV team** of partner platforms (in particular the AixLearning DEV team) who will call the public API from another service.
-- **DevOps / Operations** engineers responsible for the production deployment, observability, backups, and incident response.
-- **Security and compliance engineers** who need to verify authentication, secret handling, network isolation, and EU AI Act / GDPR controls.
-- **New team members** onboarding to the AI Team who need a single entry point into the codebase.
-
-Readers are expected to be familiar with Python, async I/O, FastAPI, Docker, REST/SSE, and basic graph database concepts. No prior knowledge of LangChain, LangGraph, or this specific repository is assumed.
-
-### 1.3 Scope
-
-This document covers:
-
-- the **architecture** of the Agentic GraphRAG system, including the multi-agent pipeline, retrieval layer, WebUI, and public API;
-- the **repository layout**, with a map of the `src/aix/*` packages and supporting folders;
-- the **public API contract** (`/api/v1/*`), including request/response schemas, authentication, SSE event taxonomy, and stability guarantees;
-- the **agent pipeline internals** (Planner, Retriever, Writer, Critic), including state machine, checkpointer, and educational profile;
-- the **retrieval layer** (Neo4j Knowledge Graph, hybrid retrieval, external APIs);
-- **local development** (environment setup, running the API and WebUI, tests, Ruff-based code style);
-- **deployment** of the standalone production pilot (Docker Compose, Caddy, Postgres, backups, rollback);
-- **observability and security** (Langfuse, GlitchTip, health checks, CORS, secrets, network isolation);
-- **integration patterns** for the two supported deployment modes (Mode A standalone, Mode B native AixLearning);
-- **performance targets, SLOs, and operational runbooks** at the level required for a pilot deployment;
-- the **roadmap** of explicitly deferred items and known limitations.
-
-This document does **not** cover:
-
-- the pedagogical model in depth (covered by the functional documentation);
-- AixLearning-internal Django code (covered by the AixLearning team's own documentation);
-- the regulatory framework in depth — that is covered by `docs/product/Regulatory_Alignment_EU_AI_Act_UNI_11621_8.md`;
-- the internal pilot deployment plan with timing and ownership — that is covered by `docs/product/Internal_Production_Deployment_Plan.md`.
-
-The document focuses on the current state of the codebase plus the deployment artifacts already shipped in `deploy/`.
-
-### 1.4 Document conventions
-
-The document uses the following conventions to remain unambiguous and easy to scan.
-
-- **Code references** use backticks for module paths (e.g. `src/aix/agent/orchestrator.py`), function/class names (e.g. `stream_agent_events`), endpoints (e.g. `POST /api/v1/agent/stream`), environment variables (e.g. `LANGGRAPH_DATABASE_URL`), and shell commands.
-- **Code blocks** use fenced syntax. Configuration examples use environment-variable syntax (`KEY=value`); shell examples are explicitly marked when they are PowerShell vs. Bash.
-- **API examples** follow the JSON shapes defined under `src/aix/api/schemas/*` and the OpenAPI spec served at `/openapi.json`. Where possible, examples mirror the Swagger UI examples ("minimal" and "rich").
-- **Diagrams** are kept simple and ASCII-friendly where they help comprehension; larger architecture diagrams live as PNGs under `docs/mockups/`.
-- **Status callouts** use plain prefixes: `Note:`, `Warning:`, `Limitation:`, and `Recommendation:`. They are not stylized boxes, to keep the document portable.
-- **Stability promises** are stated explicitly. Anything not explicitly marked stable should be considered subject to change, and should not be relied on by external integrators.
-- **Cross-references** to other internal documents use repository-relative paths (e.g. `docs/product/Dev_Handoff_AgenticGraphRAG_Integration.md`) so they remain valid when the documentation is read offline or in a different rendering tool.
-
-### 1.5 Glossary
-
-Common terms used throughout this document are listed here. A more exhaustive glossary is provided in Appendix B.
-
-- **Agentic GraphRAG** — the overall system described by this document: a multi-agent pipeline that produces lesson plans grounded in a Knowledge Graph and supplemented by external sources.
-- **Agent** — a discrete unit of reasoning in the pipeline (Planner, Retriever, Writer, Critic), implemented as a node in a LangGraph state machine.
-- **LangGraph** — a state-machine framework for orchestrating multi-step LLM workflows, used to compose and run the agent pipeline.
-- **GraphRAG** — Retrieval-Augmented Generation where the retrieval layer is built on top of a Knowledge Graph rather than (only) a vector store.
-- **Knowledge Graph (KG)** — the Neo4j-backed graph of pedagogical concepts and relationships (UDL and Neuroscience domains) used for grounded retrieval.
-- **Educational profile** — the structured description of a class, classroom, and time/subject context used by the agents to specialize their output.
-- **Checkpointer** — the LangGraph component that persists conversation state (multi-turn memory) to a backing store; SQLite in development, PostgreSQL in production.
-- **Critic loop** — the revision cycle in which the Critic agent evaluates the Writer's output and may request a revision.
-- **SSE (Server-Sent Events)** — the streaming protocol used by `POST /api/v1/agent/stream` to emit per-phase agent events to clients.
-- **WebUI** — the internal teacher-facing web interface served by the same FastAPI process at `/webui/*`, used for the standalone internal pilot.
-- **Mode A / Mode B** — the two supported deployment modes (standalone WebUI vs. native AixLearning integration); see §3.6 and §14.
-- **AixLearning** — the partner Django platform that integrates the Agentic GraphRAG service in Mode B.
-- **Langfuse / GlitchTip** — the third-party observability tools used for tracing and error monitoring.
-- **Caddy** — the reverse proxy used in production, terminating TLS via Let's Encrypt and forwarding traffic to the FastAPI container.
+18. Appendici
+    A. Riferimento variabili d'ambiente (tabella completa)
+    B. Glossario
+    C. Documenti correlati
 
 ---
 
-## 2. System Overview
+## 1. Introduzione
 
-### 2.1 What the system does
+### 1.1 Scopo
 
-The Agentic GraphRAG system turns a teacher's natural-language request (in Italian or English) into a structured, pedagogically-grounded lesson plan. A request such as *"Crea una lezione di 45 minuti sulla fotosintesi adattata a una classe con 2 studenti DSA"* is processed by a multi-agent pipeline that:
+Questo documento è il **riferimento tecnico** del sistema Agentic GraphRAG. Descrive l'architettura, l'organizzazione del codice, l'API pubblica, il modello di deployment e le procedure operative della piattaforma. È pensato per permettere a un ingegnere che non ha mai visto il progetto di:
 
-1. **understands** the request (intent + scope detection),
-2. **retrieves** grounded knowledge from a Neo4j Knowledge Graph and, when needed, verified external sources,
-3. **writes** a complete lesson plan specialized to the class profile,
-4. **reviews** the result against quality criteria and revises it if necessary.
+- comprendere il sistema ad alto livello in pochi minuti,
+- individuare il modulo o l'endpoint giusto nel repository,
+- integrare il sistema da un altro servizio (es. AixLearning),
+- effettuare deployment, gestione operativa e troubleshooting in produzione,
+- estendere in sicurezza la pipeline degli agenti, il livello di retrieval o la WebUI.
 
-The system runs two complementary modes from a **single FastAPI process**:
+Questo documento **non** è materiale di marketing né una panoramica esecutiva. Per quella prospettiva, vedere il documento companion `docs/release/Functional_Documentation.md`, che descrive il sistema dal punto di vista di prodotto, pedagogico e di business.
 
-- a **standalone teacher WebUI** (`/webui/*`) used by the internal FEM pilot, and
-- a **public JSON + SSE API** (`/api/v1/agent/*`) consumed by non-browser clients (the AixLearning backend, Postman/curl, future apps).
+### 1.2 Destinatari
 
-Both modes drive the **same agent pipeline** and the **same retrieval layer**.
+Il documento è scritto per diversi ruoli di ingegneria. Alcune sezioni sono più rilevanti per certi lettori, ma il documento è pensato per essere leggibile dall'inizio alla fine.
 
-### 2.2 Key capabilities
+- **Backend engineer** che modificheranno, estenderanno o faranno debugging della pipeline degli agenti, del livello di retrieval, della superficie FastAPI o della WebUI.
+- **Integratori / team DEV** di piattaforme partner (in particolare il team DEV di AixLearning) che chiameranno l'API pubblica da un altro servizio.
+- **DevOps / Operations** responsabili del deployment di produzione, dell'osservabilità, dei backup e della gestione degli incidenti.
+- **Ingegneri di sicurezza e compliance** che devono verificare autenticazione, gestione dei segreti, isolamento di rete e controlli EU AI Act / GDPR.
+- **Nuovi membri del team** in onboarding nell'AI Team che hanno bisogno di un singolo punto d'ingresso al codice.
 
-- **Multi-agent orchestration** (Planner → Retriever → Writer → Critic) on a LangGraph state machine.
-- **Intent detection** across 7 query types (lesson creation, activity design, definition, comparison, explanation, recommendation, list).
-- **Scope detection** relative to the Knowledge Graph (`in_scope` / `partial_scope` / `out_of_scope`).
-- **Hybrid retrieval**: Neo4j graph traversal + Node2Vec/semantic embeddings + curated media + verified external sources (Wikipedia, OpenAlex, OER, YouTube).
-- **Educational profile specialization**: every request can carry a structured class/classroom profile (grade, BES/DSA, resources, time budget).
-- **Multi-turn conversation memory** via a LangGraph checkpointer (SQLite in dev, PostgreSQL in production), with summary-buffer windowing for long threads.
-- **Streaming**: per-phase Server-Sent Events for incremental UI; live writer-token streaming in the WebUI.
-- **Quality control**: a Critic agent scores the draft and can trigger a bounded revision loop.
-- **Optional Corrective RAG**: a retrieval-grading loop (off by default, flag-gated).
-- **MCP tool servers**: the KG, media, and agent capabilities are also exposed via Model Context Protocol (stdio + Streamable HTTP).
-- **Observability**: Langfuse tracing + GlitchTip/Sentry error monitoring + a startup connectivity probe.
+Si assume che il lettore abbia familiarità con Python, I/O asincrono, FastAPI, Docker, REST/SSE e concetti base di database a grafo. Non si assume alcuna conoscenza pregressa di LangChain, LangGraph o di questo specifico repository.
 
-### 2.3 High-level architecture diagram
+### 1.3 Ambito
+
+Questo documento copre:
+
+- l'**architettura** del sistema Agentic GraphRAG, inclusa la pipeline multi-agente, il livello di retrieval, la WebUI e l'API pubblica;
+- il **layout del repository**, con una mappa dei package `src/aix/*` e delle cartelle di supporto;
+- il **contratto dell'API pubblica** (`/api/v1/*`), inclusi gli schemi request/response, l'autenticazione, la tassonomia degli eventi SSE e le garanzie di stabilità;
+- gli **interni della pipeline degli agenti** (Planner, Retriever, Writer, Critic), inclusi state machine, checkpointer e profilo educativo;
+- il **livello di retrieval** (Knowledge Graph Neo4j, retrieval ibrido, API esterne);
+- lo **sviluppo locale** (setup dell'ambiente, esecuzione di API e WebUI, test, code style basato su Ruff);
+- il **deployment** del pilot di produzione standalone (Docker Compose, Caddy, Postgres, backup, rollback);
+- **osservabilità e sicurezza** (Langfuse, GlitchTip, health check, CORS, segreti, isolamento di rete);
+- i **pattern di integrazione** per le due modalità di deployment supportate (Mode A standalone, Mode B nativo AixLearning);
+- **target di performance, SLO e runbook operativi** al livello richiesto per un deployment pilot;
+- la **roadmap** degli elementi esplicitamente rimandati e le limitazioni note.
+
+Questo documento **non** copre:
+
+- il modello pedagogico in profondità (coperto dalla documentazione funzionale);
+- il codice Django interno di AixLearning (coperto dalla documentazione del team AixLearning);
+- l'analisi normativa approfondita (EU AI Act / UNI 11621-8), mantenuta in un documento separato;
+- il piano di deployment del pilot interno con tempistiche e ownership, mantenuto in un documento separato.
+
+Il documento si concentra sullo stato attuale del codice più gli artefatti di deployment già presenti in `deploy/`.
+
+### 1.4 Convenzioni del documento
+
+Il documento usa le seguenti convenzioni per restare non ambiguo e facile da scorrere.
+
+- I **riferimenti al codice** usano i backtick per i percorsi dei moduli (es. `src/aix/agent/orchestrator.py`), nomi di funzioni/classi (es. `stream_agent_events`), endpoint (es. `POST /api/v1/agent/stream`), variabili d'ambiente (es. `LANGGRAPH_DATABASE_URL`) e comandi shell.
+- I **blocchi di codice** usano la sintassi fenced. Gli esempi di configurazione usano la sintassi delle variabili d'ambiente (`KEY=value`); gli esempi shell sono marcati esplicitamente quando sono PowerShell vs Bash.
+- Gli **esempi API** seguono le forme JSON definite sotto `src/aix/api/schemas/*` e la spec OpenAPI servita su `/openapi.json`. Dove possibile, gli esempi rispecchiano quelli della Swagger UI ("minimal" e "rich").
+- I **diagrammi** sono mantenuti semplici e ASCII-friendly dove aiutano la comprensione; i diagrammi di architettura più grandi vivono come PNG sotto `docs/mockups/`.
+- I **callout di stato** usano prefissi semplici: `Nota:`, `Attenzione:`, `Limitazione:` e `Raccomandazione:`. Non sono box stilizzati, per mantenere il documento portabile.
+- Le **promesse di stabilità** sono dichiarate esplicitamente. Tutto ciò che non è marcato esplicitamente come stabile va considerato soggetto a modifiche e non dovrebbe essere su cui fanno affidamento gli integratori esterni.
+- I **riferimenti a file** del repository (codice, script, artefatti di deployment) usano percorsi relativi alla root del repository (es. `src/aix/agent/orchestrator.py`, `deploy/Caddyfile`) così da restare validi anche quando il documento viene letto offline o in un tool di rendering diverso.
+
+### 1.5 Glossario
+
+I termini comuni usati in tutto il documento sono elencati qui. Un glossario più esaustivo è fornito nell'Appendice B.
+
+- **Agentic GraphRAG** — il sistema complessivo descritto da questo documento: una pipeline multi-agente che produce piani di lezione ancorati a un Knowledge Graph e integrati da fonti esterne.
+- **Agent** — un'unità discreta di ragionamento nella pipeline (Planner, Retriever, Writer, Critic), implementata come nodo in una state machine LangGraph.
+- **LangGraph** — un framework a state machine per orchestrare workflow LLM multi-step, usato per comporre ed eseguire la pipeline degli agenti.
+- **GraphRAG** — Retrieval-Augmented Generation in cui il livello di retrieval è costruito su un Knowledge Graph anziché (solo) su un vector store.
+- **Knowledge Graph (KG)** — il grafo Neo4j di concetti e relazioni pedagogiche (domini UDL e Neuroscienze) usato per il retrieval ancorato.
+- **Profilo educativo** — la descrizione strutturata di una classe, di un'aula e del contesto di tempo/materia usata dagli agenti per specializzare l'output.
+- **Checkpointer** — il componente LangGraph che persiste lo stato della conversazione (memoria multi-turno) su uno store di supporto; SQLite in sviluppo, PostgreSQL in produzione.
+- **Ciclo Critic** — il ciclo di revisione in cui l'agente Critic valuta l'output del Writer e può richiedere una revisione.
+- **SSE (Server-Sent Events)** — il protocollo di streaming usato da `POST /api/v1/agent/stream` per emettere eventi per fase verso i client.
+- **WebUI** — l'interfaccia web teacher-facing interna servita dallo stesso processo FastAPI su `/webui/*`, usata per il pilot interno standalone.
+- **Mode A / Mode B** — le due modalità di deployment supportate (WebUI standalone vs integrazione nativa AixLearning); vedere §3.6 e §14.
+- **AixLearning** — la piattaforma Django partner che integra il servizio Agentic GraphRAG in Mode B.
+- **Langfuse / GlitchTip** — i tool di osservabilità di terze parti usati per tracing e monitoraggio errori.
+- **Caddy** — il reverse proxy usato in produzione, che termina il TLS via Let's Encrypt e inoltra il traffico al container FastAPI.
+
+---
+
+## 2. Panoramica del sistema
+
+### 2.1 Cosa fa il sistema
+
+Il sistema Agentic GraphRAG trasforma una richiesta in linguaggio naturale di un docente (in italiano o inglese) in un piano di lezione strutturato e pedagogicamente ancorato. Una richiesta come *"Crea una lezione di 45 minuti sulla fotosintesi adattata a una classe con 2 studenti DSA"* viene elaborata da una pipeline multi-agente che:
+
+1. **comprende** la richiesta (rilevamento di intento + scope),
+2. **recupera** conoscenza ancorata da un Knowledge Graph Neo4j e, quando serve, da fonti esterne verificate,
+3. **scrive** un piano di lezione completo specializzato sul profilo della classe,
+4. **revisiona** il risultato rispetto a criteri di qualità e lo rivede se necessario.
+
+Il sistema esegue due modalità complementari da un **singolo processo FastAPI**:
+
+- una **WebUI docente standalone** (`/webui/*`) usata dal pilot interno FEM, e
+- un'**API pubblica JSON + SSE** (`/api/v1/agent/*`) consumata da client non-browser (il backend AixLearning, Postman/curl, app future).
+
+Entrambe le modalità pilotano la **stessa pipeline di agenti** e lo **stesso livello di retrieval**.
+
+### 2.2 Capacità principali
+
+- **Orchestrazione multi-agente** (Planner → Retriever → Writer → Critic) su una state machine LangGraph.
+- **Rilevamento dell'intento** su 7 tipi di query (creazione lezione, design di attività, definizione, confronto, spiegazione, raccomandazione, elenco).
+- **Rilevamento dello scope** rispetto al Knowledge Graph (`in_scope` / `partial_scope` / `out_of_scope`).
+- **Retrieval ibrido**: traversal del grafo Neo4j + embeddings Node2Vec/semantici + media curati + fonti esterne verificate (Wikipedia, OpenAlex, OER, YouTube).
+- **Specializzazione per profilo educativo**: ogni richiesta può portare un profilo strutturato di classe/aula (grado, BES/DSA, risorse, budget di tempo).
+- **Memoria conversazionale multi-turno** tramite un checkpointer LangGraph (SQLite in dev, PostgreSQL in produzione), con windowing a summary-buffer per i thread lunghi.
+- **Streaming**: Server-Sent Events per fase per una UI incrementale; streaming live dei token del Writer nella WebUI.
+- **Controllo qualità**: un agente Critic valuta la bozza e può innescare un ciclo di revisione limitato.
+- **Corrective RAG opzionale**: un ciclo di grading del retrieval (off di default, controllato da flag).
+- **Server di tool MCP**: le capacità di KG, media e agenti sono esposte anche via Model Context Protocol (stdio + Streamable HTTP).
+- **Osservabilità**: tracing Langfuse + monitoraggio errori GlitchTip/Sentry + un connectivity probe all'avvio.
+
+### 2.3 Diagramma di architettura ad alto livello
 
 ```
                          ┌────────────────────────────────────────────┐
@@ -295,31 +308,31 @@ Both modes drive the **same agent pipeline** and the **same retrieval layer**.
                               └───────────────────────────────────────┘
 ```
 
-### 2.4 Technology stack
+### 2.4 Stack tecnologico
 
-| Layer | Technology |
+| Livello | Tecnologia |
 |---|---|
-| API + serving | FastAPI (single uvicorn process), `sse-starlette` |
-| Agent orchestration | LangChain + LangGraph |
-| Knowledge Graph | Neo4j (Aura / FEM-managed instance) |
-| Embeddings | Node2Vec (graph) + OpenAI-compatible text embeddings (hybrid) |
-| LLM provider | OpenRouter (default `anthropic/claude-sonnet-4-6`); OpenAI as fallback |
-| State / memory | LangGraph checkpointer — SQLite (dev) / PostgreSQL (prod) |
-| WebUI persistence | SQLAlchemy async — SQLite (dev) / PostgreSQL (prod) |
-| WebUI frontend | Jinja2 + htmx 2 + WebAwesome + Tailwind + Alpine.js |
+| API + serving | FastAPI (singolo processo uvicorn), `sse-starlette` |
+| Orchestrazione agenti | LangChain + LangGraph |
+| Knowledge Graph | Neo4j (istanza Aura / gestita da FEM) |
+| Embeddings | Node2Vec (grafo) + text embeddings OpenAI-compatible (ibrido) |
+| Provider LLM | OpenRouter (default `anthropic/claude-sonnet-4-6`); OpenAI come fallback |
+| Stato / memoria | Checkpointer LangGraph — SQLite (dev) / PostgreSQL (prod) |
+| Persistenza WebUI | SQLAlchemy async — SQLite (dev) / PostgreSQL (prod) |
+| Frontend WebUI | Jinja2 + htmx 2 + WebAwesome + Tailwind + Alpine.js |
 | Auth | FastAPI-Users (cookie + Bearer JWT, HS256) |
-| Tool protocol | FastMCP 3.x (stdio + Streamable HTTP) |
+| Protocollo tool | FastMCP 3.x (stdio + Streamable HTTP) |
 | Reverse proxy / TLS | Caddy 2 (Let's Encrypt) |
-| Observability | Langfuse (tracing), GlitchTip/Sentry (errors) |
+| Osservabilità | Langfuse (tracing), GlitchTip/Sentry (errori) |
 | Packaging / tooling | `pyproject.toml` (src layout), Ruff (lint+format), mypy, pytest |
 
 ---
 
-## 3. Architecture
+## 3. Architettura
 
-### 3.1 Logical architecture (Planner → Retriever → Writer → Critic)
+### 3.1 Architettura logica (Planner → Retriever → Writer → Critic)
 
-The pipeline is a LangGraph `StateGraph` whose nodes are the four agents. A shared `AgentState` (TypedDict) flows through every node; each node reads the fields it needs and writes its outputs back.
+La pipeline è uno `StateGraph` LangGraph i cui nodi sono i quattro agenti. Uno `AgentState` condiviso (TypedDict) attraversa ogni nodo; ciascun nodo legge i campi che gli servono e riscrive i propri output.
 
 ```
 plan ──► retrieve ──► write ──► critique ──► [revise | finish]
@@ -327,51 +340,51 @@ plan ──► retrieve ──► write ──► critique ──► [revise | f
                                    └──────────────┘   (bounded revision loop)
 ```
 
-- **Planner** (`plan`) — classifies intent + scope, extracts key concepts, and produces the search queries.
-- **Retriever** (`retrieve`) — runs GraphRAG searches against Neo4j, attaches curated media, and (for out-of-scope topics) verified external sources.
-- **Writer** (`write`) — generates the lesson plan, specialized by domain prompt + educational profile + optional teacher-provided context.
-- **Critic** (`critique`) — scores the draft; on non-approval (and within `max_revisions`) routes back to `write` with revision instructions.
+- **Planner** (`plan`) — classifica intento + scope, estrae i concetti chiave e produce le query di ricerca.
+- **Retriever** (`retrieve`) — esegue ricerche GraphRAG su Neo4j, allega i media curati e (per i topic out-of-scope) le fonti esterne verificate.
+- **Writer** (`write`) — genera il piano di lezione, specializzato dal prompt di dominio + profilo educativo + eventuale contesto fornito dal docente.
+- **Critic** (`critique`) — valuta la bozza; in caso di non approvazione (ed entro `max_revisions`) reinstrada verso `write` con istruzioni di revisione.
 
-When `AIX_CORRECTIVE_RAG_ENABLED=true`, an extra `grade_retrieval` node is inserted between `retrieve` and `write`, with a bounded retry edge back to `retrieve` (see §6.6).
+Quando `AIX_CORRECTIVE_RAG_ENABLED=true`, un nodo extra `grade_retrieval` viene inserito tra `retrieve` e `write`, con un arco di retry limitato verso `retrieve` (vedere §6.6).
 
-### 3.2 Component responsibilities (per `src/aix/*` module)
+### 3.2 Responsabilità dei componenti (per modulo `src/aix/*`)
 
-| Package | Responsibility |
+| Package | Responsabilità |
 |---|---|
-| `aix.core` | Shared configuration (`config.py`), connectivity probe, cross-cutting utilities |
-| `aix.retrieval` | GraphRAG retrieval: Text2Cypher, hybrid graph retriever, context builder, query metrics |
-| `aix.generation` | LLM response generation for the legacy GraphRAG path (`llm_chain.py`) |
-| `aix.agent` | Agentic pipeline: orchestrator, LangGraph graph/nodes/state, the 4 agents, prompts, media, tools, domain prompt configs |
-| `aix.api` | FastAPI app (`main.py`), routes (`context`, `agent`), Pydantic schemas, helper client |
-| `aix.webui` | Teacher WebUI: auth, lessons (CRUD/uploads), agent streaming service, Jinja2 templates, DB |
-| `aix.mcp` | MCP tool servers: composition root, stdio entry, Streamable HTTP factory, tools/resources/prompts |
-| `aix.domains` | Domain configs and prompt knowledge for UDL and Neuroscience |
+| `aix.core` | Configurazione condivisa (`config.py`), connectivity probe, utility trasversali |
+| `aix.retrieval` | Retrieval GraphRAG: Text2Cypher, retriever ibrido sul grafo, context builder, metriche di query |
+| `aix.generation` | Generazione di risposte LLM per il percorso GraphRAG legacy (`llm_chain.py`) |
+| `aix.agent` | Pipeline agentica: orchestrator, graph/nodes/state LangGraph, i 4 agenti, prompt, media, tool, config dei prompt di dominio |
+| `aix.api` | App FastAPI (`main.py`), route (`context`, `agent`), schemi Pydantic, helper client |
+| `aix.webui` | WebUI docente: auth, lezioni (CRUD/upload), servizio di streaming agenti, template Jinja2, DB |
+| `aix.mcp` | Server di tool MCP: composition root, entry stdio, factory Streamable HTTP, tools/resources/prompts |
+| `aix.domains` | Config di dominio e conoscenza dei prompt per UDL e Neuroscienze |
 
-### 3.3 Runtime architecture
+### 3.3 Architettura a runtime
 
-A single uvicorn process (`aix.api.main:app`) hosts every surface. At import/startup it:
+Un singolo processo uvicorn (`aix.api.main:app`) ospita ogni superficie. All'import/avvio:
 
-- applies a Windows event-loop policy shim when Postgres is configured (psycopg async requires the selector loop on Windows; Linux production is unaffected);
-- optionally initializes Sentry/GlitchTip when `SENTRY_DSN` is set;
-- builds the MCP Streamable HTTP sub-app (guarded — a build failure cannot block `/api/v1`);
-- on `lifespan` startup: verifies Neo4j connectivity, checks domain configs, runs the optional LLM connectivity probe, and sets up the LangGraph checkpointer;
-- mounts routers: `/api/v1/context`, `/api/v1/agent/*`, `/webui/*`, `/auth/jwt/*`, `/static`, and `/mcp/`.
+- applica uno shim della event-loop policy di Windows quando Postgres è configurato (psycopg async richiede il selector loop su Windows; la produzione Linux non è interessata);
+- inizializza opzionalmente Sentry/GlitchTip quando `SENTRY_DSN` è impostata;
+- costruisce la sub-app MCP Streamable HTTP (protetta — un fallimento di build non può bloccare `/api/v1`);
+- all'avvio `lifespan`: verifica la connettività Neo4j, controlla le config di dominio, esegue il connectivity probe LLM opzionale e configura il checkpointer LangGraph;
+- monta i router: `/api/v1/context`, `/api/v1/agent/*`, `/webui/*`, `/auth/jwt/*`, `/static` e `/mcp/`.
 
-The agent pipeline is driven by `aix.webui.agent.service`, which owns the LangGraph `astream` loop and the translation of state diffs into normalized `StreamEvent`s. The compiled graph and its agents are module-level singletons (acceptable for the pilot; revisit for high concurrency — see §15/§17).
+La pipeline degli agenti è pilotata da `aix.webui.agent.service`, che possiede il loop `astream` di LangGraph e la traduzione dei diff di stato in `StreamEvent` normalizzati. Il grafo compilato e i suoi agenti sono singleton a livello di modulo (accettabile per il pilot; da rivalutare per alta concorrenza — vedere §15/§17).
 
-### 3.4 Data architecture
+### 3.4 Architettura dei dati
 
-- **Neo4j Knowledge Graph** — pedagogical concepts, methodologies, strategies, and their relationships, in two domains (`neuro`, `udl`). Read-only at request time. Source dumps live under `data/kg/{neuro,udl}/`.
-- **PostgreSQL (production)** — a single instance backing two logical concerns:
-  - **WebUI DB** (`WEBUI_DATABASE_URL`): users, lessons, lesson messages (multi-turn transcript).
-  - **LangGraph checkpointer** (`LANGGRAPH_DATABASE_URL`): three tables (`checkpoints`, `checkpoint_blobs`, `checkpoint_writes`) storing per-thread agent state.
-  - In development both default to SQLite files.
-- **Agent state** — the in-flight `AgentState` TypedDict (see §6.1), persisted per `thread_id` by the checkpointer to enable multi-turn follow-ups.
-- **Artifacts** — Node2Vec embeddings and the OpenAI embeddings cache under `artifacts/` (mounted as a Docker volume in production so a rebuild doesn't trigger a full re-embed).
+- **Knowledge Graph Neo4j** — concetti pedagogici, metodologie, strategie e loro relazioni, in due domini (`neuro`, `udl`). Sola lettura a runtime. I dump sorgente vivono sotto `data/kg/{neuro,udl}/`.
+- **PostgreSQL (produzione)** — una singola istanza che supporta due concerni logici:
+  - **DB WebUI** (`WEBUI_DATABASE_URL`): utenti, lezioni, messaggi delle lezioni (trascritto multi-turno).
+  - **Checkpointer LangGraph** (`LANGGRAPH_DATABASE_URL`): tre tabelle (`checkpoints`, `checkpoint_blobs`, `checkpoint_writes`) che memorizzano lo stato per thread.
+  - In sviluppo entrambi usano di default file SQLite.
+- **Stato dell'agente** — il TypedDict `AgentState` in-flight (vedere §6.1), persistito per `thread_id` dal checkpointer per abilitare i follow-up multi-turno.
+- **Artifacts** — embeddings Node2Vec e cache degli embeddings OpenAI sotto `artifacts/` (montati come volume Docker in produzione, così una rebuild non innesca un re-embed completo). La cartella `artifacts/media_cache/` è una cache a runtime del livello media dinamici (diskcache, vedere §7.8): è git-ignored e rigenerabile.
 
-### 3.5 Sequence diagrams
+### 3.5 Diagrammi di sequenza
 
-**Synchronous run (`POST /api/v1/agent/run`):**
+**Run sincrona (`POST /api/v1/agent/run`):**
 
 ```
 Client → /api/v1/agent/run (JSON)
@@ -382,7 +395,7 @@ Client → /api/v1/agent/run (JSON)
   → 200 JSON   (or 502 if the pipeline errored)
 ```
 
-**Streaming run (`POST /api/v1/agent/stream`):**
+**Run in streaming (`POST /api/v1/agent/stream`):**
 
 ```
 Client → /api/v1/agent/stream (JSON body)  →  text/event-stream
@@ -396,20 +409,20 @@ Client → /api/v1/agent/stream (JSON body)  →  text/event-stream
   # heartbeat ping every 15s keeps proxies from closing the idle connection
 ```
 
-### 3.6 Deployment architecture (Mode A vs Mode B)
+### 3.6 Architettura di deployment (Mode A vs Mode B)
 
-- **Mode A — Standalone internal pilot.** Browser → Caddy (80/443, TLS) → `app:8765`. The app serves `/webui/*` and `/api/v1/*`. PostgreSQL is private to the Docker network. This is the FEM internal pilot at `https://agente.aiforlearning.digital`.
-- **Mode B — Native AixLearning integration.** The AixLearning Django backend/worker calls the agent service over the internal Docker network (`http://graphrag-api:8765/api/v1/agent/...`). AixLearning owns its own UX and data; the agent service owns only its own state.
+- **Mode A — Pilot interno standalone.** Browser → Caddy (80/443, TLS) → `app:8765`. L'app serve `/webui/*` e `/api/v1/*`. PostgreSQL è privato alla rete Docker. È il pilot interno FEM su `https://agente.aiforlearning.digital`.
+- **Mode B — Integrazione nativa AixLearning.** Il backend/worker Django di AixLearning chiama il servizio agenti sulla rete Docker interna (`http://graphrag-api:8765/api/v1/agent/...`). AixLearning possiede la propria UX e i propri dati; il servizio agenti possiede solo il proprio stato.
 
-Full treatment is in §14 and in `docs/product/Dev_Handoff_AgenticGraphRAG_Integration.md`.
+La trattazione completa è in §14.
 
 ---
 
-## 4. Repository Structure
+## 4. Struttura del repository
 
-### 4.1 Top-level layout
+### 4.1 Layout di primo livello
 
-The project uses the modern **src layout**: all importable code lives under `src/aix/`, exposed as the `aix.*` package via `pip install -e .`.
+Il progetto usa il moderno **src layout**: tutto il codice importabile vive sotto `src/aix/`, esposto come package `aix.*` tramite `pip install -e .`.
 
 ```
 graphaixlearning/
@@ -432,7 +445,7 @@ graphaixlearning/
 └── Makefile            # make test / api / streamlit / agent
 ```
 
-### 4.2 `src/aix/` package map
+### 4.2 Mappa del package `src/aix/`
 
 ```
 src/aix/
@@ -453,7 +466,7 @@ src/aix/
 │   ├── graph/                # LangGraph: state.py, nodes.py, lesson_planner_graph.py,
 │   │                         #   checkpointer.py, write_stream.py
 │   ├── prompts/              # intent-specific prompts (planner/writer/critic)
-│   ├── media/                # media lookup, diagram/image generation, resource lookup
+│   ├── media/                # media lookup, diagram/image generation, live media, resource lookup
 │   ├── tools/                # GraphRAG + curriculum tool wrappers for agents
 │   └── configs/              # domain prompt extensions (domain_prompts.py)
 ├── api/                      # FastAPI service
@@ -477,9 +490,9 @@ src/aix/
 └── domains/                  # Domain configs (udl_domain.py, neuro_domain.py, base_config.py)
 ```
 
-### 4.3 `deploy/` folder
+### 4.3 Cartella `deploy/`
 
-Production stack and runbook (Wave 1 of the internal deployment plan):
+Stack di produzione e runbook (Wave 1 del piano di deployment interno):
 
 ```
 deploy/
@@ -490,45 +503,47 @@ deploy/
 └── README.md                # first-deploy, backups, rollback, log inspection runbook
 ```
 
-### 4.4 `scripts/` folder
+### 4.4 Cartella `scripts/`
 
-Operational and data-prep tooling, grouped by purpose: `ingest/` (Neo4j import/export), `audit/` (KG label checks), `data_prep/` (cleaning/merging), `ml/` (Node2Vec training, media mapping generation), `diagnostic/` (MCP smoke tests, OpenAPI baseline capture), `ops/` (preflight, migrations), `media_pool/` (offline media pool generation via LM Studio).
+Tooling operativo e di data-prep, raggruppato per scopo: `ingest/` (import/export Neo4j), `audit/` (controlli sulle label del KG), `data_prep/` (pulizia/merge), `ml/` (training Node2Vec, generazione media mapping), `diagnostic/` (smoke test MCP, cattura baseline OpenAPI), `ops/` (preflight, migrazioni), `media_pool/` (generazione offline del pool media via LM Studio).
 
-### 4.5 `tests/` folder
+### 4.5 Cartella `tests/`
 
-`unit/` (pure, no external services), `integration/` (Neo4j/LLM — marked `@pytest.mark.integration`), `api/` (agent API contract tests), `mcp_server/` (19-test MCP regression suite), plus `conftest.py` shared fixtures. Pytest is configured in `pyproject.toml` with markers `integration`, `slow`, `unit` and `asyncio_mode = "auto"`.
+`unit/` (puri, senza servizi esterni), `integration/` (Neo4j/LLM — marcati `@pytest.mark.integration`), `api/` (test di contratto dell'API agenti), `mcp_server/` (suite di regressione MCP da 19 test), più `conftest.py` con fixture condivise. Pytest è configurato in `pyproject.toml` con i marker `integration`, `slow`, `unit` e `asyncio_mode = "auto"`.
 
-### 4.6 `docs/` folder
+### 4.6 Cartella `docs/`
 
-`api/` (integration guides), `architecture/` (frontend evaluation/ADRs, model analyses), `integrations/` (MCP setup), `product/` (deployment plan, dev handoff, ClickUp tracker, regulatory alignment), `release/` (this document + the functional documentation), plus reports and runbooks.
+`api/` (guide di integrazione), `architecture/` (valutazioni frontend/ADR, analisi dei modelli), `integrations/` (setup MCP), `product/` (documenti interni di prodotto e processo), `release/` (questo documento + la documentazione funzionale), più report e runbook.
 
-## 5. API Reference
+---
 
-### 5.1 API surface overview
+## 5. Riferimento API
 
-All HTTP surfaces are served by the single FastAPI app (`aix.api.main:app`). The OpenAPI spec is published at `/openapi.json`, with interactive docs at `/docs` (Swagger UI) and `/redoc`.
+### 5.1 Panoramica della superficie API
 
-| Path | Method | Purpose | Auth |
+Tutte le superfici HTTP sono servite dalla singola app FastAPI (`aix.api.main:app`). La spec OpenAPI è pubblicata su `/openapi.json`, con doc interattive su `/docs` (Swagger UI) e `/redoc`.
+
+| Percorso | Metodo | Scopo | Auth |
 |---|---|---|---|
-| `/api/v1/health` | GET | Liveness/readiness probe | none |
-| `/api/v1/context` | POST | Legacy GraphRAG context (single-shot retrieval) | service auth |
-| `/api/v1/agent/run` | POST | Run the agent, return final lesson plan (sync JSON) | cookie or Bearer JWT |
-| `/api/v1/agent/stream` | POST | Run the agent, stream phases as SSE JSON | cookie or Bearer JWT |
-| `/auth/jwt/login` | POST | Mint a Bearer JWT (FastAPI-Users) | credentials |
-| `/webui/*` | GET/POST | Teacher WebUI (HTML + htmx + SSE) | cookie session |
-| `/mcp/` | (MCP) | MCP Streamable HTTP transport | Bearer JWT |
-| `/docs`, `/redoc`, `/openapi.json` | GET | API documentation | none |
+| `/api/v1/health` | GET | Probe di liveness/readiness | nessuna |
+| `/api/v1/context` | POST | Contesto GraphRAG legacy (retrieval single-shot) | service auth |
+| `/api/v1/agent/run` | POST | Esegue l'agente, ritorna il piano di lezione finale (JSON sincrono) | cookie o Bearer JWT |
+| `/api/v1/agent/stream` | POST | Esegue l'agente, fa streaming delle fasi come SSE JSON | cookie o Bearer JWT |
+| `/auth/jwt/login` | POST | Emette un Bearer JWT (FastAPI-Users) | credenziali |
+| `/webui/*` | GET/POST | WebUI docente (HTML + htmx + SSE) | cookie session |
+| `/mcp/` | (MCP) | Transport MCP Streamable HTTP | Bearer JWT |
+| `/docs`, `/redoc`, `/openapi.json` | GET | Documentazione API | nessuna |
 
-The two surfaces the integration team consumes are **`/api/v1/agent/run`** and **`/api/v1/agent/stream`**. They are *additive* — they do not alter `/api/v1/context`, `/webui/*`, or `/auth/*`.
+Le due superfici che il team di integrazione consuma sono **`/api/v1/agent/run`** e **`/api/v1/agent/stream`**. Sono *additive* — non alterano `/api/v1/context`, `/webui/*` o `/auth/*`.
 
-### 5.2 Authentication
+### 5.2 Autenticazione
 
-Both agent endpoints depend on `current_active_user` (FastAPI-Users), which accepts **either**:
+Entrambi gli endpoint dell'agente dipendono da `current_active_user` (FastAPI-Users), che accetta **uno tra**:
 
-- the **WebUI session cookie** (used by browser clients), or
-- an **`Authorization: Bearer <jwt>`** header (used by API/integration clients).
+- il **cookie di sessione WebUI** (usato dai client browser), oppure
+- un header **`Authorization: Bearer <jwt>`** (usato dai client API/integrazione).
 
-Tokens are HS256, signed with `WEBUI_AUTH_SECRET` (shared by cookie and Bearer backends). To obtain a Bearer token programmatically:
+I token sono HS256, firmati con `WEBUI_AUTH_SECRET` (condiviso da backend cookie e Bearer). Per ottenere un Bearer token a livello programmatico:
 
 ```bash
 curl -X POST https://agente.aiforlearning.digital/auth/jwt/login \
@@ -537,31 +552,31 @@ curl -X POST https://agente.aiforlearning.digital/auth/jwt/login \
 # → { "access_token": "<jwt>", "token_type": "bearer" }
 ```
 
-Note: the legacy `/api/v1/context` endpoint uses a separate service-to-service auth scheme (HTTP Basic), as documented in the integration guide; it is not affected by the FastAPI-Users layer.
+Nota: l'endpoint legacy `/api/v1/context` usa uno schema separato di auth service-to-service (HTTP Basic), come documentato nella guida di integrazione; non è interessato dal layer FastAPI-Users.
 
-### 5.3 `POST /api/v1/agent/run` — synchronous JSON
+### 5.3 `POST /api/v1/agent/run` — JSON sincrono
 
-Drains the full **Planner → Retriever → Writer → Critic** pipeline and returns a single response. Typical run: **60–120 s** (the Writer LLM call dominates). For incremental UI use `/stream` instead.
+Esaurisce l'intera pipeline **Planner → Retriever → Writer → Critic** e ritorna una singola risposta. Run tipica: **60–120 s** (domina la chiamata LLM del Writer). Per una UI incrementale usare invece `/stream`.
 
-**Request body** (`AgentRunRequest`):
+**Body della richiesta** (`AgentRunRequest`):
 
-| Field | Type | Req. | Notes |
+| Campo | Tipo | Obbl. | Note |
 |---|---|---|---|
-| `query` | string (3–2000) | ✅ | Teacher request in natural language |
-| `domain` | `"neuro"` \| `"udl"` | ✅ | Knowledge graph domain |
-| `language` | `"it"` \| `"en"` | — | Output language (default `it`) |
-| `session_id` | string (≤128) | — | Correlation/thread id; UUID4 generated if omitted |
-| `educational_profile` | `EducationalProfile` | — | Class/classroom context (CORE 1 #2.5) |
-| `teacher_provided_context` | string (≤48000) | — | Joined text from uploads; Writer-only, **not** ingested into the KG |
-| `max_revisions` | int (0–4) | — | Critic loop cap; `null` → `AIX_MAX_REVISIONS` (default 1); `0` disables |
+| `query` | string (3–2000) | ✅ | Richiesta del docente in linguaggio naturale |
+| `domain` | `"neuro"` \| `"udl"` | ✅ | Dominio del knowledge graph |
+| `language` | `"it"` \| `"en"` | — | Lingua di output (default `it`) |
+| `session_id` | string (≤128) | — | Id di correlazione/thread; UUID4 generato se omesso |
+| `educational_profile` | `EducationalProfile` | — | Contesto di classe/aula (CORE 1 #2.5) |
+| `teacher_provided_context` | string (≤48000) | — | Testo unito dagli upload; solo Writer, **non** ingerito nel KG |
+| `max_revisions` | int (0–4) | — | Cap del ciclo Critic; `null` → `AIX_MAX_REVISIONS` (default 1); `0` disabilita |
 
-Minimal request:
+Richiesta minimale:
 
 ```json
 { "query": "Crea una lezione sull'attenzione", "domain": "neuro" }
 ```
 
-**Response** (`AgentRunResponse`):
+**Risposta** (`AgentRunResponse`):
 
 ```json
 {
@@ -590,11 +605,11 @@ Minimal request:
 }
 ```
 
-**Status codes:** `200` success · `401` missing/invalid auth · `422` body validation error · `502` agent pipeline runtime error (LLM failure, KG unreachable — potentially retryable).
+**Codici di stato:** `200` successo · `401` auth mancante/non valida · `422` errore di validazione del body · `502` errore a runtime della pipeline agenti (fallimento LLM, KG irraggiungibile — potenzialmente ritentabile).
 
 ### 5.4 `POST /api/v1/agent/stream` — Server-Sent Events
 
-Same request body as `/run`. Returns `text/event-stream`. Each frame carries an `event:` line (the `kind`) and a JSON `data:` payload. A heartbeat comment is sent every **15 s** so proxies/load balancers don't drop the idle connection during the slow Writer call.
+Stesso body di richiesta di `/run`. Ritorna `text/event-stream`. Ogni frame porta una riga `event:` (il `kind`) e un payload JSON `data:`. Un commento di heartbeat è inviato ogni **15 s** così che proxy/load balancer non chiudano la connessione idle durante la lenta chiamata del Writer.
 
 ```bash
 curl -N -X POST https://agente.aiforlearning.digital/api/v1/agent/stream \
@@ -602,97 +617,97 @@ curl -N -X POST https://agente.aiforlearning.digital/api/v1/agent/stream \
   -d '{"query":"Crea una lezione sull'\''attenzione","domain":"neuro"}'
 ```
 
-Wire shape per frame:
+Forma sul filo per frame:
 
 ```
 event: planner
 data: {"kind":"planner","data":{...},"lesson_plan_md":null,"error":null}
 ```
 
-> Note: Swagger UI's "Try it out" renders the whole stream as one blob. For live event-by-event inspection use `curl -N`, Postman, or Bruno.
+> Nota: il "Try it out" della Swagger UI rende l'intero stream come un unico blob. Per l'ispezione evento-per-evento usare `curl -N`, Postman o Bruno.
 
-### 5.5 SSE event taxonomy
+### 5.5 Tassonomia degli eventi SSE
 
-The public stream (`stream_agent_events`) emits the 7 event kinds frozen by the `AgentStreamEvent` union in `src/aix/api/schemas/agent.py`. Every frame has the same outer envelope: `{ kind, data, lesson_plan_md, error }`.
+Lo stream pubblico (`stream_agent_events`) emette i 7 tipi di evento congelati dall'union `AgentStreamEvent` in `src/aix/api/schemas/agent.py`. Ogni frame ha lo stesso envelope esterno: `{ kind, data, lesson_plan_md, error }`.
 
-| `kind` | When | Key `data` fields |
+| `kind` | Quando | Campi `data` principali |
 |---|---|---|
-| `planner` | after `plan` | `intent`, `intent_label`, `scope`, `scope_label`, `scope_confidence`, `key_concepts[]`, `search_queries[]` |
-| `retriever` | after `retrieve` | `nodes_count`, `relationships_count`, `recommendations_count`, `media_counts{videos,articles,oer}`, `media{}`, `top_concepts[]`, `retrieval_confidence`, coverage tier |
-| `writer_pending` | before a write attempt | `revision`, `is_revision`, `feedback` |
-| `writer` | after `write` | `revision`; `lesson_plan_md` = draft for this revision |
-| `critic` | after `critique` | `approved`, `revision_count`, `max_revisions`, `score`, `score_pct`, `critique`, `revision_instructions` |
-| `done` | end of run | (envelope) `lesson_plan_md` = final; `data`/meta = run summary |
-| `error` | on failure | `error` = short message (≤480 chars) |
+| `planner` | dopo `plan` | `intent`, `intent_label`, `scope`, `scope_label`, `scope_confidence`, `key_concepts[]`, `search_queries[]` |
+| `retriever` | dopo `retrieve` | `nodes_count`, `relationships_count`, `recommendations_count`, `media_counts{videos,articles,oer}`, `media{}`, `top_concepts[]`, `retrieval_confidence`, coverage tier |
+| `writer_pending` | prima di un tentativo di scrittura | `revision`, `is_revision`, `feedback` |
+| `writer` | dopo `write` | `revision`; `lesson_plan_md` = bozza per questa revisione |
+| `critic` | dopo `critique` | `approved`, `revision_count`, `max_revisions`, `score`, `score_pct`, `critique`, `revision_instructions` |
+| `done` | fine della run | (envelope) `lesson_plan_md` = finale; `data`/meta = riepilogo della run |
+| `error` | in caso di fallimento | `error` = messaggio breve (≤480 char) |
 
-Happy-path order (0 revisions): `planner → retriever → writer_pending → writer → critic → done`.
-With one revision: `planner → retriever → writer_pending → writer → critic → writer_pending → writer → critic → done`.
+Ordine happy-path (0 revisioni): `planner → retriever → writer_pending → writer → critic → done`.
+Con una revisione: `planner → retriever → writer_pending → writer → critic → writer_pending → writer → critic → done`.
 
-Implementation note: clients should `switch` on `kind` and ignore unknown kinds (forward-compatible). The browser WebUI uses additional internal-only kinds (`retriever_pending`, `critic_pending`, `writer_chunk` for live token streaming) that are **not** part of the public union; non-browser clients will not receive them from `/api/v1/agent/stream`.
+Nota implementativa: i client dovrebbero fare `switch` sul `kind` e ignorare i kind sconosciuti (forward-compatible). La WebUI browser usa kind aggiuntivi interni (`retriever_pending`, `critic_pending`, `writer_chunk` per lo streaming live dei token) che **non** fanno parte dell'union pubblica; i client non-browser non li riceveranno da `/api/v1/agent/stream`.
 
-### 5.6 Educational profile schema
+### 5.6 Schema del profilo educativo
 
-`educational_profile` reuses the same `EducationalProfile` model the WebUI form serializes (`src/aix/api/schemas/educational_profile.py`), so a profile is interchangeable across both surfaces. It carries:
+`educational_profile` riusa lo stesso modello `EducationalProfile` che il form della WebUI serializza (`src/aix/api/schemas/educational_profile.py`), così un profilo è interscambiabile tra le due superfici. Porta:
 
-- **`group`** — class context: `title`, `students_number`, `grade` (e.g. `SECONDARIA_II_GRADO`), `disabilities` (e.g. `ADHD`, `DSA`), `class_features`, `student_attributes`.
-- **`classroom`** — physical context: `title`, `forniture_mobility`, `has_lim`, `has_wifi`, `has_suite`, `pc_station`, `own_device`.
+- **`group`** — contesto di classe: `title`, `students_number`, `grade` (es. `SECONDARIA_II_GRADO`), `disabilities` (es. `ADHD`, `DSA`), `class_features`, `student_attributes`.
+- **`classroom`** — contesto fisico: `title`, `forniture_mobility`, `has_lim`, `has_wifi`, `has_suite`, `pc_station`, `own_device`.
 - **top-level** — `time_available_minutes`, `subject_area`, `specific_topic`.
 
-All fields are optional; omitting the profile makes the agent fall back to generic prompts. The Swagger UI exposes two named examples — **minimal** and **rich** — driven by `openapi_examples` in `routes/agent.py`.
+Tutti i campi sono opzionali; omettere il profilo fa sì che l'agente ricada su prompt generici. La Swagger UI espone due esempi nominati — **minimal** e **rich** — guidati da `openapi_examples` in `routes/agent.py`.
 
-### 5.7 Legacy GraphRAG context endpoint
+### 5.7 Endpoint legacy di contesto GraphRAG
 
-`POST /api/v1/context` (`routes/context.py`) is the original single-shot retrieval endpoint that powered the first AixLearning integration. It returns structured GraphRAG context (concepts, methodologies, recommendations) without running the agent pipeline. It remains supported for backward compatibility; new integrations should prefer the agent endpoints.
+`POST /api/v1/context` (`routes/context.py`) è l'endpoint di retrieval single-shot originale che alimentava la prima integrazione AixLearning. Ritorna contesto GraphRAG strutturato (concetti, metodologie, raccomandazioni) senza eseguire la pipeline degli agenti. Resta supportato per retrocompatibilità; le nuove integrazioni dovrebbero preferire gli endpoint dell'agente.
 
-### 5.8 Error model
+### 5.8 Modello degli errori
 
-- Agent endpoints raise `502 Bad Gateway` (not `500`) when the *pipeline* fails — communicating that the route itself didn't crash and the request may be retryable.
-- The SSE stream never lets an exception cross the generator boundary: failures are emitted as a terminal `error` event (treated as domain data).
-- Validation errors (`422`) follow FastAPI's standard `{"detail": [...]}` shape.
+- Gli endpoint dell'agente sollevano `502 Bad Gateway` (non `500`) quando fallisce la *pipeline* — comunicando che la route stessa non è crashata e che la richiesta può essere ritentabile.
+- Lo stream SSE non lascia mai attraversare un'eccezione il confine del generator: i fallimenti sono emessi come evento terminale `error` (trattato come dato di dominio).
+- Gli errori di validazione (`422`) seguono la forma standard FastAPI `{"detail": [...]}`.
 
 ---
 
-## 6. Agent Pipeline (Internals)
+## 6. Pipeline degli agenti (interni)
 
-### 6.1 `AgentState` — the shared contract
+### 6.1 `AgentState` — il contratto condiviso
 
-`src/aix/agent/graph/state.py` defines `AgentState`, a `TypedDict(total=False)` that flows through every node. It is grouped into input, per-agent outputs, corrective-RAG fields, metadata, and final output. Key fields:
+`src/aix/agent/graph/state.py` definisce `AgentState`, un `TypedDict(total=False)` che attraversa ogni nodo. È raggruppato in input, output per agente, campi corrective-RAG, metadati e output finale. Campi chiave:
 
 - **Input**: `teacher_query`, `domain`, `language`, `session_id`, `educational_profile`, `teacher_provided_context`, `conversation_history`, `conversation_summary`, `raw_user_turn`.
-- **Planner output**: `query_intent`, `lesson_type`, `target_grade`, `key_concepts`, `search_queries`, `scope_status`, `scope_confidence`, `subject_concepts`, `pedagogy_concepts`.
-- **Retriever output**: `graphrag_results`, `retrieved_nodes`, `retrieved_relationships`, `recommendations`, `retrieval_confidence`, `curated_media`, `external_resources`.
-- **Corrective-RAG** (only when enabled): `retrieval_grade`, `retrieval_grade_reason`, `retrieval_attempts`, `retrieval_rewritten_query`, `retrieval_warning`.
-- **Writer output**: `lesson_plan_draft`, `lesson_plan_structured`, `sources_cited`.
-- **Critic output**: `critique`, `critique_score`, `approved`, `revision_instructions`.
-- **Metadata / final**: `revision_count`, `max_revisions`, `current_step`, `error`, `final_lesson_plan`, `final_metadata`.
+- **Output Planner**: `query_intent`, `lesson_type`, `target_grade`, `key_concepts`, `search_queries`, `scope_status`, `scope_confidence`, `subject_concepts`, `pedagogy_concepts`.
+- **Output Retriever**: `graphrag_results`, `retrieved_nodes`, `retrieved_relationships`, `recommendations`, `retrieval_confidence`, `curated_media`, `external_resources`.
+- **Corrective-RAG** (solo quando abilitato): `retrieval_grade`, `retrieval_grade_reason`, `retrieval_attempts`, `retrieval_rewritten_query`, `retrieval_warning`.
+- **Output Writer**: `lesson_plan_draft`, `lesson_plan_structured`, `sources_cited`.
+- **Output Critic**: `critique`, `critique_score`, `approved`, `revision_instructions`.
+- **Metadati / finale**: `revision_count`, `max_revisions`, `current_step`, `error`, `final_lesson_plan`, `final_metadata`.
 
-`create_initial_state(...)` is the single source of truth for the agent's input shape; both the WebUI service and the public API construct state through it. New nullable fields are designed to be additive so older callers behave identically.
+`create_initial_state(...)` è l'unica fonte di verità per la forma di input dell'agente; sia il servizio WebUI sia l'API pubblica costruiscono lo stato tramite essa. I nuovi campi nullable sono pensati per essere additivi così che i chiamanti più vecchi si comportino in modo identico.
 
-### 6.2 Planner agent
+### 6.2 Agente Planner
 
-`agent/agents/planner_agent.py` (node `plan`) performs **intent detection** (7 `QueryIntent` types), **scope detection** (`ScopeStatus`: `in_scope` / `partial_scope` / `out_of_scope` / `unknown`), and extracts `key_concepts` + `search_queries`. It also acts as **language layer L1**: it sees the full augmented query and can override the statistical seed language (L2 = `lingua` detector, L3 = default `it`). `plan_node` applies user-vs-history precedence on duration via `raw_user_turn` (the un-augmented current turn).
+`agent/agents/planner_agent.py` (nodo `plan`) esegue il **rilevamento dell'intento** (7 tipi `QueryIntent`), il **rilevamento dello scope** (`ScopeStatus`: `in_scope` / `partial_scope` / `out_of_scope` / `unknown`) ed estrae `key_concepts` + `search_queries`. Agisce anche come **layer linguistico L1**: vede la query aumentata completa e può sovrascrivere il seed linguistico statistico (L2 = detector `lingua`, L3 = default `it`). `plan_node` applica la precedenza utente-vs-storico sulla durata tramite `raw_user_turn` (il turno corrente non aumentato).
 
-### 6.3 Retriever agent
+### 6.3 Agente Retriever
 
-`agent/agents/retriever_agent.py` (node `retrieve`) executes the planner's `search_queries` against the GraphRAG retrieval layer (§7), aggregates nodes/relationships/recommendations, and assembles `curated_media` (videos, resources, citations, open_textbooks). For `partial_scope`/`out_of_scope` topics it attaches `external_resources` (Wikipedia, OER, papers) so the Writer can still compose a useful lesson. Uploaded teacher context is **never** sent to the retriever — it is Writer-only.
+`agent/agents/retriever_agent.py` (nodo `retrieve`) esegue le `search_queries` del planner sul livello di retrieval GraphRAG (§7), aggrega nodi/relazioni/raccomandazioni e assembla `curated_media` (video, risorse, citazioni, open_textbooks). Per i topic `partial_scope`/`out_of_scope` allega `external_resources` (Wikipedia, OER, paper) così che il Writer possa comunque comporre una lezione utile. Il contesto caricato dal docente **non** viene mai inviato al retriever — è solo per il Writer.
 
-### 6.4 Writer agent
+### 6.4 Agente Writer
 
-`agent/agents/writer_agent.py` (node `write`) generates the lesson plan. Its prompt is assembled from the **intent-specific prompt** (`agent/prompts/`), the **domain prompt extension** (`agent/configs/`), the **educational profile**, the **retrieved context + media**, optional **teacher-provided context**, and any **conversation history/summary**. Output length is bounded by `AIX_WRITER_MAX_TOKENS` (default 3500) with up to `AIX_WRITER_MAX_CONTINUATIONS` automatic continuations when the model hits `finish_reason="length"`. In the WebUI, writer tokens stream live (`writer_chunk`); the public API delivers the writer output as a single `writer` event per revision.
+`agent/agents/writer_agent.py` (nodo `write`) genera il piano di lezione. Il suo prompt è assemblato dal **prompt specifico per intento** (`agent/prompts/`), dall'**estensione di prompt di dominio** (`agent/configs/`), dal **profilo educativo**, dal **contesto recuperato + media**, dall'eventuale **contesto fornito dal docente** e da qualsiasi **storico/riassunto della conversazione**. La lunghezza dell'output è limitata da `AIX_WRITER_MAX_TOKENS` (default 3500) con fino a `AIX_WRITER_MAX_CONTINUATIONS` continuazioni automatiche quando il modello raggiunge `finish_reason="length"`. Nella WebUI i token del writer fanno streaming live (`writer_chunk`); l'API pubblica consegna l'output del writer come singolo evento `writer` per revisione.
 
-### 6.5 Critic agent and the revision loop
+### 6.5 Agente Critic e ciclo di revisione
 
-`agent/agents/critic_agent.py` (node `critique`) scores the draft on multiple criteria (average on a 1–5 scale) and returns an approve/revise decision. `should_continue_to_revision` routes the run:
+`agent/agents/critic_agent.py` (nodo `critique`) valuta la bozza su più criteri (media su scala 1–5) e ritorna una decisione approva/rivedi. `should_continue_to_revision` instrada la run:
 
 - `approved == true` → `finish` (END);
-- `not approved` **and** `revision_count < max_revisions` → `revise` (back to `write`) with `revision_instructions`;
-- otherwise → `finish`.
+- `not approved` **e** `revision_count < max_revisions` → `revise` (di nuovo a `write`) con `revision_instructions`;
+- altrimenti → `finish`.
 
-`max_revisions` defaults to `AIX_MAX_REVISIONS` (1). Robustness flags: `AIX_CRITIC_PARSE_ERROR_BEHAVIOR` (`approve`/`revise`/`raise`) controls behavior on unparseable critic JSON; `AIX_CRITIC_MODEL` (default a fast model) keeps the ~300-token classification cheap; `AIX_CRITIC_LESSON_MAX_CHARS` / `AIX_CRITIC_CONTEXT_MAX_CHARS` cap prefill to reduce latency.
+`max_revisions` ha default `AIX_MAX_REVISIONS` (1). Flag di robustezza: `AIX_CRITIC_PARSE_ERROR_BEHAVIOR` (`approve`/`revise`/`raise`) controlla il comportamento su JSON del critic non parsabile; `AIX_CRITIC_MODEL` (default un modello veloce) mantiene economica la classificazione da ~300 token; `AIX_CRITIC_LESSON_MAX_CHARS` / `AIX_CRITIC_CONTEXT_MAX_CHARS` limitano il prefill per ridurre la latenza.
 
-### 6.6 Corrective RAG (optional)
+### 6.6 Corrective RAG (opzionale)
 
-Gated by `AIX_CORRECTIVE_RAG_ENABLED` (default **off**). When on, `_build_workflow()` inserts a `grade_retrieval` node after `retrieve`:
+Controllato da `AIX_CORRECTIVE_RAG_ENABLED` (default **off**). Quando attivo, `_build_workflow()` inserisce un nodo `grade_retrieval` dopo `retrieve`:
 
 ```
 plan → retrieve → grade_retrieval ─[continue]→ write → critique → [revise|finish]
@@ -700,183 +715,222 @@ plan → retrieve → grade_retrieval ─[continue]→ write → critique → [r
                         └─[retry]→ retrieve   (bounded by AIX_CORRECTIVE_RAG_MAX_ATTEMPTS, default 2)
 ```
 
-A grader LLM classifies the retrieval as `relevant` / `ambiguous` / `irrelevant`. Non-relevant grades trigger a bounded retry with a rewritten query; after the attempt budget is exhausted, the run falls through to the Writer with `retrieval_warning=true` so the lesson carries an explicit low-confidence caveat. When the flag is off, the topology is byte-identical to the pre-feature pipeline.
+Un LLM grader classifica il retrieval come `relevant` / `ambiguous` / `irrelevant`. I grade non rilevanti innescano un retry limitato con una query riscritta; esaurito il budget di tentativi, la run prosegue verso il Writer con `retrieval_warning=true` così che la lezione porti un'esplicita avvertenza di bassa confidenza. Quando il flag è off, la topologia è identica byte-per-byte alla pipeline pre-feature.
 
-### 6.7 LangGraph orchestration
+### 6.7 Orchestrazione LangGraph
 
-`agent/graph/lesson_planner_graph.py` builds the `StateGraph`. Two compile paths share one topology (`_build_workflow`):
+`agent/graph/lesson_planner_graph.py` costruisce lo `StateGraph`. Due percorsi di compile condividono una topologia (`_build_workflow`):
 
-- `build_lesson_planner_graph()` (sync, **no** checkpointer) — for legacy/ephemeral callers.
-- `build_lesson_planner_graph_async()` (async, **with** the checkpointer when available) — used by the WebUI, the public API, and MCP.
+- `build_lesson_planner_graph()` (sync, **senza** checkpointer) — per chiamanti legacy/effimeri.
+- `build_lesson_planner_graph_async()` (async, **con** checkpointer quando disponibile) — usato dalla WebUI, dall'API pubblica e da MCP.
 
-`LessonPlannerPipeline` wraps the compiled graph; `AgentOrchestrator` (`agent/orchestrator.py`) is the public, ergonomic entry point (`create_lesson_plan(...)`). The execution engine for streaming is `aix.webui.agent.service` (`run_agent_stream` for the WebUI/DB path, `stream_agent_events` for the DB-less API path) — both drive `graph.astream(..., stream_mode="updates")` and translate state diffs into `StreamEvent`s.
+`LessonPlannerPipeline` avvolge il grafo compilato; `AgentOrchestrator` (`agent/orchestrator.py`) è il punto d'ingresso pubblico ed ergonomico (`create_lesson_plan(...)`). L'engine di esecuzione per lo streaming è `aix.webui.agent.service` (`run_agent_stream` per il percorso WebUI/DB, `stream_agent_events` per il percorso API senza DB) — entrambi pilotano `graph.astream(..., stream_mode="updates")` e traducono i diff di stato in `StreamEvent`.
 
-### 6.8 Multi-turn memory & checkpointing
+### 6.8 Memoria multi-turno & checkpointing
 
-`agent/graph/checkpointer.py` resolves the checkpointer from `LANGGRAPH_DATABASE_URL`: `AsyncPostgresSaver` for `postgresql[+driver]://…`, `AsyncSqliteSaver` for SQLite (the dev default `data/agent_threads.db`). Every streaming run passes `thread_config(thread_id)`; the WebUI uses `str(lesson.id)` so follow-up turns share state. For long threads, the service applies **summary-buffer windowing** (`AIX_CONVERSATION_WINDOW_TURNS`, default 4): the most recent turns are kept verbatim and older turns are LLM-summarized into `conversation_summary`. The WebUI also persists a SQL transcript (`lesson_message` rows) as a dialect-agnostic source of truth that survives a checkpointer wipe.
+`agent/graph/checkpointer.py` risolve il checkpointer da `LANGGRAPH_DATABASE_URL`: `AsyncPostgresSaver` per `postgresql[+driver]://…`, `AsyncSqliteSaver` per SQLite (il default dev `data/agent_threads.db`). Ogni run in streaming passa `thread_config(thread_id)`; la WebUI usa `str(lesson.id)` così i turni successivi condividono lo stato. Per i thread lunghi, il servizio applica un **windowing a summary-buffer** (`AIX_CONVERSATION_WINDOW_TURNS`, default 4): i turni più recenti sono mantenuti verbatim e quelli più vecchi sono riassunti via LLM in `conversation_summary`. La WebUI persiste anche un trascritto SQL (righe `lesson_message`) come fonte di verità agnostica dal dialetto che sopravvive a un wipe del checkpointer.
 
-### 6.9 Prompt system
+### 6.9 Sistema dei prompt
 
-`agent/prompts/` holds intent-specific prompt builders (planner/writer/critic); `agent/configs/domain_prompts.py` holds domain-specific extensions (UDL vs Neuro tone, terminology, and constraints). Reference prompt texts are mirrored under `docs/prompts_reference/`. This separation lets the same agent code specialize per domain without branching logic.
+`agent/prompts/` contiene i builder di prompt specifici per intento (planner/writer/critic); `agent/configs/domain_prompts.py` contiene le estensioni specifiche per dominio (tono, terminologia e vincoli UDL vs Neuro). I testi di prompt di riferimento sono rispecchiati sotto `docs/prompts_reference/`. Questa separazione permette allo stesso codice degli agenti di specializzarsi per dominio senza logica condizionale.
 
 ---
 
-## 7. Retrieval Layer
+## 7. Livello di retrieval
 
-### 7.1 GraphRAG approach
+### 7.1 Approccio GraphRAG
 
-Retrieval is **graph-first**: the system grounds answers in a curated Neo4j Knowledge Graph rather than relying solely on a vector store. A teacher query is converted to Cypher, executed against Neo4j, optionally expanded via semantic similarity, and structured into an educational context object the agents consume. This is what makes outputs *evidence-based* and auditable.
+Il retrieval è **graph-first**: il sistema ancora le risposte a un Knowledge Graph Neo4j curato anziché affidarsi solo a un vector store. Una query del docente viene convertita in Cypher, eseguita su Neo4j, opzionalmente espansa via similarità semantica e strutturata in un oggetto di contesto educativo che gli agenti consumano. È ciò che rende gli output *evidence-based* e auditabili.
 
-### 7.2 Text2Cypher (multilingual)
+### 7.2 Text2Cypher (multilingue)
 
-`retrieval/text2cypher.py` converts natural language to Cypher; `retrieval/multilingual_text2cypher.py` adds Italian→English translation so Italian queries match the (partly English) graph vocabulary. Generated Cypher is optionally validated and self-repaired before execution. Tuning: `TEXT2CYPHER_MODEL` (a fast/cheap model, default `google/gemini-2.5-flash`), `TEXT2CYPHER_MAX_QUERY_LENGTH`, `TEXT2CYPHER_DEFAULT_LIMIT`, `TEXT2CYPHER_ENABLE_VALIDATION`, `TEXT2CYPHER_ENABLE_EXECUTION` (set false for dry-run).
+`retrieval/text2cypher.py` converte il linguaggio naturale in Cypher; `retrieval/multilingual_text2cypher.py` aggiunge la traduzione Italiano→Inglese così che le query italiane corrispondano al vocabolario (in parte inglese) del grafo. Il Cypher generato è opzionalmente validato e auto-riparato prima dell'esecuzione. Tuning: `TEXT2CYPHER_MODEL` (un modello veloce/economico, default `google/gemini-2.5-flash`), `TEXT2CYPHER_MAX_QUERY_LENGTH`, `TEXT2CYPHER_DEFAULT_LIMIT`, `TEXT2CYPHER_ENABLE_VALIDATION`, `TEXT2CYPHER_ENABLE_EXECUTION` (impostare a false per dry-run).
 
-### 7.3 Hybrid graph retriever (Neo4j + Node2Vec / embeddings)
+### 7.3 Retriever ibrido sul grafo (Neo4j + Node2Vec / embeddings)
 
-`retrieval/graph_retriever.py` combines three signals:
+`retrieval/graph_retriever.py` combina tre segnali:
 
-1. **Direct graph traversal** — the generated Cypher.
-2. **Semantic search** — embedding similarity over graph nodes.
-3. **Neighbor expansion** — pulling related concepts for completeness.
+1. **Traversal diretto del grafo** — il Cypher generato.
+2. **Ricerca semantica** — similarità di embedding sui nodi del grafo.
+3. **Espansione dei vicini** — recupero dei concetti correlati per completezza.
 
-Embedding modes (`EMBEDDING_MODE`):
+Modalità di embedding (`EMBEDDING_MODE`):
 
-| Mode | Behavior |
+| Modalità | Comportamento |
 |---|---|
-| `node2vec` | Pre-trained graph embeddings only; fast, no API call; language-blind |
-| `hybrid_semantic` | `EMBEDDING_NODE2VEC_WEIGHT` (default 0.4) Node2Vec + (0.6) text embeddings; **recommended for production** (handles Italian, synonyms, paraphrase) |
-| `openai_only` | Pure semantic embeddings (use when a domain has no Node2Vec model) |
+| `node2vec` | Solo embeddings di grafo pre-addestrati; veloce, nessuna chiamata API; language-blind |
+| `hybrid_semantic` | `EMBEDDING_NODE2VEC_WEIGHT` (default 0.4) Node2Vec + (0.6) text embeddings; **raccomandato per la produzione** (gestisce italiano, sinonimi, parafrasi) |
+| `openai_only` | Embeddings puramente semantici (da usare quando un dominio non ha modello Node2Vec) |
 
-Relevant settings: `EMBEDDING_MODEL` (default `openai/text-embedding-3-small`, 1536-dim), `EMBEDDING_SEMANTIC_THRESHOLD` (default 0.7), `EMBEDDINGS_CACHE_DIR`, `NODE2VEC_MODEL_DIR`. **Warning:** changing `EMBEDDING_MODEL` requires deleting `artifacts/embeddings_cache/` so node and query vectors stay dimension-compatible.
+Impostazioni rilevanti: `EMBEDDING_MODEL` (default `openai/text-embedding-3-small`, 1536-dim), `EMBEDDING_SEMANTIC_THRESHOLD` (default 0.7), `EMBEDDINGS_CACHE_DIR`, `NODE2VEC_MODEL_DIR`. **Attenzione:** cambiare `EMBEDDING_MODEL` richiede di eliminare `artifacts/embeddings_cache/` così che i vettori di nodo e query restino dimensionalmente compatibili.
 
 ### 7.4 Context builder
 
-`retrieval/context_builder.py` turns raw graph results into a structured educational context: methodology recommendations with confidence levels, concept groupings, and a student-profile view. This structured object — not raw rows — is what the agents reason over, keeping prompts compact and consistent.
+`retrieval/context_builder.py` trasforma i risultati grezzi del grafo in un contesto educativo strutturato: raccomandazioni metodologiche con livelli di confidenza, raggruppamenti di concetti e una vista per profilo studente. Questo oggetto strutturato — non le righe grezze — è ciò su cui gli agenti ragionano, mantenendo i prompt compatti e coerenti.
 
 ### 7.5 Embeddings & artifacts
 
-Pre-trained artifacts ship in the repo and are mounted as a Docker volume in production:
+Gli artefatti pre-addestrati sono inclusi nel repo e montati come volume Docker in produzione:
 
-- `artifacts/node2vec/{domain}_node2vec_embeddings.npz` — graph embeddings (128-dim; walk length 80, 200 walks).
-- `artifacts/embeddings_cache/{domain}_openai_embeddings.json` — cached text embeddings.
+- `artifacts/node2vec/{domain}_node2vec_embeddings.npz` — embeddings di grafo (128-dim; walk length 80, 200 walk).
+- `artifacts/embeddings_cache/{domain}_openai_embeddings.json` — text embeddings in cache.
 
-Retraining: `python scripts/ml/train_node2vec.py {neuro|udl}`. First-time hybrid setup precomputes text embeddings via `python -m aix.retrieval.graph_retriever --precompute {domain}`.
+Re-training: `python scripts/ml/train_node2vec.py {neuro|udl}`. Il primo setup ibrido precalcola i text embeddings via `python -m aix.retrieval.graph_retriever --precompute {domain}`.
 
-### 7.6 External sources (hybrid / out-of-scope)
+Nota: la cache del livello media dinamici vive separatamente sotto `artifacts/media_cache/` (vedere §7.8) ed è una cache a runtime git-ignored e rigenerabile, distinta da queste cache di embedding.
 
-When the Planner marks a topic `partial_scope`/`out_of_scope`, the Retriever supplements the KG with verified external sources via `agent/media/` (and `agent/tools/`): Wikipedia, OpenAlex/Semantic Scholar (academic citations), OER repositories, and YouTube (via `yt-dlp` + oEmbed, no API quota). `SEMANTIC_SCHOLAR_API_KEY` is optional and only raises rate limits. These sources fill the `external_resources` / media buckets so the lesson remains useful even outside the KG's core coverage, while the UI clearly signals reduced KG anchoring (coverage tiers).
+### 7.6 Fonti esterne (ibrido / out-of-scope)
 
-### 7.7 Knowledge Graph schema (UDL & Neuro domains)
+Quando il Planner marca un topic come `partial_scope`/`out_of_scope`, il Retriever integra il KG con fonti esterne verificate via `agent/media/` (e `agent/tools/`): Wikipedia, OpenAlex/Semantic Scholar (citazioni accademiche), repository OER e YouTube. Per YouTube il recupero usa la **YouTube Data API** quando `YOUTUBE_API_KEY` è configurata (risultati limitati a `videoEmbeddable=true` e `safeSearch=strict`); senza chiave ricade su URL di ricerca e il pool curato resta il riferimento. `SEMANTIC_SCHOLAR_API_KEY` è opzionale e serve solo ad alzare i rate limit. Queste fonti riempiono i bucket `external_resources` / media così che la lezione resti utile anche fuori dalla copertura centrale del KG, mentre la UI segnala chiaramente l'ancoraggio ridotto al KG (coverage tier).
 
-Two domains are served from the same Neo4j instance:
+### 7.7 Schema del Knowledge Graph (domini UDL & Neuro)
 
-- **`neuro`** — neuroscience-of-learning concepts, methodologies, and strategies.
-- **`udl`** — Universal Design for Learning (inclusive pedagogy).
+Due domini sono serviti dalla stessa istanza Neo4j:
 
-Nodes represent educational concepts/methodologies/strategies; relationships encode pedagogical links (e.g. `BELONGS_TO`, `ADDRESSES`, `SUPPORTS`). Domain selection is per-request (`domain` field). Source dumps and the contract format live under `data/kg/{neuro,udl}/` and `data/reference/JSON_reference.json`; ingestion is handled by `scripts/ingest/data_ingestion_neo4j.py`.
+- **`neuro`** — concetti, metodologie e strategie di neuroscienze dell'apprendimento.
+- **`udl`** — Universal Design for Learning (didattica inclusiva).
 
-## 8. Configuration & Environment
+I nodi rappresentano concetti/metodologie/strategie educative; le relazioni codificano legami pedagogici (es. `BELONGS_TO`, `ADDRESSES`, `SUPPORTS`). La selezione del dominio è per richiesta (campo `domain`). I dump sorgente e il formato di contratto vivono sotto `data/kg/{neuro,udl}/` e `data/reference/JSON_reference.json`; l'ingestion è gestita da `scripts/ingest/data_ingestion_neo4j.py`.
 
-### 8.1 Configuration model
+### 7.8 Livello media dinamici (live media)
 
-Configuration is environment-driven. `src/aix/core/config.py` loads variables via `python-dotenv` (`load_dotenv()`) and exposes typed config objects (`Neo4jConfig`, `OpenAIConfig`, …) plus a singleton `config`. There is **no** secret in source control: `.env` (dev) and `deploy/.env.prod` (prod) are git-ignored. Templates are committed: `.env.example` (full dev surface) and `deploy/.env.prod.example` (production subset).
+Oltre alle fonti esterne pilotate dal Retriever (§7.6), esiste un **livello media dinamici ("live")** separato, implementato in `src/aix/agent/media/` (`live_media.py`, `media_cache.py`, `media_config.py`, `media_ranker.py`). Recupera media dinamici (paper OpenAlex, voci Wikipedia, video YouTube) in base ai concetti/alla query della lezione e li restituisce nella **stessa forma dict** che il retriever produce per `external_resources`, così il pannello media li mostra senza modifiche ai template.
 
-The `OpenAIConfig` is provider-agnostic (OpenRouter or OpenAI) and detects reasoning/"thinking" models (Claude Sonnet/Opus 4.x, o-series, DeepSeek R1) to adjust API parameters automatically (`max_completion_tokens` vs `max_tokens`, dropping `temperature`, requesting reasoning tokens). This is why switching models rarely requires code changes.
+Proprietà di design (conformi al piano approvato):
 
-### 8.2 Environment variables reference
+- **Off-critical-path.** Nulla qui è chiamato dalla pipeline planner → retriever → writer → critic; è pensato per essere invocato da un worker off-path, quindi la latenza di generazione delle lezioni resta invariata.
+- **Flag-gated.** Quando `AIX_MEDIA_LIVE_ENABLED` è false (default), ogni entry point è un no-op che ritorna `{}` — cioè il comportamento odierno.
+- **Cache-first.** Il pool di candidati BROAD è letto/scritto da `MediaCache` (Redis in prod / diskcache in dev / null fallback), con chiave sui concetti, così che set di concetti ripetuti siano serviti istantaneamente e la quota esterna sia ammortizzata. La cache di sviluppo vive sotto `artifacts/media_cache/` (vedere §3.4) con TTL di 14 giorni.
+- **Bounded & fail-safe.** Un timeout globale per chiamata limita il lavoro, ogni fallimento di sorgente è isolato e qualsiasi errore degrada a `{}` — senza mai sollevare verso il chiamante.
+- **Re-ranking semantico (Phase 3).** Quando `AIX_MEDIA_RERANK_ENABLED` è true (default off), gli item live sono riordinati rispetto a query + contenuto della lezione con un punteggio combinato `w_semantic·cosine + w_quality·signal` (`media_ranker.py`); con il flag off gli item mantengono l'ordine di fetch.
+- **Deduplica.** Voci Wikipedia deduplicate per URL canonico (concetti sinonimi risolvono alla stessa pagina), paper e video deduplicati per identificatore, per evitare duplicati nel pannello media.
 
-**Core services**
-
-| Variable | Default | Purpose |
-|---|---|---|
-| `NEO4J_URI` | `bolt://localhost:7687` | Neo4j connection (`bolt+s://` for TLS/Aura) |
-| `NEO4J_USER` / `NEO4J_PASSWORD` | `neo4j` / — | Neo4j credentials |
-| `NEO4J_ENCRYPTED` | `1` | TLS toggle |
-| `OPENROUTER_API_KEY` | — | LLM provider key (preferred) |
-| `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | LLM endpoint |
-| `OPENAI_API_KEY` | — | Fallback if OpenRouter unset |
-| `LLM_MODEL` | `anthropic/claude-sonnet-4-6` | Primary lesson-generation model |
-
-**Retrieval / embeddings**
-
-| Variable | Default | Purpose |
-|---|---|---|
-| `EMBEDDING_MODE` | `hybrid_semantic` | `node2vec` / `hybrid_semantic` / `openai_only` |
-| `EMBEDDING_MODEL` | `openai/text-embedding-3-small` | Text embedding model (cache-coupled) |
-| `EMBEDDING_NODE2VEC_WEIGHT` | `0.4` | Hybrid weight (Node2Vec share) |
-| `EMBEDDING_SEMANTIC_THRESHOLD` | `0.7` | Min semantic similarity |
-| `NODE2VEC_MODEL_DIR` | `./artifacts/node2vec` | Node2Vec artifacts |
-| `TEXT2CYPHER_MODEL` | `google/gemini-2.5-flash` | Cypher generation + translation |
-
-**WebUI / auth / persistence**
-
-| Variable | Default | Purpose |
-|---|---|---|
-| `WEBUI_AUTH_SECRET` | dev fallback (warns) | HS256 signing secret (cookie + Bearer). **Must** be random in prod |
-| `WEBUI_DATABASE_URL` | SQLite `data/webui/webui.db` | Users/lessons/messages store |
-| `WEBUI_TOKEN_LIFETIME_SECONDS` | `86400` | Session lifetime |
-| `WEBUI_COOKIE_SECURE` | `0` | Set `1` behind HTTPS |
-| `WEBUI_CORS_ALLOW_ORIGINS` | — | Allowed origins (Mode B / cross-origin) |
-| `LANGGRAPH_DATABASE_URL` | SQLite `data/agent_threads.db` | LangGraph checkpointer store |
-
-**Agent tuning flags** (all safe-defaulted via `os.getenv` — see `.env.example` for the annotated list)
-
-| Variable | Default | Purpose |
-|---|---|---|
-| `AIX_MAX_REVISIONS` | `1` | Writer→Critic revision cycles (0–4) |
-| `AIX_WRITER_MAX_TOKENS` | `3500` | Writer output ceiling |
-| `AIX_WRITER_MAX_CONTINUATIONS` | `1` | Auto-continue on length cutoff |
-| `AIX_THINKING_EFFORT` | `low` | Reasoning-token budget (`low`/`medium`/`high`) |
-| `AIX_CRITIC_MODEL` | (→ `TEXT2CYPHER_MODEL`) | Critic model (fast/cheap) |
-| `AIX_CRITIC_PARSE_ERROR_BEHAVIOR` | `approve` | On unparseable critic JSON (`approve`/`revise`/`raise`) |
-| `AIX_CORRECTIVE_RAG_ENABLED` | `false` | Enable retrieval-grading loop |
-| `AIX_CORRECTIVE_RAG_MAX_ATTEMPTS` | `2` | Retry budget when CR on (1–4) |
-| `AIX_CONVERSATION_WINDOW_TURNS` | `4` | Verbatim turns before summary buffering |
-| `AIX_LLM_PROBE_ENABLED` | `true` | Startup LLM connectivity probe |
-
-**Observability / ops**
-
-| Variable | Default | Purpose |
-|---|---|---|
-| `SENTRY_DSN` | — | GlitchTip/Sentry DSN (empty = disabled) |
-| `ENVIRONMENT` | `production` | Issue label (`production`/`staging`/`development`) |
-| `LOG_LEVEL` | `INFO` | Log verbosity |
-| `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` / `LANGFUSE_HOST` | — | LLM tracing |
-
-**Deployment (Caddy / Postgres / TLS)**
-
-| Variable | Purpose |
-|---|---|
-| `AIX_DOMAIN` | Public hostname Caddy serves (e.g. `agente.aiforlearning.digital`) |
-| `AIX_TLS_EMAIL` | Let's Encrypt registration/expiry email |
-| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | Postgres credentials (chosen by us; compose creates the DB on first boot) |
-| `GIT_SHA` | Build arg stamped into `CODE_VERSION` for traceability |
-
-### 8.3 Secrets management
-
-- Secrets live only in `.env` (dev) / `deploy/.env.prod` (prod), never in git. On the VM, `chmod 600 deploy/.env.prod`.
-- `WEBUI_AUTH_SECRET` is generated with `python -c "import secrets; print(secrets.token_urlsafe(48))"`. If unset, a dev-only fallback is used and a warning is logged — acceptable locally, unacceptable in production.
-- `POSTGRES_*` are operator-chosen (not provided by a third party); `docker-compose.prod.yml` derives both `WEBUI_DATABASE_URL` and `LANGGRAPH_DATABASE_URL` from them so there is a single source of truth.
-- LLM and Neo4j keys are provided by their respective providers (OpenRouter dashboard, Neo4j Aura/FEM).
-
-### 8.4 Configuration profiles (dev / staging / prod)
-
-- **Dev** — SQLite everywhere, HTTP localhost, `WEBUI_COOKIE_SECURE=0`, optional observability, `.env`.
-- **Staging** — Postgres, HTTPS via Caddy, `ENVIRONMENT=staging`, observability on, stricter critic behavior (`AIX_CRITIC_PARSE_ERROR_BEHAVIOR=raise`) for investigation.
-- **Prod** — Postgres, HTTPS, `WEBUI_COOKIE_SECURE=1`, random `WEBUI_AUTH_SECRET`, `LOG_LEVEL=INFO`, observability on, `deploy/.env.prod`.
+Trasparenza UI: i media **curati** mostrano un badge `✓ Verificato`, quelli **dinamici** un badge `auto`. In ogni caso l'output della lezione resta contenuto generato dall'IA da rivedere da parte del docente (vedere §13.7).
 
 ---
 
-## 9. Local Development
+## 8. Configurazione & ambiente
 
-### 9.1 Prerequisites
+### 8.1 Modello di configurazione
 
-- **Python 3.11** recommended for local dev (project supports ≥3.10; production Docker pins 3.12).
-- A reachable **Neo4j** (local or the shared Aura/FEM instance).
-- An **OpenRouter** (or OpenAI) API key.
-- Git, and on Windows a PowerShell shell (the repo is developed cross-platform).
+La configurazione è guidata dall'ambiente. `src/aix/core/config.py` carica le variabili via `python-dotenv` (`load_dotenv()`) ed espone oggetti di config tipizzati (`Neo4jConfig`, `OpenAIConfig`, …) più un singleton `config`. **Nessun** segreto è nel source control: `.env` (dev) e `deploy/.env.prod` (prod) sono git-ignored. I template sono committati: `.env.example` (superficie dev completa) e `deploy/.env.prod.example` (sottoinsieme di produzione).
 
-### 9.2 Installation
+`OpenAIConfig` è agnostico rispetto al provider (OpenRouter o OpenAI) e rileva i modelli reasoning/"thinking" (Claude Sonnet/Opus 4.x, serie o, DeepSeek R1) per adattare automaticamente i parametri API (`max_completion_tokens` vs `max_tokens`, eliminando `temperature`, richiedendo reasoning token). È per questo che cambiare modello raramente richiede modifiche al codice.
+
+### 8.2 Riferimento variabili d'ambiente
+
+**Servizi core**
+
+| Variabile | Default | Scopo |
+|---|---|---|
+| `NEO4J_URI` | `bolt://localhost:7687` | Connessione Neo4j (`bolt+s://` per TLS/Aura) |
+| `NEO4J_USER` / `NEO4J_PASSWORD` | `neo4j` / — | Credenziali Neo4j |
+| `NEO4J_ENCRYPTED` | `1` | Toggle TLS |
+| `OPENROUTER_API_KEY` | — | Chiave del provider LLM (preferito) |
+| `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | Endpoint LLM |
+| `OPENAI_API_KEY` | — | Fallback se OpenRouter non impostato |
+| `LLM_MODEL` | `anthropic/claude-sonnet-4-6` | Modello primario di generazione lezioni |
+
+**Retrieval / embeddings**
+
+| Variabile | Default | Scopo |
+|---|---|---|
+| `EMBEDDING_MODE` | `hybrid_semantic` | `node2vec` / `hybrid_semantic` / `openai_only` |
+| `EMBEDDING_MODEL` | `openai/text-embedding-3-small` | Modello di text embedding (accoppiato alla cache) |
+| `EMBEDDING_NODE2VEC_WEIGHT` | `0.4` | Peso ibrido (quota Node2Vec) |
+| `EMBEDDING_SEMANTIC_THRESHOLD` | `0.7` | Similarità semantica minima |
+| `NODE2VEC_MODEL_DIR` | `./artifacts/node2vec` | Artefatti Node2Vec |
+| `TEXT2CYPHER_MODEL` | `google/gemini-2.5-flash` | Generazione Cypher + traduzione |
+
+**WebUI / auth / persistenza**
+
+| Variabile | Default | Scopo |
+|---|---|---|
+| `WEBUI_AUTH_SECRET` | fallback dev (avvisa) | Segreto di firma HS256 (cookie + Bearer). **Deve** essere random in prod |
+| `WEBUI_DATABASE_URL` | SQLite `data/webui/webui.db` | Store utenti/lezioni/messaggi |
+| `WEBUI_TOKEN_LIFETIME_SECONDS` | `86400` | Durata della sessione |
+| `WEBUI_COOKIE_SECURE` | `0` | Impostare `1` dietro HTTPS |
+| `WEBUI_CORS_ALLOW_ORIGINS` | — | Origini ammesse (Mode B / cross-origin) |
+| `LANGGRAPH_DATABASE_URL` | SQLite `data/agent_threads.db` | Store del checkpointer LangGraph |
+
+**Flag di tuning degli agenti** (tutti con default sicuro via `os.getenv` — vedere `.env.example` per l'elenco annotato)
+
+| Variabile | Default | Scopo |
+|---|---|---|
+| `AIX_MAX_REVISIONS` | `1` | Cicli di revisione Writer→Critic (0–4) |
+| `AIX_WRITER_MAX_TOKENS` | `3500` | Tetto di output del Writer |
+| `AIX_WRITER_MAX_CONTINUATIONS` | `1` | Auto-continuazione su taglio per lunghezza |
+| `AIX_THINKING_EFFORT` | `low` | Budget di reasoning token (`low`/`medium`/`high`) |
+| `AIX_CRITIC_MODEL` | (→ `TEXT2CYPHER_MODEL`) | Modello Critic (veloce/economico) |
+| `AIX_CRITIC_PARSE_ERROR_BEHAVIOR` | `approve` | Su JSON del critic non parsabile (`approve`/`revise`/`raise`) |
+| `AIX_CORRECTIVE_RAG_ENABLED` | `false` | Abilita il ciclo di grading del retrieval |
+| `AIX_CORRECTIVE_RAG_MAX_ATTEMPTS` | `2` | Budget di retry quando CR è on (1–4) |
+| `AIX_CONVERSATION_WINDOW_TURNS` | `4` | Turni verbatim prima del summary buffering |
+| `AIX_LLM_PROBE_ENABLED` | `true` | Connectivity probe LLM all'avvio |
+
+**Media dinamici / live** (vedere §7.8; tutti opzionali e con default sicuro — il livello è disattivo finché `AIX_MEDIA_LIVE_ENABLED` non è true)
+
+| Variabile | Default | Scopo |
+|---|---|---|
+| `AIX_MEDIA_LIVE_ENABLED` | `false` | Master switch del livello media live; off = no-op |
+| `AIX_MEDIA_MAX_VIDEOS` | `5` | Cap per bucket — video |
+| `AIX_MEDIA_MAX_PAPERS` | `3` | Cap per bucket — paper |
+| `AIX_MEDIA_MAX_WEB` | `6` | Cap per bucket — link web |
+| `AIX_MEDIA_CACHE_BACKEND` | `diskcache` (`redis` se è impostato un URL Redis) | Backend di cache (`redis`/`diskcache`/`none`) |
+| `AIX_MEDIA_CACHE_DIR` | `artifacts/media_cache` | Directory della cache diskcache (dev) |
+| `AIX_MEDIA_CACHE_TTL` | `1209600` | TTL della cache in secondi (14 giorni) |
+| `AIX_MEDIA_CACHE_NAMESPACE` | `aix:media:v1` | Namespace di chiave versionato (flush indipendente) |
+| `AIX_MEDIA_REDIS_URL` / `REDIS_URL` | — | URL Redis condiviso (abilita il backend redis in prod) |
+| `AIX_MEDIA_REFRESH_ENABLED` | `false` | Job schedulato di refresh in background (off di default) |
+| `AIX_MEDIA_RERANK_ENABLED` | `false` | Re-ranking semantico degli item live (Phase 3) |
+| `AIX_MEDIA_RERANK_W_SEMANTIC` | `0.7` | Peso semantico nel punteggio combinato |
+| `AIX_MEDIA_RERANK_W_QUALITY` | `0.3` | Peso di qualità nel punteggio combinato |
+| `YOUTUBE_API_KEY` | — | Abilita il fetch live di YouTube via Data API (senza chiave: fallback su URL di ricerca) |
+| `SEMANTIC_SCHOLAR_API_KEY` | — | Opzionale; alza i rate limit di Semantic Scholar |
+
+**Osservabilità / ops**
+
+| Variabile | Default | Scopo |
+|---|---|---|
+| `SENTRY_DSN` | — | DSN GlitchTip/Sentry (vuoto = disabilitato) |
+| `ENVIRONMENT` | `production` | Label degli issue (`production`/`staging`/`development`) |
+| `LOG_LEVEL` | `INFO` | Verbosità dei log |
+| `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` / `LANGFUSE_HOST` | — | Tracing LLM |
+
+**Deployment (Caddy / Postgres / TLS)**
+
+| Variabile | Scopo |
+|---|---|
+| `AIX_DOMAIN` | Hostname pubblico servito da Caddy (es. `agente.aiforlearning.digital`) |
+| `AIX_TLS_EMAIL` | Email di registrazione/scadenza Let's Encrypt |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | Credenziali Postgres (scelte da noi; compose crea il DB al primo boot) |
+| `GIT_SHA` | Build arg impresso in `CODE_VERSION` per tracciabilità |
+
+### 8.3 Gestione dei segreti
+
+- I segreti vivono solo in `.env` (dev) / `deploy/.env.prod` (prod), mai in git. Sulla VM, `chmod 600 deploy/.env.prod`.
+- `WEBUI_AUTH_SECRET` è generato con `python -c "import secrets; print(secrets.token_urlsafe(48))"`. Se non impostato, viene usato un fallback solo-dev e viene loggato un warning — accettabile in locale, inaccettabile in produzione.
+- I `POSTGRES_*` sono scelti dall'operatore (non forniti da una terza parte); `docker-compose.prod.yml` deriva sia `WEBUI_DATABASE_URL` sia `LANGGRAPH_DATABASE_URL` da essi, così c'è un'unica fonte di verità.
+- Le chiavi LLM e Neo4j sono fornite dai rispettivi provider (dashboard OpenRouter, Neo4j Aura/FEM).
+
+### 8.4 Profili di configurazione (dev / staging / prod)
+
+- **Dev** — SQLite ovunque, HTTP localhost, `WEBUI_COOKIE_SECURE=0`, osservabilità opzionale, `.env`.
+- **Staging** — Postgres, HTTPS via Caddy, `ENVIRONMENT=staging`, osservabilità on, comportamento critic più severo (`AIX_CRITIC_PARSE_ERROR_BEHAVIOR=raise`) per investigazione.
+- **Prod** — Postgres, HTTPS, `WEBUI_COOKIE_SECURE=1`, `WEBUI_AUTH_SECRET` random, `LOG_LEVEL=INFO`, osservabilità on, `deploy/.env.prod`.
+
+---
+
+## 9. Sviluppo locale
+
+### 9.1 Prerequisiti
+
+- **Python 3.11** raccomandato per il dev locale (il progetto supporta ≥3.10; il Docker di produzione fissa 3.12).
+- Un **Neo4j** raggiungibile (locale o l'istanza condivisa Aura/FEM).
+- Una chiave API **OpenRouter** (o OpenAI).
+- Git, e su Windows una shell PowerShell (il repo è sviluppato cross-platform).
+
+### 9.2 Installazione
 
 ```bash
 git clone <repo-url> && cd graphaixlearning
@@ -885,17 +939,17 @@ pip install -e ".[dev]"                              # editable install + dev ex
 cp .env.example .env                                 # then fill credentials
 ```
 
-`pip install -e .` registers the `aix` package so `aix.*` imports resolve from any working directory. The `[dev]` extra adds the test/lint toolchain used by `make test` / `make lint` / CI.
+`pip install -e .` registra il package `aix` così che gli import `aix.*` si risolvano da qualsiasi working directory. L'extra `[dev]` aggiunge la toolchain di test/lint usata da `make test` / `make lint` / CI.
 
-### 9.3 Running locally
+### 9.3 Esecuzione in locale
 
-The canonical command for end-to-end local testing (serves every surface on one port):
+Il comando canonico per il test end-to-end locale (serve ogni superficie su una porta):
 
 ```bash
 python -m uvicorn aix.api.main:app --host 127.0.0.1 --port 8765 --log-level info
 ```
 
-This single process serves `/docs`, `/webui/`, `/api/v1/context`, `/api/v1/agent/run`, `/api/v1/agent/stream`, `/mcp/`, and `/auth/jwt/login`. Add `--reload` for autoreload during development. Other entry points:
+Questo singolo processo serve `/docs`, `/webui/`, `/api/v1/context`, `/api/v1/agent/run`, `/api/v1/agent/stream`, `/mcp/` e `/auth/jwt/login`. Aggiungere `--reload` per l'autoreload durante lo sviluppo. Altri entry point:
 
 ```bash
 python apps/cli/run_agent.py                  # interactive agent CLI (or: make agent)
@@ -904,9 +958,9 @@ streamlit run apps/streamlit/main.py          # legacy demo (retirement banner)
 python -m aix.mcp.stdio_main                  # MCP over stdio (Claude Desktop / Cursor)
 ```
 
-### 9.4 Knowledge Graph setup
+### 9.4 Setup del Knowledge Graph
 
-Pre-baked KG dumps ship in the repo, so no data prep is needed for the default setup:
+I dump del KG pre-confezionati sono inclusi nel repo, quindi non serve data prep per il setup di default:
 
 ```bash
 python scripts/ingest/data_ingestion_neo4j.py \
@@ -914,38 +968,38 @@ python scripts/ingest/data_ingestion_neo4j.py \
     --password YOUR_NEO4J_PASSWORD --clear        # swap in kg_udl_neo4j.json for UDL
 ```
 
-Node2Vec artifacts also ship pre-trained; retrain only if you change the graph: `python scripts/ml/train_node2vec.py {neuro|udl}`.
+Anche gli artefatti Node2Vec sono inclusi pre-addestrati; ri-addestrare solo se si cambia il grafo: `python scripts/ml/train_node2vec.py {neuro|udl}`.
 
-### 9.5 Common development workflows
+### 9.5 Flussi di sviluppo comuni
 
-- **Add/refresh dependencies** — edit `requirements.txt` (human source of truth), then regenerate the hashed lockfile for the production target: `uv pip compile requirements.txt -o requirements.lock.txt` (Python 3.12 / Linux resolution). Commit both.
-- **Lint & format** — `ruff format .` then `ruff check . --fix` (see §10.4). Run via the venv: `python -m ruff …`.
-- **Type-check** — `mypy` (lenient by default; configured in `pyproject.toml`).
-- **Smoke-test MCP** — `python scripts/diagnostic/mcp_smoke.py` (in-process, no uvicorn).
-- **Sync with remote** — `git fetch`, inspect with `git log HEAD..origin/<branch>`, then `git pull --ff-only`; stash local edits with `git stash push -u` if needed.
+- **Aggiungere/aggiornare dipendenze** — modificare `requirements.txt` (fonte di verità umana), poi rigenerare il lockfile con hash per il target di produzione: `uv pip compile requirements.txt -o requirements.lock.txt` (risoluzione Python 3.12 / Linux). Committare entrambi.
+- **Lint & format** — `ruff format .` poi `ruff check . --fix` (vedere §10.4). Eseguire via la venv: `python -m ruff …`.
+- **Type-check** — `mypy` (permissivo di default; configurato in `pyproject.toml`).
+- **Smoke-test MCP** — `python scripts/diagnostic/mcp_smoke.py` (in-process, senza uvicorn).
+- **Sync con il remoto** — `git fetch`, ispezionare con `git log HEAD..origin/<branch>`, poi `git pull --ff-only`; mettere da parte le modifiche locali con `git stash push -u` se necessario.
 
-### 9.6 IDE setup notes
+### 9.6 Note di configurazione dell'IDE
 
-- The `aix` package resolves only after `pip install -e .`; point your interpreter at the project venv.
-- Ruff is the single formatter/linter (Black-compatible, line length 100, double quotes). Configure your editor's "format on save" to use Ruff to avoid diff churn.
-- On Windows, when Postgres is configured the app applies a selector-event-loop policy at import; this is a no-op on Linux and for SQLite dev.
+- Il package `aix` si risolve solo dopo `pip install -e .`; puntare l'interprete alla venv del progetto.
+- Ruff è l'unico formatter/linter (Black-compatible, line length 100, double quotes). Configurare il "format on save" dell'editor per usare Ruff ed evitare churn nei diff.
+- Su Windows, quando Postgres è configurato, l'app applica una selector-event-loop policy all'import; è un no-op su Linux e per lo sviluppo SQLite.
 
 ---
 
-## 10. Testing Strategy
+## 10. Strategia di testing
 
-### 10.1 Test layout & markers
+### 10.1 Layout dei test & marker
 
-Tests live under `tests/` and are configured in `pyproject.toml`:
+I test vivono sotto `tests/` e sono configurati in `pyproject.toml`:
 
-- `tests/unit/` — pure unit tests, no external services (`@pytest.mark.unit`).
-- `tests/integration/` — hit Neo4j / LLM APIs (`@pytest.mark.integration`).
-- `tests/api/` — Agent API contract tests (request/response + SSE taxonomy round-trips).
-- `tests/mcp_server/` — MCP regression suite (19 tests).
+- `tests/unit/` — unit test puri, senza servizi esterni (`@pytest.mark.unit`).
+- `tests/integration/` — colpiscono Neo4j / API LLM (`@pytest.mark.integration`).
+- `tests/api/` — test di contratto dell'API agenti (round-trip request/response + tassonomia SSE).
+- `tests/mcp_server/` — suite di regressione MCP (19 test).
 
-Pytest defaults: `-v --tb=short --strict-markers`, `asyncio_mode = "auto"` (async tests need no explicit decorator). Markers: `integration`, `slow`, `unit`.
+Default di pytest: `-v --tb=short --strict-markers`, `asyncio_mode = "auto"` (i test async non richiedono decorator esplicito). Marker: `integration`, `slow`, `unit`.
 
-### 10.2 Running tests
+### 10.2 Esecuzione dei test
 
 ```bash
 pytest tests/ -v                       # all suites (or: make test)
@@ -954,14 +1008,15 @@ pytest tests/mcp_server/ -v            # MCP regression suite
 pytest tests/api/ -v                   # agent API contract
 ```
 
-### 10.3 What is covered vs. what to validate manually
+### 10.3 Cosa è coperto vs cosa validare manualmente
 
-- **Well covered**: API contract (schemas, status codes, SSE `kind` taxonomy), MCP tools/resources/prompts, agent routing logic (revision loop, corrective-RAG routing), retrieval helpers.
-- **Validate manually / end-to-end** (no full automated coverage yet): the media pipeline enrichment, the upsell flow, and full multi-turn WebUI runs — exercise via `apps/cli/run_agent.py` and the WebUI before a release. See §17 for the known-gaps backlog.
+- **Ben coperto**: contratto API (schemi, codici di stato, tassonomia `kind` SSE), tool/resources/prompts MCP, logica di routing degli agenti (ciclo di revisione, routing corrective-RAG), helper di retrieval.
+- **Da validare manualmente / end-to-end** (nessuna copertura automatica completa ancora): l'arricchimento della pipeline media, il flusso di upsell e le run WebUI multi-turno complete — esercitare via `apps/cli/run_agent.py` e la WebUI prima di una release. Vedere §17 per il backlog dei gap noti.
+- **Da validare per il livello media dinamici** (§7.8), quando lo si abilita: deduplica Wikipedia (concetti sinonimi → singola voce), hit/miss della cache `MediaCache`, fallback quando un'API esterna fallisce o è in rate limit, comportamento con `AIX_MEDIA_LIVE_ENABLED` off vs on, re-ranking on/off e rendering del pannello media (badge `auto` vs `✓ Verificato`).
 
-### 10.4 Linting & formatting (Ruff)
+### 10.4 Linting & formattazione (Ruff)
 
-Ruff is the single tool for both **linting** (replacing flake8/isort/bugbear/pyupgrade) and **formatting** (Black-compatible). Config in `pyproject.toml`: line length 100, target `py310`, double-quote style, rule sets `E/F/W/I/B/UP`. `E501` (line length) is delegated to the formatter; `B008` (FastAPI `Depends()`) and `UP007` are intentionally ignored. Per-directory ignores relax rules for `tests/`, `apps/`, and `scripts/`.
+Ruff è l'unico strumento sia per il **linting** (sostituisce flake8/isort/bugbear/pyupgrade) sia per la **formattazione** (Black-compatible). Config in `pyproject.toml`: line length 100, target `py310`, stile double-quote, set di regole `E/F/W/I/B/UP`. `E501` (line length) è delegato al formatter; `B008` (FastAPI `Depends()`) e `UP007` sono ignorati intenzionalmente. Ignore per-directory rilassano le regole per `tests/`, `apps/` e `scripts/`.
 
 ```bash
 python -m ruff format .            # apply formatting
@@ -970,164 +1025,166 @@ python -m ruff check . --fix       # lint + safe autofixes
 python -m ruff check . --statistics
 ```
 
-Formatting and import-sorting fixes are behavior-preserving; only review autofixes from rule families that can change semantics (e.g. some `B`/`UP` rewrites) before committing.
+Le correzioni di formattazione e ordinamento import preservano il comportamento; rivedere solo gli autofix di famiglie di regole che possono cambiare la semantica (es. alcune riscritture `B`/`UP`) prima di committare.
 
-### 10.5 CI expectations
+### 10.5 Aspettative di CI
 
-CI is expected to run `ruff format --check .`, `ruff check .`, and the non-integration test suite on each push/PR. Integration tests that require live Neo4j/LLM keys are run selectively (they are marked and can be excluded in environments without credentials). The OpenAPI baseline under `data/diagnostic/` serves as a regression guard against unintended contract changes.
+Ci si aspetta che la CI esegua `ruff format --check .`, `ruff check .` e la suite di test non-integration su ogni push/PR. I test di integration che richiedono Neo4j/chiavi LLM live sono eseguiti selettivamente (sono marcati e possono essere esclusi in ambienti senza credenziali). La baseline OpenAPI sotto `data/diagnostic/` funge da guardia di regressione contro modifiche non intenzionali al contratto.
 
 ---
 
 ## 11. Deployment
 
-### 11.1 Container image
+### 11.1 Immagine container
 
-`Dockerfile` is a multi-stage build targeting `api`, hardened for production:
+`Dockerfile` è una build multi-stage che targetta `api`, hardened per la produzione:
 
-- Base `python:3.12-slim-bookworm` with the `it_IT.UTF-8` locale installed (Italian output correctness).
-- Dependencies installed from the **hashed lockfile** with `uv pip install --require-hashes -r requirements.lock.txt` (reproducible builds), then `pip install --no-deps -e .`.
-- Runs as a **non-root** user (`aix`, uid/gid 10001); `artifacts/` and `data/` are writable for caches.
-- Exposes `8765`; `PORT` env drives the bind. `CODE_VERSION` is stamped from the `GIT_SHA` build arg.
-- Built-in `HEALTHCHECK` curls `/api/v1/health` (interval 30 s, 45 s start period).
+- Base `python:3.12-slim-bookworm` con il locale `it_IT.UTF-8` installato (correttezza dell'output italiano).
+- Dipendenze installate dal **lockfile con hash** con `uv pip install --require-hashes -r requirements.lock.txt` (build riproducibili), poi `pip install --no-deps -e .`.
+- Esegue come utente **non-root** (`aix`, uid/gid 10001); `artifacts/` e `data/` sono scrivibili per le cache.
+- Espone `8765`; l'env `PORT` guida il bind. `CODE_VERSION` è impresso dal build arg `GIT_SHA`.
+- `HEALTHCHECK` integrato fa curl di `/api/v1/health` (interval 30 s, start period 45 s).
 
-Local-equivalent run command (outside Docker): `python -m uvicorn aix.api.main:app --host 127.0.0.1 --port 8765`.
+Comando equivalente locale (fuori da Docker): `python -m uvicorn aix.api.main:app --host 127.0.0.1 --port 8765`.
 
-### 11.2 Production stack (`deploy/docker-compose.prod.yml`)
+### 11.2 Stack di produzione (`deploy/docker-compose.prod.yml`)
 
-Three services on a single host:
+Tre servizi su un singolo host:
 
-| Service | Image | Exposure | Role |
+| Servizio | Immagine | Esposizione | Ruolo |
 |---|---|---|---|
-| `app` | built from `Dockerfile` (`api`) | internal only | FastAPI — `/api/v1/*` + `/webui/*` |
-| `postgres` | `postgres:16-alpine` | internal only | Backs both DB URLs (webui + checkpointer) |
+| `app` | build da `Dockerfile` (`api`) | solo interno | FastAPI — `/api/v1/*` + `/webui/*` |
+| `postgres` | `postgres:16-alpine` | solo interno | Supporta entrambi gli URL DB (webui + checkpointer) |
 | `caddy` | `caddy:2-alpine` | `80`, `443`, `443/udp` | Reverse proxy + auto-HTTPS |
 
-Key properties:
+Proprietà chiave:
 
-- **Neo4j is not in the compose** — production reuses the external Aura/FEM instance via `NEO4J_URI`.
-- Both DB URLs are composed from the same `POSTGRES_*` credentials in the compose `environment` block — one source of truth. The webui uses the `asyncpg` driver (SQLAlchemy); LangGraph's `AsyncPostgresSaver` uses the libpq scheme directly.
-- `app` waits for `postgres` to be healthy (`depends_on … condition: service_healthy`); tables auto-create on first boot.
-- Volumes: `pg_data` (DB), `app_artifacts` (embeddings/Node2Vec — survives rebuilds), `caddy_data`/`caddy_config` (ACME certs + state).
+- **Neo4j non è nel compose** — la produzione riusa l'istanza esterna Aura/FEM via `NEO4J_URI`.
+- Entrambi gli URL DB sono composti dalle stesse credenziali `POSTGRES_*` nel blocco `environment` del compose — un'unica fonte di verità. La webui usa il driver `asyncpg` (SQLAlchemy); `AsyncPostgresSaver` di LangGraph usa direttamente lo schema libpq.
+- `app` attende che `postgres` sia healthy (`depends_on … condition: service_healthy`); le tabelle si auto-creano al primo boot.
+- Volumi: `pg_data` (DB), `app_artifacts` (embeddings/Node2Vec — sopravvive alle rebuild), `caddy_data`/`caddy_config` (certificati ACME + stato).
 - Run: `docker compose -f docker-compose.prod.yml --env-file .env.prod up -d`.
 
 ### 11.3 Reverse proxy & TLS (Caddy)
 
-`deploy/Caddyfile` is parameterized by `$AIX_DOMAIN` and `$AIX_TLS_EMAIL`. Caddy terminates TLS (Let's Encrypt, auto-renew), serves HTTP/3 (QUIC) on UDP/443, and reverse-proxies all traffic to `app:8765`. SSE endpoints work transparently (Caddy streams responses; the app's 15 s heartbeat keeps idle connections open). `AIX_TLS_EMAIL` is the ACME registration/expiry-notice address — required for unattended certificate issuance.
+`deploy/Caddyfile` è parametrizzato da `$AIX_DOMAIN` e `$AIX_TLS_EMAIL`. Caddy termina il TLS (Let's Encrypt, auto-renew), serve HTTP/3 (QUIC) su UDP/443 e fa reverse proxy di tutto il traffico verso `app:8765`. Gli endpoint SSE funzionano in modo trasparente (Caddy fa streaming delle risposte; l'heartbeat da 15 s dell'app tiene aperte le connessioni idle). `AIX_TLS_EMAIL` è l'indirizzo di registrazione/avviso scadenza ACME — richiesto per l'emissione non presidiata dei certificati.
 
-### 11.4 Database & checkpointer migration to PostgreSQL
+### 11.4 Migrazione DB & checkpointer a PostgreSQL
 
-Wave 1 migrates both stateful stores from SQLite (dev) to PostgreSQL (prod):
+La Wave 1 migra entrambi gli store stateful da SQLite (dev) a PostgreSQL (prod):
 
-- **WebUI DB** (`WEBUI_DATABASE_URL`) — users, lessons, lesson messages.
-- **LangGraph checkpointer** (`LANGGRAPH_DATABASE_URL`) — `checkpoints`, `checkpoint_blobs`, `checkpoint_writes`.
+- **DB WebUI** (`WEBUI_DATABASE_URL`) — utenti, lezioni, messaggi delle lezioni.
+- **Checkpointer LangGraph** (`LANGGRAPH_DATABASE_URL`) — `checkpoints`, `checkpoint_blobs`, `checkpoint_writes`.
 
-Both point at the same Postgres instance (separate logical concerns, distinct table sets). No manual schema step is required for the pilot: tables auto-create on first boot (`init_db()` for the webui; the saver `setup()` for the checkpointer). Backups are handled by `deploy/scripts/backup_postgres.*`.
+Entrambi puntano alla stessa istanza Postgres (concerni logici separati, set di tabelle distinti). Nessuno step di schema manuale è richiesto per il pilot: le tabelle si auto-creano al primo boot (`init_db()` per la webui; `setup()` del saver per il checkpointer). I backup sono gestiti da `deploy/scripts/backup_postgres.*`.
 
-### 11.5 Deployment modes (Mode A standalone / Mode B native)
+### 11.5 Modalità di deployment (Mode A standalone / Mode B nativo)
 
-- **Mode A (standalone pilot)** — the compose stack above; teachers use `/webui/*` at `https://agente.aiforlearning.digital`. This is the current Wave 1/2 target.
-- **Mode B (native AixLearning)** — the agent service runs as an internal service; the AixLearning Django backend calls `/api/v1/agent/*` over the private network and owns its own UX/data. Mode B does not require Caddy/WebUI exposure. See §14.
+- **Mode A (pilot standalone)** — lo stack compose sopra; i docenti usano `/webui/*` su `https://agente.aiforlearning.digital`. È l'attuale target Wave 1/2.
+- **Mode B (nativo AixLearning)** — il servizio agenti gira come servizio interno; il backend Django di AixLearning chiama `/api/v1/agent/*` sulla rete privata e possiede la propria UX/dati. Mode B non richiede l'esposizione di Caddy/WebUI. Vedere §14.
 
-The hostname strategy (transition from the legacy `graph.aiforlearning.digital` and the relationship between API access and WebUI access) is tracked in `docs/product/Internal_Production_Deployment_Plan.md`.
+La strategia di hostname prevede la transizione dal legacy `graph.aiforlearning.digital` al nuovo `agente.aiforlearning.digital`; la relazione tra accesso API e accesso WebUI è gestita nel piano di deployment interno.
 
-### 11.6 CI/CD pipeline
+### 11.6 Pipeline CI/CD
 
-The FEM environment already runs continuous deployment: a merge commit pushed to the GitHub repository triggers a build + redeploy of the GraphRAG instance on the managed VM (Debian; networking, Docker, and CD pre-configured per FEM's template). Practically, shipping a new version is a **merge to the deployment branch**. The build uses the committed `requirements.lock.txt` for reproducibility; `GIT_SHA` is stamped into `CODE_VERSION` for traceability across logs and observability tools.
+L'ambiente FEM esegue già continuous deployment: un merge commit pushato sul repository GitHub innesca una build + redeploy dell'istanza GraphRAG sulla VM gestita (Debian; networking, Docker e CD pre-configurati per il template FEM). In pratica, rilasciare una nuova versione è un **merge sul branch di deployment**. La build usa il `requirements.lock.txt` committato per la riproducibilità; `GIT_SHA` è impresso in `CODE_VERSION` per tracciabilità attraverso log e tool di osservabilità.
 
 ### 11.7 Rollback & recovery
 
-- **Rollback** — redeploy a previous image/commit (CD), or `docker compose up -d` against the prior tag; `CODE_VERSION` identifies the running build.
-- **Data recovery** — restore Postgres from `deploy/scripts/restore_postgres.*`; Caddy certs/state from `backup_caddy`. Artifacts in `app_artifacts` are regenerable (re-embed) if lost.
-- **Failure isolation** — the MCP sub-app is built defensively so a failure there cannot block `/api/v1`; the agent stream surfaces pipeline failures as `error`/`502` rather than crashing the process. The runbook in `deploy/README.md` covers first deploy, backups, rollback, and log inspection.
+- **Rollback** — redeploy di un'immagine/commit precedente (CD), oppure `docker compose up -d` contro il tag precedente; `CODE_VERSION` identifica la build in esecuzione.
+- **Recovery dei dati** — ripristinare Postgres da `deploy/scripts/restore_postgres.*`; certificati/stato Caddy da `backup_caddy`. Gli artefatti in `app_artifacts` sono rigenerabili (re-embed) se persi.
+- **Isolamento dei fallimenti** — la sub-app MCP è costruita in modo difensivo così che un fallimento lì non possa bloccare `/api/v1`; lo stream agenti fa emergere i fallimenti della pipeline come `error`/`502` anziché crashare il processo. Il runbook in `deploy/README.md` copre primo deploy, backup, rollback e ispezione dei log.
 
-## 12. Observability
+---
 
-### 12.1 LLM tracing (Langfuse)
+## 12. Osservabilità
 
-When `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` (+ optional `LANGFUSE_HOST`) are set, agent LLM calls are traced to Langfuse, giving per-agent and full-pipeline visibility: prompts, model, token usage, latency, and the planner/retriever/critic outputs. The `session_id` carried through `AgentState` (and accepted by the API) is the correlation key for stitching a multi-step run together. Tracing is **opt-in** — with the keys unset, the system runs identically without tracing.
+### 12.1 Tracing LLM (Langfuse)
 
-### 12.2 Error monitoring (GlitchTip / Sentry)
+Quando `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` (+ opzionale `LANGFUSE_HOST`) sono impostate, le chiamate LLM degli agenti sono tracciate su Langfuse, dando visibilità per-agente e sull'intera pipeline: prompt, modello, uso dei token, latenza e gli output di planner/retriever/critic. Il `session_id` portato attraverso `AgentState` (e accettato dall'API) è la chiave di correlazione per ricucire una run multi-step. Il tracing è **opt-in** — con le chiavi non impostate, il sistema gira in modo identico senza tracing.
 
-When `SENTRY_DSN` is set, the app initializes the Sentry SDK at startup (GlitchTip is Sentry-compatible). Unhandled exceptions and slow requests are reported, labeled by `ENVIRONMENT` (`production`/`staging`/`development`). Performance tracing is sampled at 20% (`traces_sample_rate=0.2`, set in `api/main.py`) — enough to surface slow endpoints without overwhelming the dashboard. Leave `SENTRY_DSN` empty to disable entirely.
+### 12.2 Monitoraggio errori (GlitchTip / Sentry)
 
-### 12.3 Health checks
+Quando `SENTRY_DSN` è impostata, l'app inizializza l'SDK Sentry all'avvio (GlitchTip è Sentry-compatible). Eccezioni non gestite e richieste lente sono riportate, etichettate da `ENVIRONMENT` (`production`/`staging`/`development`). Il performance tracing è campionato al 20% (`traces_sample_rate=0.2`, impostato in `api/main.py`) — sufficiente a far emergere gli endpoint lenti senza sovraccaricare la dashboard. Lasciare `SENTRY_DSN` vuoto per disabilitare del tutto.
 
-`GET /api/v1/health` returns a `HealthResponse` reporting `status` (`healthy`/`degraded`), `neo4j_connected`, and `version` (the package version; the build also stamps `CODE_VERSION` from `GIT_SHA`). It verifies Neo4j connectivity and domain configs, making it suitable as both a container `HEALTHCHECK` (Dockerfile + compose) and an external uptime probe. A `degraded` status (Neo4j unreachable) still returns HTTP 200 with the flag set, so orchestrators can distinguish "process up but dependency down" from "process down".
+### 12.3 Health check
+
+`GET /api/v1/health` ritorna un `HealthResponse` che riporta `status` (`healthy`/`degraded`), `neo4j_connected` e `version` (la versione del package; la build imprime anche `CODE_VERSION` da `GIT_SHA`). Verifica la connettività Neo4j e le config di dominio, rendendolo adatto sia come `HEALTHCHECK` del container (Dockerfile + compose) sia come probe di uptime esterno. Uno stato `degraded` (Neo4j irraggiungibile) ritorna comunque HTTP 200 con il flag impostato, così gli orchestrator possono distinguere "processo su ma dipendenza giù" da "processo giù".
 
 ### 12.4 Connectivity probe
 
-At startup (`AIX_LLM_PROBE_ENABLED=true`, default), `src/aix/core/connectivity_probe.py` issues a one-shot `GET /models` against the configured LLM `base_url` and emits **one** actionable log line that distinguishes TLS certificate failures, DNS/connection errors, read timeouts, 401/403 auth failures, and 4xx/5xx upstream errors. This resolves the common "Connection error." ambiguity that otherwise hides three different failure modes inside the OpenAI SDK retry layer. Disable in air-gapped/test environments.
+All'avvio (`AIX_LLM_PROBE_ENABLED=true`, default), `src/aix/core/connectivity_probe.py` emette un `GET /models` one-shot verso il `base_url` LLM configurato ed emette **una** riga di log azionabile che distingue fallimenti di certificato TLS, errori DNS/connessione, read timeout, fallimenti auth 401/403 ed errori upstream 4xx/5xx. Questo risolve la comune ambiguità "Connection error." che altrimenti nasconde tre diverse modalità di fallimento dentro il retry layer dell'SDK OpenAI. Disabilitare in ambienti air-gapped/di test.
 
-### 12.5 Structured logging
+### 12.5 Logging strutturato
 
-Logging verbosity is set by `LOG_LEVEL` (default `INFO`). Log lines use consistent, greppable prefixes per subsystem (e.g. `[api.agent]`, `[webui.agent]`, `[LessonPlannerGraph]`, `[language]`) and include the `session_id`/`thread_id`, duration, approval, and revision count on run completion. Use `DEBUG` locally to surface Cypher queries, embedding scores, and reasoning tokens; keep `INFO`/`WARNING` in production.
+La verbosità di logging è impostata da `LOG_LEVEL` (default `INFO`). Le righe di log usano prefissi coerenti e greppabili per sottosistema (es. `[api.agent]`, `[webui.agent]`, `[LessonPlannerGraph]`, `[language]`) e includono `session_id`/`thread_id`, durata, approvazione e revision count al completamento della run. Usare `DEBUG` in locale per far emergere query Cypher, score di embedding e reasoning token; mantenere `INFO`/`WARNING` in produzione.
 
 ---
 
-## 13. Security
+## 13. Sicurezza
 
-### 13.1 Authentication
+### 13.1 Autenticazione
 
-User-facing and API auth is handled by **FastAPI-Users**. Two backends share `WEBUI_AUTH_SECRET` (HS256): a **cookie** backend (browser/WebUI sessions) and a **Bearer JWT** backend (API/integration clients). The agent endpoints accept either via the `current_active_user` dependency. Token lifetime is `WEBUI_TOKEN_LIFETIME_SECONDS` (default 24 h). The legacy `/api/v1/context` endpoint uses a separate HTTP Basic service-to-service scheme for the existing AixLearning integration.
+L'auth utente e API è gestita da **FastAPI-Users**. Due backend condividono `WEBUI_AUTH_SECRET` (HS256): un backend **cookie** (sessioni browser/WebUI) e un backend **Bearer JWT** (client API/integrazione). Gli endpoint agente accettano entrambi via la dependency `current_active_user`. La durata del token è `WEBUI_TOKEN_LIFETIME_SECONDS` (default 24 h). L'endpoint legacy `/api/v1/context` usa uno schema HTTP Basic separato service-to-service per l'integrazione AixLearning esistente.
 
-### 13.2 Authorization
+### 13.2 Autorizzazione
 
-For the pilot, authorization is coarse-grained: any active, authenticated user may call the agent endpoints. There is no per-tenant or per-role gating yet — multi-tenant authorization (and the RS256/multi-issuer JWT work in §17.3) is deferred. WebUI users only see and operate on their own lessons (ownership is enforced at the data layer).
+Per il pilot, l'autorizzazione è a grana grossa: qualsiasi utente attivo e autenticato può chiamare gli endpoint agente. Non c'è ancora gating per-tenant o per-ruolo — l'autorizzazione multi-tenant (e il lavoro RS256/JWT multi-issuer in §17.3) è rimandata. Gli utenti WebUI vedono e operano solo sulle proprie lezioni (la ownership è applicata a livello dati).
 
-### 13.3 CORS policy
+### 13.3 Politica CORS
 
-CORS is configured via `WEBUI_CORS_ALLOW_ORIGINS` (`api/main.py`). Default is `*` (convenient for local dev and the same-origin pilot); in production with cross-origin clients (Mode B browser callers) it should be set to a comma-separated allow-list. `allow_credentials=True` is set so cookie auth works cross-origin when an explicit origin list is provided.
+CORS è configurato via `WEBUI_CORS_ALLOW_ORIGINS` (`api/main.py`). Il default è `*` (comodo per dev locale e per il pilot same-origin); in produzione con client cross-origin (chiamanti browser Mode B) andrebbe impostato a una allow-list separata da virgole. `allow_credentials=True` è impostato così che l'auth a cookie funzioni cross-origin quando è fornita una lista di origini esplicita.
 
-### 13.4 Secrets handling
+### 13.4 Gestione dei segreti
 
-See §8.3. In summary: secrets are environment-only (`.env` / `deploy/.env.prod`, git-ignored, `chmod 600` on the VM); `WEBUI_AUTH_SECRET` must be a strong random value in any non-local environment; database URLs are derived from a single set of `POSTGRES_*` credentials; LLM/Neo4j keys come from their providers.
+Vedere §8.3. In sintesi: i segreti sono solo da ambiente (`.env` / `deploy/.env.prod`, git-ignored, `chmod 600` sulla VM); `WEBUI_AUTH_SECRET` deve essere un valore random forte in qualsiasi ambiente non locale; gli URL di database sono derivati da un singolo set di credenziali `POSTGRES_*`; le chiavi LLM/Neo4j vengono dai loro provider.
 
 ### 13.5 Rate limiting
 
-There is no application-level rate limiter in the pilot. The natural throttle is the LLM provider's own rate limits (OpenRouter), and Caddy can enforce connection-level limits at the edge if required. Application-level per-user rate limiting is a candidate for a later wave if abuse becomes a concern.
+Non c'è un rate limiter a livello applicativo nel pilot. Il throttle naturale è dato dai rate limit del provider LLM (OpenRouter), e Caddy può imporre limiti a livello di connessione al bordo se richiesto. Il rate limiting per-utente a livello applicativo è un candidato per una wave successiva se l'abuso diventa una preoccupazione. (Nota: il livello media dinamici di §7.8 ha un proprio rate limiting solo verso le API esterne come Semantic Scholar, non sulle chiamate LLM degli agenti.)
 
-### 13.6 Network isolation
+### 13.6 Isolamento di rete
 
-In production only Caddy is published (host ports 80/443). The `app` and `postgres` services have **no** `ports:` mapping — they are reachable only on the internal Docker network. Postgres is therefore never exposed to the host or the internet; the app is reachable only through Caddy (TLS-terminated). Neo4j is an external managed instance reached over `bolt+s://` (TLS). The MCP sub-app mount is guarded so a failure there cannot affect `/api/v1`.
+In produzione solo Caddy è pubblicato (porte host 80/443). I servizi `app` e `postgres` **non** hanno mapping `ports:` — sono raggiungibili solo sulla rete Docker interna. Postgres non è quindi mai esposto all'host o a internet; l'app è raggiungibile solo attraverso Caddy (TLS-terminated). Neo4j è un'istanza esterna gestita raggiunta via `bolt+s://` (TLS). Il mount della sub-app MCP è protetto così che un fallimento lì non possa interessare `/api/v1`.
 
-### 13.7 AI transparency & EU AI Act alignment
+### 13.7 Trasparenza IA & allineamento EU AI Act
 
-The system is designed to make AI involvement explicit, in line with the project's regulatory analysis (`docs/product/Regulatory_Alignment_EU_AI_Act_UNI_11621_8.md`):
+Il sistema è progettato per rendere esplicito il coinvolgimento dell'IA, in linea con l'analisi normativa del progetto:
 
-- **In-product transparency (implemented):** the WebUI shows per-phase explainability (planner intent/scope, retriever coverage tiers, critic score) and an explicit banner when a lesson is composed with reduced KG coverage or from external sources ("La lezione è generata con queste limitazioni…"). Outputs are always presented as AI-generated drafts for a human educator to review.
-- **Human-in-the-loop:** the teacher is the decision-maker; the system produces drafts, not authoritative content. The Critic loop and coverage signals support, but do not replace, human judgment.
-- **Machine-readable AI marking (planned):** a response-level marker (e.g. an `X-AI-Generated` header and/or an embedded Markdown comment on exported lesson plans) is tracked as a compliance enhancement so downstream consumers and exported artifacts can be programmatically identified as AI-assisted. This is not yet enforced in code and should be added before any external/public-facing rollout.
+- **Trasparenza in-product (implementata):** la WebUI mostra spiegabilità per fase (intento/scope del planner, coverage tier del retriever, score del critic) e un banner esplicito quando una lezione è composta con copertura KG ridotta o da fonti esterne ("La lezione è generata con queste limitazioni…"). Gli output sono sempre presentati come bozze generate da IA da rivedere da parte di un educatore umano.
+- **Human-in-the-loop:** il docente è il decisore; il sistema produce bozze, non contenuti autorevoli. Il ciclo Critic e i segnali di copertura supportano, ma non sostituiscono, il giudizio umano.
+- **Marcatura IA machine-readable (pianificata):** un marcatore a livello di risposta (es. un header `X-AI-Generated` e/o un commento Markdown embedded sui piani di lezione esportati) è tracciato come enhancement di compliance così che i consumatori a valle e gli artefatti esportati possano essere identificati programmaticamente come IA-assistiti. Non è ancora imposto nel codice e dovrebbe essere aggiunto prima di qualsiasi rollout esterno/pubblico.
 
-Refer to the regulatory document for the full mapping to EU AI Act and UNI/PdR obligations; this section captures only the technical controls.
+Fare riferimento al documento normativo per la mappatura completa agli obblighi EU AI Act e UNI/PdR; questa sezione cattura solo i controlli tecnici.
 
 ---
 
-## 14. Integration Patterns
+## 14. Pattern di integrazione
 
-### 14.1 Mode A — Standalone WebUI
+### 14.1 Mode A — WebUI standalone
 
-The agent service runs the full stack (§11.2) and exposes the teacher WebUI at `https://<AIX_DOMAIN>/webui/`. Teachers authenticate (cookie session), create lessons with an educational profile, optionally upload context files, and watch the agent stream its phases live. This is the **internal FEM pilot** mode and requires no work from the AixLearning DEV team beyond infrastructure (VM + DNS + CD).
+Il servizio agenti esegue lo stack completo (§11.2) ed espone la WebUI docente su `https://<AIX_DOMAIN>/webui/`. I docenti si autenticano (cookie session), creano lezioni con un profilo educativo, opzionalmente caricano file di contesto e guardano l'agente fare streaming delle sue fasi live. È la modalità **pilot interno FEM** e non richiede lavoro dal team DEV AixLearning oltre all'infrastruttura (VM + DNS + CD).
 
-### 14.2 Mode B — Native AixLearning integration
+### 14.2 Mode B — integrazione nativa AixLearning
 
-The AixLearning Django platform integrates the agent service the same way it already integrated the legacy GraphRAG `/api/v1/context` endpoint:
+La piattaforma Django AixLearning integra il servizio agenti nello stesso modo in cui ha già integrato l'endpoint GraphRAG legacy `/api/v1/context`:
 
-1. The teacher uses AixLearning's existing UI to request a lesson.
-2. AixLearning's **Dramatiq worker** detects a UDL/NEURO `plan_type` and routes the request to a new **`AgenticGraphRagService`** — a sibling of the existing `GraphRagService` that already calls `/api/v1/context`.
-3. `AgenticGraphRagService` calls `POST /api/v1/agent/run` (or `/stream`) over the internal Docker network with a service Bearer token, passing the teacher's query + educational profile.
-4. AixLearning persists and renders the returned `lesson_plan_md` in its own UI.
+1. Il docente usa la UI esistente di AixLearning per richiedere una lezione.
+2. Il **worker Dramatiq** di AixLearning rileva un `plan_type` UDL/NEURO e instrada la richiesta a un nuovo **`AgenticGraphRagService`** — un fratello dell'esistente `GraphRagService` che già chiama `/api/v1/context`.
+3. `AgenticGraphRagService` chiama `POST /api/v1/agent/run` (o `/stream`) sulla rete Docker interna con un service Bearer token, passando la query del docente + il profilo educativo.
+4. AixLearning persiste e renderizza il `lesson_plan_md` ritornato nella propria UI.
 
-In this mode the agent service owns only its own state (KG, checkpointer, lessons store if used); AixLearning owns the teacher UX and its own data. Caddy/WebUI exposure is optional.
+In questa modalità il servizio agenti possiede solo il proprio stato (KG, checkpointer, store delle lezioni se usato); AixLearning possiede la UX docente e i propri dati. L'esposizione di Caddy/WebUI è opzionale.
 
-### 14.3 Mode coexistence rules
+### 14.3 Regole di coesistenza tra le modalità
 
-- The two modes are **not mutually exclusive** — the same running instance can serve `/webui/*` (Mode A) and `/api/v1/agent/*` to AixLearning (Mode B) simultaneously.
-- The agent endpoints are **additive and backward-compatible**: the API contract is locked by an automated regression test against an OpenAPI baseline (`data/diagnostic/`), and new fields are always added, never removed or repurposed.
-- Authentication differs by caller: browser cookie (Mode A) vs service Bearer token (Mode B). Both resolve to the same `current_active_user` dependency.
+- Le due modalità **non sono mutuamente esclusive** — la stessa istanza in esecuzione può servire `/webui/*` (Mode A) e `/api/v1/agent/*` ad AixLearning (Mode B) simultaneamente.
+- Gli endpoint agente sono **additivi e retrocompatibili**: il contratto API è bloccato da un test di regressione automatico contro una baseline OpenAPI (`data/diagnostic/`), e i nuovi campi sono sempre aggiunti, mai rimossi o riadattati.
+- L'autenticazione differisce per chiamante: cookie browser (Mode A) vs service Bearer token (Mode B). Entrambi risolvono alla stessa dependency `current_active_user`.
 
-### 14.4 Reference wrapper (`AgenticGraphRagService` pattern)
+### 14.4 Wrapper di riferimento (pattern `AgenticGraphRagService`)
 
-The recommended integration shape on the AixLearning side is a thin service class mirroring the existing `GraphRagService`:
+La forma di integrazione raccomandata lato AixLearning è una classe di servizio sottile che rispecchia l'esistente `GraphRagService`:
 
 ```python
 class AgenticGraphRagService:
@@ -1142,150 +1199,144 @@ class AgenticGraphRagService:
         return resp.json()["lesson_plan_md"]
 ```
 
-For incremental UX, swap `/run` for `/stream` and consume SSE frames, switching on `kind`. The full contract, payload examples, and SSE taxonomy the DEV team needs are in `docs/product/Dev_Handoff_AgenticGraphRAG_Integration.md` and `docs/product/Dev_Technical_Integration_Guide.md`.
+Per una UX incrementale, sostituire `/run` con `/stream` e consumare i frame SSE, facendo switch sul `kind`. Il contratto completo, gli esempi di payload e la tassonomia SSE di cui il team DEV ha bisogno sono in §5 (Riferimento API) e §5.5 (tassonomia degli eventi SSE).
 
 ---
 
-## 15. Performance & SLOs
+## 15. Performance & SLO
 
-### 15.1 Latency budget per phase
+### 15.1 Budget di latenza per fase
 
-A typical KG-covered run (default config, 0–1 revisions) distributes roughly as:
+Una run tipica coperta dal KG (config di default, 0–1 revisioni) si distribuisce all'incirca così:
 
-| Phase | Typical time | Notes |
+| Fase | Tempo tipico | Note |
 |---|---|---|
-| Planner | ~2–5 s | Intent + scope + query extraction |
-| Retriever | ~3–8 s | Cypher + hybrid search (+ external sources if out-of-scope) |
-| Writer | ~25–40 s | Dominant cost; bounded by `AIX_WRITER_MAX_TOKENS` (+ continuations) |
-| Critic | ~2–5 s | Fast model (`AIX_CRITIC_MODEL`), capped prefill |
+| Planner | ~2–5 s | Intento + scope + estrazione query |
+| Retriever | ~3–8 s | Cypher + ricerca ibrida (+ fonti esterne se out-of-scope) |
+| Writer | ~25–40 s | Costo dominante; limitato da `AIX_WRITER_MAX_TOKENS` (+ continuazioni) |
+| Critic | ~2–5 s | Modello veloce (`AIX_CRITIC_MODEL`), prefill limitato |
 
-The Writer is the long pole; thinking-effort and token caps (`AIX_THINKING_EFFORT`, `AIX_WRITER_MAX_TOKENS`) are the primary latency levers.
+Il Writer è il collo di bottiglia; thinking-effort e cap sui token (`AIX_THINKING_EFFORT`, `AIX_WRITER_MAX_TOKENS`) sono le leve di latenza primarie.
 
-### 15.2 Streaming first-event target
+### 15.2 Target del primo evento in streaming
 
-For `/stream`, the first `planner` event should reach the client within a few seconds (target **< 5 s**), giving immediate UI feedback while the slow Writer runs. The 15 s SSE heartbeat prevents proxy timeouts during the Writer call.
+Per `/stream`, il primo evento `planner` dovrebbe raggiungere il client entro pochi secondi (target **< 5 s**), dando feedback immediato alla UI mentre gira il lento Writer. L'heartbeat SSE da 15 s previene i timeout dei proxy durante la chiamata del Writer.
 
-### 15.3 End-to-end SLO targets (pilot)
+### 15.3 Target SLO end-to-end (pilot)
 
-- Full pipeline (sync `/run`): **< 180 s** for KG-covered topics; **< 240 s** for out-of-scope topics that trigger external retrieval. Integration clients should set timeouts with headroom (≈240 s).
-- Availability target for the pilot: **~99.5%** (single-host stack; not HA).
+- Pipeline completa (sync `/run`): **< 180 s** per topic coperti dal KG; **< 240 s** per topic out-of-scope che innescano retrieval esterno. I client di integrazione dovrebbero impostare timeout con margine (≈240 s).
+- Target di disponibilità per il pilot: **~99.5%** (stack single-host; non HA).
 
-### 15.4 Cost & capacity assumptions
+### 15.4 Assunzioni di costo & capacità
 
-- Cost per interaction is dominated by the Writer LLM call (and thinking tokens). The Critic and Text2Cypher use cheaper fast models to keep per-run cost low.
-- The pilot is sized for a single host (2 vCPU / 4 GB RAM / ~50 GB disk, Debian) with the agent graph/agents as process-level singletons and one in-flight run per lesson. This is adequate for internal pilot concurrency; horizontal scaling and a shared-state refactor are deferred (§17). Embedding caches persist in a volume so restarts/rebuilds avoid re-embedding.
+- Il costo per interazione è dominato dalla chiamata LLM del Writer (e dai thinking token). Critic e Text2Cypher usano modelli veloci più economici per mantenere basso il costo per run.
+- Il pilot è dimensionato per un singolo host (2 vCPU / 4 GB RAM / ~50 GB disco, Debian) con il graph/agenti come singleton a livello di processo e una run in-flight per lezione. È adeguato per la concorrenza del pilot interno; lo scaling orizzontale e un refactor dello stato condiviso sono rimandati (§17). Le cache di embedding persistono in un volume così che restart/rebuild evitino il re-embed.
 
 ---
 
-## 16. Operational Runbook
+## 16. Runbook operativo
 
-### 16.1 Common incidents
+### 16.1 Incidenti comuni
 
-| Symptom | Likely cause | First action |
+| Sintomo | Causa probabile | Prima azione |
 |---|---|---|
-| `/api/v1/health` reports `degraded` | Neo4j unreachable / bad `NEO4J_*` | Check `NEO4J_URI` + network to Aura/FEM; inspect app logs |
-| Runs fail with `502` / `error` events | LLM provider down / bad key / rate limit | Check connectivity-probe log line; verify `OPENROUTER_API_KEY` |
-| "Connection error." at startup | TLS/DNS/auth to LLM endpoint | Read the single probe log line (it names the exact failure mode) |
-| Slow first event on `/stream` | Cold start / Neo4j latency | Confirm warm process; check Planner/Retriever timings in logs |
-| WebUI login fails after deploy | `WEBUI_AUTH_SECRET` changed/missing | Restore the secret; rotating it invalidates existing sessions |
-| Lesson "frozen" in WebUI | Setup exception swallowed into `error` | Check `[webui.agent] setup FAILED` logs; lesson is marked `error` |
+| `/api/v1/health` riporta `degraded` | Neo4j irraggiungibile / `NEO4J_*` errati | Controllare `NEO4J_URI` + rete verso Aura/FEM; ispezionare i log dell'app |
+| Run falliscono con `502` / eventi `error` | Provider LLM giù / chiave errata / rate limit | Controllare la riga di log del connectivity-probe; verificare `OPENROUTER_API_KEY` |
+| "Connection error." all'avvio | TLS/DNS/auth verso l'endpoint LLM | Leggere la singola riga di log del probe (nomina la modalità di fallimento esatta) |
+| Primo evento lento su `/stream` | Cold start / latenza Neo4j | Confermare processo caldo; controllare i timing Planner/Retriever nei log |
+| Login WebUI fallisce dopo un deploy | `WEBUI_AUTH_SECRET` cambiato/mancante | Ripristinare il segreto; ruotarlo invalida le sessioni esistenti |
+| Lezione "congelata" nella WebUI | Eccezione di setup inghiottita in `error` | Controllare i log `[webui.agent] setup FAILED`; la lezione è marcata `error` |
+| Media live assenti pur con `AIX_MEDIA_LIVE_ENABLED=true` | Worker off-path non in esecuzione, oppure API esterna giù / in rate limit / `YOUTUBE_API_KEY` mancante | Verificare i log `[live-media]`; il livello degrada in modo silenzioso a `{}` per design (la lezione resta valida) — vedere §7.8 |
+| Voci media duplicate / mismatch di conteggio card↔sidebar | Concetti sinonimi o cache vecchia | La deduplica Wikipedia è per URL canonico (§7.8); svuotare la cache `artifacts/media_cache/` o ruotare `AIX_MEDIA_CACHE_NAMESPACE` |
 
-### 16.2 Debugging guide
+### 16.2 Guida al debugging
 
-- Set `LOG_LEVEL=DEBUG` to see Cypher, embedding scores, and reasoning tokens.
-- Trace a specific run by its `session_id`/`thread_id` across logs and Langfuse.
-- Reproduce a pipeline run without the WebUI/DB via `apps/cli/run_agent.py --query "…" --domain neuro`.
-- Smoke-test MCP in-process with `python scripts/diagnostic/mcp_smoke.py`.
-- Verify the API contract hasn't drifted against the OpenAPI baseline in `data/diagnostic/`.
+- Impostare `LOG_LEVEL=DEBUG` per vedere Cypher, score di embedding e reasoning token.
+- Tracciare una run specifica tramite il suo `session_id`/`thread_id` attraverso log e Langfuse.
+- Riprodurre una run della pipeline senza WebUI/DB via `apps/cli/run_agent.py --query "…" --domain neuro`.
+- Smoke-test di MCP in-process con `python scripts/diagnostic/mcp_smoke.py`.
+- Verificare che il contratto API non sia derivato rispetto alla baseline OpenAPI in `data/diagnostic/`.
 
 ### 16.3 Restart / redeploy
 
-- **Redeploy (CD):** push a merge commit to the deployment branch — the FEM CD pipeline rebuilds and restarts the stack.
-- **Manual restart:** `docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.prod up -d` (recreates changed services; volumes persist).
-- **Single service:** `docker compose … restart app` (or `caddy`). Confirm health via `/api/v1/health` and compose health status.
+- **Redeploy (CD):** pushare un merge commit sul branch di deployment — la pipeline CD di FEM ricostruisce e riavvia lo stack.
+- **Restart manuale:** `docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.prod up -d` (ricrea i servizi cambiati; i volumi persistono).
+- **Singolo servizio:** `docker compose … restart app` (o `caddy`). Confermare la salute via `/api/v1/health` e lo stato health del compose.
 
-### 16.4 Database maintenance
+### 16.4 Manutenzione del database
 
-- **Backups:** `deploy/scripts/backup_postgres.*` (DB) and `backup_caddy` (certs/state) on a schedule; store off-host.
-- **Restore:** `deploy/scripts/restore_postgres.*` into a fresh `postgres` volume; restart `app`.
-- **Schema:** tables auto-create on first boot (webui `init_db()`, checkpointer `setup()`). The lesson-message transcript is the durable source of truth and survives a checkpointer wipe; artifacts in the `app_artifacts` volume are regenerable.
-
----
-
-## 17. Roadmap & Known Limitations
-
-### 17.1 Deferred items
-
-Items intentionally out of scope for the current pilot (tracked in `docs/product/ClickUp_Agentic_GraphRAG_Update.md`):
-
-- Lesson library + history + PDF export; Italian copy polish, accessibility, mobile breakpoints, Tailwind CLI build.
-- Full automated end-to-end coverage of the media pipeline and the upsell flow (currently validate manually — §10.3).
-- UDL content parity (media-mapping enrichment) and enriched UDL Critic criteria; Critic integration with domain-configs mirroring the Writer's pattern.
-- Application-level rate limiting and per-tenant authorization.
-- Decision on `lesson_template.txt` (wire into the Writer or remove).
-
-### 17.2 Concurrency & scaling
-
-The compiled graph and agents are module-level singletons and the WebUI enforces one in-flight run per lesson. For higher concurrency, the streaming engine should be consolidated into a single `aix.agent.streaming` module and the singleton assumption revisited (worker pool / per-request graph). Tracked as a deploy follow-up.
-
-### 17.3 RS256 / multi-issuer JWT migration
-
-V1 uses HS256 with a shared `WEBUI_AUTH_SECRET`. A migration to **RS256** with multi-issuer support is planned for multi-tenant / multi-issuer scenarios (e.g. AixLearning minting its own tokens), but is **not required for V1**.
-
-### 17.4 Frontend evolution
-
-The standalone WebUI (Jinja2 + htmx + WebAwesome + Tailwind + Alpine.js + SSE) is intentionally lightweight and server-driven, which suits the agentic, streaming UX. A deeper analysis of frontend options for an agentic architecture (including comparison with the native AixLearning Django/Mercure stack) is captured in `docs/product/WebUI_Frontend_Comparison_Agentic_UX.md`.
-
-### 17.5 Other known limitations
-
-- Single-host, non-HA pilot (availability ~99.5%, §15.3).
-- Coarse authorization (§13.2) and no app-level rate limiting (§13.5).
-- Multilingual generation is tuned for Italian (primary) with English support; other languages are detected but not first-class.
+- **Backup:** `deploy/scripts/backup_postgres.*` (DB) e `backup_caddy` (certificati/stato) su schedule; conservare off-host.
+- **Restore:** `deploy/scripts/restore_postgres.*` in un volume `postgres` fresco; riavviare `app`.
+- **Schema:** le tabelle si auto-creano al primo boot (webui `init_db()`, checkpointer `setup()`). Il trascritto dei messaggi della lezione è la fonte di verità durevole e sopravvive a un wipe del checkpointer; gli artefatti nel volume `app_artifacts` sono rigenerabili.
 
 ---
 
-## 18. Appendices
+## 17. Roadmap & limitazioni note
 
-### Appendix A — Environment variables reference (full table)
+### 17.1 Elementi rimandati
 
-The full, annotated list lives in `.env.example` (development surface) and `deploy/.env.prod.example` (production subset). The categorized summary tables in §8.2 are the canonical in-document reference; treat the `*.example` files as the authoritative source for defaults and inline guidance, since they are versioned alongside the code.
+Elementi intenzionalmente fuori scope per il pilot attuale (tracciati nel backlog di progetto):
 
-### Appendix B — Glossary
+- Libreria delle lezioni + storico + export PDF; rifinitura della copy italiana, accessibilità, breakpoint mobile, build Tailwind CLI.
+- Copertura end-to-end automatica completa della pipeline media e del flusso di upsell (attualmente validati manualmente — §10.3).
+- Parità di contenuti UDL (arricchimento del media-mapping) e criteri Critic UDL arricchiti; integrazione del Critic con le domain-config rispecchiando il pattern del Writer.
+- Rate limiting a livello applicativo e autorizzazione per-tenant.
+- Decisione su `lesson_template.txt` (collegarlo al Writer o rimuoverlo).
 
-Extends the §1.5 glossary:
+### 17.2 Concorrenza & scaling
 
-- **Node2Vec** — graph-embedding algorithm producing structural vectors for KG nodes.
-- **Text2Cypher** — the NL→Cypher conversion layer (with IT/EN translation).
-- **Corrective RAG** — optional retrieval-grading loop that retries retrieval when grounding is weak.
-- **Educational profile** — structured class/classroom/time/subject context attached to a request.
-- **Coverage tier** — UI signal (`healthy`/`limited`/`out_of_scope`) derived from KG node count.
-- **Checkpointer** — LangGraph component persisting per-thread agent state (SQLite dev / Postgres prod).
-- **Thread / `thread_id`** — the conversation key enabling multi-turn memory.
-- **MCP** — Model Context Protocol; exposes tools/resources/prompts to MCP clients.
-- **Mode A / Mode B** — standalone WebUI vs native AixLearning integration.
-- **Langfuse / GlitchTip** — tracing and error-monitoring backends.
+Il grafo compilato e gli agenti sono singleton a livello di modulo e la WebUI impone una run in-flight per lezione (tramite un registro in-memory `_ACTIVE_RUNS`). Per concorrenza più alta, l'engine di streaming andrebbe consolidato in un singolo modulo `aix.agent.streaming` e l'assunzione di singleton andrebbe rivista (worker pool / grafo per-richiesta). Mancano inoltre, per molti utenti simultanei, controlli espliciti di carico: coda globale delle generazioni, cap globale di chiamate LLM concorrenti, coordinamento cross-worker del registro run. La roadmap dettagliata in due fasi (Phase A single-worker, Phase B multi-worker) è mantenuta nel piano di deployment interno. Tracciato come follow-up di deploy.
 
-### Appendix C — Cross-references to internal documents
+### 17.3 Migrazione RS256 / JWT multi-issuer
 
-| Document | Purpose |
+La V1 usa HS256 con un `WEBUI_AUTH_SECRET` condiviso. Una migrazione a **RS256** con supporto multi-issuer è pianificata per scenari multi-tenant / multi-issuer (es. AixLearning che conia i propri token), ma **non è richiesta per la V1**.
+
+### 17.4 Evoluzione del frontend
+
+La WebUI standalone (Jinja2 + htmx + WebAwesome + Tailwind + Alpine.js + SSE) è intenzionalmente leggera e server-driven, il che si adatta alla UX agentica e in streaming. Un'analisi più approfondita delle opzioni di frontend per un'architettura agentica (incluso il confronto con lo stack nativo Django/Mercure di AixLearning) è mantenuta separatamente.
+
+### 17.5 Altre limitazioni note
+
+- Pilot single-host, non-HA (disponibilità ~99.5%, §15.3).
+- Autorizzazione grossolana (§13.2) e nessun rate limiting a livello applicativo (§13.5).
+- La generazione multilingue è tarata per l'italiano (primario) con supporto inglese; altre lingue sono rilevate ma non first-class.
+
+---
+
+## 18. Appendici
+
+### Appendice A — Riferimento variabili d'ambiente (tabella completa)
+
+L'elenco completo e annotato vive in `.env.example` (superficie di sviluppo) e `deploy/.env.prod.example` (sottoinsieme di produzione). Le tabelle di riepilogo categorizzate in §8.2 sono il riferimento canonico in-documento; trattare i file `*.example` come la fonte autorevole per default e indicazioni inline, dato che sono versionati insieme al codice.
+
+### Appendice B — Glossario
+
+Estende il glossario di §1.5:
+
+- **Node2Vec** — algoritmo di graph-embedding che produce vettori strutturali per i nodi del KG.
+- **Text2Cypher** — il layer di conversione NL→Cypher (con traduzione IT/EN).
+- **Corrective RAG** — ciclo opzionale di grading del retrieval che ritenta il retrieval quando l'ancoraggio è debole.
+- **Profilo educativo** — contesto strutturato di classe/aula/tempo/materia allegato a una richiesta.
+- **Coverage tier** — segnale UI (`healthy`/`limited`/`out_of_scope`) derivato dal numero di nodi del KG.
+- **Checkpointer** — componente LangGraph che persiste lo stato dell'agente per-thread (SQLite dev / Postgres prod).
+- **Thread / `thread_id`** — la chiave di conversazione che abilita la memoria multi-turno.
+- **MCP** — Model Context Protocol; espone tool/resources/prompts ai client MCP.
+- **Mode A / Mode B** — WebUI standalone vs integrazione nativa AixLearning.
+- **Live media layer** — livello media dinamici off-critical-path (§7.8) che arricchisce le risorse via fonti esterne in tempo reale, flag-gated e con cache.
+- **Langfuse / GlitchTip** — backend di tracing e monitoraggio errori.
+
+### Appendice C — Documenti correlati
+
+Documenti consegnati insieme a questo riferimento tecnico (parte del repository):
+
+| Documento | Scopo |
 |---|---|
-| `docs/release/Functional_Documentation.md` | Product/pedagogical companion to this technical reference |
-| `docs/product/Dev_Handoff_AgenticGraphRAG_Integration.md` | DEV integration handoff (Mode B contract, examples) |
-| `docs/product/Dev_Technical_Integration_Guide.md` | Detailed API/integration technical guide |
-| `docs/product/Internal_Production_Deployment_Plan.md` | Wave 1/2 deployment plan, timing, ownership, hostnames |
-| `docs/product/Regulatory_Alignment_EU_AI_Act_UNI_11621_8.md` | EU AI Act / UNI alignment |
-| `docs/product/WebUI_Frontend_Comparison_Agentic_UX.md` | Frontend/UX analysis for agentic architecture |
-| `docs/product/ClickUp_Agentic_GraphRAG_Update.md` | Backlog / deferred-item tracker |
-| `deploy/README.md` | First-deploy, backup, rollback, log-inspection runbook |
-| `README.md` | Repository quick start and feature overview |
+| `docs/release/Functional_Documentation.md` | Companion di prodotto/pedagogico a questo riferimento tecnico |
+| `deploy/README.md` | Runbook di primo deploy, backup, rollback, ispezione log |
+| `README.md` | Quick start del repository e panoramica delle feature |
 
-### Appendix D — Changelog
-
-| Version | Date | Notes |
-|---|---|---|
-| 0.1 | May 2026 | Initial structure + TOC + §1 Introduction |
-| 1.0 | May 2026 | First complete draft: §2–§18 written and grounded in the codebase |
+> La storia delle modifiche del documento è in testa (sezione **Storia delle modifiche**).
 
 ---
 
-*End of document.*
+*Fine del documento.*

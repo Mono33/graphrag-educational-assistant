@@ -9,13 +9,21 @@
 
 ## Messaggi chiave (cosa devono ricordarsi a fine intervento)
 
-1. Dietro la "modalità agente" delle AI che già usano c'è un'**architettura complessa**: i generalisti la nascondono, noi possiamo **scegliere quanto mostrarla**.
-2. Il nostro **non è un chatbot generalista**: è un'**AI specializzata per la didattica**, ancorata a conoscenza verificata e al profilo della classe.
-3. **L'architettura AI guida le scelte di prodotto/frontend**: la nuova domanda di design non è "quale schermata", ma *"quanta parte del ragionamento rendiamo visibile, a chi e con quale linguaggio?"*.
+1. Il protagonista non è la tecnologia: è il **docente** che deve preparare una lezione affidabile per una classe reale, con tempi stretti e bisogni diversi.
+2. Dietro la "modalità agente" delle AI che già usano c'è un'**architettura complessa**: i generalisti la nascondono, noi possiamo **scegliere quanto mostrarla**.
+3. Il nostro **non è un chatbot generalista**: è un'**AI specializzata per la didattica**, ancorata a conoscenza verificata e al profilo della classe.
+4. **L'architettura AI guida le scelte di prodotto/frontend**: la nuova domanda di design non è "quale schermata", ma *"quanta parte del ragionamento rendiamo visibile, a chi e con quale linguaggio?"*.
 
 ---
 
 ## Lo storytelling (parlato)
+
+### 0. Premessa — partire dal bisogno reale
+> "Immaginiamo un docente che deve preparare una lezione per una classe reale: tempi stretti, livelli diversi, BES/DSA, bisogno di fonti affidabili.
+>
+> Il punto non è avere una risposta qualsiasi dall'AI. Il punto è avere un sistema che costruisce una proposta didattica, la ancora a conoscenza verificata e gli permette di capire **perché** quella proposta ha senso."
+
+*(Obiettivo: far capire subito che il valore non è "un altro chatbot", ma fiducia, controllo e qualità didattica.)*
 
 ### 1. Hook — partire da ciò che conoscono già
 > [Domanda aperta alla sala, poi 5 secondi di pausa]
@@ -48,7 +56,9 @@
 >
 > Prima era: *'quale bottone, quale schermata'*. Adesso è: ***'quanta parte del ragionamento dell'AI rendiamo visibile, a chi, e con quale linguaggio?'***
 >
-> Oggi **sono le architetture AI a guidare le scelte di prodotto e di frontend**, non il contrario. Chi disegna il prodotto deve capire l'architettura, perché è l'architettura che apre — o chiude — le possibilità."
+> Oggi **sono le architetture AI a guidare le scelte di prodotto e di frontend**, non il contrario. Chi disegna il prodotto deve capire l'architettura, perché è l'architettura che apre — o chiude — le possibilità.
+>
+> La vera opportunità di prodotto non è solo generare contenuti: è trasformare il ragionamento dell'AI in **fiducia, controllo e trasparenza** per il docente."
 
 ### 6. Come si integra in un prodotto esistente — *progressive disclosure*
 > "La buona notizia è che non dobbiamo scegliere fra 'tutto visibile' e 'tutto nascosto'. Si fa **progressive disclosure**, a livelli:
@@ -68,9 +78,11 @@
 
 ## Versione 60 secondi (se manca tempo)
 
-> "Avete presente la *modalità agente* o il *deep research* di ChatGPT? Dietro quel bottone c'è un'architettura che **pianifica, cerca, scrive e verifica** — loro la nascondono. Quello che vi mostra Angelo è la stessa cosa, ma **resa visibile**.
+> "Un docente non ha bisogno di una risposta qualsiasi: deve preparare una lezione affidabile per una classe reale, con livelli diversi e fonti da poter spiegare.
 >
-> La differenza è che il nostro **non è un generalista**: è un'**AI specializzata per la didattica**, ancorata a conoscenza verificata e al profilo della classe — quindi meno invenzioni e più tracciabilità.
+> Avete presente la *modalità agente* o il *deep research* di ChatGPT? Dietro quel bottone c'è un'architettura che **pianifica, cerca, scrive e verifica** — loro la nascondono. Quello che vi mostra Angelo è la stessa cosa, ma **resa visibile**.
+>
+> La differenza è che il nostro **non è un generalista**: è un'**AI specializzata per la didattica**, ancorata a conoscenza verificata e al profilo della classe — quindi riduce il rischio di risposte inventate e aumenta la tracciabilità.
 >
 > Il punto per voi è uno solo: **quanta parte di questo processo vogliamo mostrare al docente?** Da quella scelta dipende il prodotto."
 
@@ -78,13 +90,13 @@
 
 ## Filo conduttore (in una riga)
 
-**Dal bottone "agent" che tutti conoscono → a "ecco cosa c'è dietro" (il video) → "il nostro è specializzato, non generalista" → "l'architettura guida il prodotto" → "quanto mostriamo? decidiamolo insieme" → le risposte e le domande del documento.**
+**Dal bisogno reale del docente → al bottone "agent" che tutti conoscono → a "ecco cosa c'è dietro" (il video) → "il nostro è specializzato, non generalista" → "l'architettura guida il prodotto" → "quanto mostriamo? decidiamolo insieme" → le risposte e le domande del documento.**
 
 ---
 
 ## Possibili domande dalla sala (risposte-lampo)
 
-- **"Ma allora è come ChatGPT?"** → No: specializzato sulla didattica, **ancorato al Knowledge Graph** e al **profilo della classe** → meno allucinazioni, più tracciabilità delle fonti.
+- **"Ma allora è come ChatGPT?"** → No: specializzato sulla didattica, **ancorato al Knowledge Graph** e al **profilo della classe** → riduce il rischio di risposte inventate e aumenta la tracciabilità delle fonti.
 - **"Perché mostrare gli agenti? Non confonde il docente?"** → Si mostra **solo l'essenziale** (4 passaggi leggibili); il resto è **a richiesta**. È una scelta di prodotto, non un obbligo tecnico.
 - **"Quanto costa e quanto è lento?"** → L'agenticità aggiunge passaggi, ma alza qualità e grounding; leve e numeri nel documento (sezioni *Costi* e *Concorrenza*).
 - **"Si può mettere nell'app attuale?"** → Sì, in modo **incrementale**: stesse tecnologie di frontend già in uso, niente rewrite.

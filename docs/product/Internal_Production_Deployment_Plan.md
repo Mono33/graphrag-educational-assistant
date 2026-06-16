@@ -338,7 +338,59 @@ These items are tracked in `ClickUp_Agentic_GraphRAG_Update.md` but **NOT** gati
 
 ---
 
-## 7. Open questions for FEM Direction
+## 7. Concurrency in production — scale-up roadmap
+
+This section answers a recurring product-team question ("can it handle many teachers at once?") with a concrete plan. It is intentionally **out of scope for the ~5-10 user pilot** (Waves 1-6 above are enough to launch), but it is the path from **pilot-grade** to **production-grade** concurrency. It mirrors the two-phase recommendation in the companion answers doc (`Risposte_Domande_Product_Team_Agentic_GraphRAG.md` §1.2) and the scaling note in `docs/release/Technical_Documentation.md` §17.2.
+
+### 7.1 Where we are today (grounded in the code)
+
+**Already in place ✅** — the async foundation is real:
+
+- FastAPI async endpoints + LangGraph async execution + SSE streaming, so one process interleaves many requests on the event loop.
+- Per-request DB sessions; Postgres checkpointer for multi-turn memory (Wave 1 #1).
+- A **per-lesson, in-memory** duplicate-run guard (`_ACTIVE_RUNS` in `src/aix/webui/lessons/routes.py`) that stops a second stream attaching to the *same* lesson within the *same* process.
+- Token-bucket rate limiting on **external media APIs only** (`RateLimiter` in `src/aix/agent/media/external_apis.py`).
+
+**Missing for many simultaneous users ❌** — there is no explicit *load control*:
+
+- No global cap/queue on concurrent agent runs → N users = N full pipelines = N simultaneous LLM calls, with no backpressure.
+- No process-wide limit on concurrent **LLM** calls (the only limiter is for external media APIs), so a burst can hit provider rate limits / spike cost.
+- `_ACTIVE_RUNS` is **per-process** and **non-persistent** → it does not coordinate across multiple workers/replicas.
+- The compiled graph + agents are **module-level singletons** (`aix.agent.graph.nodes`) — fine for one box, must be revisited for parallel throughput.
+- No per-user rate limiting yet (planned as Wave 3 #13), no operational load/cost dashboard.
+
+### 7.2 Phase A — single-worker hardening *(cheapest; enough for tens of users on one larger VM)*
+
+Ordered so the highest-value, lowest-risk items come first. None require a horizontal-scale refactor.
+
+| # | Activity | Effort | Owner | Notes |
+|---|---|---|---|---|
+| 31 | **Global generation queue + bounded concurrency** *(`asyncio.Semaphore` caps N in-flight pipelines; excess requests queue)* | 4-6 h | LM | The single biggest lever. Surface an "in coda…" state in the WebUI when queued; cap is env-configurable (e.g. `AIX_MAX_CONCURRENT_RUNS`) |
+| 32 | **Process-wide concurrent-LLM-call cap** *(token bucket / semaphore across planner+writer+critic)* | 3-4 h | LM | Protects against OpenRouter 429s and cost spikes independent of #31; tune to provider limits |
+| 33 | **Per-user rate limiting** *(e.g. 30 lessons/day, 10/hour)* | 2 h | LM | Same item as Wave 3 #13 — listed here for completeness; slowapi middleware, per-role config |
+| 34 | **Load-shedding / graceful "sistema occupato"** *(reject at capacity instead of failing mid-run)* | 2-3 h | LM | When queue (#31) is full, return a friendly "riprova tra poco" rather than a hard error or a slow run |
+| 35 | **Concurrency load test** *(k6 / Locust: simulate N concurrent teachers; measure P95, 429 rate, RAM)* | 4-6 h | LM | Produces the real "safe concurrent users on this VM" number; feeds #36 |
+| 36 | **Vertical capacity sizing** *(measure per-run RAM/CPU; decide CX22 4 GB → CCX13 8 GB if needed)* | 2 h | LM + FEM | Cheapest scale-up is a bigger single VM (see §3.2); revisit only if #35 shows headroom is short |
+
+**Phase A pilot note:** strictly, the pilot needs none of these, but **#31 + #34** are cheap insurance and worth doing opportunistically even for the internal pilot.
+
+### 7.3 Phase B — multi-worker / horizontal scale *(needed for hundreds of users; requires shared state)*
+
+| # | Activity | Effort | Owner | Notes |
+|---|---|---|---|---|
+| 37 | **DB-backed run registry** *(replace in-memory `_ACTIVE_RUNS` with a Postgres row + heartbeat)* | 1-1.5 d | LM | Prereq for >1 worker: lets workers see each other's in-flight runs and recover stale rows after a crash |
+| 38 | **Revisit module-level singletons** *(graph + agents → worker pool or per-request graph; verify async/thread safety)* | 1-2 d | LM | Removes the shared-mutable-state risk under truly parallel runs; consolidate streaming into one `aix.agent.streaming` module (per Tech Doc §17.2) |
+| 39 | **Multi-worker / multi-replica deploy** *(uvicorn `--workers` or replicas behind Caddy)* | 0.5-1 d | LM + FEM | Safe only after #37 + #38; Postgres checkpointer + WebUI DB are already shared, so state is ready |
+| 40 | **Operational concurrency dashboard** *(active runs, queue depth, LLM call rate, cost/run, 429 rate)* | 0.5 d | LM | Extends the Langfuse work in Wave 4 #15; the cockpit for tuning #31/#32 caps |
+
+### 7.4 Recommendation
+
+1. **Pilot (now):** ship as-is; optionally land **#31** and **#34** as cheap safety nets.
+2. **If the WebUI grows into a real multi-user product:** do **Phase A** first (single bigger VM gets you surprisingly far), then **Phase B** only when load tests (#35) or user count justify horizontal scale. Do **not** enable multi-worker (#39) before the DB-backed registry (#37) and singleton review (#38), or the per-process guard will silently break.
+
+---
+
+## 8. Open questions for FEM Direction
 
 These must now be resolved before the production pilot can be opened to users:
 
@@ -351,7 +403,7 @@ These must now be resolved before the production pilot can be opened to users:
 
 ---
 
-## 8. Cross-references
+## 9. Cross-references
 
 - **AixLearning DEV integration** *(separate track)*: `Dev_Handoff_AgenticGraphRAG_Integration.md`, `Dev_Technical_Integration_Guide.md`
 - **Regulatory compliance**: `Regulatory_Alignment_EU_AI_Act_UNI_11621_8.md`
