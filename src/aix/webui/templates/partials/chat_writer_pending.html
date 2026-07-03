@@ -2,10 +2,11 @@
   Writer Agent — pending placeholder (CORE 2 #6.6 P2 phase 2 / re-skin P5.4).
 
   Rendered immediately after the retriever finishes, BEFORE the writer call
-  starts. Today the writer call is non-streaming (a single, long
-  ``chat.completions.create``); without this placeholder the chat would
-  look frozen for 60–90 seconds. P2 phase 3 swaps in token streaming and
-  this same wrapper becomes the streaming-tokens target.
+  starts. Displays an animated checklist while the LLM starts up, then:
+    1. Switches to a "💭 Elaborazione pedagogica…" accordion that fills with
+       the model's thinking tokens (reasoning_details) in real time.
+    2. When the first lesson-content token arrives the accordion collapses
+       and the lesson is rendered as live markdown via marked.js.
 
   The wrapper element carries a unique id ``writer-card-rev{N}`` so the
   matching ``chat_writer_card.html`` can OOB-replace it with the completed
@@ -21,8 +22,10 @@
 {% set p = payload or {} %}
 {% set rev = p.get('revision', 1) %}
 {% set is_revision = p.get('is_revision', False) %}
+{% set lid = lesson.id | string if lesson else '' %}
 
-<div id="writer-card-rev{{ rev }}" class="aix-agent-shell">
+<div id="writer-card-rev{{ rev }}" class="aix-agent-shell"
+     {% if lid %}data-writer-stream="{{ lid }}"{% endif %}>
 
   <div class="aix-agent-avatar aix-agent-avatar--writer">
     <wa-icon name="pen-nib"></wa-icon>
@@ -39,42 +42,80 @@
           </span>
         </div>
         <span class="aix-pill aix-pill-warning">
-          <wa-spinner style="font-size:0.7rem;"></wa-spinner>
+          <wa-spinner class="aix-fs-xs"></wa-spinner>
           in scrittura
         </span>
       </header>
 
-      <div class="aix-agent-card-body" style="display:flex; flex-direction:column; gap:10px;">
+      <div class="aix-agent-card-body aix-col-10">
         {% if is_revision and p.get('feedback') %}
-          <div style="font-size:12px; color:var(--aix-text-secondary);
-                      background:var(--aix-amber-soft); border:1px solid rgba(212,164,90,0.32);
-                      border-radius:var(--aix-radius-sm); padding:8px 12px;">
-            <strong style="color:var(--aix-amber-hover);">Indicazioni di revisione:</strong>
-            <span style="margin-left:4px;">{{ p.feedback }}</span>
+          <div class="aix-fs-12 aix-color-secondary aix-revision-box">
+            <strong class="aix-color-amber">Indicazioni di revisione:</strong>
+            <span class="aix-ml-4px">{{ p.feedback }}</span>
           </div>
         {% endif %}
 
-        {# Skeleton paragraphs that subtly pulse — visual proof we're working #}
-        <div class="aix-skeleton-stack">
-          <div class="aix-skeleton-line" style="width:92%;"></div>
-          <div class="aix-skeleton-line" style="width:84%;"></div>
-          <div class="aix-skeleton-line" style="width:76%;"></div>
-          <div class="aix-skeleton-line" style="width:91%;"></div>
-          <div class="aix-skeleton-line" style="width:60%;"></div>
+        {# Thinking accordion — hidden until first think_chunk; collapses when content starts #}
+        <div id="writer-think-{{ lid }}" class="aix-mb-2px" style="display:none;">
+          <details id="writer-think-details-{{ lid }}" open>
+            <summary class="aix-irow-6 aix-clickable aix-fs-11 aix-color-tertiary aix-think-summary">
+              <span class="writer-think-dot"></span>
+              💭 <em>Elaborazione pedagogica…</em>
+            </summary>
+            <div id="writer-think-body-{{ lid }}" class="aix-think-body"></div>
+          </details>
         </div>
 
-        <p style="font-size:12px; font-style:italic; color:var(--aix-text-tertiary); margin:0;">
-          La generazione richiede tipicamente 60–90 secondi. Il Writer
-          incorpora i nodi del KG, le strategie pedagogiche e i media
-          curati, applicandoli al profilo educativo della classe.
-        </p>
+        {# Live markdown preview — hidden until first writer_chunk #}
+        <div id="writer-stream-{{ lid }}" class="aix-prose writer-stream-prose aix-writer-stream-box"
+             style="display:none;"></div>
+
+        {# Animated checklist — hidden when the first token (think or content) arrives #}
+        <div id="writer-skeleton-{{ lid }}" class="aix-col-6">
+
+          <p class="aix-color-secondary aix-fs-12 m-0">
+            Il Writer sta componendo la lezione:
+          </p>
+
+          <div class="writer-pending-item aix-delay-0">
+            <span class="writer-pending-dot"></span>
+            <span>Lettura dei {{ "nodi" if not is_revision else "nodi KG e istruzioni di revisione" }} recuperati dal Knowledge Graph</span>
+          </div>
+          <div class="writer-pending-item aix-delay-2s">
+            <span class="writer-pending-dot"></span>
+            <span>Adattamento al profilo della classe (BES, livello, durata)</span>
+          </div>
+          <div class="writer-pending-item aix-delay-4s">
+            <span class="writer-pending-dot"></span>
+            <span>Selezione e sequenza delle strategie pedagogiche</span>
+          </div>
+          <div class="writer-pending-item aix-delay-6s">
+            <span class="writer-pending-dot"></span>
+            <span>Strutturazione delle attività e dei tempi della lezione</span>
+          </div>
+          <div class="writer-pending-item aix-delay-8s">
+            <span class="writer-pending-dot"></span>
+            <span>Citazione inline dei media curati (video, articoli, OER)</span>
+          </div>
+
+          <p class="aix-footnote-sm mt-1">
+            Il testo apparirà in tempo reale non appena il modello inizia a scrivere.
+          </p>
+
+        </div>
       </div>
 
     </article>
     <div class="aix-agent-footer-label">
-      <wa-icon name="pen-nib" style="font-size:0.75rem;"></wa-icon>
+      <wa-icon name="pen-nib" class="aix-fs-sm"></wa-icon>
       <span>Writer · pending</span>
     </div>
   </div>
 
 </div>
+
+{# .writer-pending-item / .writer-pending-dot / .writer-stream-prose / @keyframes → aix-brand.css #}
+
+{# EventSource is opened by the MutationObserver in _base.html when it detects
+   data-writer-stream="{{ lid }}" on this card. No inline <script> here —
+   HTMX 2 does not execute scripts in SSE-received HTML. #}

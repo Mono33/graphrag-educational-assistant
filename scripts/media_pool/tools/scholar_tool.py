@@ -5,11 +5,10 @@ DOI resolution verified via HEAD request before accepting an entry.
 """
 
 import logging
+import threading
 import time
 from datetime import date
-from typing import Any, Dict
-
-import threading
+from typing import Any
 
 import requests
 
@@ -45,7 +44,7 @@ def _verify_doi(doi: str) -> bool:
         return False
 
 
-def search_papers(query: str, max_results: int = 3) -> Dict[str, Any]:
+def search_papers(query: str, max_results: int = 3) -> dict[str, Any]:
     """
     Search OpenAlex for open-access papers with verified DOIs.
 

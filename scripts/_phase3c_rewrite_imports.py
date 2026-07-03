@@ -41,8 +41,8 @@ from __future__ import annotations
 import argparse
 import re
 import sys
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 # -----------------------------------------------------------------------------
 # Mapping table — order does not matter (each pattern is an exact module name)
@@ -184,7 +184,7 @@ def main() -> int:
             # Print a tiny diff summary (lines that changed)
             orig_lines = original.splitlines()
             new_lines = rewritten.splitlines()
-            for i, (o, n_) in enumerate(zip(orig_lines, new_lines), start=1):
+            for i, (o, n_) in enumerate(zip(orig_lines, new_lines, strict=False), start=1):
                 if o != n_:
                     print(f"    L{i:<5d}-: {o}")
                     print(f"    L{i:<5d}+: {n_}")

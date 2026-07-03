@@ -51,11 +51,13 @@ import json
 import logging
 import re
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from openai import AsyncOpenAI
 
-from aix.core.config import config as app_config, extract_response_content
+from aix.core.concurrency import guarded_chat_completion
+from aix.core.config import config as app_config
+from aix.core.config import extract_response_content
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +125,7 @@ VALID_GRADES = ("relevant", "ambiguous", "irrelevant")
 @dataclass
 class GraderResult:
     """Structured output of one grading pass."""
+
     grade: str  # one of VALID_GRADES
     reason: str
     rewritten_query: Optional[str] = None
@@ -140,6 +143,7 @@ class GraderResult:
 # ---------------------------------------------------------------------------
 # JSON extractor (same multi-strategy as planner/critic — keep them aligned)
 # ---------------------------------------------------------------------------
+
 
 def _extract_json(content: str) -> dict:
     """Multi-strategy JSON extractor for LLM responses that may wrap JSON
@@ -163,7 +167,7 @@ def _extract_json(content: str) -> dict:
     end = content.rfind("}")
     if start != -1 and end != -1 and end > start:
         try:
-            return json.loads(content[start: end + 1])
+            return json.loads(content[start : end + 1])
         except json.JSONDecodeError:
             pass
 
@@ -173,6 +177,7 @@ def _extract_json(content: str) -> dict:
 # ---------------------------------------------------------------------------
 # Agent
 # ---------------------------------------------------------------------------
+
 
 class RetrievalGraderAgent:
     """
@@ -217,11 +222,11 @@ class RetrievalGraderAgent:
         return self._client
 
     @staticmethod
-    def _node_titles(nodes: List[Dict[str, Any]], cap: int) -> List[str]:
+    def _node_titles(nodes: list[dict[str, Any]], cap: int) -> list[str]:
         """Best-effort title extraction. Different retriever code paths
         populate ``title`` / ``name`` / ``label`` / ``id``; we walk all of
         them, dedup case-insensitively, and stop at ``cap`` entries."""
-        titles: List[str] = []
+        titles: list[str] = []
         seen: set[str] = set()
         for n in nodes or []:
             if not isinstance(n, dict):
@@ -242,8 +247,8 @@ class RetrievalGraderAgent:
         return titles
 
     @staticmethod
-    def _recommendation_names(recs: List[Dict[str, Any]], cap: int) -> List[str]:
-        names: List[str] = []
+    def _recommendation_names(recs: list[dict[str, Any]], cap: int) -> list[str]:
+        names: list[str] = []
         for r in (recs or [])[:cap]:
             if isinstance(r, dict):
                 n = r.get("name") or r.get("title")
@@ -255,10 +260,10 @@ class RetrievalGraderAgent:
         self,
         *,
         query: str,
-        key_concepts: Optional[List[str]] = None,
-        search_queries: Optional[List[str]] = None,
-        retrieved_nodes: Optional[List[Dict[str, Any]]] = None,
-        recommendations: Optional[List[Dict[str, Any]]] = None,
+        key_concepts: Optional[list[str]] = None,
+        search_queries: Optional[list[str]] = None,
+        retrieved_nodes: Optional[list[dict[str, Any]]] = None,
+        recommendations: Optional[list[dict[str, Any]]] = None,
     ) -> GraderResult:
         """
         Grade a single retrieval pass.
@@ -316,7 +321,8 @@ class RetrievalGraderAgent:
                 max_tokens=300,
                 json_mode=True,
             )
-            response = await client.chat.completions.create(
+            response = await guarded_chat_completion(
+                client,
                 messages=[
                     {"role": "system", "content": GRADER_SYSTEM_PROMPT},
                     {"role": "user", "content": user_prompt},
@@ -333,7 +339,8 @@ class RetrievalGraderAgent:
             raw_preview = content[:300] if "content" in dir() else "<not set>"
             logger.error(
                 "event=agent_parse_error agent=retrieval_grader err=%s raw_preview=%r",
-                e, raw_preview,
+                e,
+                raw_preview,
             )
             return GraderResult(
                 grade="relevant",
@@ -372,6 +379,8 @@ class RetrievalGraderAgent:
         result = GraderResult(grade=grade, reason=reason, rewritten_query=rewritten)
         logger.info(
             "[RetrievalGrader] grade=%s reason=%r rewrite=%r",
-            result.grade, result.reason[:120], result.rewritten_query,
+            result.grade,
+            result.reason[:120],
+            result.rewritten_query,
         )
         return result

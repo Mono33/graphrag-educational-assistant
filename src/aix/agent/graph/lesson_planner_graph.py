@@ -22,24 +22,25 @@ presence of a checkpointer attached to the compiled graph.
 """
 
 import logging
-from typing import Any, Dict, Optional
+import os
+from typing import Any, Optional
 
 from langgraph.graph import END, StateGraph
 
-from aix.agent.graph.state import AgentState, create_initial_state
 from aix.agent.graph.nodes import (
-    plan_node,
-    retrieve_node,
-    write_node,
+    _corrective_rag_enabled,
     critique_node,
-    should_continue_to_revision,
     # CORE 2 #9 — Corrective RAG (Retrieval Grading). Imported eagerly so
     # an import error fails fast even when the feature flag is off; the
     # nodes are only added to the topology when the flag is on.
     grade_retrieval_node,
+    plan_node,
+    retrieve_node,
+    should_continue_to_revision,
     should_retry_retrieval,
-    _corrective_rag_enabled,
+    write_node,
 )
+from aix.agent.graph.state import AgentState, create_initial_state
 
 logger = logging.getLogger(__name__)
 
@@ -115,10 +116,10 @@ def _build_workflow() -> StateGraph:
         "critique",
         should_continue_to_revision,
         {
-            "revise": "write",    # Go back to writer
-            "finish": END,        # End the pipeline
-            "error": END          # End on error
-        }
+            "revise": "write",
+            "finish": END,
+            "error": END,
+        },  # Go back to writer  # End the pipeline  # End on error
     )
     return workflow
 
@@ -153,8 +154,9 @@ async def build_lesson_planner_graph_async() -> Any:
     Build the lesson planner state machine *with* a checkpointer when
     available (CORE 2 #10.2).
 
-    Looks up the process-singleton ``AsyncSqliteSaver`` (or ``None`` if
-    ``langgraph-checkpoint-sqlite`` is not installed), and compiles the
+    Looks up the process-singleton checkpointer (``AsyncPostgresSaver`` when
+    ``LANGGRAPH_DATABASE_URL`` is a Postgres URL, else ``AsyncSqliteSaver``,
+    or ``None`` if the relevant backend package is missing), and compiles the
     graph with it attached. Falls back to the no-checkpointer path on
     graceful degradation.
 
@@ -175,11 +177,14 @@ async def build_lesson_planner_graph_async() -> Any:
     workflow = _build_workflow()
 
     if saver is not None:
-        logger.info("[LessonPlannerGraph] Building graph with AsyncSqliteSaver checkpointer...")
-        compiled = workflow.compile(checkpointer=saver)
+        # Report the ACTUAL backend (AsyncPostgresSaver / AsyncSqliteSaver),
+        # not a hardcoded name — the saver is chosen at runtime from the env.
         logger.info(
-            "[LessonPlannerGraph] Graph compiled successfully (multi-turn memory: ENABLED)"
+            "[LessonPlannerGraph] Building graph with %s checkpointer...",
+            type(saver).__name__,
         )
+        compiled = workflow.compile(checkpointer=saver)
+        logger.info("[LessonPlannerGraph] Graph compiled successfully (multi-turn memory: ENABLED)")
     else:
         logger.info("[LessonPlannerGraph] Building graph without checkpointer (degraded)...")
         compiled = workflow.compile()
@@ -192,21 +197,21 @@ async def build_lesson_planner_graph_async() -> Any:
 class LessonPlannerPipeline:
     """
     High-level interface for the lesson planner pipeline.
-    
+
     Usage:
         pipeline = LessonPlannerPipeline(domain="neuro")
         result = await pipeline.run("Crea una lezione sulla motivazione")
     """
-    
+
     def __init__(
         self,
         domain: str = "neuro",
         language: str = "it",
-        max_revisions: int = 2
+        max_revisions: int = int(os.getenv("AIX_MAX_REVISIONS", "1")),
     ):
         """
         Initialize the lesson planner pipeline.
-        
+
         Args:
             domain: Knowledge domain ("neuro" or "udl")
             language: Output language ("it" or "en")
@@ -249,7 +254,7 @@ class LessonPlannerPipeline:
         self,
         query: str,
         session_id: Optional[str] = None,
-        educational_profile: Optional[Dict[str, Any]] = None,
+        educational_profile: Optional[dict[str, Any]] = None,
     ) -> dict:
         """
         Run the lesson planner pipeline.
@@ -269,7 +274,7 @@ class LessonPlannerPipeline:
 
         # Normalize Pydantic models to dict so the LangGraph state stays
         # JSON-serializable across nodes / checkpoints.
-        profile_dict: Optional[Dict[str, Any]] = None
+        profile_dict: Optional[dict[str, Any]] = None
         if educational_profile is not None:
             if hasattr(educational_profile, "model_dump"):
                 profile_dict = educational_profile.model_dump(exclude_none=True)
@@ -297,26 +302,29 @@ class LessonPlannerPipeline:
         # otherwise LangGraph raises. Generate a per-invocation UUID when
         # the caller didn't supply ``session_id`` so ephemeral runs still
         # work (no cross-thread state — each run is its own thread).
-        from aix.agent.graph.checkpointer import thread_config
         import uuid as _uuid
+
+        from aix.agent.graph.checkpointer import thread_config
+
         effective_thread_id = session_id or f"ephemeral-{_uuid.uuid4()}"
         run_config = thread_config(effective_thread_id)
 
         # Run the pipeline
         try:
             final_state = await graph.ainvoke(initial_state, config=run_config)
-            
+
             # Extract results
             result = {
                 "success": not bool(final_state.get("error")),
-                "lesson_plan": final_state.get("final_lesson_plan") or final_state.get("lesson_plan_draft"),
+                "lesson_plan": final_state.get("final_lesson_plan")
+                or final_state.get("lesson_plan_draft"),
                 "approved": final_state.get("approved", False),
                 "revision_count": final_state.get("revision_count", 0),
                 "critique": final_state.get("critique"),
                 "scores": final_state.get("final_metadata", {}).get("scores"),
                 "sources": {
                     "nodes_count": len(final_state.get("retrieved_nodes", [])),
-                    "recommendations_count": len(final_state.get("recommendations", []))
+                    "recommendations_count": len(final_state.get("recommendations", [])),
                 },
                 "error": final_state.get("error"),
                 # Phase 3: Add query_intent and key_concepts for upsell buttons
@@ -327,27 +335,23 @@ class LessonPlannerPipeline:
                 # Phase A: Scope detection for hybrid mode
                 "scope_status": final_state.get("scope_status", "in_scope"),
                 "scope_confidence": final_state.get("scope_confidence", 1.0),
-                "external_resources": final_state.get("external_resources")
+                "external_resources": final_state.get("external_resources"),
             }
-            
+
             logger.info(
                 f"[Pipeline] Complete. "
                 f"Approved: {result['approved']}, "
                 f"Revisions: {result['revision_count']}"
             )
-            
+
             return result
-            
+
         except Exception as e:
             logger.error(f"[Pipeline] Failed: {e}")
-            return {
-                "success": False,
-                "lesson_plan": None,
-                "error": str(e)
-            }
-    
+            return {"success": False, "lesson_plan": None, "error": str(e)}
+
     def run_sync(self, query: str, session_id: Optional[str] = None) -> dict:
         """Synchronous version of run()"""
         import asyncio
-        return asyncio.run(self.run(query, session_id))
 
+        return asyncio.run(self.run(query, session_id))

@@ -27,12 +27,11 @@ See: docs/product/ClickUp_Agentic_GraphRAG_Update.md → Subtask 7.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Any, Literal, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from aix.api.schemas.educational_profile import EducationalProfile
-
 
 # ---------------------------------------------------------------------------
 # Request
@@ -109,8 +108,8 @@ class AgentRunRequest(BaseModel):
         le=4,
         description=(
             "Cap on critic revision loops. ``None`` defers to the agent "
-            "pipeline default (currently 2). Setting 0 disables critic "
-            "revisions for fast smoke testing."
+            "pipeline default (AIX_MAX_REVISIONS env var, default 1). "
+            "Setting 0 disables critic revisions for fast smoke testing."
         ),
     )
 
@@ -180,7 +179,7 @@ class CriticScores(BaseModel):
     average_score: Optional[float] = Field(
         default=None,
         description="Average score on a 0-5 scale. Convert to % via "
-                    "``round(average_score / 5 * 100)`` if needed.",
+        "``round(average_score / 5 * 100)`` if needed.",
     )
 
 
@@ -197,7 +196,9 @@ class AgentRunMeta(BaseModel):
 
     duration_seconds: float = Field(..., description="Wall-clock duration of the agent run.")
     approved: bool = Field(..., description="Whether the critic approved the final draft.")
-    revision_count: int = Field(..., ge=0, description="Number of critic-driven revisions performed.")
+    revision_count: int = Field(
+        ..., ge=0, description="Number of critic-driven revisions performed."
+    )
     scores: Optional[CriticScores] = Field(default=None, description="Critic per-criterion scores.")
     nodes_count: int = Field(default=0, ge=0, description="Knowledge-graph nodes retrieved.")
     recommendations_count: int = Field(default=0, ge=0)
@@ -213,8 +214,8 @@ class PlannerInfo(BaseModel):
     scope: Optional[str] = None
     scope_label: Optional[str] = None
     scope_confidence: Optional[float] = None
-    key_concepts: List[str] = Field(default_factory=list)
-    search_queries: List[str] = Field(default_factory=list)
+    key_concepts: list[str] = Field(default_factory=list)
+    search_queries: list[str] = Field(default_factory=list)
     lesson_type: Optional[str] = None
     target_grade: Optional[str] = None
 
@@ -226,14 +227,14 @@ class RetrieverInfo(BaseModel):
     relationships_count: int = Field(default=0, ge=0)
     recommendations_count: int = Field(default=0, ge=0)
     media_counts: MediaCounts = Field(default_factory=MediaCounts)
-    media: Dict[str, Any] = Field(
+    media: dict[str, Any] = Field(
         default_factory=dict,
         description=(
             "Full curated_media payload (videos / resources / citations / "
             "open_textbooks). Same shape consumed by the webui side panel."
         ),
     )
-    top_concepts: List[str] = Field(default_factory=list)
+    top_concepts: list[str] = Field(default_factory=list)
     retrieval_confidence: Optional[str] = None
 
 
@@ -249,18 +250,18 @@ class AgentRunResponse(BaseModel):
     lesson_plan_md: str = Field(
         ...,
         description="Final lesson plan as Markdown. Empty string indicates "
-                    "the agent finished without producing output (rare).",
+        "the agent finished without producing output (rare).",
     )
     meta: AgentRunMeta
     planner: Optional[PlannerInfo] = Field(
         default=None,
         description="Planner-stage explainability. Absent only on early "
-                    "errors that bailed before the planner ran.",
+        "errors that bailed before the planner ran.",
     )
     retriever: Optional[RetrieverInfo] = Field(
         default=None,
         description="Retriever-stage explainability. Absent only on early "
-                    "errors that bailed before the retriever ran.",
+        "errors that bailed before the retriever ran.",
     )
 
     model_config = ConfigDict(
@@ -319,7 +320,7 @@ class _SSEEventBase(BaseModel):
     """Base class for SSE event variants. Not used directly by clients."""
 
     kind: str
-    data: Dict[str, Any] = Field(default_factory=dict)
+    data: dict[str, Any] = Field(default_factory=dict)
     lesson_plan_md: Optional[str] = None
     error: Optional[str] = None
 

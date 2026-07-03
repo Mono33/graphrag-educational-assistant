@@ -6,10 +6,10 @@ Phase 1: SCAN - Identify all issues across 8 columns
 Phase 2: FIX  - Apply corrections and produce KG_UDL_FINAL.xlsx
 """
 
-import pandas as pd
 import sys
-import re
 from collections import defaultdict
+
+import pandas as pd
 
 sys.stdout.reconfigure(encoding="utf-8")
 
@@ -92,7 +92,7 @@ def scan_column(df, col_name):
     dupes = {k: v for k, v in lower_map.items() if len(v) > 1}
     if dupes:
         print(f"\n  CASE DUPLICATES ({len(dupes)} groups):")
-        for key, variants in sorted(dupes.items())[:20]:
+        for _key, variants in sorted(dupes.items())[:20]:
             counts = [int(df[col_name].eq(v).sum()) for v in variants]
             print(f"    {variants} counts={counts}")
         issues.append(("case_dupes", len(dupes)))
@@ -295,7 +295,7 @@ def phase3_verify(df):
         print("  All checks passed!")
 
     # Final stats
-    print(f"\n  Final stats:")
+    print("\n  Final stats:")
     print(f"    Rows: {len(df)}")
     print(f"    Category A unique: {df['Category A'].nunique()}")
     print(f"    Concept A unique: {df['Concept A'].nunique()}")

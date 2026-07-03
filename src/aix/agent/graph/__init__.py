@@ -7,8 +7,7 @@ This module contains the state machine that orchestrates the multi-agent pipelin
 - lesson_planner_graph.py: Main graph construction
 """
 
-from aix.agent.graph.state import AgentState
 from aix.agent.graph.lesson_planner_graph import build_lesson_planner_graph
+from aix.agent.graph.state import AgentState
 
 __all__ = ["AgentState", "build_lesson_planner_graph"]
-

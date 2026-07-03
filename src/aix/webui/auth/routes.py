@@ -63,6 +63,7 @@ router = APIRouter(prefix="/auth", tags=["webui-auth"])
 # Helpers
 # ----------------------------------------------------------------------------
 
+
 def _safe_next(next_url: Optional[str], default: str = "/webui/") -> str:
     """
     Validate the ``next`` query param so we never honour an off-site redirect.
@@ -108,6 +109,7 @@ def _clear_auth_cookie(response: Response) -> None:
 # ----------------------------------------------------------------------------
 # GET pages
 # ----------------------------------------------------------------------------
+
 
 @router.get("/register", response_class=HTMLResponse, name="auth_register_get")
 async def register_get(
@@ -159,6 +161,7 @@ async def login_get(
 # POST handlers
 # ----------------------------------------------------------------------------
 
+
 @router.post("/register", name="auth_register_post")
 async def register_post(
     request: Request,
@@ -192,9 +195,7 @@ async def register_post(
                 "phase": "P1 — Auth",
                 "next": redirect_to,
                 "user": None,
-                "form_errors": [
-                    err.get("msg", "Campo non valido") for err in exc.errors()
-                ],
+                "form_errors": [err.get("msg", "Campo non valido") for err in exc.errors()],
                 "form_values": form_values,
             },
             status_code=422,
@@ -274,9 +275,7 @@ async def login_post(
                 "phase": "P1 — Auth",
                 "next": redirect_to,
                 "user": None,
-                "form_errors": [
-                    "Email o password non corretti, oppure account disattivato."
-                ],
+                "form_errors": ["Email o password non corretti, oppure account disattivato."],
                 "form_values": form_values,
             },
             status_code=401,

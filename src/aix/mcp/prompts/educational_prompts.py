@@ -43,7 +43,7 @@ Numeric coercion happens *inside* the function — see
 """
 
 import logging
-from typing import List, Optional
+from typing import Optional
 
 from fastmcp import FastMCP
 from fastmcp.prompts.prompt import Message
@@ -81,7 +81,7 @@ def register(mcp: FastMCP) -> None:
         topic: str,
         student_profile: Optional[str] = None,
         domain: Optional[str] = None,
-    ) -> List[Message]:
+    ) -> list[Message]:
         """Educational-query prompt template.
 
         Args:
@@ -148,7 +148,7 @@ def register(mcp: FastMCP) -> None:
         methodology: Optional[str] = None,
         level: Optional[str] = None,
         domain: Optional[str] = None,
-    ) -> List[Message]:
+    ) -> list[Message]:
         """Lesson-plan-request prompt template.
 
         Args:
@@ -170,7 +170,7 @@ def register(mcp: FastMCP) -> None:
             duration_int = 60
         duration_safe = max(15, min(240, duration_int))
 
-        body_lines: List[str] = [
+        body_lines: list[str] = [
             "## Ruolo",
             "Sei l'assistente di Briefing del Lesson Planner Aix. NON "
             "scrivi la lezione — produci un brief strutturato che la "

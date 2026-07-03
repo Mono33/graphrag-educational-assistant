@@ -57,14 +57,22 @@ reportlab>=4.0.0
 # Agentic Layer (Multi-Agent Pipeline)
 langgraph>=1.0.0,<2.0.0
 
-# CORE 2 #10.2 — Conversation memory checkpointer (dev: SQLite; prod #15: Postgres).
+# CORE 2 #10.2 / CORE 4 #15.a — Conversation memory checkpointer.
 # Persists every LangGraph thread's full message history + AgentState snapshots
-# under data/agent_threads.db so multi-turn refinement (follow-up / regenerate
-# / time-travel) survives page reloads and process restarts. Migration to
-# AsyncPostgresSaver (CORE 4 #15) is a 1-line saver-class swap because LangGraph's
-# BaseCheckpointSaver protocol is backend-agnostic. Using 3.x: 2.0.11 (last 2.x)
-# calls aiosqlite Connection.is_alive() which was removed in aiosqlite 0.20+.
+# so multi-turn refinement (follow-up / regenerate / time-travel) survives page
+# reloads and process restarts. The backend is chosen at runtime from the env
+# (see aix.agent.graph.checkpointer): Postgres when LANGGRAPH_DATABASE_URL is a
+# postgres URL (production), else a local SQLite file (dev). Both implement
+# LangGraph's backend-agnostic BaseCheckpointSaver protocol, so the agent graph
+# is identical across environments — only the saver class differs.
+#
+# SQLite (dev): using 3.x — 2.0.11 (last 2.x) calls aiosqlite Connection.is_alive()
+# which was removed in aiosqlite 0.20+.
 langgraph-checkpoint-sqlite>=3.0,<4.0
+# Postgres (prod): AsyncPostgresSaver + a psycopg_pool connection pool for
+# concurrent, multi-replica-safe, durable thread storage.
+langgraph-checkpoint-postgres>=2.0,<3.0
+psycopg[binary,pool]>=3.1,<4.0
 
 # Error Monitoring (GlitchTip — Sentry-compatible)
 sentry-sdk[fastapi]>=2.0.0
@@ -95,3 +103,16 @@ lingua-language-detector>=2.0.0
 
 # Media pool scripts (scripts/media_pool/) — offline YouTube search without API key/quota
 yt-dlp>=2026.1.0
+
+# Live web search — DDGS (DuckDuckGo) for real-time related URLs in the media panel
+duckduckgo-search>=6.3.0
+
+# Dynamic Media Retrieval (docs/product/Dynamic_Media_Retrieval_Plan.md — Phase 0).
+# Off-critical-path cache for the live media layer:
+#   * redis     → production (reuse the shared instance, versioned key namespace)
+#   * diskcache → dev default (local on-disk, no extra infrastructure)
+# Both are OPTIONAL at runtime — aix.agent.media.media_cache degrades to a no-op
+# miss if a package is missing or a backend fails, so the agent pipeline (which
+# never touches this cache) is completely unaffected.
+redis>=5.0.0
+diskcache>=5.6.0

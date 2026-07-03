@@ -43,8 +43,9 @@ import json
 import os
 import sys
 import uuid
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Any, AsyncIterator, Dict, List, Optional
+from typing import Any, Optional
 
 import pytest
 
@@ -111,6 +112,7 @@ async def fresh_user_token(app) -> str:
         # uses, just without going through HTTP.
         async for session in get_async_session():
             from fastapi_users_db_sqlalchemy import SQLAlchemyUserDatabase
+
             from aix.webui.auth.models import User as UserModel
 
             user_db = SQLAlchemyUserDatabase(session, UserModel)
@@ -132,7 +134,7 @@ async def fresh_user_token(app) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _patch_stream(monkeypatch, events: List[Dict[str, Any]]) -> None:
+def _patch_stream(monkeypatch, events: list[dict[str, Any]]) -> None:
     """
     Replace ``stream_agent_events`` with a generator that emits the given
     pre-canned events. Each event dict is converted to a real
@@ -153,8 +155,8 @@ def _patch_stream(monkeypatch, events: List[Dict[str, Any]]) -> None:
 
     # Patch in BOTH the source module AND the route module so import
     # binding doesn't matter.
-    import aix.webui.agent.service as service_mod
     import aix.api.routes.agent as agent_route_mod
+    import aix.webui.agent.service as service_mod
 
     monkeypatch.setattr(service_mod, "stream_agent_events", _fake)
     monkeypatch.setattr(agent_route_mod, "stream_agent_events", _fake)
@@ -324,8 +326,8 @@ async def test_agent_stream_serialises_events(client, fresh_user_token, monkeypa
 
     # Parse the SSE frames. We expect at least one ``event: planner`` and
     # one ``event: done``. Frames are separated by blank lines.
-    frames: List[Dict[str, str]] = []
-    current: Dict[str, str] = {}
+    frames: list[dict[str, str]] = []
+    current: dict[str, str] = {}
     for raw_line in body.splitlines():
         line = raw_line.strip()
         if not line:
@@ -378,7 +380,7 @@ def test_openapi_inventory_strictly_additive(client):
     if not os.path.exists(baseline_path):
         pytest.skip(f"baseline inventory missing at {baseline_path}")
 
-    expected: List[str] = []
+    expected: list[str] = []
     with open(baseline_path, encoding="utf-8") as fh:
         for line in fh:
             parts = line.split()

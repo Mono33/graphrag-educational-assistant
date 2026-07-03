@@ -5,28 +5,35 @@ Transforms structured EducationalContext into natural language responses for Ita
 """
 
 import logging
-from typing import Dict, List, Optional
-from dataclasses import asdict
-from langchain_openai import ChatOpenAI
-from langchain_core.prompts import ChatPromptTemplate
+
 from langchain_core.output_parsers import StrOutputParser
-from aix.retrieval.context_builder import EducationalContext, ConfidenceLevel
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_openai import ChatOpenAI
 
 # Import domain configuration system
 from aix.domains import get_domain_config
+from aix.retrieval.context_builder import ConfidenceLevel, EducationalContext
 
 logger = logging.getLogger(__name__)
+
 
 class EducationalResponseGenerator:
     """
     Response Generator - Converts structured educational context into natural language
     Generates pedagogically sound, actionable responses for Italian teachers
     """
-    
-    def __init__(self, openai_api_key: str, language: str = "italian", temperature: float = 0.7, domain: str = "udl", model: str = "gpt-3.5-turbo-16k"):
+
+    def __init__(
+        self,
+        openai_api_key: str,
+        language: str = "italian",
+        temperature: float = 0.7,
+        domain: str = "udl",
+        model: str = "gpt-3.5-turbo-16k",
+    ):
         """
         Initialize the response generator
-        
+
         Args:
             openai_api_key: OpenAI API key
             language: Target language for responses (default: italian)
@@ -37,6 +44,7 @@ class EducationalResponseGenerator:
         self.language = language
         self.domain = domain
         from aix.core.config import config as _cfg
+
         _compat = _cfg.openai.build_completion_kwargs(temperature=temperature, max_tokens=2500)
         self.llm = ChatOpenAI(
             openai_api_key=openai_api_key,
@@ -44,15 +52,15 @@ class EducationalResponseGenerator:
             model=model,
             **{k: v for k, v in _compat.items() if k != "model"},
         )
-        
+
         # Load prompt templates and create chain using LCEL
         self.prompt_template = self._create_prompt_template()
         self.output_parser = StrOutputParser()
         self.chain = self.prompt_template | self.llm | self.output_parser
-    
+
     def _create_prompt_template(self) -> ChatPromptTemplate:
         """Create comprehensive prompt template for educational response generation"""
-        
+
         if self.language == "italian":
             # ============================================================
             # SYSTEM PROMPT: Domain-specific role, expertise, principles
@@ -74,11 +82,11 @@ Il tuo compito è fornire raccomandazioni chiare, pratiche e scientificamente so
 
 Il tuo compito è fornire raccomandazioni chiare, pratiche e pedagogicamente solide per insegnanti italiani."""
                 response_template = None
-            
+
             # ============================================================
             # USER MESSAGE: KG Context (shared) + Domain Response Template
             # ============================================================
-            
+
             # Part 1: Knowledge Graph context (same for ALL domains)
             kg_context = """
 CONTESTO DELLA DOMANDA:
@@ -103,7 +111,7 @@ LIVELLO DI CONFIDENZA:
 
 STRATEGIE DI FALLBACK (se applicabili):
 {fallback_strategies}"""
-            
+
             # Part 2: Domain-specific response instructions
             if response_template is None:
                 # Default generic instructions (for "all" domain or fallback)
@@ -128,22 +136,25 @@ IMPORTANTE:
 - Fornisci azioni immediate che l'insegnante può prendere
 - Adatta il linguaggio al contesto scolastico italiano (primaria, secondaria, etc.)
 - Se la confidenza è BASSA o VERY_LOW, enfatizza la necessità di supporto specialistico"""
-            
+
             # Combine: KG context + domain-specific instructions
-            user_message = kg_context + "\n\n" + response_template + "\n\nGenera la tua risposta pedagogica:"
-            
-            logger.info(f"[LLM Chain] Domain: {self.domain} | System prompt: {len(system_prompt)} chars | Response template: {len(response_template)} chars")
-            
-            return ChatPromptTemplate.from_messages([
-                ("system", system_prompt),
-                ("human", user_message)
-            ])
-        
+            user_message = (
+                kg_context + "\n\n" + response_template + "\n\nGenera la tua risposta pedagogica:"
+            )
+
+            logger.info(
+                f"[LLM Chain] Domain: {self.domain} | System prompt: {len(system_prompt)} chars | Response template: {len(response_template)} chars"
+            )
+
+            return ChatPromptTemplate.from_messages(
+                [("system", system_prompt), ("human", user_message)]
+            )
+
         else:  # English fallback
             system_prompt = """You are an expert educational consultant specializing in inclusive and differentiated teaching methodologies.
 
 Your task is to provide clear, practical, and pedagogically sound recommendations for teachers."""
-            
+
             user_message = """QUERY CONTEXT:
 Original question: {original_query}
 Student profile: {student_profile}
@@ -188,24 +199,21 @@ IMPORTANT:
 - If confidence is LOW or VERY_LOW, emphasize need for specialist support
 
 Generate your pedagogical response:"""
-        
-            return ChatPromptTemplate.from_messages([
-                ("system", system_prompt),
-                ("human", user_message)
-            ])
-    
+
+            return ChatPromptTemplate.from_messages(
+                [("system", system_prompt), ("human", user_message)]
+            )
+
     async def generate_response(
-        self, 
-        educational_context: EducationalContext,
-        original_query: str
-    ) -> Dict[str, str]:
+        self, educational_context: EducationalContext, original_query: str
+    ) -> dict[str, str]:
         """
         Generate natural language response from structured educational context
-        
+
         Args:
             educational_context: Structured context from aix.retrieval.context_builder
             original_query: Original teacher's question
-            
+
         Returns:
             Dict with:
                 - response: Natural language response
@@ -214,79 +222,75 @@ Generate your pedagogical response:"""
         """
         try:
             logger.info(f"Generating response for query: {original_query[:50]}...")
-            
+
             # Prepare prompt inputs
             prompt_inputs = self._prepare_prompt_inputs(educational_context, original_query)
-            
+
             # Generate response using LCEL chain
             response_text = self.chain.invoke(prompt_inputs)
-            
+
             # Post-process response
             formatted_response = self._post_process_response(response_text, educational_context)
-            
+
             return {
-                'response': formatted_response,
-                'confidence': educational_context.confidence_assessment.value,
-                'metadata': {
-                    'language': self.language,
-                    'primary_methodologies_count': len(educational_context.primary_methodologies),
-                    'evidence_sources': {
-                        'total_nodes': educational_context.metadata.get('total_nodes', 0),
-                        'total_triples': educational_context.metadata.get('total_triples', 0)
-                    }
-                }
+                "response": formatted_response,
+                "confidence": educational_context.confidence_assessment.value,
+                "metadata": {
+                    "language": self.language,
+                    "primary_methodologies_count": len(educational_context.primary_methodologies),
+                    "evidence_sources": {
+                        "total_nodes": educational_context.metadata.get("total_nodes", 0),
+                        "total_triples": educational_context.metadata.get("total_triples", 0),
+                    },
+                },
             }
-            
+
         except Exception as e:
             logger.error(f"Response generation failed: {e}")
             return self._generate_fallback_response(original_query, educational_context)
-    
+
     def _prepare_prompt_inputs(
-        self, 
-        context: EducationalContext, 
-        original_query: str
-    ) -> Dict[str, str]:
+        self, context: EducationalContext, original_query: str
+    ) -> dict[str, str]:
         """Prepare inputs for the prompt template"""
-        
+
         # Format student profile
         student_profile_text = self._format_student_profile(context.student_profile)
-        
+
         # Format primary methodologies
         primary_methodologies_text = self._format_methodologies(
-            context.primary_methodologies, 
-            is_primary=True
+            context.primary_methodologies, is_primary=True
         )
-        
+
         # Format supporting methodologies
         supporting_methodologies_text = self._format_methodologies(
-            context.supporting_methodologies, 
-            is_primary=False
+            context.supporting_methodologies, is_primary=False
         )
-        
+
         # Format implementation priority
-        implementation_priority_text = "\n".join([
-            f"  {i}. {priority}" 
-            for i, priority in enumerate(context.implementation_priority, 1)
-        ])
-        
+        implementation_priority_text = "\n".join(
+            [f"  {i}. {priority}" for i, priority in enumerate(context.implementation_priority, 1)]
+        )
+
         # Format fallback strategies
-        fallback_strategies_text = "\n".join([
-            f"  - {strategy}" 
-            for strategy in context.fallback_strategies
-        ]) if context.fallback_strategies else "Nessuna strategia di fallback necessaria"
-        
+        fallback_strategies_text = (
+            "\n".join([f"  - {strategy}" for strategy in context.fallback_strategies])
+            if context.fallback_strategies
+            else "Nessuna strategia di fallback necessaria"
+        )
+
         return {
-            'original_query': original_query,
-            'student_profile': student_profile_text,
-            'educational_context_type': context.student_profile.educational_context,
-            'primary_methodologies': primary_methodologies_text,
-            'supporting_methodologies': supporting_methodologies_text,
-            'evidence_summary': context.evidence_summary,
-            'implementation_priority': implementation_priority_text,
-            'confidence_level': self._format_confidence_level(context.confidence_assessment),
-            'fallback_strategies': fallback_strategies_text
+            "original_query": original_query,
+            "student_profile": student_profile_text,
+            "educational_context_type": context.student_profile.educational_context,
+            "primary_methodologies": primary_methodologies_text,
+            "supporting_methodologies": supporting_methodologies_text,
+            "evidence_summary": context.evidence_summary,
+            "implementation_priority": implementation_priority_text,
+            "confidence_level": self._format_confidence_level(context.confidence_assessment),
+            "fallback_strategies": fallback_strategies_text,
         }
-    
+
     def _format_student_profile(self, profile) -> str:
         """Format student profile for prompt"""
         if self.language == "italian":
@@ -313,12 +317,16 @@ Generate your pedagogical response:"""
             if profile.subject_area:
                 parts.append(f"Subject: {profile.subject_area}")
             return " | ".join(parts) if parts else "General profile"
-    
-    def _format_methodologies(self, methodologies: List, is_primary: bool = True) -> str:
+
+    def _format_methodologies(self, methodologies: list, is_primary: bool = True) -> str:
         """Format methodology recommendations for prompt"""
         if not methodologies:
-            return "Nessuna metodologia specifica identificata" if self.language == "italian" else "No specific methodologies identified"
-        
+            return (
+                "Nessuna metodologia specifica identificata"
+                if self.language == "italian"
+                else "No specific methodologies identified"
+            )
+
         formatted = []
         for i, method in enumerate(methodologies, 1):
             method_text = f"\n{i}. **{method.name}** ({method.category})\n"
@@ -326,21 +334,21 @@ Generate your pedagogical response:"""
             method_text += f"   - Tipo di evidenza: {method.evidence_type}\n"
             method_text += f"   - Confidenza: {method.confidence.value}\n"
             method_text += f"   - Guida implementazione: {method.implementation_guidance}\n"
-            
+
             if method.classroom_applications:
-                method_text += f"   - Applicazioni in classe:\n"
+                method_text += "   - Applicazioni in classe:\n"
                 for app in method.classroom_applications[:3]:  # Top 3
                     method_text += f"     • {app}\n"
-            
+
             if method.special_considerations:
-                method_text += f"   - Considerazioni speciali:\n"
+                method_text += "   - Considerazioni speciali:\n"
                 for consideration in method.special_considerations[:3]:  # Top 3
                     method_text += f"     • {consideration}\n"
-            
+
             formatted.append(method_text)
-        
+
         return "\n".join(formatted)
-    
+
     def _format_confidence_level(self, confidence: ConfidenceLevel) -> str:
         """Format confidence level with explanation"""
         confidence_map_it = {
@@ -348,25 +356,25 @@ Generate your pedagogical response:"""
             ConfidenceLevel.HIGH: "ALTA - Raccomandazioni supportate da buone evidenze",
             ConfidenceLevel.MEDIUM: "MEDIA - Raccomandazioni ragionevoli, considerare supporto aggiuntivo",
             ConfidenceLevel.LOW: "BASSA - Consultare specialisti per raccomandazioni personalizzate",
-            ConfidenceLevel.VERY_LOW: "MOLTO BASSA - Necessario supporto specialistico"
+            ConfidenceLevel.VERY_LOW: "MOLTO BASSA - Necessario supporto specialistico",
         }
-        
+
         confidence_map_en = {
             ConfidenceLevel.VERY_HIGH: "VERY HIGH - Recommendations based on direct and robust evidence",
             ConfidenceLevel.HIGH: "HIGH - Recommendations supported by good evidence",
             ConfidenceLevel.MEDIUM: "MEDIUM - Reasonable recommendations, consider additional support",
             ConfidenceLevel.LOW: "LOW - Consult specialists for personalized recommendations",
-            ConfidenceLevel.VERY_LOW: "VERY LOW - Specialist support required"
+            ConfidenceLevel.VERY_LOW: "VERY LOW - Specialist support required",
         }
-        
+
         if self.language == "italian":
             return confidence_map_it.get(confidence, "SCONOSCIUTA")
         else:
             return confidence_map_en.get(confidence, "UNKNOWN")
-    
+
     def _post_process_response(self, response_text: str, context: EducationalContext) -> str:
         """Post-process and enhance the generated response"""
-        
+
         # Add confidence warning if needed
         if context.confidence_assessment in [ConfidenceLevel.LOW, ConfidenceLevel.VERY_LOW]:
             if self.language == "italian":
@@ -374,20 +382,22 @@ Generate your pedagogical response:"""
             else:
                 warning = "\n\n⚠️ **IMPORTANT NOTE**: These recommendations have a low confidence level. We strongly recommend consulting a pedagogist or specialist for personalized support.\n"
             response_text = warning + response_text
-        
+
         # Add evidence footer
         if self.language == "italian":
             footer = f"\n\n---\n📊 **Fonti**: Questa risposta si basa su {context.metadata.get('total_nodes', 0)} concetti educativi e {context.metadata.get('total_triples', 0)} relazioni pedagogiche dal grafo della conoscenza.\n"
         else:
             footer = f"\n\n---\n📊 **Sources**: This response is based on {context.metadata.get('total_nodes', 0)} educational concepts and {context.metadata.get('total_triples', 0)} pedagogical relationships from the knowledge graph.\n"
-        
+
         response_text += footer
-        
+
         return response_text.strip()
-    
-    def _generate_fallback_response(self, query: str, context: EducationalContext) -> Dict[str, str]:
+
+    def _generate_fallback_response(
+        self, query: str, context: EducationalContext
+    ) -> dict[str, str]:
         """Generate fallback response when main generation fails"""
-        
+
         if self.language == "italian":
             fallback_text = f"""Mi dispiace, ho riscontrato un problema nella generazione della risposta completa.
 
@@ -397,7 +407,7 @@ Tuttavia, ecco alcune raccomandazioni di base basate sul contesto educativo:
 {self._format_methodologies(context.primary_methodologies, is_primary=True)}
 
 **Prossimi Passi:**
-{chr(10).join([f'{i}. {p}' for i, p in enumerate(context.implementation_priority[:3], 1)])}
+{chr(10).join([f"{i}. {p}" for i, p in enumerate(context.implementation_priority[:3], 1)])}
 
 Per un supporto più dettagliato, ti consiglio di:
 - Consultare uno specialista dell'educazione
@@ -414,7 +424,7 @@ However, here are some basic recommendations based on the educational context:
 {self._format_methodologies(context.primary_methodologies, is_primary=True)}
 
 **Next Steps:**
-{chr(10).join([f'{i}. {p}' for i, p in enumerate(context.implementation_priority[:3], 1)])}
+{chr(10).join([f"{i}. {p}" for i, p in enumerate(context.implementation_priority[:3], 1)])}
 
 For more detailed support, I recommend:
 - Consult an education specialist
@@ -422,30 +432,29 @@ For more detailed support, I recommend:
 - Explore recent research in the field
 
 If you need further assistance, don't hesitate to ask!"""
-        
+
         return {
-            'response': fallback_text,
-            'confidence': context.confidence_assessment.value,
-            'metadata': {
-                'language': self.language,
-                'fallback': True,
-                'error': 'LLM generation failed'
-            }
+            "response": fallback_text,
+            "confidence": context.confidence_assessment.value,
+            "metadata": {
+                "language": self.language,
+                "fallback": True,
+                "error": "LLM generation failed",
+            },
         }
+
 
 # Integration helper for testing
 async def test_response_generator():
     """Test the response generator with sample educational context"""
-    import asyncio
+    from aix.core.config import config
     from aix.retrieval.context_builder import (
-        EducationalContextBuilder,
+        ConfidenceLevel,
+        EducationalContext,
         MethodologyRecommendation,
         StudentProfile,
-        EducationalContext,
-        ConfidenceLevel
     )
-    from aix.core.config import config
-    
+
     # Create sample educational context
     sample_context = EducationalContext(
         student_profile=StudentProfile(
@@ -453,7 +462,7 @@ async def test_response_generator():
             secondary_needs=["audio_support"],
             educational_context="special_needs",
             grade_level="quarta elementare",
-            subject_area="scienze"
+            subject_area="scienze",
         ),
         primary_methodologies=[
             MethodologyRecommendation(
@@ -465,14 +474,14 @@ async def test_response_generator():
                 classroom_applications=[
                     "Jigsaw method for complex topics",
                     "Think-Pair-Share for quick engagement",
-                    "Group investigations for project work"
+                    "Group investigations for project work",
                 ],
                 special_considerations=[
                     "Provide tactile materials for visually impaired students",
                     "Use verbal descriptions during group activities",
-                    "Assign complementary roles based on abilities"
+                    "Assign complementary roles based on abilities",
                 ],
-                confidence=ConfidenceLevel.VERY_HIGH
+                confidence=ConfidenceLevel.VERY_HIGH,
             ),
             MethodologyRecommendation(
                 name="Station Rotation",
@@ -483,15 +492,15 @@ async def test_response_generator():
                 classroom_applications=[
                     "Tactile learning station with 3D models",
                     "Audio description station",
-                    "Peer support station"
+                    "Peer support station",
                 ],
                 special_considerations=[
                     "Include braille materials where possible",
                     "Use high-contrast visual aids",
-                    "Ensure safe navigation between stations"
+                    "Ensure safe navigation between stations",
                 ],
-                confidence=ConfidenceLevel.HIGH
-            )
+                confidence=ConfidenceLevel.HIGH,
+            ),
         ],
         supporting_methodologies=[],
         evidence_summary="Direct pedagogical evidence: 2 direct methodology suggestions | Conceptual similarity: Average conceptual similarity of 0.78 across 5 related concepts",
@@ -499,47 +508,49 @@ async def test_response_generator():
             "Start with Cooperative Learning (high confidence)",
             "Ensure accessibility accommodations are in place",
             "Begin with small-group implementation",
-            "Pilot with a subset of students first"
+            "Pilot with a subset of students first",
         ],
         confidence_assessment=ConfidenceLevel.VERY_HIGH,
         fallback_strategies=[],
         metadata={
-            'total_nodes': 15,
-            'total_triples': 6,
-            'semantic_nodes': 8,
-            'graph_nodes': 7,
-            'original_query': "Quali metodologie funzionano meglio per studenti con deficit di attenzione?",
-            'query_type': 'special_needs'
-        }
+            "total_nodes": 15,
+            "total_triples": 6,
+            "semantic_nodes": 8,
+            "graph_nodes": 7,
+            "original_query": "Quali metodologie funzionano meglio per studenti con deficit di attenzione?",
+            "query_type": "special_needs",
+        },
     )
-    
+
     # Initialize response generator
     generator = EducationalResponseGenerator(
-        openai_api_key=config.openai.api_key,
-        language="italian"
+        openai_api_key=config.openai.api_key, language="italian"
     )
-    
+
     # Generate response
-    original_query = "Come posso adattare una lezione di scienze per studenti ipovedenti in quarta elementare?"
-    
-    print("="*80)
+    original_query = (
+        "Come posso adattare una lezione di scienze per studenti ipovedenti in quarta elementare?"
+    )
+
+    print("=" * 80)
     print("🎓 EDUCATIONAL RESPONSE GENERATOR TEST")
-    print("="*80)
+    print("=" * 80)
     print(f"\n📝 Query: {original_query}")
-    print(f"\n🔄 Generating response...")
-    
+    print("\n🔄 Generating response...")
+
     result = await generator.generate_response(sample_context, original_query)
-    
-    print(f"\n✅ Response generated!")
+
+    print("\n✅ Response generated!")
     print(f"📊 Confidence: {result['confidence']}")
     print(f"🌍 Language: {result['metadata']['language']}")
-    print(f"\n" + "="*80)
+    print("\n" + "=" * 80)
     print("📖 GENERATED RESPONSE:")
-    print("="*80)
-    print(result['response'])
-    print("="*80)
+    print("=" * 80)
+    print(result["response"])
+    print("=" * 80)
+
 
 if __name__ == "__main__":
     import asyncio
-    asyncio.run(test_response_generator())
 
+    asyncio.run(test_response_generator())

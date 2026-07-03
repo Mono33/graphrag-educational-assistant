@@ -63,6 +63,18 @@
       color: #94a3b8;
     }
 
+    /* EU AI Act Art. 50 — visible AI-generated notice (prints too). */
+    .ai-notice {
+      margin: 0.75rem 0 0;
+      padding: 0.5rem 0.75rem;
+      border: 1px solid #c7d2fe;
+      background: #eef2ff;
+      border-radius: 6px;
+      font-size: 0.78rem;
+      color: #3730a3;
+    }
+    .ai-notice strong { font-weight: 700; }
+
     @media print {
       .no-print-hint { display: none !important; }
       body { padding: 0; }
@@ -84,6 +96,10 @@
     <div class="no-print-hint">
       💡 Per salvare come PDF: usa <strong>File → Stampa → Salva come PDF</strong> nel tuo browser,
       oppure premi <kbd>Ctrl+P</kbd> (Windows) / <kbd>⌘+P</kbd> (Mac).
+    </div>
+    <div class="ai-notice">
+      <strong>{{ ai_disclosure_short or "Generato dall'IA" }}.</strong>
+      {{ ai_disclosure_long or "Contenuto generato dall'intelligenza artificiale. Verificare sempre l'accuratezza prima dell'uso in classe." }}
     </div>
   </header>
 

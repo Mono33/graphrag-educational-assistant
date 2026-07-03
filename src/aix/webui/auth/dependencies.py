@@ -28,7 +28,6 @@ from aix.webui.auth.backend import auth_backend, bearer_backend
 from aix.webui.auth.manager import get_user_manager
 from aix.webui.auth.models import User
 
-
 # Generic FastAPIUsers instance keyed by our User model and UUID id type.
 #
 # Two backends are registered in parallel (CORE 2 #7):

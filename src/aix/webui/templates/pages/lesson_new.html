@@ -75,7 +75,7 @@
     <header>
       <h1 class="aix-page-title">Crea una nuova lezione</h1>
       <p class="aix-text-muted mt-2 max-w-2xl">
-        Compila il <strong style="color: var(--aix-text-primary);">profilo educativo</strong>
+        Compila il <strong class="aix-color-primary">profilo educativo</strong>
         della classe e dell'aula. Questi dati vengono passati sia al
         Knowledge Graph sia all'agente Planner per generare una lezione
         personalizzata.
@@ -120,8 +120,8 @@
       ``lesson_create`` in lessons/routes.py) — we just render it nicely.
     #}
     {% if form_errors %}
-      <div class="aix-card aix-card-stripe-error" style="padding: 14px 16px;">
-        <strong style="color: var(--aix-status-error);">
+      <div class="aix-card aix-card-stripe-error aix-card-compact">
+        <strong class="aix-color-error">
           Controlla i campi del modulo.
         </strong>
         <ul class="mt-2 ml-5 list-disc text-sm aix-text-muted space-y-0.5">
@@ -130,14 +130,17 @@
       </div>
     {% endif %}
 
+    {# Saved profiles selector — chips that pre-fill the form via page reload #}
+    {% include "partials/saved_profiles.html" %}
+
     {#
       Main form. ``action="/webui/lesson"`` matches the existing
       ``webui_lesson_create`` POST route — DO NOT CHANGE.
     #}
-    <form method="post" action="/webui/lesson" class="space-y-6">
+    <form method="post" action="/webui/lesson" class="space-y-6" id="lesson-new-form">
 
       {# ─── Section 1: Lezione ─────────────────────────────────────────── #}
-      <section id="section-lezione" class="aix-form-section" style="scroll-margin-top: 80px;">
+      <section id="section-lezione" class="aix-form-section aix-scroll-section">
         <header class="aix-form-section-header">
           <span class="aix-form-section-number">1</span>
           <span class="aix-form-section-icon aix-form-section-icon--amber" aria-hidden="true">
@@ -210,10 +213,58 @@
           </div>
 
         </div>
+
+        {# ── Salva come profilo (Alpine.js inline expander) ─────────────── #}
+        <div class="aix-save-profile-inline"
+             x-data="{ open: false, saving: false }">
+          <button type="button"
+                  class="aix-save-profile-trigger"
+                  @click="open = !open"
+                  :aria-expanded="open">
+            <wa-icon name="bookmark" class="aix-fs-08"></wa-icon>
+            Salva come profilo
+            <wa-icon name="chevron-down"
+                     class="aix-chevron-animate"
+                     :style="open ? 'transform:rotate(180deg)' : ''"></wa-icon>
+          </button>
+
+          <div x-show="open"
+               x-cloak
+               x-transition
+               class="aix-save-profile-panel">
+            <label for="f-profile-name" class="aix-form-label">
+              Nome del profilo
+            </label>
+            <div class="aix-save-profile-row">
+              <input id="f-profile-name"
+                     type="text"
+                     name="profile_name"
+                     class="aix-input aix-save-profile-name-input"
+                     placeholder="Es. 3A Liceo Scientifico"
+                     autocomplete="off">
+              <button type="button"
+                      class="aix-btn aix-btn-primary aix-btn-sm"
+                      :disabled="saving"
+                      hx-post="/webui/profiles"
+                      hx-include="#lesson-new-form"
+                      hx-target="#saved-profiles-container"
+                      hx-swap="outerHTML"
+                      @htmx:before-request="saving = true"
+                      @htmx:after-request="saving = false; open = false">
+                <span x-show="!saving">Salva</span>
+                <span x-show="saving">Salvataggio…</span>
+              </button>
+            </div>
+            <p class="aix-form-help">
+              Il profilo include tutti i dati della classe, non il titolo o l'argomento.
+            </p>
+          </div>
+        </div>
+
       </section>
 
       {# ─── Section 2: Profilo della classe ────────────────────────────── #}
-      <section id="section-profilo" class="aix-form-section" style="scroll-margin-top: 80px;">
+      <section id="section-profilo" class="aix-form-section aix-scroll-section">
         <header class="aix-form-section-header">
           <span class="aix-form-section-number">2</span>
           <span class="aix-form-section-icon aix-form-section-icon--teal" aria-hidden="true">
@@ -333,7 +384,7 @@
       </section>
 
       {# ─── Section 3: Ambiente d'aula ─────────────────────────────────── #}
-      <section id="section-ambiente" class="aix-form-section" style="scroll-margin-top: 80px;">
+      <section id="section-ambiente" class="aix-form-section aix-scroll-section">
         <header class="aix-form-section-header">
           <span class="aix-form-section-number">3</span>
           <span class="aix-form-section-icon aix-form-section-icon--navy" aria-hidden="true">
@@ -444,7 +495,7 @@
           </button>
           <button type="submit" class="aix-btn aix-btn-primary">
             Crea lezione
-            <wa-icon name="arrow-right" style="font-size: 0.9rem;"></wa-icon>
+            <wa-icon name="arrow-right" class="aix-fs-09"></wa-icon>
           </button>
         </div>
       </footer>
@@ -464,8 +515,7 @@
     {# Suggerimenti — practical hints, green checkmark bullets #}
     <div class="aix-side-card">
       <header class="aix-side-card-header">
-        <wa-icon name="lightbulb"
-                 style="color: var(--aix-amber-hover); font-size: 18px;"></wa-icon>
+        <wa-icon name="lightbulb" class="aix-fs-18 aix-color-amber"></wa-icon>
         <span class="aix-side-card-title">Suggerimenti</span>
       </header>
       <ul class="aix-side-card-list">
@@ -487,8 +537,7 @@
     {# Esempio di profilo — sample data display, helps teachers visualise output #}
     <div class="aix-side-card">
       <header class="aix-side-card-header">
-        <wa-icon name="user-graduate"
-                 style="color: var(--aix-teal); font-size: 18px;"></wa-icon>
+        <wa-icon name="user-graduate" class="aix-fs-18 aix-color-teal"></wa-icon>
         <span class="aix-side-card-title">Esempio di profilo</span>
       </header>
       <dl class="aix-side-card-kv">
@@ -504,8 +553,7 @@
     {# Perché — short rationale, makes the profile feel less bureaucratic #}
     <div class="aix-side-card">
       <header class="aix-side-card-header">
-        <wa-icon name="clipboard-list"
-                 style="color: var(--aix-status-info); font-size: 18px;"></wa-icon>
+        <wa-icon name="clipboard-list" class="aix-fs-18 aix-color-info"></wa-icon>
         <span class="aix-side-card-title">Perché questi dati sono utili?</span>
       </header>
       <ul class="aix-side-card-list">
@@ -527,8 +575,7 @@
     {# L'agente genererà — preview of outputs, builds confidence before submit #}
     <div class="aix-side-card">
       <header class="aix-side-card-header">
-        <wa-icon name="sparkles"
-                 style="color: var(--aix-agent-planner); font-size: 18px;"></wa-icon>
+        <wa-icon name="sparkles" class="aix-fs-18 aix-color-planner"></wa-icon>
         <span class="aix-side-card-title">L'agente genererà</span>
       </header>
       <ul class="aix-side-card-list">
@@ -558,14 +605,5 @@
 
 </div>
 
-{#
-  Smooth-scroll for the 3-step indicator anchor links. Native CSS
-  ``scroll-behavior: smooth`` on <html> is the most portable approach, but
-  we scope it here so the rest of the WebUI keeps its instant-anchor
-  behaviour (avoids surprising the chat workspace's "scroll to last card"
-  pattern in P5.4).
-#}
-<style>
-  html { scroll-behavior: smooth; }
-</style>
+{# html { scroll-behavior: smooth } lives in aix-brand.css (global). #}
 {% endblock %}

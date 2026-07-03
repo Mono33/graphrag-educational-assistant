@@ -9,7 +9,6 @@ ingested into the shared Knowledge Graph.
 from __future__ import annotations
 
 import io
-import re
 import uuid
 from pathlib import Path
 from typing import Any, Optional
@@ -52,7 +51,7 @@ def _normalize_manifest(raw: Any) -> list[dict[str, Any]]:
 
 
 def total_excerpt_len(files: list[dict[str, Any]]) -> int:
-    return sum(len((f.get("text_excerpt") or "")) for f in files)
+    return sum(len(f.get("text_excerpt") or "") for f in files)
 
 
 def extract_text(content: bytes, filename: str) -> str:

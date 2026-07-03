@@ -55,7 +55,7 @@
 
       <div class="aix-agent-avatar aix-agent-avatar--user">{{ initials }}</div>
 
-      <div style="display:flex; flex-direction:column; align-items:flex-end; gap:2px; min-width:0;">
+      <div class="aix-col-4 aix-col-end">
         <div class="aix-msg-bubble-user">{{ msg.content_md }}</div>
         <div class="aix-msg-user-meta">
           Tu · turno {{ msg.turn_index }} · {{ msg.created_at.strftime('%H:%M') }}
@@ -82,13 +82,13 @@
         <article class="aix-agent-card aix-agent-card--lesson">
 
           <header class="aix-agent-card-header aix-agent-card-header--lesson">
-            <div style="display:flex; align-items:flex-start; gap:8px;">
-              <wa-icon name="book-open" style="font-size:1.05rem; color:var(--aix-text-secondary);"></wa-icon>
+            <div class="aix-irow-8 aix-items-start">
+              <wa-icon name="book-open" class="aix-fs-105 aix-color-secondary"></wa-icon>
               <div>
-                <div style="font-family:var(--aix-font-serif); font-size:16px; font-weight:600; color:var(--aix-text-primary); line-height:1.2;">
+                <div class="aix-card-heading-sm">
                   Piano della lezione · turno {{ msg.turn_index }}
                 </div>
-                <div style="font-size:12px; color:var(--aix-text-tertiary);">
+                <div class="aix-fs-12 aix-color-tertiary">
                   {% if m.get('backfilled') %}
                     Lezione precedente (importata nello storico al primo follow-up)
                   {% else %}
@@ -97,18 +97,25 @@
                 </div>
               </div>
             </div>
-            {% if m.get('approved') is not none %}
-              {% if m.approved %}
-                <span class="aix-pill aix-pill-success">
-                  <wa-icon name="circle-check" style="font-size:0.7rem;"></wa-icon>
-                  approvata dal critic
-                </span>
-              {% else %}
-                <span class="aix-pill aix-pill-warning">
-                  limite revisioni raggiunto
-                </span>
+            <div class="aix-irow-8">
+              {# EU AI Act Art. 50 (#22) — per-card AI-generated badge. #}
+              <span class="aix-pill aix-pill-info" title="Contenuto generato dall'intelligenza artificiale">
+                <wa-icon name="sparkles" class="aix-fs-xs"></wa-icon>
+                Generato dall'IA
+              </span>
+              {% if m.get('approved') is not none %}
+                {% if m.approved %}
+                  <span class="aix-pill aix-pill-success">
+                    <wa-icon name="circle-check" class="aix-fs-xs"></wa-icon>
+                    approvata dal critic
+                  </span>
+                {% else %}
+                  <span class="aix-pill aix-pill-warning">
+                    limite revisioni raggiunto
+                  </span>
+                {% endif %}
               {% endif %}
-            {% endif %}
+            </div>
           </header>
 
           {# Compact per-turn metadata strip — only render fields that are present #}
@@ -119,28 +126,28 @@
             <div class="aix-meta-strip">
               {% if m.get('duration_seconds') is not none %}
                 <span class="aix-meta-item">
-                  <wa-icon name="clock" style="font-size:0.75rem;"></wa-icon>
+                  <wa-icon name="clock" class="aix-fs-sm"></wa-icon>
                   <strong>{{ '%.1f' | format(m.duration_seconds) }} s</strong>
                 </span>
               {% endif %}
 
               {% if m.get('revision_count') is not none %}
                 <span class="aix-meta-item">
-                  <wa-icon name="rotate" style="font-size:0.75rem;"></wa-icon>
+                  <wa-icon name="rotate" class="aix-fs-sm"></wa-icon>
                   <strong>{{ m.revision_count }}</strong> revisioni
                 </span>
               {% endif %}
 
               {% if m.get('nodes_count') %}
                 <span class="aix-meta-item">
-                  <wa-icon name="diagram-project" style="font-size:0.75rem;"></wa-icon>
+                  <wa-icon name="diagram-project" class="aix-fs-sm"></wa-icon>
                   <strong>{{ m.nodes_count }}</strong> nodi KG
                 </span>
               {% endif %}
 
               {% if m.get('search_queries_count') %}
                 <span class="aix-meta-item">
-                  <wa-icon name="magnifying-glass" style="font-size:0.75rem;"></wa-icon>
+                  <wa-icon name="magnifying-glass" class="aix-fs-sm"></wa-icon>
                   <strong>{{ m.search_queries_count }}</strong> ricerche
                 </span>
               {% endif %}
@@ -148,21 +155,21 @@
               {% set total_media = (mc.get('videos', 0) + mc.get('articles', 0) + mc.get('oer', 0)) %}
               {% if total_media %}
                 <span class="aix-meta-item">
-                  <wa-icon name="photo-film" style="font-size:0.75rem;"></wa-icon>
+                  <wa-icon name="photo-film" class="aix-fs-sm"></wa-icon>
                   <strong>{{ total_media }}</strong> media curati
                 </span>
               {% endif %}
             </div>
           {% endif %}
 
-          <article class="lesson-prose" style="padding:18px 20px;">
+          <article class="lesson-prose aix-prose-padding">
             {{ msg.content_html | safe }}
           </article>
 
         </article>
 
         <div class="aix-agent-footer-label">
-          <wa-icon name="check-double" style="font-size:0.75rem;"></wa-icon>
+          <wa-icon name="check-double" class="aix-fs-sm"></wa-icon>
           <span>Turno {{ msg.turn_index }} · finalizzato</span>
         </div>
       </div>

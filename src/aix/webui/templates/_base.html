@@ -53,54 +53,8 @@
      Tailwind CDN so .aix-* classes win against any Tailwind utility collision. #}
   <link rel="stylesheet" href="/static/css/aix-brand.css">
 
-  <style>
-    /* Avoid flash of unstyled content from web-component upgrades. */
-    :not(:defined) { visibility: hidden; }
-
-    /*
-      ── .lesson-prose ────────────────────────────────────────────────
-      Shared typography for any agent-produced markdown rendered to
-      HTML inside a card. Used by partials/chat_lesson_card.html and
-      partials/chat_writer_card.html (P2 phase 2). Sits here rather
-      than in a per-partial <style> block because it's two templates
-      now and almost certainly N templates by P5.
-
-      We're CDN-only on Tailwind today (no plugin loader), so we can't
-      rely on @tailwindcss/typography. These rules cover typical agent
-      output (headings, lists, tables, code, blockquotes). Lifted into
-      a Tailwind preset / first-party stylesheet in P5 polish.
-    */
-    .lesson-prose { line-height: 1.7; color: #1e293b; }
-    .lesson-prose h1 { font-size: 1.5rem; font-weight: 700; margin: 1.25rem 0 0.5rem; }
-    .lesson-prose h2 { font-size: 1.25rem; font-weight: 700; margin: 1.25rem 0 0.5rem; }
-    .lesson-prose h3 { font-size: 1.1rem; font-weight: 600; margin: 1rem 0 0.5rem; }
-    .lesson-prose p  { margin: 0.5rem 0; }
-    .lesson-prose ul, .lesson-prose ol { margin: 0.5rem 0; padding-left: 1.5rem; }
-    .lesson-prose ul { list-style: disc; }
-    .lesson-prose ol { list-style: decimal; }
-    .lesson-prose li { margin: 0.25rem 0; }
-    .lesson-prose strong { font-weight: 600; }
-    .lesson-prose code { background: #f1f5f9; padding: 0.05rem 0.3rem; border-radius: 3px; font-size: 0.9em; }
-    .lesson-prose pre { background: #0f172a; color: #f1f5f9; padding: 0.75rem; border-radius: 6px; overflow-x: auto; }
-    .lesson-prose pre code { background: transparent; color: inherit; padding: 0; }
-    .lesson-prose table { border-collapse: collapse; margin: 0.75rem 0; }
-    .lesson-prose th, .lesson-prose td { border: 1px solid #e2e8f0; padding: 0.4rem 0.6rem; }
-    .lesson-prose th { background: #f8fafc; font-weight: 600; }
-    .lesson-prose blockquote { border-left: 3px solid #cbd5e1; padding-left: 0.75rem; color: #475569; }
-
-    /*
-      Tailwind line-clamp utility shim — used by media-panel titles to
-      keep them to a max of 2 lines without ellipsis-overrun. Tailwind
-      CDN ships @tailwindcss/line-clamp out of the box in v3.x but the
-      explicit fallback keeps the styles deterministic across CDN drift.
-    */
-    .line-clamp-2 {
-      display: -webkit-box;
-      -webkit-line-clamp: 2;
-      -webkit-box-orient: vertical;
-      overflow: hidden;
-    }
-  </style>
+{# All styles (.lesson-prose, .line-clamp-2, :not(:defined), html scroll-behavior)
+   live in aix-brand.css — see the "MIGRATED FROM HTML" section at the bottom. #}
 
   {% block head_extra %}{% endblock %}
 </head>
@@ -124,6 +78,12 @@
   </main>
 
   <footer class="aix-footer">
+    {# EU AI Act Art. 50 (#22) — persistent AI-generated disclosure. #}
+    <div class="aix-footer-ai">
+      <wa-icon name="sparkles" class="aix-fs-xs"></wa-icon>
+      <span>Contenuti generati dall'intelligenza artificiale — verificare sempre l'accuratezza prima dell'uso in classe.</span>
+      <a href="/webui/about-ai">Come funziona l'IA</a>
+    </div>
     <div class="aix-footer-inner">
       <span>Built with</span>
       <span class="font-mono">FastAPI · htmx · WebAwesome · Tailwind</span>
@@ -135,5 +95,100 @@
   </footer>
 
   {% block body_extra %}{% endblock %}
+
+  {#
+    Writer stream — persistent MutationObserver that opens a dedicated EventSource
+    for each writer pending card as it mounts in the DOM.
+
+    WHY HERE: HTMX 2 does not execute <script> tags inside SSE-received HTML
+    (only htmx attributes are processed).  The writer pending card is injected
+    via the main SSE stream, so any <script> placed inside that template will
+    silently be ignored.  This global observer is the correct pattern: it runs
+    once in the base page, watches for [data-writer-stream] elements, and opens
+    the per-lesson EventSource when it finds one.
+  #}
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script>
+  (function () {
+    var _activeStreams = {};
+
+    function openWriterStream(lid) {
+      if (!lid || _activeStreams[lid]) return;
+
+      var thinkWrap = document.getElementById('writer-think-' + lid);
+      var thinkDet  = document.getElementById('writer-think-details-' + lid);
+      var thinkBody = document.getElementById('writer-think-body-' + lid);
+      var streamEl  = document.getElementById('writer-stream-' + lid);
+      var skelEl    = document.getElementById('writer-skeleton-' + lid);
+      if (!streamEl) return;
+
+      var mdBuffer       = '';
+      var renderTimer    = null;
+      var contentStarted = false;
+
+      function scheduleRender() {
+        if (renderTimer) return;
+        renderTimer = setTimeout(function () {
+          if (window.marked) {
+            streamEl.innerHTML = marked.parse(mdBuffer);
+          } else {
+            streamEl.textContent = mdBuffer;
+          }
+          streamEl.scrollTop = streamEl.scrollHeight;
+          renderTimer = null;
+        }, 150);
+      }
+
+      var src = new EventSource('/webui/lesson/' + lid + '/writer-stream');
+      _activeStreams[lid] = src;
+
+      src.addEventListener('think_chunk', function (e) {
+        if (skelEl && skelEl.style.display !== 'none') skelEl.style.display = 'none';
+        if (thinkWrap && thinkWrap.style.display === 'none') thinkWrap.style.display = 'block';
+        if (thinkBody) {
+          thinkBody.textContent += e.data;
+          thinkBody.scrollTop = thinkBody.scrollHeight;
+        }
+      });
+
+      src.addEventListener('writer_chunk', function (e) {
+        if (!contentStarted) {
+          contentStarted = true;
+          if (thinkDet) thinkDet.open = false;
+          if (streamEl.style.display === 'none') streamEl.style.display = 'block';
+          if (skelEl) skelEl.style.display = 'none';
+        }
+        mdBuffer += e.data;
+        scheduleRender();
+      });
+
+      src.addEventListener('end', function () {
+        src.close();
+        delete _activeStreams[lid];
+      });
+
+      src.onerror = function () {
+        src.close();
+        delete _activeStreams[lid];
+      };
+    }
+
+    function checkNode(node) {
+      if (node.nodeType !== 1) return;
+      if (node.dataset && node.dataset.writerStream) {
+        openWriterStream(node.dataset.writerStream);
+      }
+      node.querySelectorAll('[data-writer-stream]').forEach(function (el) {
+        openWriterStream(el.dataset.writerStream);
+      });
+    }
+
+    new MutationObserver(function (mutations) {
+      mutations.forEach(function (mutation) {
+        mutation.addedNodes.forEach(checkNode);
+      });
+    }).observe(document.body, { childList: true, subtree: true });
+  })();
+  </script>
 </body>
 </html>

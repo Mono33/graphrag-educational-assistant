@@ -353,6 +353,10 @@ body.aix-body {
   background-color: var(--aix-cream-darker);
 }
 
+/* Standardised icon size inside small buttons / meta strips */
+.aix-btn-icon { font-size: 0.85rem; }
+.aix-meta-icon { font-size: 0.75rem; }
+
 .aix-btn-sm {
   padding: 6px 12px;
   font-size: 13px;
@@ -467,6 +471,12 @@ body.aix-body {
 }
 .aix-link-amber:hover { color: var(--aix-amber); }
 
+.aix-link-sm {
+  font-size: 12px;
+  margin-top: 6px;
+  display: inline-block;
+}
+
 .aix-link-navy {
   color: var(--aix-ink-navy);
   text-decoration: none;
@@ -496,6 +506,18 @@ body.aix-body {
 .aix-footer a:hover { color: var(--aix-text-primary); }
 .aix-footer-sep { color: var(--aix-border-medium); }
 
+/* EU AI Act Art. 50 — persistent AI-generated disclosure strip. */
+.aix-footer-ai {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 10px 32px 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--aix-text-secondary);
+  font-size: 12px;
+}
+
 /* -----------------------------------------------------------------------------
    Inputs (used by Create-Lesson form on later pages, declared here so the
    foundation pass already covers it)
@@ -520,6 +542,12 @@ body.aix-body {
   outline: none;
   border-color: var(--aix-teal);
   box-shadow: 0 0 0 3px var(--aix-teal-soft);
+}
+
+/* Compact non-resizable textarea — used inside the intent detail expander */
+.aix-input-textarea-sm {
+  font-size: 13px;
+  resize: none;
 }
 
 /* -----------------------------------------------------------------------------
@@ -907,6 +935,113 @@ body.aix-body {
 }
 
 /* -----------------------------------------------------------------------------
+   Pedagogical-intent chip selector (F1 — Backward Design)
+   Single-select radio cards; Alpine drives .is-selected via x-model.
+   ----------------------------------------------------------------------------- */
+.aix-intent-chip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 12px;
+  border: 1.5px solid var(--aix-border-soft);
+  border-radius: var(--aix-radius);
+  background: var(--aix-paper);
+  cursor: pointer;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--aix-text-secondary);
+  -webkit-user-select: none;
+  user-select: none;
+  transition: border-color 120ms, background 120ms, color 120ms;
+}
+.aix-intent-chip:hover {
+  border-color: var(--aix-teal);
+  color: var(--aix-text-primary);
+}
+.aix-intent-chip.is-selected {
+  border-color: var(--aix-teal);
+  background: var(--aix-teal-soft);
+  color: var(--aix-text-primary);
+}
+.aix-intent-chip:has(input[type="radio"]:focus-visible) {
+  outline: 2px solid var(--aix-teal);
+  outline-offset: 2px;
+}
+
+/* Subtle label suffix for optional fields (e.g. "Obiettivo pedagogico (opzionale)") */
+.aix-form-optional {
+  font-weight: 400;
+  color: var(--aix-text-muted);
+  font-size: 11px;
+  margin-left: 4px;
+}
+
+/* Indent detail textarea inside intent chip section */
+.aix-intent-detail {
+  margin-top: 12px;
+}
+
+/* -----------------------------------------------------------------------------
+   Chat-based intent selection card (phase 1 planner-pause)
+   ----------------------------------------------------------------------------- */
+.aix-agent-card--intent {
+  border-left: 3px solid var(--aix-teal);
+}
+.aix-agent-avatar--intent {
+  background: linear-gradient(135deg, var(--aix-teal) 0%, #0d7a6e 100%);
+}
+.aix-intent-select-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  margin: 16px 0 12px;
+}
+@media (min-width: 640px) {
+  .aix-intent-select-grid { grid-template-columns: repeat(3, 1fr); }
+}
+.aix-intent-select-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 10px 14px;
+  background: var(--aix-paper);
+  border: 1.5px solid var(--aix-border);
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.aix-intent-select-chip:hover {
+  border-color: var(--aix-teal);
+  background: var(--aix-teal-pale, #f0faf8);
+  box-shadow: 0 1px 4px rgba(14, 134, 120, 0.12);
+}
+.aix-intent-select-chip:focus-visible {
+  outline: 2px solid var(--aix-teal);
+  outline-offset: 2px;
+}
+.aix-intent-select-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--aix-text-primary);
+  line-height: 1.3;
+}
+.aix-intent-select-desc {
+  font-size: 11px;
+  color: var(--aix-text-tertiary);
+  line-height: 1.3;
+}
+.aix-intent-select-skip {
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--aix-border);
+}
+
+/* -----------------------------------------------------------------------------
    Right-rail informational cards (Suggerimenti / Esempio profilo / …)
    ----------------------------------------------------------------------------- */
 .aix-side-card {
@@ -1091,6 +1226,47 @@ body.aix-body {
   flex-wrap: wrap;
   gap: 4px;
   margin-top: 6px;
+}
+
+/* F3: ARCHED pipeline phase label shown in agent card headers */
+.aix-arched-phase {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--aix-text-tertiary);
+  border: 1px solid var(--aix-border-soft);
+  border-radius: var(--aix-radius-sm);
+  padding: 2px 6px;
+  white-space: nowrap;
+}
+
+/* F2: Pedagogical intent callout in the profile sidebar */
+.aix-intent-callout {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--aix-teal);
+  background: var(--aix-teal-soft);
+  border-radius: 0 var(--aix-radius-sm) var(--aix-radius-sm) 0;
+  margin-top: 6px;
+}
+.aix-intent-callout-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--aix-teal);
+}
+.aix-intent-callout-detail {
+  font-size: 12px;
+  color: var(--aix-text-secondary);
+  line-height: 1.4;
+}
+.aix-intent-callout-empty {
+  font-size: 12px;
+  color: var(--aix-text-tertiary);
+  font-style: italic;
+  margin-top: 4px;
 }
 
 /* -----------------------------------------------------------------------------
@@ -1676,6 +1852,56 @@ body.aix-body {
   margin-left: 18px;
 }
 
+/* Dynamic Media Retrieval (Phase 1b) — live/auto-retrieved resources block */
+.aix-media-live-divider {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 14px 0 8px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--aix-border-soft);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--aix-text-secondary);
+}
+.aix-media-live-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  color: var(--aix-text-tertiary);
+}
+
+/* UI polish (C3) — subtle separator between the curated block and the live
+   (auto-retrieved) block inside a shared section (e.g. "Articoli scientifici").
+   Shown ONLY when the curated list AND the live list both have items, so a
+   section that is live-only never shows an orphan top border. No text label:
+   each live item already carries an "auto" badge for provenance. */
+.aix-media-list:has(li) + .aix-media-live-group:has(li) {
+  margin-top: 8px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--aix-border-soft);
+}
+
+/* Phase 5 — provenance legend (trust + EU AI Act transparency). Explains the
+   "✓ Verificato" (curated/expert) vs "auto" (live/AI-selected) badges. */
+.aix-media-provenance {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--aix-border-soft);
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--aix-text-tertiary);
+}
+.aix-media-provenance-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
 /* -----------------------------------------------------------------------------
    Lesson card metadata strip
    ----------------------------------------------------------------------------- */
@@ -1698,6 +1924,17 @@ body.aix-body {
 .aix-meta-item strong {
   font-weight: 600;
   color: var(--aix-text-primary);
+}
+/* F1: intent pill in the meta strip — teal accent */
+.aix-meta-item--intent {
+  color: var(--aix-teal);
+  font-weight: 500;
+}
+/* F5: UDL coverage badge in the meta strip */
+.aix-meta-item--udl {
+  color: var(--aix-status-info, #1d6fa5);
+  font-weight: 500;
+  cursor: help;
 }
 
 /* -----------------------------------------------------------------------------
@@ -1723,4 +1960,779 @@ body.aix-body {
   font-size: 11px;
   color: var(--aix-text-tertiary);
   margin-right: 4px;
+}
+
+/* -----------------------------------------------------------------------------
+   F3b: SAM Guided Refinement Panel
+   Expands below the lesson footer; no modal, no page change.
+   ----------------------------------------------------------------------------- */
+.aix-refinement-panel {
+  padding: 16px;
+  background: var(--aix-cream);
+  border-top: 1px solid var(--aix-border-soft);
+}
+.aix-refinement-panel-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--aix-text-primary);
+  margin-bottom: 10px;
+}
+.aix-refinement-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.aix-refinement-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1.5px solid var(--aix-border-soft);
+  border-radius: var(--aix-radius-sm);
+  background: var(--aix-paper);
+  cursor: pointer;
+  transition: border-color 120ms, background 120ms;
+}
+.aix-refinement-chip:hover {
+  border-color: var(--aix-teal);
+}
+.aix-refinement-chip.is-selected {
+  border-color: var(--aix-teal);
+  background: var(--aix-teal-soft);
+}
+.aix-refinement-chip-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--aix-text-primary);
+}
+.aix-refinement-chip-desc {
+  font-size: 11px;
+  color: var(--aix-text-secondary);
+  line-height: 1.3;
+}
+.aix-refinement-freetext {
+  margin-bottom: 12px;
+}
+.aix-refinement-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* -----------------------------------------------------------------------------
+   F6: "What's Next?" — adjacent KG concept cards after lesson completion
+   ----------------------------------------------------------------------------- */
+.aix-what-next {
+  padding: 16px;
+  border-top: 1px solid var(--aix-border-soft);
+  background: var(--aix-cream);
+}
+.aix-what-next-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--aix-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 10px;
+}
+.aix-what-next-icon { font-size: 0.8rem; }
+.aix-what-next-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.aix-what-next-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  border: 1.5px solid var(--aix-border-soft);
+  border-radius: var(--aix-radius-sm);
+  background: var(--aix-paper);
+  text-decoration: none;
+  transition: border-color 120ms, box-shadow 120ms;
+  min-width: 140px;
+  max-width: 200px;
+  flex: 1;
+}
+.aix-what-next-card:hover {
+  border-color: var(--aix-teal);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+.aix-what-next-rel {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: var(--aix-teal);
+  text-transform: uppercase;
+}
+.aix-what-next-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--aix-text-primary);
+  line-height: 1.3;
+}
+.aix-what-next-desc {
+  font-size: 11px;
+  color: var(--aix-text-tertiary);
+  line-height: 1.4;
+}
+
+/* =============================================================================
+   Saved profiles — selector chips + save widget (lesson_new.html)
+   ============================================================================= */
+
+/* Container shown above the form when at least one profile is saved */
+.aix-saved-profiles {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 14px;
+  background: var(--aix-teal-soft);
+  border: 1px solid var(--aix-teal);
+  border-radius: var(--aix-radius-sm);
+}
+
+.aix-saved-profiles-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--aix-teal);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.aix-saved-profiles-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* Individual chip — label link + delete button side by side */
+.aix-saved-profile-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  background: var(--aix-paper);
+  border: 1.5px solid var(--aix-teal);
+  border-radius: 999px;
+  overflow: hidden;
+  transition: box-shadow 120ms;
+}
+.aix-saved-profile-chip:hover {
+  box-shadow: 0 1px 6px rgba(45,138,138,0.18);
+}
+
+.aix-saved-profile-link {
+  padding: 3px 10px 3px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--aix-teal);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.aix-saved-profile-link:hover {
+  color: var(--aix-teal-hover);
+}
+
+.aix-saved-profile-delete {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-left: 1px solid var(--aix-teal);
+  color: var(--aix-text-tertiary);
+  cursor: pointer;
+  transition: background 120ms, color 120ms;
+}
+.aix-saved-profile-delete:hover {
+  background: var(--aix-status-error-soft, #fde8e8);
+  color: var(--aix-status-error, #c0392b);
+}
+
+/* Save-as-profile inline expander (bottom of Section 1) */
+.aix-save-profile-inline {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--aix-border-soft);
+}
+
+.aix-save-profile-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--aix-teal);
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  transition: color 120ms;
+}
+.aix-save-profile-trigger:hover {
+  color: var(--aix-teal-hover);
+}
+
+.aix-save-profile-panel {
+  margin-top: 10px;
+  padding: 12px 14px;
+  background: var(--aix-teal-soft);
+  border: 1px solid var(--aix-border-soft);
+  border-radius: var(--aix-radius-sm);
+}
+
+.aix-save-profile-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 6px;
+}
+
+.aix-save-profile-name-input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* =============================================================================
+   MIGRATED FROM HTML — styles previously in <style> blocks inside templates
+   ============================================================================= */
+
+/* --- _base.html ------------------------------------------------------------ */
+
+/* Avoid flash of unstyled content from web-component upgrades. */
+:not(:defined) { visibility: hidden; }
+
+/* Smooth scrolling for the whole site */
+html { scroll-behavior: smooth; }
+
+/*
+  .lesson-prose — shared typography for agent-produced markdown rendered inside
+  a card. Used by chat_lesson_card.html and chat_writer_card.html. Not relying
+  on @tailwindcss/typography (CDN-only Tailwind).
+*/
+.lesson-prose { line-height: 1.7; color: #1e293b; padding: 20px 22px; }
+.lesson-prose h1 { font-size: 1.5rem; font-weight: 700; margin: 1.25rem 0 0.5rem; }
+.lesson-prose h2 { font-size: 1.25rem; font-weight: 700; margin: 1.25rem 0 0.5rem; }
+.lesson-prose h3 { font-size: 1.1rem; font-weight: 600; margin: 1rem 0 0.5rem; }
+.lesson-prose p { margin: 0.5rem 0; }
+.lesson-prose ul, .lesson-prose ol { margin: 0.5rem 0; padding-left: 1.5rem; }
+.lesson-prose ul { list-style: disc; }
+.lesson-prose ol { list-style: decimal; }
+.lesson-prose li { margin: 0.25rem 0; }
+.lesson-prose strong { font-weight: 600; }
+.lesson-prose code { background: #f1f5f9; padding: 0.05rem 0.3rem; border-radius: 3px; font-size: 0.9em; }
+.lesson-prose pre { background: #0f172a; color: #f1f5f9; padding: 0.75rem; border-radius: 6px; overflow-x: auto; }
+.lesson-prose pre code { background: transparent; color: inherit; padding: 0; }
+.lesson-prose table { border-collapse: collapse; margin: 0.75rem 0; }
+.lesson-prose th, .lesson-prose td { border: 1px solid #e2e8f0; padding: 0.4rem 0.6rem; }
+.lesson-prose th { background: #f8fafc; font-weight: 600; }
+.lesson-prose blockquote { border-left: 3px solid #cbd5e1; padding-left: 0.75rem; color: #475569; }
+
+/* Tailwind line-clamp shim (CDN v3 ships it, but explicit fallback avoids CDN drift) */
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* --- chat_writer_pending.html ---------------------------------------------- */
+
+.writer-pending-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--aix-text-secondary);
+  animation: writer-item-appear 0.4s ease forwards;
+}
+.writer-pending-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--aix-writer, #5a7fa0);
+  flex-shrink: 0;
+  animation: writer-dot-pulse 1.4s ease-in-out infinite;
+}
+.writer-think-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--aix-purple, #7c6bbf);
+  display: inline-block;
+  flex-shrink: 0;
+  animation: writer-dot-pulse 1.4s ease-in-out infinite;
+}
+@keyframes writer-item-appear {
+  from { opacity: 0; transform: translateX(-6px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes writer-dot-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.35; transform: scale(0.6); }
+}
+
+/* Prose styles for the markdown streaming preview in the writer card */
+.writer-stream-prose h1, .writer-stream-prose h2, .writer-stream-prose h3 {
+  margin: 0.75em 0 0.35em;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.writer-stream-prose h1 { font-size: 1.15em; }
+.writer-stream-prose h2 { font-size: 1.05em; }
+.writer-stream-prose h3 { font-size: 0.97em; }
+.writer-stream-prose p { margin: 0.4em 0; }
+.writer-stream-prose ul, .writer-stream-prose ol { padding-left: 1.4em; margin: 0.4em 0; }
+.writer-stream-prose li { margin: 0.2em 0; }
+.writer-stream-prose strong { font-weight: 600; }
+.writer-stream-prose em { font-style: italic; }
+.writer-stream-prose hr { border: none; border-top: 1px solid var(--aix-border-soft); margin: 0.8em 0; }
+
+/* --- chat_retriever_pending.html ------------------------------------------- */
+
+.retriever-pending-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--aix-text-secondary);
+  animation: retriever-item-appear 0.4s ease forwards;
+}
+.retriever-pending-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--aix-teal, #3a8fa0);
+  flex-shrink: 0;
+  animation: retriever-dot-pulse 1.4s ease-in-out infinite;
+}
+@keyframes retriever-item-appear {
+  from { opacity: 0; transform: translateX(-6px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes retriever-dot-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.35; transform: scale(0.6); }
+}
+
+/* --- chat_critic_pending.html ---------------------------------------------- */
+
+.critic-pending-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--aix-text-secondary);
+  animation: critic-item-appear 0.4s ease forwards;
+}
+.critic-pending-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--aix-amber-hover, #c9922a);
+  flex-shrink: 0;
+  animation: critic-dot-pulse 1.4s ease-in-out infinite;
+}
+@keyframes critic-item-appear {
+  from { opacity: 0; transform: translateX(-6px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes critic-dot-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.35; transform: scale(0.6); }
+}
+
+/* =============================================================================
+   UTILITY CLASSES — replaces repeated inline style="" attributes in templates
+   ============================================================================= */
+
+/* --- Font sizes ------------------------------------------------------------ */
+.aix-fs-2xs  { font-size: 0.65rem; }
+.aix-fs-xs   { font-size: 0.7rem; }
+.aix-fs-08   { font-size: 0.8rem; }
+.aix-fs-sm   { font-size: 0.75rem; }
+.aix-fs-085  { font-size: 0.85rem; }
+.aix-fs-09   { font-size: 0.9rem; }
+.aix-fs-095  { font-size: 0.95rem; }
+.aix-chevron-animate { font-size: 0.7rem; transition: transform 0.15s; }
+.aix-fs-11   { font-size: 11px; }
+.aix-fs-11-5 { font-size: 11.5px; }
+.aix-fs-12   { font-size: 12px; }
+.aix-fs-13   { font-size: 13px; }
+.aix-fs-14   { font-size: 14px; }
+.aix-fs-16   { font-size: 16px; }
+.aix-fs-17   { font-size: 17px; }
+.aix-fs-18   { font-size: 18px; }
+.aix-fs-20   { font-size: 20px; }
+
+/* --- Agent card serif heading ---------------------------------------------- */
+.aix-card-heading {
+  font-family: var(--aix-font-serif);
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--aix-text-primary);
+  line-height: 1.2;
+}
+
+/* --- Text colors ----------------------------------------------------------- */
+.aix-color-primary   { color: var(--aix-text-primary); }
+.aix-color-secondary { color: var(--aix-text-secondary); }
+.aix-color-tertiary  { color: var(--aix-text-tertiary); }
+.aix-color-teal      { color: var(--aix-teal); }
+.aix-color-amber     { color: var(--aix-amber-hover); }
+.aix-color-error     { color: var(--aix-status-error); }
+.aix-color-info      { color: var(--aix-status-info); }
+.aix-color-planner   { color: var(--aix-agent-planner); }
+
+/* --- Flex column layouts --------------------------------------------------- */
+.aix-col-4  { display: flex; flex-direction: column; gap: 4px; }
+.aix-col-6  { display: flex; flex-direction: column; gap: 6px; }
+.aix-col-8  { display: flex; flex-direction: column; gap: 8px; }
+.aix-col-10 { display: flex; flex-direction: column; gap: 10px; }
+.aix-col-12 { display: flex; flex-direction: column; gap: 12px; }
+
+/* --- Inline-flex row ------------------------------------------------------- */
+.aix-irow-6 { display: inline-flex; align-items: center; gap: 6px; }
+.aix-irow-8 { display: inline-flex; align-items: center; gap: 8px; }
+.aix-items-start { align-items: flex-start; }
+
+/* --- Scroll offset for sticky navbar --------------------------------------- */
+.aix-scroll-section { scroll-margin-top: 80px; }
+
+/* --- Form controls --------------------------------------------------------- */
+.aix-accent-teal { accent-color: var(--aix-teal); }
+
+/* --- Interactive ----------------------------------------------------------- */
+.aix-clickable { cursor: pointer; -webkit-user-select: none; user-select: none; }
+
+/* --- Footnotes / captions -------------------------------------------------- */
+.aix-footnote    { font-size: 12px; font-style: italic; color: var(--aix-text-tertiary); margin: 0; }
+.aix-footnote-sm { font-size: 11px; font-style: italic; color: var(--aix-text-tertiary); margin: 0; }
+
+/* --- Fieldset reset (profile sidebar / form sections) ---------------------- */
+.aix-fieldset { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+
+/* --- Animation delays for pending-step items ------------------------------- */
+/* Writer / Retriever pending (steps appear every 2 s) */
+.aix-delay-0  { animation-delay: 0s; }
+.aix-delay-2s { animation-delay: 2s;  opacity: 0; }
+.aix-delay-4s { animation-delay: 4s;  opacity: 0; }
+.aix-delay-6s { animation-delay: 6s;  opacity: 0; }
+.aix-delay-8s { animation-delay: 8s;  opacity: 0; }
+/* Critic pending (steps appear every 2.5 s) */
+.aix-delay-2-5s  { animation-delay: 2.5s;  opacity: 0; }
+.aix-delay-5s    { animation-delay: 5s;    opacity: 0; }
+.aix-delay-7-5s  { animation-delay: 7.5s;  opacity: 0; }
+.aix-delay-10s   { animation-delay: 10s;   opacity: 0; }
+.aix-delay-12-5s { animation-delay: 12.5s; opacity: 0; }
+
+/* --- Spacing helpers ------------------------------------------------------- */
+.aix-mt-12   { margin-top: 48px; }
+.aix-ml-2px  { margin-left: 2px; }
+.aix-ml-4px  { margin-left: 4px; }
+.aix-min-w-64px { min-width: 64px; }
+
+/* --- Label / hint text ----------------------------------------------------- */
+.aix-label-hint { font-weight: 500; margin-bottom: 8px; }
+
+/* --- Amber base color (--aix-amber, not the hover shade) ------------------- */
+/* .aix-color-amber uses --aix-amber-hover; use this class for the base amber  */
+.aix-color-amber-base { color: var(--aix-amber); }
+
+/* --- Timestamp column ------------------------------------------------------- */
+.aix-time-stamp { min-width: 48px; text-align: right; }
+
+/* --- Saved-profile row card ------------------------------------------------- */
+.aix-profile-row {
+  border: 1px solid var(--aix-border-soft);
+  background: var(--aix-cream);
+}
+
+/* --- Font weight 600 -------------------------------------------------------- */
+.aix-fw-600 { font-weight: 600; }
+
+/* --- Compact button padding ------------------------------------------------- */
+.aix-px-compact { padding: 3px 10px; }
+
+/* --- Small icon button size ------------------------------------------------- */
+.aix-btn-icon-sm { width: 26px; height: 26px; }
+
+/* --- Pointer-events none ---------------------------------------------------- */
+.aix-pe-none { pointer-events: none; }
+
+/* --- Chat running-state hint row ------------------------------------------- */
+.aix-chat-running-hint { flex: 1; padding: 6px 10px; }
+
+/* --- Navbar search input (replaces multi-property inline style) ------------- */
+.aix-nav-search-input {
+  background: transparent;
+  border: 0;
+  outline: none;
+  color: var(--aix-text-on-dark);
+  width: 100%;
+  font-size: 13px;
+}
+
+/* --- Navbar kbd shortcut badge --------------------------------------------- */
+.aix-kbd-shortcut {
+  opacity: 0.7;
+  padding: 1px 5px;
+  border: 1px solid var(--aix-border-on-dark);
+  border-radius: 4px;
+}
+
+/* --- Navbar chevron opacity ------------------------------------------------- */
+.aix-nav-chevron { opacity: 0.7; }
+
+/* --- Navbar auth buttons (outline on dark background) ----------------------- */
+.aix-btn-nav-auth {
+  border-color: var(--aix-border-on-dark);
+  color: var(--aix-text-on-dark);
+}
+
+/* --- Card compact padding -------------------------------------------------- */
+.aix-card-compact { padding: 14px 16px; }
+
+/* --- Ghost button (transparent, no border, pointer cursor) ----------------- */
+.aix-btn-ghost {
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  padding: 0;
+}
+
+/* --- Lesson-list toolbar --------------------------------------------------- */
+.aix-search-container {
+  background: var(--aix-cream);
+  border: 1px solid var(--aix-border-soft);
+  border-radius: var(--aix-radius-pill);
+  padding: 8px 14px;
+}
+.aix-search-input {
+  background: transparent;
+  border: 0;
+  outline: none;
+  flex: 1;
+  font-size: 14px;
+  color: var(--aix-text-primary);
+}
+.aix-search-clear {
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  color: var(--aix-text-tertiary);
+  padding: 0;
+  font-size: 12px;
+}
+.aix-toolbar-select {
+  padding: 6px 28px 6px 10px;
+  font-size: 13px;
+  cursor: not-allowed;
+  background: var(--aix-paper);
+}
+.aix-view-toggle {
+  border: 1px solid var(--aix-border-soft);
+  border-radius: var(--aix-radius-sm);
+  padding: 2px;
+}
+.aix-view-btn-active {
+  background: var(--aix-cream);
+  border: 0;
+  padding: 6px 10px;
+  border-radius: 4px;
+  cursor: default;
+  color: var(--aix-text-primary);
+}
+.aix-view-btn-inactive {
+  background: transparent;
+  border: 0;
+  padding: 6px 10px;
+  border-radius: 4px;
+  cursor: not-allowed;
+  color: var(--aix-text-tertiary);
+}
+
+/* --- Lesson card helpers --------------------------------------------------- */
+.aix-card-hover    { transition: box-shadow 120ms, transform 120ms; }
+.aix-card-title-lh { line-height: 1.3; }
+.aix-card-footer   { border-top: 1px solid var(--aix-border-soft); }
+.aix-card-delete-btn {
+  background: var(--aix-paper);
+  border: 1px solid var(--aix-border-soft);
+  box-shadow: var(--aix-shadow-soft);
+  color: var(--aix-status-error);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+}
+.aix-empty-icon-lg { font-size: 2rem; color: var(--aix-text-tertiary); }
+
+/* --- Inline-style extraction: utilities ------------------------------------ */
+/* Pixel-precise margins not on the Tailwind 4px scale */
+.aix-mt-2px  { margin-top: 2px; }
+.aix-mt-3px  { margin-top: 3px; }
+.aix-mb-2px  { margin-bottom: 2px; }
+
+/* Text helpers */
+.aix-ws-prewrap { white-space: pre-wrap; }
+.aix-lh-1       { line-height: 1; }
+
+/* Font sizes */
+.aix-fs-105  { font-size: 1.05rem; }
+.aix-fs-115  { font-size: 1.15rem; }
+.aix-fs-3rem { font-size: 3rem; }
+
+/* Color */
+.aix-color-border-medium { color: var(--aix-border-medium); }
+.aix-bg-transparent      { background: transparent; }
+
+/* Layout */
+.aix-col-end { align-items: flex-end; min-width: 0; }   /* user bubble col */
+.aix-pl-48   { padding-left: 48px; }                    /* chat spinner indent */
+.aix-p-18    { padding: 18px; }
+.aix-p-18-16 { padding: 18px 16px; }
+
+/* List indent */
+.aix-list-indent { margin: 0; padding-left: 18px; }
+
+/* --- Inline-style extraction: components ----------------------------------- */
+
+/* Card heading — history variant (16px, same tokens as .aix-card-heading) */
+.aix-card-heading-sm {
+  font-family: var(--aix-font-serif);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--aix-text-primary);
+  line-height: 1.2;
+}
+
+/* Lesson prose padding (history transcript) */
+.aix-prose-padding { padding: 18px 20px; }
+
+/* Sidebar — edit-mode amber border */
+.aix-side-pane--edit {
+  border-color: var(--aix-amber);
+  border-width: 1.5px;
+}
+
+/* 2-column checkbox grid (classroom section in edit form) */
+.aix-grid-2col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+/* Form action bar divider */
+.aix-form-divider {
+  padding-top: 8px;
+  border-top: 1px solid var(--aix-border-soft);
+}
+
+/* Debug JSON pre block */
+.aix-debug-json {
+  margin-top: 6px;
+  padding: 8px;
+  background: var(--aix-ink-navy);
+  color: #e6e6e6;
+  border-radius: var(--aix-radius-sm);
+  font-size: 10.5px;
+  overflow-x: auto;
+  line-height: 1.3;
+}
+
+/* Amber revision / feedback box (critic card + writer pending) */
+.aix-revision-box {
+  border: 1px solid rgba(212, 164, 90, 0.32);
+  background: var(--aix-amber-soft);
+  border-radius: var(--aix-radius-sm);
+  padding: 8px 12px;
+}
+
+/* Critic feedback text */
+.aix-critique-body        { margin: 8px 0 0; line-height: 1.6; white-space: pre-wrap; }
+.aix-revision-instructions { margin: 4px 0 0; white-space: pre-wrap; }
+
+/* Outcome callout list */
+.aix-outcome-list {
+  margin: 6px 0 0 18px;
+  padding: 0;
+  line-height: 1.5;
+}
+
+/* Writer thinking accordion */
+.aix-think-summary { list-style: none; padding: 4px 0; }
+.aix-think-body {
+  font-size: 11px;
+  font-family: monospace;
+  color: var(--aix-text-tertiary);
+  max-height: 180px;
+  overflow-y: auto;
+  padding: 8px 10px;
+  margin-top: 4px;
+  background: rgba(124, 107, 191, 0.05);
+  border-left: 2px solid rgba(124, 107, 191, 0.28);
+  border-radius: 0 4px 4px 0;
+  white-space: pre-wrap;
+}
+
+/* Writer live stream preview */
+.aix-writer-stream-box {
+  max-height: 28rem;
+  overflow-y: auto;
+  background: var(--aix-cream, #fdfaf5);
+  border: 1px solid var(--aix-border-soft);
+  border-radius: var(--aix-radius-sm);
+  padding: 10px 18px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/* Writer draft review article */
+.aix-writer-draft-preview {
+  margin-top: 10px;
+  max-height: 28rem;
+  overflow-y: auto;
+  border: 1px solid var(--aix-border-soft);
+  border-radius: var(--aix-radius-sm);
+  padding: 12px;
+  background: var(--aix-cream);
+}
+
+/* Media panel footer note */
+.aix-footnote-bottom    { margin: 12px 0 0; padding-top: 10px; border-top: 1px solid var(--aix-border-soft); }
+.aix-footnote-web-hint  { margin: 4px 0 8px; padding: 0 2px; }
+
+/* Attachment tray hint paragraph */
+.aix-attach-hint {
+  margin: 6px 4px 0;
+  font-size: 10.5px;
+  color: var(--aix-text-tertiary);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Attachment filename truncation */
+.aix-attach-filename {
+  max-width: 18ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

@@ -29,7 +29,7 @@ milliseconds and are stable in CI.
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -43,18 +43,17 @@ from aix.webui.agent.service import (
     _resolve_max_attempts,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _state(**overrides: Any) -> Dict[str, Any]:
+def _state(**overrides: Any) -> dict[str, Any]:
     """Build a minimal post-retrieve state dict and apply overrides.
 
     All fields are optional — :class:`AgentState` is a ``TypedDict`` with
     ``total=False`` so the loose dict shape is the runtime contract.
     """
-    base: Dict[str, Any] = {
+    base: dict[str, Any] = {
         "retrieved_nodes": [{"title": "Scaffolding"}, {"title": "Working Memory"}],
         "retrieved_relationships": [{"src": "a", "dst": "b"}],
         "recommendations": [{"strategy": "chunking"}],

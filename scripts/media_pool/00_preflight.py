@@ -6,7 +6,6 @@ Usage:
     python scripts/media_pool/00_preflight.py
 """
 
-import io
 import os
 import sys
 

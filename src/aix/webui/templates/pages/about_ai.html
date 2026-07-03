@@ -1,0 +1,241 @@
+{#
+  "Come funziona l'IA" — teacher AI-literacy guide (Wave 5 #23).
+
+  EU AI Act Art. 4 (AI literacy) deliverable: a static, non-technical
+  explanation of how the Agentic GraphRAG system produces a lesson plan,
+  written in plain Italian for teachers.
+
+  Purely additive: a new standalone page rendered from _base.html. It does
+  NOT touch the agent pipeline, SSE, the database, or any existing route.
+  Reuses existing aix-brand.css components (cards, icon circles, pills) so
+  there is no new CSS and no visual drift on other pages.
+
+  Context vars consumed:
+    - user      (Optional[User])  — anonymous access OK
+    - active_nav == "about"       — highlights the new navbar link
+#}
+{% extends "_base.html" %}
+
+{% set main_container_class = "max-w-screen-xl mx-auto w-full px-6 py-8" %}
+
+{% block content %}
+<section class="space-y-6 max-w-4xl mx-auto">
+
+  {# ── Hero ─────────────────────────────────────────────────────────── #}
+  <header class="aix-card p-8">
+    <div class="aix-section-label aix-color-teal">TRASPARENZA · INTELLIGENZA ARTIFICIALE</div>
+    <h1 class="aix-page-title mt-2">Come funziona l'IA</h1>
+    <p class="aix-text-muted mt-3 max-w-2xl">
+      Questo strumento usa l'intelligenza artificiale per aiutarti a progettare
+      lezioni. Qui spieghiamo, in modo semplice, <strong>come</strong> nasce una
+      lezione, <strong>su cosa</strong> si basa e <strong>quali sono i limiti</strong>,
+      così puoi usarlo con consapevolezza. Tu resti sempre l'insegnante che decide.
+    </p>
+  </header>
+
+  {# ── Le quattro fasi (4-agent pipeline) ───────────────────────────── #}
+  <div class="aix-card p-6">
+    <h2 class="aix-card-title aix-fs-20">Le quattro fasi di una lezione</h2>
+    <p class="aix-text-muted mt-1 aix-fs-14">
+      Quando invii una richiesta, quattro "agenti" lavorano in sequenza. Ogni
+      fase è visibile mentre la lezione si genera, nelle schede della chat.
+    </p>
+
+    <div class="grid md:grid-cols-2 gap-4 mt-5">
+
+      {# 1 — Planner #}
+      <div class="aix-card aix-card-stripe-teal p-4 flex items-start gap-4">
+        <span class="aix-icon-circle aix-icon-circle--planner aix-icon-on-dark flex-shrink-0">
+          <wa-icon name="diagram-project" class="aix-fs-18"></wa-icon>
+        </span>
+        <div>
+          <div class="aix-card-title aix-fs-16">1 · Progettazione</div>
+          <p class="aix-text-muted mt-1 aix-fs-13">
+            Legge la tua richiesta e il profilo della classe (materia, durata,
+            BES, livello) e capisce cosa serve: l'obiettivo, i concetti chiave e
+            se l'argomento rientra nelle competenze del sistema.
+          </p>
+        </div>
+      </div>
+
+      {# 2 — Retriever #}
+      <div class="aix-card aix-card-stripe-navy p-4 flex items-start gap-4">
+        <span class="aix-icon-circle aix-icon-circle--retriever aix-icon-on-dark flex-shrink-0">
+          <wa-icon name="magnifying-glass" class="aix-fs-18"></wa-icon>
+        </span>
+        <div>
+          <div class="aix-card-title aix-fs-16">2 · Ricerca nella conoscenza</div>
+          <p class="aix-text-muted mt-1 aix-fs-13">
+            Cerca dentro una base di conoscenza curata (un "grafo" di concetti e
+            relazioni didattiche) le strategie, le metodologie e le fonti più
+            pertinenti al tuo argomento.
+          </p>
+        </div>
+      </div>
+
+      {# 3 — Writer #}
+      <div class="aix-card aix-card-stripe-amber p-4 flex items-start gap-4">
+        <span class="aix-icon-circle aix-icon-circle--writer aix-icon-on-dark flex-shrink-0">
+          <wa-icon name="pen" class="aix-fs-18"></wa-icon>
+        </span>
+        <div>
+          <div class="aix-card-title aix-fs-16">3 · Scrittura</div>
+          <p class="aix-text-muted mt-1 aix-fs-13">
+            Compone il piano della lezione — obiettivi, materiali, attività,
+            tempi, valutazione e differenziazione — usando le strategie trovate
+            nella fase precedente.
+          </p>
+        </div>
+      </div>
+
+      {# 4 — Critic #}
+      <div class="aix-card aix-card-stripe-teal p-4 flex items-start gap-4">
+        <span class="aix-icon-circle aix-icon-circle--critic aix-icon-on-dark flex-shrink-0">
+          <wa-icon name="circle-check" class="aix-fs-18"></wa-icon>
+        </span>
+        <div>
+          <div class="aix-card-title aix-fs-16">4 · Revisione pedagogica</div>
+          <p class="aix-text-muted mt-1 aix-fs-13">
+            Un agente "critico" controlla la qualità del piano e, se necessario,
+            chiede di riscriverlo prima di mostrartelo. Vedi l'esito come
+            "approvata dal critic".
+          </p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  {# ── La base di conoscenza ─────────────────────────────────────────── #}
+  <div class="aix-card p-6">
+    <div class="flex items-center gap-2">
+      <wa-icon name="diagram-project" class="aix-color-teal aix-fs-18"></wa-icon>
+      <h2 class="aix-card-title aix-fs-20">Su cosa si basa</h2>
+    </div>
+    <p class="aix-text-muted mt-2 aix-fs-14">
+      Il sistema non "inventa" liberamente: attinge a una base di conoscenza
+      curata da fonti accademiche e didattiche, organizzata in due domini.
+    </p>
+    <div class="grid md:grid-cols-2 gap-4 mt-4">
+      <div class="aix-card p-4">
+        <span class="aix-pill aix-pill-info">UDL</span>
+        <p class="aix-text-muted mt-2 aix-fs-13">
+          <strong>Universal Design for Learning</strong> — principi di didattica
+          inclusiva: rappresentazione, azione/espressione e coinvolgimento, con
+          strategie per BES e DSA.
+        </p>
+      </div>
+      <div class="aix-card p-4">
+        <span class="aix-pill aix-pill-info">Neuro</span>
+        <p class="aix-text-muted mt-2 aix-fs-13">
+          <strong>Neuroscienze dell'apprendimento</strong> — basi cognitive e
+          neurobiologiche (memoria di lavoro, attenzione, funzioni esecutive)
+          tradotte in metodologie didattiche.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  {# ── Fondato sul grafo vs conoscenza generale ─────────────────────── #}
+  <div class="aix-card p-6">
+    <div class="flex items-center gap-2">
+      <wa-icon name="circle-check" class="aix-color-teal aix-fs-18"></wa-icon>
+      <h2 class="aix-card-title aix-fs-20">"Fondato sul grafo" o "conoscenza generale"?</h2>
+    </div>
+    <p class="aix-text-muted mt-2 aix-fs-14">
+      All'inizio di ogni lezione compare un avviso di copertura. Ti dice da dove
+      arriva la risposta, così sai quanto fidarti:
+    </p>
+    <ul class="mt-3 space-y-2 aix-fs-14 aix-color-primary">
+      <li class="flex items-start gap-2">
+        <wa-icon name="circle-check" class="aix-color-teal aix-fs-14 aix-mt-2px"></wa-icon>
+        <span><strong>Ricerca completata sulla base UDL/Neuro</strong> — la
+          lezione è fondata sulla base di conoscenza curata.</span>
+      </li>
+      <li class="flex items-start gap-2">
+        <wa-icon name="circle-check" class="aix-color-amber-base aix-fs-14 aix-mt-2px"></wa-icon>
+        <span><strong>Argomento non presente nella base</strong> — la lezione si
+          appoggia a conoscenze didattiche generali del modello e a fonti esterne
+          verificate. In questo caso, controlla con più attenzione.</span>
+      </li>
+    </ul>
+  </div>
+
+  {# ── Tu resti al comando ──────────────────────────────────────────── #}
+  <div class="aix-card aix-card-stripe-teal p-6">
+    <div class="flex items-center gap-2">
+      <wa-icon name="circle-check" class="aix-color-teal aix-fs-18"></wa-icon>
+      <h2 class="aix-card-title aix-fs-20">Tu resti al comando</h2>
+    </div>
+    <p class="aix-text-muted mt-2 aix-fs-14">
+      L'IA propone, l'insegnante dispone. Nessuna lezione raggiunge gli studenti
+      automaticamente: tu la richiedi, la leggi, la modifichi, la rigeneri o la
+      scarti. Puoi continuare la conversazione per adattarla (ad esempio
+      «adatta per studenti DSA» o «aggiungi un'attività di gruppo»).
+    </p>
+  </div>
+
+  {# ── Trasparenza e marcatura ──────────────────────────────────────── #}
+  <div class="aix-card p-6">
+    <div class="flex items-center gap-2">
+      <wa-icon name="sparkles" class="aix-color-teal aix-fs-18"></wa-icon>
+      <h2 class="aix-card-title aix-fs-20">Trasparenza dei contenuti</h2>
+    </div>
+    <p class="aix-text-muted mt-2 aix-fs-14">
+      Ogni contenuto è chiaramente marcato come generato dall'IA, sia nell'app
+      sia nei file esportati:
+    </p>
+    <ul class="mt-3 space-y-2 aix-fs-14 aix-color-primary">
+      <li class="flex items-start gap-2">
+        <wa-icon name="sparkles" class="aix-color-teal aix-fs-14 aix-mt-2px"></wa-icon>
+        <span>Il badge <span class="aix-pill aix-pill-info"><wa-icon name="sparkles" class="aix-fs-xs"></wa-icon> Generato dall'IA</span> sulla scheda della lezione.</span>
+      </li>
+      <li class="flex items-start gap-2">
+        <wa-icon name="sparkles" class="aix-color-teal aix-fs-14 aix-mt-2px"></wa-icon>
+        <span>La nota fissa a fondo pagina e l'avviso nei file scaricati (Markdown, TXT, PDF).</span>
+      </li>
+      <li class="flex items-start gap-2">
+        <wa-icon name="book-open" class="aix-color-teal aix-fs-14 aix-mt-2px"></wa-icon>
+        <span>Le <strong>fonti</strong> (video, articoli, risorse) nel pannello
+          "Risorse multimediali" e nella sezione <em>Fonti</em> della lezione.</span>
+      </li>
+    </ul>
+  </div>
+
+  {# ── Limiti e responsabilità ──────────────────────────────────────── #}
+  <div class="aix-card aix-card-stripe-amber p-6">
+    <div class="flex items-center gap-2">
+      <wa-icon name="circle-exclamation" class="aix-color-amber-base aix-fs-18"></wa-icon>
+      <h2 class="aix-card-title aix-fs-20">Limiti e responsabilità</h2>
+    </div>
+    <ul class="mt-3 space-y-2 aix-fs-14 aix-color-primary">
+      <li class="flex items-start gap-2">
+        <wa-icon name="circle-exclamation" class="aix-color-amber-base aix-fs-14 aix-mt-2px"></wa-icon>
+        <span>L'IA può commettere errori o omissioni. <strong>Verifica sempre
+          l'accuratezza prima dell'uso in classe.</strong></span>
+      </li>
+      <li class="flex items-start gap-2">
+        <wa-icon name="circle-exclamation" class="aix-color-amber-base aix-fs-14 aix-mt-2px"></wa-icon>
+        <span>Non è uno strumento medico, diagnostico o legale: i riferimenti a
+          BES/DSA sono spunti didattici, non valutazioni cliniche.</span>
+      </li>
+      <li class="flex items-start gap-2">
+        <wa-icon name="circle-exclamation" class="aix-color-amber-base aix-fs-14 aix-mt-2px"></wa-icon>
+        <span>La responsabilità pedagogica della lezione resta dell'insegnante.</span>
+      </li>
+    </ul>
+    <div class="mt-5">
+      <a href="/webui/lesson/new" class="aix-btn aix-btn-primary">
+        <wa-icon name="circle-plus"></wa-icon>
+        Crea una lezione
+      </a>
+    </div>
+  </div>
+
+  <p class="aix-text-subtle aix-fs-12 text-center">
+    Conforme all'art. 50 (trasparenza dei contenuti generati) e all'art. 4
+    (alfabetizzazione sull'IA) del Regolamento UE 2024/1689 sull'intelligenza artificiale.
+  </p>
+
+</section>
+{% endblock %}

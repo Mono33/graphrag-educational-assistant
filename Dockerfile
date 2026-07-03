@@ -22,19 +22,44 @@ RUN set -ex \
     && python3 -m venv $VIRTUAL_ENV \
     && $VIRTUAL_ENV/bin/pip install -U setuptools wheel pip uv
 
-# Install Python packages (requirements.txt is read by pyproject.toml via dynamic deps)
-COPY requirements.txt pyproject.toml README.md ./
+# Install Python packages from the hash-pinned lockfile for reproducible,
+# supply-chain-verified production builds. requirements.txt is also copied
+# because pyproject.toml resolves its dynamic `dependencies` from it during the
+# editable install below (metadata generation reads the file even with --no-deps).
+COPY requirements.lock.txt requirements.txt pyproject.toml README.md ./
 
 RUN set -ex \
-    && $VIRTUAL_ENV/bin/uv pip install -r requirements.txt \
+    && $VIRTUAL_ENV/bin/uv pip install -r requirements.lock.txt \
     && rm -rf /root/.cache/
 
 FROM python-env AS api
 ARG GIT_SHA
-# Copy application files and install project in editable mode
+# Copy application files and install project in editable mode (deps already
+# satisfied from the lockfile above, so --no-deps avoids re-resolving them).
 COPY . .
 RUN $VIRTUAL_ENV/bin/pip install --no-deps -e .
 # Enable venv
 ENV PATH="/opt/venv/bin:$PATH"
 ENV CODE_VERSION=${GIT_SHA}
-CMD uvicorn aix.api.main:app --host 0.0.0.0 --port 80 $API_CMD_ARGS
+
+# Defense-in-depth: run as a non-root user. Create the artifacts mount point
+# and hand the whole app tree to `aix` so the mounted artifacts volume inherits
+# writable ownership on its first mount (Docker seeds an empty named volume with
+# the image path's ownership).
+RUN useradd --create-home --uid 10001 aix \
+    && mkdir -p /graphrag-aixlearning/artifacts \
+    && chown -R aix:aix /graphrag-aixlearning
+USER aix
+
+# Serve on 8765 — the port Caddy proxies to (deploy/Caddyfile) and the compose
+# healthcheck probes. 8765 is unprivileged, so the non-root user can bind it.
+EXPOSE 8765
+
+# Baked-in health check mirroring the compose-level one, so the image is
+# self-describing even when run outside compose. curl ships in the bookworm base.
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -fsS http://localhost:8765/api/v1/health || exit 1
+
+# Shell form (not exec) so $API_CMD_ARGS expands — e.g. API_CMD_ARGS=--workers 2
+# for the Phase B #39 multi-worker deploy.
+CMD uvicorn aix.api.main:app --host 0.0.0.0 --port 8765 $API_CMD_ARGS

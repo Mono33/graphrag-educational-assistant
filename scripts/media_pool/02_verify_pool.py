@@ -18,7 +18,6 @@ import os
 import sys
 import time
 from datetime import date
-from typing import Dict, Any
 
 import requests
 from dotenv import load_dotenv
@@ -54,7 +53,7 @@ def head_url(url: str, timeout: int = 8) -> bool:
         return False
 
 
-def verify_youtube(entry: Dict) -> bool:
+def verify_youtube(entry: dict) -> bool:
     """Verify a YouTube video is still accessible via oEmbed (no API key needed)."""
     video_id = entry.get("video_id", "")
     if not video_id:
@@ -71,13 +70,13 @@ def verify_youtube(entry: Dict) -> bool:
         return False
 
 
-def verify_doi(entry: Dict) -> bool:
+def verify_doi(entry: dict) -> bool:
     """Verify DOI still resolves."""
     doi_url = entry.get("doi_url", "")
     return head_url(doi_url) if doi_url else False
 
 
-def verify_wikipedia(entry: Dict) -> bool:
+def verify_wikipedia(entry: dict) -> bool:
     """Verify Wikipedia URL still returns a valid article."""
     url = entry.get("url", "")
     return head_url(url) if url else False
@@ -165,7 +164,7 @@ def main():
 
     if args.fix and (broken_videos + broken_citations + broken_wiki) > 0:
         # Read pool metadata to preserve it
-        with open(pool_path, "r", encoding="utf-8") as f:
+        with open(pool_path, encoding="utf-8") as f:
             meta = json.load(f)
         model = meta.get("generated_by", "unknown")
         save_pool(pool_path, args.domain, model, entries)

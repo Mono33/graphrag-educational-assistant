@@ -55,11 +55,18 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Any, List, Optional
+from typing import Any, Optional
 
 from fastapi_users_db_sqlalchemy.generics import GUID
 from sqlalchemy import (
-    JSON, DateTime, ForeignKey, Index, Integer, String, Text, func,
+    JSON,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -115,9 +122,7 @@ class Lesson(Base):
     # column is just the manifest (id, filename, mime, size, text_excerpt,
     # stored_name). The Writer prompt receives a joined excerpt as
     # ``teacher_provided_context``; nothing here goes into the KG.
-    uploaded_files_json: Mapped[Optional[list[Any]]] = mapped_column(
-        JSON, nullable=True
-    )
+    uploaded_files_json: Mapped[Optional[list[Any]]] = mapped_column(JSON, nullable=True)
 
     status: Mapped[str] = mapped_column(String(24), default="draft", nullable=False)
 
@@ -144,11 +149,50 @@ class Lesson(Base):
     # to do ``lesson.messages`` instead of an explicit query. Ordered by
     # turn_index so the chat pane gets them in the right order without an
     # extra ``order_by`` on every consumer.
-    messages: Mapped[List["LessonMessage"]] = relationship(
+    messages: Mapped[list[LessonMessage]] = relationship(
         "LessonMessage",
         back_populates="lesson",
         cascade="all, delete-orphan",
         order_by="LessonMessage.turn_index, LessonMessage.created_at",
+    )
+
+
+class SavedProfile(Base):
+    """
+    A named EducationalProfile preset the teacher can reuse across lessons.
+
+    Saved from the lesson creation form via POST /webui/profiles (includes the
+    current form values).  Loaded back via GET /webui/lesson/new?profile_id={id}
+    which pre-fills the form.  No relationship to Lesson — profiles are
+    independent library entries owned by the user.
+    """
+
+    __tablename__ = "saved_profile"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        GUID,
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+
+    owner_id: Mapped[uuid.UUID] = mapped_column(
+        GUID,
+        ForeignKey("user.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+
+    # Short human-readable name chosen by the teacher (e.g. "Classe 3A Fisica").
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+
+    # Profile fields in the same nested shape as Lesson.educational_profile_json
+    # (i.e. an EducationalProfile-compatible dict).
+    profile_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
     )
 
 
@@ -190,7 +234,7 @@ class LessonMessage(Base):
         ForeignKey("lesson.id", ondelete="CASCADE"),
         nullable=False,
     )
-    lesson: Mapped["Lesson"] = relationship("Lesson", back_populates="messages")
+    lesson: Mapped[Lesson] = relationship("Lesson", back_populates="messages")
 
     # ``user`` | ``assistant``. We keep ``system`` reserved for future
     # summary-buffer rows (#10.4) but don't emit them yet — V1 keeps the
@@ -217,17 +261,13 @@ class LessonMessage(Base):
     #   {approved, revision_count, scores, nodes_count, recommendations_count,
     #    media_counts, search_queries_count, duration_seconds}
     # For user messages this is None.
-    meta_json: Mapped[Optional[dict[str, Any]]] = mapped_column(
-        JSON, nullable=True
-    )
+    meta_json: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
 
     # LangGraph checkpoint id snapshotted at this turn (CORE 2 #10.3 future
     # use — regenerate via aupdate_state branches from this checkpoint).
     # Optional because V1 doesn't populate it for the simple replay path;
     # regenerate-from-history will set it when that branch lands.
-    checkpoint_id: Mapped[Optional[str]] = mapped_column(
-        String(128), nullable=True
-    )
+    checkpoint_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -241,4 +281,56 @@ class LessonMessage(Base):
         # of a lesson with 10+ turns. With this, an index seek + ordered
         # walk delivers messages in O(log N + K).
         Index("ix_lesson_message_lesson_turn", "lesson_id", "turn_index"),
+    )
+
+
+class AgentRun(Base):
+    """Cross-worker registry of *in-flight* agent runs (CORE 6 #37).
+
+    One row exists **only while a generation is running**: it is INSERTed when a
+    run is claimed and DELETEd when it finishes. This replaces the per-process
+    ``_ACTIVE_RUNS`` set so multiple uvicorn workers / replicas share a single
+    source of truth for "is this lesson already being generated?" — the
+    prerequisite for the multi-worker deploy (#39).
+
+    Ephemeral by design: this is a coordination table, not run history (that
+    lives in ``LessonMessage`` + Langfuse). Keeping only live rows keeps it tiny
+    and the duplicate-attach check a single indexed point-lookup.
+
+    Crash recovery: ``heartbeat_at`` is refreshed periodically by the owning
+    worker. A row whose heartbeat is older than the configured TTL is treated as
+    *stale* (the worker crashed mid-run) — it is ignored by ``is_active`` and may
+    be taken over by a new ``claim`` — so a crash never permanently blocks a
+    lesson from being re-run. This reproduces the old in-memory semantic where
+    the set was simply lost on restart.
+
+    Timestamps are stored as naive UTC (``datetime.utcnow()``, written by the
+    app) rather than ``timezone=True`` + ``func.now()``: the staleness check
+    compares app-clock values and must behave identically on SQLite (tests /
+    dev) and Postgres (prod), avoiding aware/naive comparison pitfalls.
+    """
+
+    __tablename__ = "agent_run"
+
+    # One in-flight run per lesson → lesson_id is the natural claim key / PK.
+    lesson_id: Mapped[uuid.UUID] = mapped_column(GUID, primary_key=True)
+
+    # Per-claim identity. ``release``/``heartbeat`` filter on this so a worker
+    # never deletes/refreshes a successor's row after a stale takeover.
+    run_id: Mapped[uuid.UUID] = mapped_column(GUID, nullable=False, default=uuid.uuid4)
+
+    # Owning user (for the #40 dashboard). Nullable — coordination doesn't
+    # depend on it, and we never want a missing owner to block a claim.
+    owner_id: Mapped[Optional[uuid.UUID]] = mapped_column(GUID, nullable=True)
+
+    # host:pid of the process driving the run — diagnostics + dashboard.
+    worker_id: Mapped[str] = mapped_column(String(128), nullable=False)
+
+    started_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    heartbeat_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+    __table_args__ = (
+        # Supports the dashboard's "all live runs" scan and the staleness
+        # cutoff comparison.
+        Index("ix_agent_run_heartbeat", "heartbeat_at"),
     )

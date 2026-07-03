@@ -1,0 +1,93 @@
+{#
+  Critic Agent — pending placeholder.
+
+  Emitted by service.py immediately after the write node finishes
+  (``critic_pending`` StreamEvent), before ``critique_node`` starts.
+  The 30-second critic wait would otherwise leave the chat looking frozen;
+  this card gives the user a live "cascade of thought" — an animated
+  checklist of what the critic is evaluating — so the wait feels active,
+  not stuck.
+
+  OOB replacement: id="critic-card-rev{{ write_revision }}" matches the
+  root id of chat_critic_card.html so htmx replaces this pending card
+  in-place when the critique completes.
+
+  Required context:
+    payload = { write_revision }   (1-based, set by service.py)
+#}
+
+{% set p = payload or {} %}
+{% set rev = p.get('write_revision', 1) %}
+
+<div id="critic-card-rev{{ rev }}" class="aix-agent-shell">
+
+  <div class="aix-agent-avatar aix-agent-avatar--critic">
+    <wa-icon name="shield-check"></wa-icon>
+  </div>
+
+  <div class="aix-agent-body">
+    <article class="aix-agent-card aix-agent-card--critic aix-card-stripe-critic">
+
+      <header class="aix-agent-card-header aix-agent-card-header--critic">
+        <div class="aix-agent-card-title">
+          <strong>Critic Agent</strong>
+          <span class="aix-agent-card-role">· valutazione in corso</span>
+        </div>
+        <span class="aix-pill aix-pill-warning">
+          <wa-spinner class="aix-fs-xs"></wa-spinner>
+          analisi
+        </span>
+      </header>
+
+      <div class="aix-agent-card-body aix-col-10">
+
+        <p class="aix-color-secondary aix-fs-12 m-0">
+          Il Critic sta analizzando la lezione su più dimensioni pedagogiche:
+        </p>
+
+        {# Animated evaluation checklist — items appear one by one via CSS animation #}
+        <div class="aix-col-6" id="critic-checklist-{{ rev }}">
+
+          <div class="critic-pending-item aix-delay-0">
+            <span class="critic-pending-dot"></span>
+            <span>Allineamento agli obiettivi di apprendimento</span>
+          </div>
+          <div class="critic-pending-item aix-delay-2-5s">
+            <span class="critic-pending-dot"></span>
+            <span>Inclusività e supporti UDL per la classe</span>
+          </div>
+          <div class="critic-pending-item aix-delay-5s">
+            <span class="critic-pending-dot"></span>
+            <span>Coerenza con il profilo educativo fornito</span>
+          </div>
+          <div class="critic-pending-item aix-delay-7-5s">
+            <span class="critic-pending-dot"></span>
+            <span>Qualità pedagogica dei media selezionati</span>
+          </div>
+          <div class="critic-pending-item aix-delay-10s">
+            <span class="critic-pending-dot"></span>
+            <span>Bilanciamento tempi e attività nella lezione</span>
+          </div>
+          <div class="critic-pending-item aix-delay-12-5s">
+            <span class="critic-pending-dot"></span>
+            <span>Accuratezza scientifica e pertinenza del dominio</span>
+          </div>
+
+        </div>
+
+        <p class="aix-footnote-sm m-0">
+          La valutazione richiede tipicamente 15–30 secondi.
+        </p>
+
+      </div>
+
+    </article>
+    <div class="aix-agent-footer-label">
+      <wa-icon name="shield-check" class="aix-fs-sm"></wa-icon>
+      <span>Critic · pending</span>
+    </div>
+  </div>
+
+</div>
+
+{# .critic-pending-item / .critic-pending-dot / @keyframes → aix-brand.css #}

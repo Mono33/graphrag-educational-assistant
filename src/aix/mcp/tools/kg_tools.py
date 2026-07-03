@@ -28,10 +28,8 @@ ASGI mount lives in the same uvicorn process as the FastAPI app — see
 
 from __future__ import annotations
 
-import asyncio
 import logging
-from dataclasses import asdict
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Literal, Optional
 
 from fastmcp import FastMCP
 from pydantic import BaseModel, Field
@@ -67,7 +65,7 @@ class KgSearchNode(BaseModel):
     description: Optional[str] = Field(
         default=None, description="Natural-language description if present in the KG."
     )
-    properties: Dict[str, Any] = Field(
+    properties: dict[str, Any] = Field(
         default_factory=dict,
         description="Other node properties as returned by Neo4j.",
     )
@@ -84,21 +82,20 @@ class KgSearchResult(BaseModel):
 
     domain: DomainLiteral
     query: str
-    nodes: List[KgSearchNode]
-    relationships: List[KgSearchRelationship]
-    recommendations: List[Dict[str, Any]] = Field(
+    nodes: list[KgSearchNode]
+    relationships: list[KgSearchRelationship]
+    recommendations: list[dict[str, Any]] = Field(
         description="Ranked methodology recommendations (educational context)."
     )
     confidence: str = Field(
-        description="Educational-context confidence assessment "
-        "('LOW' / 'MEDIUM' / 'HIGH')."
+        description="Educational-context confidence assessment ('LOW' / 'MEDIUM' / 'HIGH')."
     )
     cypher_query: Optional[str] = Field(
         default=None,
         description="Cypher query the Text2Cypher layer generated. "
         "Useful for transparency / debugging.",
     )
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class KgConceptList(BaseModel):
@@ -106,7 +103,7 @@ class KgConceptList(BaseModel):
 
     domain: DomainLiteral
     count: int
-    concepts: List[str] = Field(description="Concept names available in the domain.")
+    concepts: list[str] = Field(description="Concept names available in the domain.")
 
 
 class KgSchemaResult(BaseModel):
@@ -115,14 +112,14 @@ class KgSchemaResult(BaseModel):
     domain: DomainLiteral
     display_name: str
     description: Optional[str] = None
-    label_categories: Dict[str, str] = Field(
+    label_categories: dict[str, str] = Field(
         description="Map of Neo4j node label → human-readable category."
     )
     similarity_threshold: Optional[float] = Field(
         default=None,
         description="Default cosine similarity threshold used by Node2Vec retrieval.",
     )
-    methodology_categories: Dict[str, Any] = Field(
+    methodology_categories: dict[str, Any] = Field(
         default_factory=dict,
         description="Domain-specific methodology category groupings.",
     )
@@ -135,8 +132,8 @@ class KgSchemaResult(BaseModel):
 # driver init + schema cache warm-up; ~13s on the dev box, see terminals
 # 23.txt). We cache one instance per domain so the second call in the same
 # process is sub-second.
-_GRAPHRAG_TOOLS: Dict[str, Any] = {}
-_MEDIA_LOOKUPS: Dict[str, Any] = {}
+_GRAPHRAG_TOOLS: dict[str, Any] = {}
+_MEDIA_LOOKUPS: dict[str, Any] = {}
 
 
 def _get_graphrag_tool(domain: str):
@@ -156,7 +153,7 @@ def _get_media_lookup(domain: str):
     return _MEDIA_LOOKUPS[domain]
 
 
-def _node_dict_to_model(raw: Dict[str, Any]) -> KgSearchNode:
+def _node_dict_to_model(raw: dict[str, Any]) -> KgSearchNode:
     """Best-effort coercion of a raw Neo4j-derived dict into ``KgSearchNode``."""
     if not isinstance(raw, dict):
         return KgSearchNode(
@@ -221,8 +218,10 @@ def register(mcp: FastMCP) -> None:
             query=query,
             nodes=[_node_dict_to_model(n) for n in result.nodes],
             relationships=[
-                KgSearchRelationship(**r) if isinstance(r, dict) else KgSearchRelationship(
-                    source=str(r[0]), type=str(r[1]), target=str(r[2])
+                (
+                    KgSearchRelationship(**r)
+                    if isinstance(r, dict)
+                    else KgSearchRelationship(source=str(r[0]), type=str(r[1]), target=str(r[2]))
                 )
                 for r in result.relationships
             ],
@@ -252,7 +251,7 @@ def register(mcp: FastMCP) -> None:
         query: str,
         domain: DomainLiteral = "neuro",
         max_methodologies: int = 10,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Get the educational-context bundle for a query.
 
         Args:
@@ -271,13 +270,11 @@ def register(mcp: FastMCP) -> None:
         # downstream changes. We stay conservative on field names.
         recommendations = list(result.recommendations or [])[:max_methodologies]
 
-        media_counts: Dict[str, int] = {"videos": 0, "images": 0, "resources": 0}
+        media_counts: dict[str, int] = {"videos": 0, "images": 0, "resources": 0}
         try:
             media = _get_media_lookup(domain)
             concept_names = [
-                (n.get("name") or n.get("title") or "")
-                for n in result.nodes
-                if isinstance(n, dict)
+                (n.get("name") or n.get("title") or "") for n in result.nodes if isinstance(n, dict)
             ]
             concept_names = [c for c in concept_names if c]
             if concept_names:

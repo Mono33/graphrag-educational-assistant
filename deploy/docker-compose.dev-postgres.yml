@@ -1,0 +1,73 @@
+# =====================================================================
+# Phase B — LOCAL Postgres validation helper (dev only)
+# =====================================================================
+#
+# Spins up ONLY a Postgres 16 instance on the host so you can validate the
+# already-Postgres-ready code paths (WebUI DB via SQLAlchemy/asyncpg +
+# LangGraph AsyncPostgresSaver via psycopg) on your laptop — WITHOUT touching
+# the production stack in docker-compose.prod.yml.
+#
+# Unlike the prod compose, this:
+#   * runs Postgres ONLY (the app runs natively on your host), and
+#   * PUBLISHES port 5432 to localhost so the native app can reach it.
+#
+# ---------------------------------------------------------------------
+# Usage (from the graphaixlearning/ root):
+#
+#   1. Start Postgres:
+#        docker compose -f deploy/docker-compose.dev-postgres.yml up -d
+#
+#   2. Point the app at it (PowerShell, current session only). Use 127.0.0.1,
+#      NOT localhost: on Windows libpq resolves localhost to IPv6 ::1 first,
+#      but the port below is published on IPv4 127.0.0.1 only, so localhost
+#      stalls psycopg's async pool (30s PoolTimeout -> single-turn).
+#        $env:WEBUI_DATABASE_URL    = "postgresql+asyncpg://aix:aixdevpass@127.0.0.1:5432/aix"
+#        $env:LANGGRAPH_DATABASE_URL = "postgresql://aix:aixdevpass@127.0.0.1:5432/aix"
+#
+#   3. Boot the app via the local launcher (NOT `python -m uvicorn`):
+#        python scripts/ops/run_local.py
+#      The launcher sets WindowsSelectorEventLoopPolicy BEFORE uvicorn creates
+#      its loop, which psycopg (LangGraph's Postgres checkpointer) requires on
+#      Windows. Launching with `python -m uvicorn aix.api.main:app` would start
+#      the loop before the app's import-time guard runs, so the checkpointer
+#      would fail with a 30s PoolTimeout and multi-turn memory would silently
+#      degrade to single-turn. On Linux/prod the launcher is just a uvicorn
+#      passthrough.
+#      Watch the logs for: `[checkpointer] AsyncPostgresSaver ready ... multi-turn enabled`,
+#      then run one lesson end-to-end.
+#
+#   4. Tear down when done (add -v to also delete the data volume):
+#        docker compose -f deploy/docker-compose.dev-postgres.yml down
+#
+# NOTE: credentials here are throwaway DEV values. Do NOT reuse them in prod;
+# prod credentials live in deploy/.env.prod and are interpolated by
+# docker-compose.prod.yml.
+# =====================================================================
+
+services:
+
+  postgres-dev:
+    image: postgres:16-alpine
+    container_name: aix-postgres-dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: aix
+      POSTGRES_PASSWORD: aixdevpass
+      POSTGRES_DB: aix
+    ports:
+      # Published to localhost so the natively-run app can connect. This is
+      # the deliberate difference from the prod compose (where Postgres is
+      # only reachable on the internal docker network).
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pg_dev_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  pg_dev_data:
+    name: aix-pg-dev-data

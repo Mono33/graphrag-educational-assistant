@@ -24,27 +24,26 @@
     <article class="aix-agent-card aix-agent-card--error aix-card-stripe-error">
 
       <header class="aix-agent-card-header aix-agent-card-header--error">
-        <div class="aix-agent-card-title" style="color:var(--aix-status-error);">
+        <div class="aix-agent-card-title aix-color-error">
           <strong>Errore durante la generazione</strong>
         </div>
         <span class="aix-pill aix-pill-error">error</span>
       </header>
 
-      <div class="aix-agent-card-body" style="display:flex; flex-direction:column; gap:10px;">
-        <p style="margin:0; font-size:14px; white-space:pre-wrap; color:var(--aix-text-primary);">
+      <div class="aix-agent-card-body aix-col-10">
+        <p class="aix-color-primary aix-fs-14 m-0 aix-ws-prewrap">
           {{ error or "Errore sconosciuto." }}
         </p>
 
-        <p style="margin:0; font-size:12px; font-style:italic; color:var(--aix-text-tertiary);">
+        <p class="aix-footnote m-0">
           Suggerimento: controlla la connessione, le chiavi API in <code>.env</code>,
           e i log del server. Se l'errore persiste, allega il messaggio
           quando segnali il problema.
         </p>
 
-        <div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end;
-                    gap:8px; padding-top:6px;">
+        <div class="flex flex-wrap items-center justify-end gap-2 pt-1.5">
           <a href="/webui/lesson/new" class="aix-btn aix-btn-outline aix-btn-sm">
-            <wa-icon name="circle-plus" style="font-size:0.85rem;"></wa-icon>
+            <wa-icon name="circle-plus" class="aix-fs-085"></wa-icon>
             Nuova lezione
           </a>
           <button type="button"
@@ -52,7 +51,7 @@
                   hx-post="/webui/lesson/{{ lesson.id }}/run"
                   hx-target="#chat-conversation"
                   hx-swap="innerHTML">
-            <wa-icon name="rotate" style="font-size:0.85rem;"></wa-icon>
+            <wa-icon name="rotate" class="aix-fs-085"></wa-icon>
             Riprova
           </button>
         </div>
@@ -60,7 +59,7 @@
 
     </article>
     <div class="aix-agent-footer-label">
-      <wa-icon name="circle-exclamation" style="font-size:0.75rem;"></wa-icon>
+      <wa-icon name="circle-exclamation" class="aix-fs-sm"></wa-icon>
       <span>Sistema · errore</span>
     </div>
   </div>

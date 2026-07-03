@@ -366,7 +366,7 @@ Dependency graph:
 
 | # | Subtask Name | Assignee | Priority | Est. Effort | Depends On | Status |
 |---|---|---|---|---|---|---|
-| 15.a | **State Checkpointing (PostgresSaver upgrade)** | LM | 🟡 Medium | 5-8h | #10 | TODO |
+| 15.a | **State Checkpointing (PostgresSaver upgrade)** | LM | 🟡 Medium | 5-8h | #10 | ✅ DONE locally *(2026-05-16; restored after repo sync on 2026-06-06)* |
 | 15.b | **Conversation-Memory Hardening — Production-readiness without new UX** | LM | 🟠 High | 2-3h | #10 | TODO *(promoted from Point A analysis 2026-05-09)* |
 | 15.c | **Conversation-Memory UX V2 — Time-travel "Rigenera" + Branching + Edit-and-rerun** | LM | 🔵 Low | 1-2d | #15.a, #15.b | DEFERRED *(design-only for now; no UI work until product signal justifies it)* |
 | 16 | **Long-Term Memory (Teacher Profiles)** | LM | 🟡 Medium | 6-8h | #15.a | TODO |
@@ -1206,7 +1206,7 @@ L3 — Long-term cross-session preferences: deferred to #16 (LangGraph Store API
 | **10.2 — `AsyncSqliteSaver` checkpointer** | `pip install langgraph-checkpoint-sqlite`. New `aix.agent.graph.checkpointer.get_checkpointer()` async singleton with graceful degradation if package is missing. New `build_lesson_planner_graph_async()` compiles with checkpointer attached; old sync `build_lesson_planner_graph()` preserved for backward compat. Pass `config={"configurable": {"thread_id": str(lesson.id)}}` on every `astream()` / `ainvoke()` call in `webui.agent.service` and `aix.api.routes.agent`. DB at `data/agent_threads.db`, override via `LANGGRAPH_CHECKPOINTER_URL`. | 4-6h | ✅ **DONE 2026-05-01** | None |
 | **10.3 — `lesson_messages` table + multi-turn `/run`** | New SQLAlchemy model `LessonMessage(id, lesson_id, role, content_md, turn_index, agent_kind, meta_json, checkpoint_id, created_at)` with compound index on `(lesson_id, turn_index)`; auto-created by `Base.metadata.create_all` (Alembic stays in its planned home at #6.6 P5/CORE 6). `POST /run` auto-detects `mode` from `lesson.status` (`draft` → `new`, `complete`/`error` → `follow_up`); persists user `LessonMessage` on entry, assistant `LessonMessage` on `kind="done"`. Backward-compat **backfill on first follow-up** for pre-#10.3 lessons (turn 1 imported from `lesson.teacher_query`/`lesson.lesson_plan_md`). Service layer loads prior turns and injects them as a service-layer-augmented `teacher_query` (Italian/English-aware) so EVERY agent in the pipeline sees prior context without bespoke prompt edits. New `chat_history.html` partial renders the full transcript (user bubbles + per-turn lesson cards); `chat_conversation.html` falls back to the legacy single-bubble layout when no `lesson_message` rows exist. Chat input copy refreshed: "Continua la conversazione…" / "Invia" instead of "Nuova". **Time-travel regenerate deferred** to a follow-up — V1 multi-turn delivers `mode={new, follow_up}` with auto-detection. | 2-3d | ✅ **DONE 2026-05-01** *(regenerate via time-travel deferred to V2)* | 10.2 |
 | **10.4 — Memory window strategy** | Turn-based summary-buffer pattern: when conversation has more than `AIX_CONVERSATION_WINDOW_TURNS` (default 4) prior turns, summarise everything older via a cheap LLM call (temperature 0.2, max_tokens 600, language-aware) into `AgentState.conversation_summary`; keep the recent window verbatim in `conversation_history`. Both flow into the augmented query — summary first, then recent turns, then current request. Failures fall back to no windowing with a logged warning so the run never crashes on a transient LLM error. Tunable via env var. | 1d | ✅ **DONE 2026-05-01** | 10.3 |
-| **10.5 — `AsyncPostgresSaver` migration** | Deferred to **CORE 4 #15.a** — see that subtask. 1-line API swap (`AsyncSqliteSaver` → `AsyncPostgresSaver(pool)`). Same schema shape, same code path, just durable + multi-instance. | rolls up to #15.a | TODO | #10.3 |
+| **10.5 — `AsyncPostgresSaver` migration** | Rolled into **CORE 4 #15.a**. Runtime backend selection now uses `AsyncPostgresSaver(pool)` when `LANGGRAPH_DATABASE_URL` is a Postgres URL and `AsyncSqliteSaver` for zero-config dev. Same schema shape, same graph/API path, just durable + multi-instance in production. | rolls up to #15.a | ✅ DONE locally *(2026-05-16; restored 2026-06-06)* | #10.3 |
 
 **Acceptance Criteria:**
 - [x] **10.1:** `chat_input` re-enables automatically after the SSE stream closes; no page reload required; verified across `complete` and `error` terminal states *(stable `#chat-input-wrapper` root + `_oob` flag in partial; `_stream_event_to_sse` appends OOB-rendered partial on `done`/`error`)*
@@ -1366,23 +1366,27 @@ Add source attribution to Writer output (each strategy cites which KG node it ca
 **Priority:** 🟡 Medium | **Effort:** 5-8h | **Assignee:** LM
 **Note:** First subtask of **CORE 4 — Personalization**. Depends on CORE 2 #10 already being live (`AsyncSqliteSaver`-backed, dev). Triggered alongside the broader app-wide SQLite → PostgreSQL migration in #6.6 P6 (Hetzner deploy). *Originally tracked as #15; renamed to 15.a on 2026-05-09 when #15 was split into 15.a (this — backend migration), 15.b (no-UX memory hardening), and 15.c (deferred memory UX V2). See 15.b/15.c below; nothing in this subtask's description, acceptance criteria, or dependencies has changed — only the numbering.*
 
+**Status update 2026-06-06:** ✅ DONE locally and restored after the repo-sync conflict/reset. `src/aix/agent/graph/checkpointer.py` now selects `AsyncPostgresSaver` when `LANGGRAPH_DATABASE_URL` / `LANGGRAPH_CHECKPOINTER_URL` is a Postgres URL and falls back to `AsyncSqliteSaver` for local dev. The production deployment plan records the original 2026-05-16 smoke against Postgres 16 (`setup()` table bootstrap + `aput`/`aget_tuple` round-trip); the code was rewritten/restored to that contract after the SQLite-only file reappeared during the Angelo branch sync.
+
 **Description:**
 Swap `AsyncSqliteSaver` (dev — set up in CORE 2 #10) for `AsyncPostgresSaver` for production-grade durable conversation memory across pod restarts, multi-instance deployments, and concurrent-request safety.
 
-**The migration is a 1-line change of the saver class** because LangGraph's `BaseCheckpointSaver` abstraction is backend-agnostic — same `astream` / `aget_state` / `get_state_history` / `aupdate_state` API on both backends, identical `lesson_messages` CQRS sync (the L2 view from #10 is unchanged). The data shape (3 tables: `checkpoints`, `checkpoint_blobs`, `checkpoint_writes` — all `JSONB` columns) is created idempotently on app startup via `await checkpointer.setup()`.
+The migration is intentionally backend-agnostic because LangGraph's `BaseCheckpointSaver` abstraction exposes the same `astream` / `aget_state` / `get_state_history` / `aupdate_state` API on both backends. The app now uses an env-driven selector rather than a hardcoded saver class: Postgres in production, SQLite in dev. The data shape (3 tables: `checkpoints`, `checkpoint_blobs`, `checkpoint_writes` — all `JSONB` columns) is created idempotently via `await saver.setup()`.
 
 **Why this is "Medium" priority and not blocking:** the dev `AsyncSqliteSaver` set up in #10 is already durable (writes to `data/agent_threads.db` on disk); it just doesn't support multi-instance horizontal scaling. The migration becomes urgent only when we deploy multiple uvicorn replicas or hit SQLite write-lock contention under load — neither is a near-term concern.
 
 **Acceptance Criteria:**
-- [ ] `pip install langgraph-checkpoint-postgres` (`>=2.0`)
-- [ ] PostgreSQL connection configured (separate `LANGGRAPH_DATABASE_URL` env var so the agent thread store can live in its own DB if ops prefer; otherwise fall back to the main app `DATABASE_URL`)
-- [ ] `psycopg_pool.AsyncConnectionPool(POSTGRES_URI, min_size=4, max_size=20)` shared across the app
-- [ ] Graph compiled with `AsyncPostgresSaver(pool)` in production, `AsyncSqliteSaver` in dev (env-flag toggle in `aix.core.config`)
-- [ ] Idempotent table setup (`await checkpointer.setup()`) hooked into FastAPI lifespan
-- [ ] Crash recovery test: kill process mid-pipeline, restart, verify resume from last node via `aget_state(config)` and SSE replay of unfinished events
-- [ ] Concurrent-request stress test: 20 parallel runs across 5 different threads, no row-lock contention (PostgresSaver uses `SELECT ... FOR UPDATE` row locking)
-- [ ] Historical SQLite checkpoints migrated via one-shot script (read via `AsyncSqliteSaver`, write via `AsyncPostgresSaver` — same `BaseCheckpointSaver` protocol, ~30-line script)
-- [ ] OpenAPI strictly-additive regression baseline still green (no public-API surface change)
+- [x] `langgraph-checkpoint-postgres` (`>=2.0`) installed / locked.
+- [x] PostgreSQL connection configured through separate `LANGGRAPH_DATABASE_URL` env var; `LANGGRAPH_CHECKPOINTER_URL` remains as a legacy/dev override.
+- [x] `psycopg_pool.AsyncConnectionPool` used for `AsyncPostgresSaver` in production; max pool size tunable via `LANGGRAPH_PG_POOL_MAX` (default 20).
+- [x] Runtime selector uses `AsyncPostgresSaver(pool)` in production and `AsyncSqliteSaver` in dev, preserving the same graph/API path.
+- [x] Idempotent table setup (`await saver.setup()`) runs during lazy checkpointer initialisation.
+- [x] Local Postgres 16 smoke recorded in the production deployment plan: table bootstrap + `aput`/`aget_tuple` round-trip.
+- [x] Historical SQLite checkpoint migration decision recorded as intentionally skipped for the internal pilot; production starts with empty conversation memory and empty WebUI data.
+- [ ] Final Linux VM / CD smoke: verify Postgres backend selected from deployed `LANGGRAPH_DATABASE_URL`.
+- [ ] Crash recovery test: kill process mid-pipeline, restart, verify resume from last node via `aget_state(config)` and SSE replay of unfinished events.
+- [ ] Concurrent-request stress test: 20 parallel runs across 5 different threads, no row-lock contention.
+- [ ] OpenAPI strictly-additive regression baseline still green (no public-API surface change).
 
 **Depends on:** PostgreSQL database (provisioned by ops in #6.6 P6 / CORE 6), **#10 (Conversation Memory — `AsyncSqliteSaver` must be live first)**
 **Unblocks:** #16 (Long-Term Memory — needs PostgresSaver-backed thread store + LangGraph Store API for L3 cross-session preferences), #19 (Human-in-the-Loop — needs durable interrupt state across pod restarts)

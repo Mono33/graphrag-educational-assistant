@@ -1,0 +1,28 @@
+{#
+  F6: "What's Next?" — adjacent KG concept cards shown after a completed lesson.
+  Turns single-lesson use into curriculum navigation.
+
+  Required context (set by lesson_show() in routes.py):
+    adjacent_concepts   list[dict]   each: {name, labels, rel_type, description}
+    lesson              ORM Lesson   for domain forwarding on the link
+#}
+{% if adjacent_concepts %}
+<section class="aix-what-next">
+  <header class="aix-what-next-header">
+    <wa-icon name="compass" class="aix-what-next-icon"></wa-icon>
+    <span>Cosa esplorare dopo</span>
+  </header>
+  <div class="aix-what-next-grid">
+    {% for concept in adjacent_concepts %}
+    <a href="/webui/lesson/new?topic={{ concept.name | urlencode }}&domain={{ lesson.domain or 'neuro' }}"
+       class="aix-what-next-card">
+      <span class="aix-what-next-rel">{{ concept.rel_type | replace('_', ' ') | lower }}</span>
+      <span class="aix-what-next-name">{{ concept.name }}</span>
+      {% if concept.description %}
+        <span class="aix-what-next-desc">{{ concept.description | truncate(80) }}</span>
+      {% endif %}
+    </a>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}

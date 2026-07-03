@@ -32,7 +32,7 @@ import pytest
 from aix.agent.agents.critic_agent import CriticAgent
 from aix.agent.agents.planner_agent import PlannerAgent
 from aix.agent.agents.retriever_agent import RetrievalResult
-
+from aix.core.config import config as app_config
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -71,9 +71,18 @@ def _patch_critic_client(critic: CriticAgent, completion_text: str) -> MagicMock
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_planner_forwards_json_mode_to_client():
+async def test_planner_forwards_json_mode_to_client(monkeypatch):
     """The Planner must request ``response_format={"type": "json_object"}``
-    on non-reasoning models (default ``gpt-4o``)."""
+    on non-reasoning models.
+
+    The Planner uses the GLOBAL configured model (it passes no
+    ``model_override``), so we pin it to a non-reasoning model here. With a
+    reasoning default (e.g. ``claude-sonnet-4``) ``build_completion_kwargs``
+    correctly *skips* ``response_format`` and this assertion would not apply.
+    (``PlannerAgent``'s ``model`` arg is vestigial — production instantiates
+    ``PlannerAgent()`` and relies on the global model.)
+    """
+    monkeypatch.setattr(app_config.openai, "model", "gpt-4o")
     planner = PlannerAgent(model="gpt-4o")
     fake_create = _patch_planner_client(
         planner,

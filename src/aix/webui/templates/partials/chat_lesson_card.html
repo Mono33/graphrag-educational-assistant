@@ -29,6 +29,19 @@
 {% set m = meta or {} %}
 {% set mc = m.get('media_counts') or {} %}
 
+{# F1: Resolve pedagogical_intent code → human label for the pill #}
+{% set _ep = lesson.educational_profile_json or {} %}
+{% set _pi_raw = _ep.get('pedagogical_intent', '') %}
+{% set _pi_code = _pi_raw.split(':')[0].strip() if _pi_raw else '' %}
+{% set _intent_labels = {
+  "intro": "Prima introduzione",
+  "deepening": "Approfondimento",
+  "misconception": "Correggere idea errata",
+  "assessment": "Preparazione verifica",
+  "practice": "Applicazione pratica",
+  "interdisciplinary": "Interdisciplinare"
+} %}
+
 <div class="aix-agent-shell">
 
   <div class="aix-agent-avatar aix-agent-avatar--lesson">
@@ -39,30 +52,36 @@
     <article class="aix-agent-card aix-agent-card--lesson">
 
       <header class="aix-agent-card-header aix-agent-card-header--lesson">
-        <div style="display:flex; align-items:flex-start; gap:10px;">
-          <wa-icon name="book-open" style="font-size:1.15rem; color:var(--aix-text-secondary); margin-top:2px;"></wa-icon>
+        <div class="aix-irow-8 aix-items-start">
+          <wa-icon name="book-open" class="aix-fs-115 aix-color-secondary aix-mt-2px"></wa-icon>
           <div>
-            <div style="font-family:var(--aix-font-serif); font-size:18px; font-weight:600;
-                        color:var(--aix-text-primary); line-height:1.2;">
+            <div class="aix-card-heading">
               Piano della lezione
             </div>
-            <div style="font-size:12px; color:var(--aix-text-tertiary); margin-top:2px;">
+            <div class="aix-fs-12 aix-color-tertiary aix-mt-2px">
               Output finale dell'agente · {{ lesson.title or 'lezione senza titolo' }}
             </div>
           </div>
         </div>
-        {% if m.get('approved') is not none %}
-          {% if m.approved %}
-            <span class="aix-pill aix-pill-success">
-              <wa-icon name="circle-check" style="font-size:0.7rem;"></wa-icon>
-              approvata dal critic
-            </span>
-          {% else %}
-            <span class="aix-pill aix-pill-warning">
-              limite revisioni raggiunto
-            </span>
+        <div class="aix-irow-8">
+          {# EU AI Act Art. 50 (#22) — per-card AI-generated badge. #}
+          <span class="aix-pill aix-pill-info" title="Contenuto generato dall'intelligenza artificiale">
+            <wa-icon name="sparkles" class="aix-fs-xs"></wa-icon>
+            Generato dall'IA
+          </span>
+          {% if m.get('approved') is not none %}
+            {% if m.approved %}
+              <span class="aix-pill aix-pill-success">
+                <wa-icon name="circle-check" class="aix-fs-xs"></wa-icon>
+                approvata dal critic
+              </span>
+            {% else %}
+              <span class="aix-pill aix-pill-warning">
+                limite revisioni raggiunto
+              </span>
+            {% endif %}
           {% endif %}
-        {% endif %}
+        </div>
       </header>
 
       {# Compact metadata strip — duration, sources, revisions #}
@@ -70,28 +89,28 @@
 
         {% if m.get('duration_seconds') is not none %}
           <span class="aix-meta-item">
-            <wa-icon name="clock" style="font-size:0.75rem;"></wa-icon>
+            <wa-icon name="clock" class="aix-meta-icon"></wa-icon>
             <strong>{{ '%.1f' | format(m.duration_seconds) }} s</strong>
           </span>
         {% endif %}
 
         {% if m.get('revision_count') is not none %}
           <span class="aix-meta-item">
-            <wa-icon name="rotate" style="font-size:0.75rem;"></wa-icon>
+            <wa-icon name="rotate" class="aix-meta-icon"></wa-icon>
             <strong>{{ m.revision_count }}</strong> revisioni
           </span>
         {% endif %}
 
         {% if m.get('nodes_count') %}
           <span class="aix-meta-item">
-            <wa-icon name="diagram-project" style="font-size:0.75rem;"></wa-icon>
+            <wa-icon name="diagram-project" class="aix-meta-icon"></wa-icon>
             <strong>{{ m.nodes_count }}</strong> nodi KG
           </span>
         {% endif %}
 
         {% if m.get('search_queries_count') %}
           <span class="aix-meta-item">
-            <wa-icon name="magnifying-glass" style="font-size:0.75rem;"></wa-icon>
+            <wa-icon name="magnifying-glass" class="aix-meta-icon"></wa-icon>
             <strong>{{ m.search_queries_count }}</strong> ricerche
           </span>
         {% endif %}
@@ -99,62 +118,138 @@
         {% set total_media = (mc.get('videos', 0) + mc.get('articles', 0) + mc.get('oer', 0)) %}
         {% if total_media %}
           <span class="aix-meta-item">
-            <wa-icon name="photo-film" style="font-size:0.75rem;"></wa-icon>
+            <wa-icon name="photo-film" class="aix-meta-icon"></wa-icon>
             <strong>{{ total_media }}</strong> media curati
+          </span>
+        {% endif %}
+
+        {# F1: Pedagogical intent pill #}
+        {% if _pi_code %}
+          <span class="aix-meta-item aix-meta-item--intent">
+            <wa-icon name="bullseye" class="aix-meta-icon"></wa-icon>
+            {{ _intent_labels.get(_pi_code, _pi_code) }}
+          </span>
+        {% endif %}
+
+        {# F5: UDL 3.0 coverage badge — shown only when udl_coverage is set #}
+        {% set _udl = m.get('udl_coverage') %}
+        {% if _udl and _udl.get('total', 0) > 0 %}
+          <span class="aix-meta-item aix-meta-item--udl"
+                title="Rappresentazione: {{ _udl.get('representation', 0) }} · Azione/Espressione: {{ _udl.get('action', 0) }} · Coinvolgimento: {{ _udl.get('engagement', 0) }}">
+            <wa-icon name="universal-access" class="aix-meta-icon"></wa-icon>
+            UDL: {{ _udl.total }} principi
           </span>
         {% endif %}
       </div>
 
       {# The lesson body #}
-      <article class="lesson-prose" style="padding:20px 22px;">
+      <article class="lesson-prose">
         {{ lesson_plan_html | safe }}
       </article>
 
-      {# Footer actions #}
-      <footer class="aix-lesson-footer">
+      {# F6: "What's Next?" adjacent KG concepts panel (only on completed lessons) #}
+      {% if adjacent_concepts is defined and adjacent_concepts %}
+        {% include "partials/what_next_panel.html" with context %}
+      {% endif %}
 
-        {# ── Download actions ── #}
-        <div class="aix-lesson-footer-group">
-          <span class="aix-lesson-footer-label">Scarica:</span>
-          <a href="/webui/lesson/{{ lesson.id }}/export?format=md" download
-             class="aix-btn aix-btn-outline aix-btn-sm">
-            <wa-icon name="file-arrow-down" style="font-size:0.85rem;"></wa-icon>
-            MD
-          </a>
-          <a href="/webui/lesson/{{ lesson.id }}/export?format=txt" download
-             class="aix-btn aix-btn-outline aix-btn-sm">
-            <wa-icon name="file-lines" style="font-size:0.85rem;"></wa-icon>
-            TXT
-          </a>
-          <a href="/webui/lesson/{{ lesson.id }}/print" target="_blank"
-             class="aix-btn aix-btn-outline aix-btn-sm">
-            <wa-icon name="print" style="font-size:0.85rem;"></wa-icon>
-            PDF
-          </a>
+      {# F3b: Footer + SAM guided refinement panel — Alpine manages panel visibility #}
+      <div x-data="{ panel: false, refCode: '', refDetail: '' }">
+
+        <footer class="aix-lesson-footer">
+
+          {# ── Download actions ── #}
+          <div class="aix-lesson-footer-group">
+            <span class="aix-lesson-footer-label">Scarica:</span>
+            <a href="/webui/lesson/{{ lesson.id }}/export?format=md" download
+               class="aix-btn aix-btn-outline aix-btn-sm">
+              <wa-icon name="file-arrow-down" class="aix-btn-icon"></wa-icon>
+              MD
+            </a>
+            <a href="/webui/lesson/{{ lesson.id }}/export?format=txt" download
+               class="aix-btn aix-btn-outline aix-btn-sm">
+              <wa-icon name="file-lines" class="aix-btn-icon"></wa-icon>
+              TXT
+            </a>
+            <a href="/webui/lesson/{{ lesson.id }}/print" target="_blank"
+               class="aix-btn aix-btn-outline aix-btn-sm">
+              <wa-icon name="print" class="aix-btn-icon"></wa-icon>
+              PDF
+            </a>
+          </div>
+
+          {# ── Navigation + Raffina ── #}
+          <div class="aix-lesson-footer-group">
+            <a href="/webui/lesson/new" class="aix-btn aix-btn-outline aix-btn-sm">
+              <wa-icon name="circle-plus" class="aix-btn-icon"></wa-icon>
+              Nuova lezione
+            </a>
+            <button type="button"
+                    class="aix-btn aix-btn-primary aix-btn-sm"
+                    @click="panel = !panel">
+              <wa-icon name="sliders" class="aix-btn-icon"></wa-icon>
+              Raffina
+            </button>
+          </div>
+
+        </footer>
+
+        {# SAM Guided Refinement Panel — expandable inline, no modal #}
+        <div x-show="panel" x-cloak class="aix-refinement-panel">
+          <p class="aix-refinement-panel-title">Come vorresti migliorare questa lezione?</p>
+
+          <div class="aix-refinement-grid">
+            {% for code, label, desc in [
+              ('simplify',       'Semplifica',          'Riduci complessità e lunghezza'),
+              ('deepen',         'Approfondisci',        'Aumenta dettaglio e rigore scientifico'),
+              ('more_activities','Più attività',         'Aggiungi esercizi pratici e interattivi'),
+              ('adapt_class',    'Adatta alla classe',   'Ricalibra su profilo classe, BES, tempo'),
+              ('custom',         'Personalizza',         'Specifica cosa cambiare…'),
+            ] %}
+            <label class="aix-refinement-chip"
+                   :class="{ 'is-selected': refCode === '{{ code }}' }">
+              <input type="radio" x-model="refCode" value="{{ code }}" class="sr-only">
+              <span class="aix-refinement-chip-label">{{ label }}</span>
+              <span class="aix-refinement-chip-desc">{{ desc }}</span>
+            </label>
+            {% endfor %}
+          </div>
+
+          {# Freetext — shown only for "custom" #}
+          <div x-show="refCode === 'custom'" x-cloak class="aix-refinement-freetext">
+            <textarea x-model="refDetail"
+                      rows="2"
+                      class="aix-input aix-input-textarea-sm"
+                      placeholder="Specifica cosa cambiare nella lezione…"></textarea>
+          </div>
+
+          {# Hidden inputs so htmx picks them up on the Raffina POST #}
+          <input type="hidden" name="refinement_code"   :value="refCode"   id="rf-code-{{ lesson.id }}">
+          <input type="hidden" name="refinement_detail" :value="refDetail" id="rf-detail-{{ lesson.id }}">
+
+          <div class="aix-refinement-actions">
+            <button type="button" @click="panel = false; refCode = ''; refDetail = ''"
+                    class="aix-btn aix-btn-outline aix-btn-sm">
+              Annulla
+            </button>
+            <button type="button"
+                    :disabled="refCode === ''"
+                    class="aix-btn aix-btn-primary aix-btn-sm"
+                    hx-post="/webui/lesson/{{ lesson.id }}/run"
+                    hx-target="#chat-conversation"
+                    hx-swap="innerHTML"
+                    hx-include="#rf-code-{{ lesson.id }}, #rf-detail-{{ lesson.id }}">
+              <wa-icon name="rotate" class="aix-btn-icon"></wa-icon>
+              Raffina lezione →
+            </button>
+          </div>
         </div>
 
-        {# ── Navigation actions ── #}
-        <div class="aix-lesson-footer-group">
-          <a href="/webui/lesson/new" class="aix-btn aix-btn-outline aix-btn-sm">
-            <wa-icon name="circle-plus" style="font-size:0.85rem;"></wa-icon>
-            Nuova lezione
-          </a>
-          <button type="button"
-                  class="aix-btn aix-btn-primary aix-btn-sm"
-                  hx-post="/webui/lesson/{{ lesson.id }}/run"
-                  hx-target="#chat-conversation"
-                  hx-swap="innerHTML">
-            <wa-icon name="rotate" style="font-size:0.85rem;"></wa-icon>
-            Rigenera
-          </button>
-        </div>
-
-      </footer>
+      </div>
 
     </article>
 
     <div class="aix-agent-footer-label">
-      <wa-icon name="check-double" style="font-size:0.75rem;"></wa-icon>
+      <wa-icon name="check-double" class="aix-meta-icon"></wa-icon>
       <span>Lezione finalizzata</span>
     </div>
   </div>

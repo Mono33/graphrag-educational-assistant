@@ -3,9 +3,9 @@ Neo4j tool — executes arbitrary Cypher queries and returns rows as JSON-serial
 Used by the LM Studio agent to explore the Knowledge Graph.
 """
 
-import os
 import logging
-from typing import Any, Dict, List
+import os
+from typing import Any
 
 from dotenv import load_dotenv
 
@@ -30,7 +30,7 @@ def _get_driver():
     return _driver
 
 
-def run_query(cypher: str, limit_rows: int = 50) -> Dict[str, Any]:
+def run_query(cypher: str, limit_rows: int = 50) -> dict[str, Any]:
     """
     Execute a Cypher query and return up to limit_rows rows.
 

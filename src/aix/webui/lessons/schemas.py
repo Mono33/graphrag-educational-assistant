@@ -37,7 +37,6 @@ from aix.api.schemas.educational_profile import (
     EducationalProfile,
 )
 
-
 _TRUTHY_FORM = {"on", "true", "1", "yes"}
 
 
@@ -108,10 +107,22 @@ def form_to_profile_dict(form: FormData) -> dict[str, Any]:
     }
     classroom_kwargs = {k: v for k, v in classroom_kwargs.items() if v is not None}
 
+    # Merge pedagogical_intent_code + optional _detail into a single string.
+    # Stored as "{code}" or "{code}: {detail}" — the detail is optional.
+    intent_code = _str_or_none(form.get("pedagogical_intent_code"))
+    intent_detail = _str_or_none(form.get("pedagogical_intent_detail"))
+    pedagogical_intent: str | None = None
+    if intent_code:
+        pedagogical_intent = f"{intent_code}: {intent_detail}" if intent_detail else intent_code
+    else:
+        # Inline sidebar edit form posts pedagogical_intent as a raw string
+        pedagogical_intent = _str_or_none(form.get("pedagogical_intent"))
+
     profile_kwargs: dict[str, Any] = {
         "time_available_minutes": _int_or_none(form.get("time_available_minutes")),
         "subject_area": _str_or_none(form.get("subject_area")),
         "specific_topic": _str_or_none(form.get("specific_topic")),
+        "pedagogical_intent": pedagogical_intent,
     }
     profile_kwargs = {k: v for k, v in profile_kwargs.items() if v is not None}
 
@@ -125,3 +136,34 @@ def form_to_profile_dict(form: FormData) -> dict[str, Any]:
 
     profile = EducationalProfile(**profile_kwargs)
     return profile.model_dump(mode="json", exclude_none=True)
+
+
+def profile_to_form_values(profile: dict[str, Any]) -> dict[str, Any]:
+    """
+    Reverse of ``form_to_profile_dict``: turn a persisted EducationalProfile
+    dict back into the flat ``fv`` dict the ``lesson_new.html`` template uses
+    to pre-fill form fields.
+
+    Used when a teacher loads a saved profile at GET /webui/lesson/new?profile_id=...
+    """
+    group = profile.get("group") or {}
+    classroom = profile.get("classroom") or {}
+    return {
+        "domain": profile.get("domain", "neuro"),
+        "group_title": group.get("title", ""),
+        "group_students_number": group.get("students_number", ""),
+        "group_grade": group.get("grade", ""),
+        "group_disabilities": group.get("disabilities") or [],
+        "group_class_features": group.get("class_features") or [],
+        "group_student_attributes": group.get("student_attributes") or [],
+        "classroom_title": classroom.get("title", ""),
+        "classroom_forniture_mobility": classroom.get("forniture_mobility", "NO"),
+        "classroom_has_lim": classroom.get("has_lim", False),
+        "classroom_has_wifi": classroom.get("has_wifi", False),
+        "classroom_has_suite": classroom.get("has_suite", False),
+        "classroom_pc_station": classroom.get("pc_station", False),
+        "classroom_own_device": classroom.get("own_device", "NO"),
+        "time_available_minutes": profile.get("time_available_minutes", ""),
+        "subject_area": profile.get("subject_area", ""),
+        "specific_topic": profile.get("specific_topic", ""),
+    }

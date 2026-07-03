@@ -12,15 +12,15 @@ Usage:
     python merge_kg_json.py --root concepts4_neo4j.json --delta UDLData/kg_udl_delta.json
 """
 
-import json
 import argparse
+import json
 import shutil
 from datetime import datetime
 from pathlib import Path
 
 
 def load_json(filepath: str) -> dict:
-    with open(filepath, 'r', encoding='utf-8') as f:
+    with open(filepath, encoding='utf-8') as f:
         return json.load(f)
 
 
@@ -151,7 +151,7 @@ Examples:
 
     labels_fixed = fix_labels(merged_nodes)
     if labels_fixed:
-        print(f"\n  Label remediation:")
+        print("\n  Label remediation:")
         print(f"    Fixed:   {labels_fixed} nodes with case-variant labels")
 
     merged_data = {

@@ -38,7 +38,7 @@ See: ``docs/integrations/MCP_Setup.md`` for client setup (stdio + HTTP).
 See: ``docs/product/ClickUp_Agentic_GraphRAG_Update.md`` → Subtask 20.
 """
 
-from aix.mcp.server import mcp, build_mcp_server
-from aix.mcp.http_app import build_mcp_http_app, MCP_MOUNT_PATH
+from aix.mcp.http_app import MCP_MOUNT_PATH, build_mcp_http_app
+from aix.mcp.server import build_mcp_server, mcp
 
 __all__ = ["mcp", "build_mcp_server", "build_mcp_http_app", "MCP_MOUNT_PATH"]

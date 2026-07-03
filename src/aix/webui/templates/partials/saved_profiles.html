@@ -1,0 +1,46 @@
+{#
+  Saved-profile selector partial.
+
+  Rendered by:
+    GET  /webui/profiles   (htmx target after create/delete)
+    GET  /webui/lesson/new (initial page load, inside the form header)
+
+  When no profiles exist, renders an empty placeholder so the htmx target
+  (#saved-profiles-container) is present in the DOM even before the first
+  save. The "Salva come profilo" widget below the section footer always
+  posts to /webui/profiles regardless.
+
+  Required context:
+    saved_profiles  list[SavedProfile ORM rows]
+#}
+
+<div id="saved-profiles-container">
+  {% if saved_profiles %}
+  <div class="aix-saved-profiles">
+    <div class="aix-saved-profiles-label">
+      <wa-icon name="bookmark" class="aix-color-teal aix-fs-085"></wa-icon>
+      Profili salvati
+    </div>
+    <div class="aix-saved-profiles-chips">
+      {% for sp in saved_profiles %}
+      <span class="aix-saved-profile-chip">
+        <a class="aix-saved-profile-link"
+           href="/webui/lesson/new?profile_id={{ sp.id }}"
+           title="Carica profilo: {{ sp.name }}">
+          {{ sp.name }}
+        </a>
+        <button type="button"
+                class="aix-saved-profile-delete"
+                aria-label="Elimina profilo {{ sp.name }}"
+                hx-delete="/webui/profiles/{{ sp.id }}"
+                hx-target="#saved-profiles-container"
+                hx-swap="outerHTML"
+                hx-confirm="Eliminare il profilo «{{ sp.name }}»?">
+          <wa-icon name="x-mark" class="aix-fs-2xs aix-pe-none"></wa-icon>
+        </button>
+      </span>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+</div>

@@ -106,8 +106,7 @@
   {# ── EMPTY STATE (no lessons at all) ─────────────────────────────────── #}
   {% if not rows %}
     <div class="aix-card p-12 text-center">
-      <wa-icon name="book-open"
-               style="font-size:3rem; color:var(--aix-text-tertiary);"></wa-icon>
+      <wa-icon name="book-open" class="aix-color-tertiary aix-fs-3rem"></wa-icon>
       <p class="aix-text-muted mt-4 mb-6">
         Non hai ancora generato nessuna lezione.
       </p>
@@ -127,40 +126,40 @@
         <div class="flex items-center justify-between mb-4">
           <h2 class="aix-section-label">FILTRI</h2>
           <button type="button" @click="reset()"
-                  class="aix-link" style="font-size:12px; background:transparent; border:0; cursor:pointer; padding:0;">
+                  class="aix-link aix-fs-12 aix-btn-ghost">
             Azzera
           </button>
         </div>
 
         {# Stato — radio-style (single select via x-model) #}
         <div class="mb-5">
-          <h3 class="aix-section-label mb-2" style="text-transform:capitalize;">Stato</h3>
+          <h3 class="aix-section-label mb-2 capitalize">Stato</h3>
           <label class="flex items-center gap-2 py-1 cursor-pointer text-sm">
             <input type="radio" name="status_f" value="all" x-model="status_f"
-                   style="accent-color:var(--aix-teal);">
+                   class="aix-accent-teal">
             <span>Tutte le lezioni</span>
           </label>
           <label class="flex items-center gap-2 py-1 cursor-pointer text-sm">
             <input type="radio" name="status_f" value="draft" x-model="status_f"
-                   style="accent-color:var(--aix-teal);">
+                   class="aix-accent-teal">
             <span>Bozze ({{ stats.draft }})</span>
           </label>
           <label class="flex items-center gap-2 py-1 cursor-pointer text-sm">
             <input type="radio" name="status_f" value="complete" x-model="status_f"
-                   style="accent-color:var(--aix-teal);">
+                   class="aix-accent-teal">
             <span>Completate ({{ stats.complete }})</span>
           </label>
           {% if stats.running %}
             <label class="flex items-center gap-2 py-1 cursor-pointer text-sm">
               <input type="radio" name="status_f" value="running" x-model="status_f"
-                     style="accent-color:var(--aix-teal);">
+                     class="aix-accent-teal">
               <span>In corso ({{ stats.running }})</span>
             </label>
           {% endif %}
           {% if stats.error %}
             <label class="flex items-center gap-2 py-1 cursor-pointer text-sm">
               <input type="radio" name="status_f" value="error" x-model="status_f"
-                     style="accent-color:var(--aix-teal);">
+                     class="aix-accent-teal">
               <span>Con errore ({{ stats.error }})</span>
             </label>
           {% endif %}
@@ -169,16 +168,16 @@
         {# Materie — radio-style #}
         {% if filters.subjects %}
           <div class="mb-5">
-            <h3 class="aix-section-label mb-2" style="text-transform:capitalize;">Materie</h3>
+            <h3 class="aix-section-label mb-2 capitalize">Materie</h3>
             <label class="flex items-center gap-2 py-1 cursor-pointer text-sm">
               <input type="radio" name="subject_f" value="all" x-model="subject_f"
-                     style="accent-color:var(--aix-teal);">
+                     class="aix-accent-teal">
               <span>Tutte le materie</span>
             </label>
             {% for s in filters.subjects %}
               <label class="flex items-center gap-2 py-1 cursor-pointer text-sm">
                 <input type="radio" name="subject_f" value="{{ s }}" x-model="subject_f"
-                       style="accent-color:var(--aix-teal);">
+                       class="aix-accent-teal">
                 <span>{{ s }}</span>
               </label>
             {% endfor %}
@@ -188,16 +187,16 @@
         {# Classi — radio-style #}
         {% if filters.classes %}
           <div class="mb-5">
-            <h3 class="aix-section-label mb-2" style="text-transform:capitalize;">Classi</h3>
+            <h3 class="aix-section-label mb-2 capitalize">Classi</h3>
             <label class="flex items-center gap-2 py-1 cursor-pointer text-sm">
               <input type="radio" name="class_f" value="all" x-model="class_f"
-                     style="accent-color:var(--aix-teal);">
+                     class="aix-accent-teal">
               <span>Tutte le classi</span>
             </label>
             {% for c in filters.classes %}
               <label class="flex items-center gap-2 py-1 cursor-pointer text-sm">
                 <input type="radio" name="class_f" value="{{ c }}" x-model="class_f"
-                       style="accent-color:var(--aix-teal);">
+                       class="aix-accent-teal">
                 <span class="truncate">{{ c }}</span>
               </label>
             {% endfor %}
@@ -207,23 +206,21 @@
         {# Tag e bisogni educativi — chip-style single select #}
         {% if filters.disabilities %}
           <div>
-            <h3 class="aix-section-label mb-2" style="text-transform:capitalize;">
+            <h3 class="aix-section-label mb-2 capitalize">
               Tag e bisogni educativi
             </h3>
             <div class="flex flex-wrap gap-1.5">
               <button type="button"
                       @click="disability_f = 'all'"
                       :class="disability_f === 'all' ? 'aix-badge-teal' : 'aix-badge-neutral'"
-                      class="aix-badge"
-                      style="cursor:pointer; background:transparent;">
+                      class="aix-badge cursor-pointer aix-btn-ghost">
                 Tutti
               </button>
               {% for d in filters.disabilities %}
                 <button type="button"
                         @click="disability_f = '{{ d }}'"
                         :class="disability_f === '{{ d }}' ? 'aix-badge-teal' : 'aix-badge-neutral'"
-                        class="aix-badge"
-                        style="cursor:pointer; background:transparent;">
+                        class="aix-badge cursor-pointer aix-bg-transparent">
                   {{ d }}
                 </button>
               {% endfor %}
@@ -238,48 +235,36 @@
         {# ── TOOLBAR ───────────────────────────────────────────────── #}
         <div class="aix-card p-4 mb-4 flex flex-wrap items-center gap-3">
           {# Search input #}
-          <div class="flex items-center gap-2 flex-1 min-w-[240px]"
-               style="background:var(--aix-cream); border:1px solid var(--aix-border-soft);
-                      border-radius:var(--aix-radius-pill); padding:8px 14px;">
+          <div class="flex items-center gap-2 flex-1 min-w-[240px] aix-search-container">
             <wa-icon name="magnifying-glass"
-                     style="font-size:14px; color:var(--aix-text-tertiary);"></wa-icon>
+                     class="aix-fs-14 aix-color-tertiary"></wa-icon>
             <input type="search" x-model="q"
                    placeholder="Cerca per titolo, materia o classe…"
                    aria-label="Cerca lezioni"
-                   style="background:transparent; border:0; outline:none;
-                          flex:1; font-size:14px; color:var(--aix-text-primary);">
+                   class="aix-search-input">
             <button type="button" x-show="q !== ''" @click="q=''"
-                    style="background:transparent; border:0; cursor:pointer;
-                           color:var(--aix-text-tertiary); padding:0; font-size:12px;">
+                    class="aix-search-clear">
               ×
             </button>
           </div>
 
           {# Sort dropdown (visual placeholder — single option until backend
              supports configurable sort) #}
-          <div class="flex items-center gap-2" style="font-size:13px;">
+          <div class="flex items-center gap-2 aix-fs-13">
             <span class="aix-text-subtle">Ordina:</span>
-            <select class="aix-select" disabled
-                    style="padding:6px 28px 6px 10px; font-size:13px; cursor:not-allowed;
-                           background:var(--aix-paper);">
+            <select class="aix-select aix-toolbar-select" disabled
+                    aria-label="Ordina lezioni">
               <option>Più recenti</option>
             </select>
           </div>
 
           {# View toggle — grid active, list reserved for future #}
-          <div class="flex items-center gap-1" style="border:1px solid var(--aix-border-soft);
-                                                       border-radius:var(--aix-radius-sm);
-                                                       padding:2px;">
-            <button type="button" title="Griglia"
-                    style="background:var(--aix-cream); border:0; padding:6px 10px;
-                           border-radius:4px; cursor:default; color:var(--aix-text-primary);">
-              <wa-icon name="grid" style="font-size:14px;"></wa-icon>
+          <div class="flex items-center gap-1 aix-view-toggle">
+            <button type="button" title="Griglia" class="aix-view-btn-active">
+              <wa-icon name="grid" class="aix-fs-14"></wa-icon>
             </button>
-            <button type="button" title="Lista (presto)"
-                    disabled
-                    style="background:transparent; border:0; padding:6px 10px;
-                           border-radius:4px; cursor:not-allowed; color:var(--aix-text-tertiary);">
-              <wa-icon name="list" style="font-size:14px;"></wa-icon>
+            <button type="button" title="Lista (presto)" disabled class="aix-view-btn-inactive">
+              <wa-icon name="list" class="aix-fs-14"></wa-icon>
             </button>
           </div>
         </div>
@@ -301,7 +286,7 @@
 
             {# data-* attributes drive Alpine filtering on $el.dataset.* #}
             <article
-              class="aix-card {{ stripe_cls }} relative group/card flex flex-col"
+              class="aix-card {{ stripe_cls }} relative group/card flex flex-col aix-card-hover"
               data-status="{{ row.status }}"
               data-subject="{{ (row.subject or '') | lower }}"
               data-topic="{{ (row.topic or '') | lower }}"
@@ -309,7 +294,6 @@
               data-title="{{ row.title | lower }}"
               data-disabilities="{{ row.disabilities | join('|') }}"
               x-show="matches($el)"
-              style="transition:box-shadow 120ms, transform 120ms;"
               x-on:mouseenter="$el.style.boxShadow='var(--aix-shadow-medium)'"
               x-on:mouseleave="$el.style.boxShadow=''"
             >
@@ -320,8 +304,7 @@
 
                 {# Top row: domain + BES badges (right-aligned) #}
                 <div class="flex items-start justify-between gap-2">
-                  <h2 class="aix-card-title flex-1"
-                      style="font-size:17px; line-height:1.3;">
+                  <h2 class="aix-card-title flex-1 aix-fs-17 aix-card-title-lh">
                     {{ row.title }}
                   </h2>
                   <div class="flex items-center gap-1 flex-shrink-0">
@@ -359,14 +342,14 @@
                 {# Class · students #}
                 {% if row.group_title %}
                   <p class="aix-lesson-row-meta truncate">
-                    <wa-icon name="users" style="font-size:11px;"></wa-icon>
+                    <wa-icon name="users" class="aix-fs-11"></wa-icon>
                     {{ row.group_title }}{% if row.students_number %} · {{ row.students_number }} studenti{% endif %}
                   </p>
                 {% endif %}
 
                 {# Duration · date #}
-                <p class="aix-text-subtle truncate" style="font-size:12px;">
-                  <wa-icon name="clock" style="font-size:11px;"></wa-icon>
+                <p class="aix-text-subtle truncate aix-fs-12">
+                  <wa-icon name="clock" class="aix-fs-11"></wa-icon>
                   {% if row.duration_min %}{{ row.duration_min }} min · {% endif %}
                   {{ row.updated_full }}
                 </p>
@@ -375,13 +358,11 @@
                 <div class="flex-1"></div>
 
                 {# Footer: status pill + open link + 3-dot menu #}
-                <div class="flex items-center justify-between gap-2 pt-3"
-                     style="border-top:1px solid var(--aix-border-soft);">
+                <div class="flex items-center justify-between gap-2 pt-3 aix-card-footer">
                   <span class="aix-pill {{ row.pill_class }}">
                     {{ row.status_label }}
                   </span>
-                  <a href="/webui/lesson/{{ row.id }}" class="aix-link"
-                     style="font-size:13px;">
+                  <a href="/webui/lesson/{{ row.id }}" class="aix-link aix-fs-13">
                     Apri lezione →
                   </a>
                 </div>
@@ -402,13 +383,8 @@
                 type="button"
                 title="Elimina lezione"
                 class="absolute top-2 right-2 w-7 h-7 rounded-full
-                       opacity-0 group-hover/card:opacity-100 transition-opacity z-10"
-                style="background:var(--aix-paper);
-                       border:1px solid var(--aix-border-soft);
-                       box-shadow:var(--aix-shadow-soft);
-                       color:var(--aix-status-error); cursor:pointer;
-                       display:flex; align-items:center; justify-content:center;
-                       font-size:11px;"
+                       opacity-0 group-hover/card:opacity-100 transition-opacity z-10
+                       aix-card-delete-btn"
                 hx-delete="/webui/lesson/{{ row.id }}"
                 hx-confirm="Eliminare questa lezione? L'operazione non è reversibile."
                 hx-target="closest .relative"
@@ -424,20 +400,18 @@
         <div x-show="visibleCount === 0 && hasActiveFilter()"
              x-cloak
              class="aix-card p-8 text-center mt-4">
-          <wa-icon name="magnifying-glass"
-                   style="font-size:2rem; color:var(--aix-text-tertiary);"></wa-icon>
+          <wa-icon name="magnifying-glass" class="aix-empty-icon-lg"></wa-icon>
           <p class="aix-text-muted mt-3">
             Nessuna lezione corrisponde ai filtri impostati.
           </p>
           <button type="button" @click="reset()"
-                  class="aix-btn aix-btn-outline aix-btn-sm mt-3"
-                  style="cursor:pointer;">
+                  class="aix-btn aix-btn-outline aix-btn-sm mt-3 cursor-pointer">
             Azzera filtri
           </button>
         </div>
 
         {# ── FOOTER COUNT ─────────────────────────────────────────── #}
-        <div class="text-center mt-6 aix-text-subtle" style="font-size:13px;">
+        <div class="text-center mt-6 aix-text-subtle aix-fs-13">
           Mostra <span x-text="visibleCount"></span> di {{ stats.total }} lezion{{ 'i' if stats.total != 1 else 'e' }}
         </div>
 

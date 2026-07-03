@@ -21,21 +21,21 @@ Output:
     data/media/kg_{domain}_media_mapping.json
 """
 
+import argparse
+import asyncio
+import json
+import logging
 import os
 import sys
-import json
-import asyncio
-import logging
-import argparse
-from pathlib import Path
-from typing import Dict, List, Any, Optional
 from datetime import datetime
+from pathlib import Path
+from typing import Any, Optional
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
 
-from openai import AsyncOpenAI
 from dotenv import load_dotenv
+from openai import AsyncOpenAI
 
 # Respect LLM_MODEL env var (set in .env); fall back to gpt-4o via OpenRouter
 _DEFAULT_MODEL = os.getenv("LLM_MODEL", "openai/gpt-4o")
@@ -275,10 +275,10 @@ def _get_user_prompt(domain: str) -> str:
 
 async def generate_media_for_concept(
     client: AsyncOpenAI,
-    concept: Dict[str, Any],
+    concept: dict[str, Any],
     model: str = _DEFAULT_MODEL,
     domain: str = "neuro",
-) -> Optional[Dict[str, Any]]:
+) -> Optional[dict[str, Any]]:
     """
     Generate media recommendations for a single concept.
 
@@ -335,35 +335,35 @@ async def generate_media_for_concept(
         return None
 
 
-def extract_unique_concepts(kg_path: str) -> List[Dict[str, Any]]:
+def extract_unique_concepts(kg_path: str) -> list[dict[str, Any]]:
     """
     Extract unique concepts from Knowledge Graph JSON.
-    
+
     Args:
         kg_path: Path to kg_neuro_neo4j.json
-        
+
     Returns:
         List of unique concepts with their properties
     """
-    with open(kg_path, 'r', encoding='utf-8') as f:
+    with open(kg_path, encoding='utf-8') as f:
         data = json.load(f)
-    
+
     nodes = data.get('nodes', [])
-    
+
     # Deduplicate by name and extract relevant properties
     seen_names = set()
     concepts = []
-    
+
     for node in nodes:
         props = node.get('properties', {})
         name = props.get('name', '')
-        
+
         # Skip if already seen or empty
         if not name or name.lower() in seen_names:
             continue
-        
+
         seen_names.add(name.lower())
-        
+
         concepts.append({
             'id': props.get('id', ''),
             'name': name,
@@ -372,18 +372,18 @@ def extract_unique_concepts(kg_path: str) -> List[Dict[str, Any]]:
             'label': node.get('label', ''),
             'domain': props.get('domain', 'neuro')
         })
-    
+
     logger.info(f"Extracted {len(concepts)} unique concepts from KG")
     return concepts
 
 
 async def process_concepts_batch(
     client: AsyncOpenAI,
-    concepts: List[Dict[str, Any]],
+    concepts: list[dict[str, Any]],
     batch_size: int = 5,
     model: str = _DEFAULT_MODEL,
     domain: str = "neuro",
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Process concepts in batches with rate limiting.
 
@@ -465,8 +465,8 @@ _UDL_PRIORITY_LABELS = [
 
 
 def prioritize_concepts(
-    concepts: List[Dict[str, Any]], domain: str = "neuro"
-) -> List[Dict[str, Any]]:
+    concepts: list[dict[str, Any]], domain: str = "neuro"
+) -> list[dict[str, Any]]:
     """
     Prioritize concepts for processing — core concepts first.
 
@@ -484,7 +484,7 @@ def prioritize_concepts(
         priority_categories = _NEURO_PRIORITY_CATEGORIES
         priority_labels = _NEURO_PRIORITY_LABELS
 
-    def get_priority(concept: Dict) -> int:
+    def get_priority(concept: dict) -> int:
         category = concept.get('category', '').lower()
         label = concept.get('label', '')
 
@@ -526,7 +526,7 @@ async def main():
         '--model', type=str, default=_DEFAULT_MODEL,
         help='Model to use (via OpenRouter if OPENROUTER_API_KEY is set)'
     )
-    
+
     args = parser.parse_args()
 
     # Paths — resolve relative to repo root, not script location
@@ -535,52 +535,52 @@ async def main():
     output_path = Path(args.output) if args.output else (
         repo_root / "data" / "media" / f"kg_{args.domain}_media_mapping.json"
     )
-    
+
     if not kg_path.exists():
         logger.error(f"Knowledge Graph not found: {kg_path}")
         sys.exit(1)
-    
+
     # Check API key — prefer OpenRouter, fall back to direct OpenAI
     api_key = os.getenv('OPENROUTER_API_KEY') or os.getenv('OPENAI_API_KEY')
     if not api_key:
         logger.error("OPENROUTER_API_KEY (or OPENAI_API_KEY) not set in environment")
         sys.exit(1)
     use_openrouter = bool(os.getenv('OPENROUTER_API_KEY'))
-    
-    logger.info(f"=" * 60)
-    logger.info(f"Media Mapping Generator for Agentic GraphRAG")
-    logger.info(f"=" * 60)
+
+    logger.info("=" * 60)
+    logger.info("Media Mapping Generator for Agentic GraphRAG")
+    logger.info("=" * 60)
     logger.info(f"Domain: {args.domain}")
     logger.info(f"Model: {args.model}")
     logger.info(f"Batch size: {args.batch_size}")
     logger.info(f"KG source: {kg_path}")
     logger.info(f"Output: {output_path}")
-    
+
     # Extract and prioritize concepts
     concepts = extract_unique_concepts(str(kg_path))
     concepts = prioritize_concepts(concepts, domain=args.domain)
-    
+
     if args.limit:
         concepts = concepts[:args.limit]
         logger.info(f"Limited to {args.limit} concepts")
-    
+
     # Initialize client — point to OpenRouter when OPENROUTER_API_KEY is set
     client = AsyncOpenAI(
         api_key=api_key,
         base_url="https://openrouter.ai/api/v1" if use_openrouter else None,
     )
-    
+
     # Process concepts
     logger.info(f"\nProcessing {len(concepts)} concepts...")
     start_time = datetime.now()
-    
+
     media_mappings = await process_concepts_batch(
         client, concepts, batch_size=args.batch_size,
         model=args.model, domain=args.domain,
     )
-    
+
     elapsed = datetime.now() - start_time
-    
+
     # Build output structure
     output_data = {
         "metadata": {
@@ -595,14 +595,14 @@ async def main():
         },
         "concepts": media_mappings
     }
-    
+
     # Calculate statistics
     total_videos = sum(len(c.get('videos', [])) for c in media_mappings)
     total_images = sum(len(c.get('images', [])) for c in media_mappings)
     total_resources = sum(len(c.get('resources', [])) for c in media_mappings)
     total_citations = sum(len(c.get('citations', [])) for c in media_mappings)
     total_textbooks = sum(len(c.get('open_textbooks', [])) for c in media_mappings)
-    
+
     output_data["metadata"]["statistics"] = {
         "total_videos": total_videos,
         "total_images": total_images,
@@ -610,14 +610,14 @@ async def main():
         "total_citations": total_citations,
         "total_open_textbooks": total_textbooks
     }
-    
+
     # Write output
     with open(output_path, 'w', encoding='utf-8') as f:
         json.dump(output_data, f, indent=2, ensure_ascii=False)
-    
-    logger.info(f"\n" + "=" * 60)
-    logger.info(f"GENERATION COMPLETE")
-    logger.info(f"=" * 60)
+
+    logger.info("\n" + "=" * 60)
+    logger.info("GENERATION COMPLETE")
+    logger.info("=" * 60)
     logger.info(f"Concepts processed: {len(media_mappings)}")
     logger.info(f"Total videos: {total_videos}")
     logger.info(f"Total images: {total_images}")
@@ -626,13 +626,13 @@ async def main():
     logger.info(f"Total open textbooks: {total_textbooks}")
     logger.info(f"Time elapsed: {elapsed}")
     logger.info(f"Output saved to: {output_path}")
-    logger.info(f"\n📚 OER Sources included:")
-    logger.info(f"   - OpenStax Psychology")
-    logger.info(f"   - DOAB (Directory of Open Access Books)")
-    logger.info(f"   - Pressbooks Psychology")
-    logger.info(f"   - Open Textbook Library")
-    logger.info(f"   - BC Campus OpenEd")
-    logger.info(f"\nThe mapping can now be reviewed by domain experts!")
+    logger.info("\n📚 OER Sources included:")
+    logger.info("   - OpenStax Psychology")
+    logger.info("   - DOAB (Directory of Open Access Books)")
+    logger.info("   - Pressbooks Psychology")
+    logger.info("   - Open Textbook Library")
+    logger.info("   - BC Campus OpenEd")
+    logger.info("\nThe mapping can now be reviewed by domain experts!")
 
 
 if __name__ == "__main__":

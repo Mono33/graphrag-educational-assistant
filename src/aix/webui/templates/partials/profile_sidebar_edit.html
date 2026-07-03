@@ -35,19 +35,18 @@
 {% set room    = profile.get('classroom') or {} %}
 
 <aside id="profile-sidebar"
-       class="aix-side-pane"
-       style="border-color:var(--aix-amber); border-width:1.5px;">
+       class="aix-side-pane aix-side-pane--edit">
 
   {# ── Header ──────────────────────────────────────────────────────── #}
-  <div class="aix-side-pane-title" style="color:var(--aix-amber-hover);">
+  <div class="aix-side-pane-title aix-color-amber">
     <wa-icon name="pen-to-square"></wa-icon>
     <span>Modifica profilo</span>
   </div>
 
   {% if profile_errors %}
-    <wa-callout variant="danger" size="small" style="margin-top:8px;">
+    <wa-callout variant="danger" size="small" class="mt-2">
       <wa-icon slot="icon" name="circle-exclamation"></wa-icon>
-      <ul style="margin:0; padding-left:18px; font-size:12px;">
+      <ul class="aix-fs-12 aix-list-indent">
         {% for e in profile_errors %}
           <li>{{ e }}</li>
         {% endfor %}
@@ -58,10 +57,10 @@
   <form hx-post="/webui/lesson/{{ lesson.id }}/profile"
         hx-target="#profile-sidebar"
         hx-swap="outerHTML"
-        style="display:flex; flex-direction:column; gap:12px; margin-top:12px;">
+        class="aix-col-12 mt-3">
 
     {# ── Lesson title ──────────────────────────────────────────────── #}
-    <fieldset style="border:0; padding:0; margin:0; display:flex; flex-direction:column; gap:8px;">
+    <fieldset class="aix-fieldset">
       <legend class="aix-section-label">Titolo</legend>
       <wa-input type="text" name="lesson_title"
                 label="Titolo lezione" size="small"
@@ -70,7 +69,7 @@
     </fieldset>
 
     {# ── Lesson framing ────────────────────────────────────────────── #}
-    <fieldset style="border:0; padding:0; margin:0; display:flex; flex-direction:column; gap:8px;">
+    <fieldset class="aix-fieldset">
       <legend class="aix-section-label">Lezione</legend>
 
       {% set _domain = lesson.domain or 'neuro' %}
@@ -95,10 +94,20 @@
                 min="15" max="480" step="5"
                 value="{{ profile.get('time_available_minutes') or '' }}"
                 placeholder="60"></wa-input>
+
+      {# F2: Pedagogical intent — free text in the inline edit form.
+         Stored as "{code}: {detail}" or bare code. The edit form allows
+         the teacher to type or clear it directly; the chip-selector
+         experience is on the "Crea lezione" form. #}
+      <wa-textarea name="pedagogical_intent"
+                   label="Obiettivo pedagogico (opzionale)" size="small"
+                   rows="2"
+                   value="{{ profile.get('pedagogical_intent') or '' }}"
+                   placeholder="Es. misconception: la pratica da sola non migliora la WM"></wa-textarea>
     </fieldset>
 
     {# ── Class ─────────────────────────────────────────────────────── #}
-    <fieldset style="border:0; padding:0; margin:0; display:flex; flex-direction:column; gap:8px;">
+    <fieldset class="aix-fieldset">
       <legend class="aix-section-label">Classe</legend>
 
       <wa-input type="text" name="group_title"
@@ -143,7 +152,7 @@
     </fieldset>
 
     {# ── Classroom ─────────────────────────────────────────────────── #}
-    <fieldset style="border:0; padding:0; margin:0; display:flex; flex-direction:column; gap:8px;">
+    <fieldset class="aix-fieldset">
       <legend class="aix-section-label">Aula</legend>
 
       <wa-input type="text" name="classroom_title"
@@ -165,14 +174,14 @@
         {% endfor %}
       </wa-select>
 
-      <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; font-size:12px;">
+      <div class="aix-fs-12 aix-grid-2col">
         {% for fld, lbl, key in [
           ('classroom_has_lim',    'LIM',   'has_lim'),
           ('classroom_has_wifi',   'WiFi',  'has_wifi'),
           ('classroom_has_suite',  'Suite', 'has_suite'),
           ('classroom_pc_station', 'PC',    'pc_station'),
         ] %}
-          <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+          <label class="aix-irow-6 cursor-pointer">
             <input type="hidden" name="{{ fld }}_present" value="1">
             <wa-checkbox name="{{ fld }}"
               {% if room.get(key) %}checked{% endif %}
@@ -183,16 +192,15 @@
     </fieldset>
 
     {# ── Actions ───────────────────────────────────────────────────── #}
-    <div style="display:flex; gap:8px; padding-top:8px;
-                border-top:1px solid var(--aix-border-soft);">
+    <div class="aix-irow-8 aix-form-divider">
       <button type="button" class="aix-btn aix-btn-outline aix-btn-sm"
               hx-get="/webui/lesson/{{ lesson.id }}/profile"
               hx-target="#profile-sidebar"
               hx-swap="outerHTML">
         Annulla
       </button>
-      <button type="submit" class="aix-btn aix-btn-primary aix-btn-sm" style="flex:1;">
-        <wa-icon name="check" style="font-size:0.85rem;"></wa-icon>
+      <button type="submit" class="aix-btn aix-btn-primary aix-btn-sm flex-1">
+        <wa-icon name="check" class="aix-fs-085"></wa-icon>
         Salva
       </button>
     </div>

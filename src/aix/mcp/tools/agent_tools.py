@@ -42,10 +42,9 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Literal, Optional
 
-from fastmcp import FastMCP
-from fastmcp import Context
+from fastmcp import Context, FastMCP
 
 from aix.api.schemas.agent import (
     AgentRunMeta,
@@ -56,6 +55,7 @@ from aix.api.schemas.agent import (
     RetrieverInfo,
 )
 from aix.api.schemas.educational_profile import EducationalProfile
+from aix.core.concurrency import AtCapacity, run_slot
 
 logger = logging.getLogger(__name__)
 
@@ -67,16 +67,14 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-def _meta_to_pydantic(meta: Dict[str, Any]) -> AgentRunMeta:
+def _meta_to_pydantic(meta: dict[str, Any]) -> AgentRunMeta:
     media_counts = meta.get("media_counts") or {}
     scores_dict = meta.get("scores") or None
     return AgentRunMeta(
         duration_seconds=float(meta.get("duration_seconds", 0.0)),
         approved=bool(meta.get("approved", False)),
         revision_count=int(meta.get("revision_count", 0)),
-        scores=CriticScores.model_validate(scores_dict)
-        if isinstance(scores_dict, dict)
-        else None,
+        scores=CriticScores.model_validate(scores_dict) if isinstance(scores_dict, dict) else None,
         nodes_count=int(meta.get("nodes_count", 0)),
         recommendations_count=int(meta.get("recommendations_count", 0)),
         media_counts=MediaCounts(
@@ -88,7 +86,7 @@ def _meta_to_pydantic(meta: Dict[str, Any]) -> AgentRunMeta:
     )
 
 
-def _planner_payload_to_pydantic(payload: Dict[str, Any]) -> PlannerInfo:
+def _planner_payload_to_pydantic(payload: dict[str, Any]) -> PlannerInfo:
     return PlannerInfo(
         intent=payload.get("intent"),
         intent_label=payload.get("intent_label"),
@@ -102,7 +100,7 @@ def _planner_payload_to_pydantic(payload: Dict[str, Any]) -> PlannerInfo:
     )
 
 
-def _retriever_payload_to_pydantic(payload: Dict[str, Any]) -> RetrieverInfo:
+def _retriever_payload_to_pydantic(payload: dict[str, Any]) -> RetrieverInfo:
     media_counts = payload.get("media_counts") or {}
     return RetrieverInfo(
         nodes_count=int(payload.get("nodes_count", 0)),
@@ -126,14 +124,14 @@ def _retriever_payload_to_pydantic(payload: Dict[str, Any]) -> RetrieverInfo:
 # slots in-place — total never grows past 6 to avoid the bar going backwards.
 # ---------------------------------------------------------------------------
 _PROGRESS_TOTAL: float = 6.0
-_PROGRESS_STAGES: Dict[str, tuple[float, str]] = {
-    "planner":         (1.0, "Pianificazione lezione…"),
-    "retriever":       (2.0, "Recupero contesto dal Knowledge Graph…"),
-    "writer_pending":  (3.0, "Scrittura della lezione in corso…"),
-    "writer":          (4.0, "Lezione redatta — in attesa del Critic"),
-    "critic":          (5.0, "Critic ha valutato il draft"),
-    "done":            (6.0, "Lezione finalizzata"),
-    "error":           (6.0, "Esecuzione interrotta da un errore"),
+_PROGRESS_STAGES: dict[str, tuple[float, str]] = {
+    "planner": (1.0, "Pianificazione lezione…"),
+    "retriever": (2.0, "Recupero contesto dal Knowledge Graph…"),
+    "writer_pending": (3.0, "Scrittura della lezione in corso…"),
+    "writer": (4.0, "Lezione redatta — in attesa del Critic"),
+    "critic": (5.0, "Critic ha valutato il draft"),
+    "done": (6.0, "Lezione finalizzata"),
+    "error": (6.0, "Esecuzione interrotta da un errore"),
 }
 
 
@@ -208,7 +206,7 @@ def register(mcp: FastMCP) -> None:
             raise ValueError("`max_revisions` must be in the range 0..4")
 
         effective_session_id = session_id or str(uuid.uuid4())
-        profile_dict: Optional[Dict[str, Any]] = (
+        profile_dict: Optional[dict[str, Any]] = (
             educational_profile.model_dump(mode="json", exclude_none=False)
             if educational_profile is not None
             else None
@@ -238,65 +236,79 @@ def register(mcp: FastMCP) -> None:
                     message=message,
                 )
             except Exception as exc:  # pragma: no cover - defensive
-                logger.debug(
-                    "[agent.run_lesson_plan] report_progress failed: %s", exc
-                )
+                logger.debug("[agent.run_lesson_plan] report_progress failed: %s", exc)
 
         logger.info(
             "[mcp.agent] /run_lesson_plan starting session=%s domain=%s "
             "query=%r profile=%s teacher_ctx_chars=%s",
-            effective_session_id, domain, query[:80],
+            effective_session_id,
+            domain,
+            query[:80],
             "yes" if profile_dict else "no",
             len(teacher_provided_context or ""),
         )
 
-        async for event in stream_agent_events(
-            query=query,
-            domain=domain,
-            language=language,
-            session_id=effective_session_id,
-            educational_profile=profile_dict,
-            teacher_provided_context=teacher_provided_context,
-            max_revisions=max_revisions,
-        ):
-            await _emit_progress(event.kind)
+        # CORE 6 #31/#34 — MCP shares the same global generation cap as the
+        # HTTP API and the webui. Acquire a run slot (or shed) so MCP clients
+        # can't bypass the limit. On capacity we raise — FastMCP renders it as
+        # isError=true, matching the existing failure contract above.
+        try:
+            async with run_slot(label=f"mcp:{effective_session_id}"):
+                async for event in stream_agent_events(
+                    query=query,
+                    domain=domain,
+                    language=language,
+                    session_id=effective_session_id,
+                    educational_profile=profile_dict,
+                    teacher_provided_context=teacher_provided_context,
+                    max_revisions=max_revisions,
+                ):
+                    await _emit_progress(event.kind)
 
-            if event.kind == "planner":
-                planner_info = _planner_payload_to_pydantic(event.payload or {})
-            elif event.kind == "retriever":
-                retriever_info = _retriever_payload_to_pydantic(
-                    event.payload or {}
+                    if event.kind == "planner":
+                        planner_info = _planner_payload_to_pydantic(event.payload or {})
+                    elif event.kind == "retriever":
+                        retriever_info = _retriever_payload_to_pydantic(event.payload or {})
+                    elif event.kind == "done":
+                        final_lesson_plan = event.lesson_plan_md or ""
+                        final_meta = _meta_to_pydantic(event.meta or {})
+                    elif event.kind == "error":
+                        error_message = event.error or "Unknown agent error"
+                        # Fall through — the stream is finite; we raise after
+                        # the loop terminates so any in-flight state releases.
+
+                if error_message is not None or final_meta is None:
+                    detail = error_message or "Agent finished without a lesson plan"
+                    logger.warning(
+                        "[mcp.agent] /run_lesson_plan FAILED session=%s detail=%r",
+                        effective_session_id,
+                        detail[:200],
+                    )
+                    raise RuntimeError(detail)
+
+                logger.info(
+                    "[mcp.agent] /run_lesson_plan complete session=%s duration=%.1fs "
+                    "approved=%s revisions=%s",
+                    effective_session_id,
+                    final_meta.duration_seconds,
+                    final_meta.approved,
+                    final_meta.revision_count,
                 )
-            elif event.kind == "done":
-                final_lesson_plan = event.lesson_plan_md or ""
-                final_meta = _meta_to_pydantic(event.meta or {})
-            elif event.kind == "error":
-                error_message = event.error or "Unknown agent error"
-                # Fall through — the stream is finite; we raise after
-                # the loop terminates so any in-flight state releases.
 
-        if error_message is not None or final_meta is None:
-            detail = error_message or "Agent finished without a lesson plan"
+                return AgentRunResponse(
+                    lesson_plan_md=final_lesson_plan,
+                    meta=final_meta,
+                    planner=planner_info,
+                    retriever=retriever_info,
+                )
+        except AtCapacity as exc:
             logger.warning(
-                "[mcp.agent] /run_lesson_plan FAILED session=%s detail=%r",
-                effective_session_id, detail[:200],
+                "[mcp.agent] /run_lesson_plan at capacity — shedding session=%s",
+                effective_session_id,
             )
-            raise RuntimeError(detail)
-
-        logger.info(
-            "[mcp.agent] /run_lesson_plan complete session=%s duration=%.1fs "
-            "approved=%s revisions=%s",
-            effective_session_id,
-            final_meta.duration_seconds,
-            final_meta.approved,
-            final_meta.revision_count,
-        )
-
-        return AgentRunResponse(
-            lesson_plan_md=final_lesson_plan,
-            meta=final_meta,
-            planner=planner_info,
-            retriever=retriever_info,
-        )
+            raise RuntimeError(
+                "Il sistema è momentaneamente occupato: troppe generazioni in corso. "
+                "Riprova tra qualche istante."
+            ) from exc
 
     _ = agent_run_lesson_plan  # silence "unused" lint — FastMCP registers it

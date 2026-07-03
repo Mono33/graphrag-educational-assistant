@@ -4,11 +4,10 @@ Returns the canonical URL and language.
 """
 
 import logging
+import threading
 import time
 from datetime import date
-from typing import Any, Dict
-
-import threading
+from typing import Any
 
 import requests
 
@@ -29,7 +28,7 @@ def _wait():
         _LAST_CALL = time.time()
 
 
-def get_article(topic: str, language: str = "en") -> Dict[str, Any]:
+def get_article(topic: str, language: str = "en") -> dict[str, Any]:
     """
     Fetch a Wikipedia article summary for a topic.
 

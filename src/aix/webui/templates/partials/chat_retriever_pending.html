@@ -1,0 +1,80 @@
+{#
+  Retriever Agent — pending placeholder.
+
+  Emitted immediately after the planner card, before retrieve_node starts.
+  The retrieval phase (parallel GraphRAG queries + embedding + neighbor
+  expansion) takes 10–30 seconds; this card keeps the chat active and
+  shows teachers what the retriever is doing under the hood.
+
+  OOB replacement: id="retriever-card-pending" matches the root id added
+  to chat_retriever_card.html so htmx swaps this card out when the
+  retrieval completes.
+#}
+
+<div id="retriever-card-pending" class="aix-agent-shell">
+
+  <div class="aix-agent-avatar aix-agent-avatar--retriever">
+    <wa-icon name="diagram-project"></wa-icon>
+  </div>
+
+  <div class="aix-agent-body">
+    <article class="aix-agent-card aix-agent-card--retriever aix-card-stripe-retriever">
+
+      <header class="aix-agent-card-header aix-agent-card-header--retriever">
+        <div class="aix-agent-card-title">
+          <strong>Retriever Agent</strong>
+          <span class="aix-agent-card-role">· interroga il Knowledge Graph</span>
+        </div>
+        <span class="aix-pill aix-pill-warning">
+          <wa-spinner class="aix-fs-xs"></wa-spinner>
+          ricerca
+        </span>
+      </header>
+
+      <div class="aix-agent-card-body aix-col-10">
+
+        <p class="aix-color-secondary aix-fs-12 m-0">
+          Sto interrogando il Knowledge Graph su più dimensioni in parallelo:
+        </p>
+
+        <div class="aix-col-6">
+
+          <div class="retriever-pending-item aix-delay-0">
+            <span class="retriever-pending-dot"></span>
+            <span>Query semantiche sul grafo della conoscenza (Text2Cypher)</span>
+          </div>
+          <div class="retriever-pending-item aix-delay-2s">
+            <span class="retriever-pending-dot"></span>
+            <span>Espansione dei nodi: concetti correlati e prerequisiti</span>
+          </div>
+          <div class="retriever-pending-item aix-delay-4s">
+            <span class="retriever-pending-dot"></span>
+            <span>Embedding ibrido: Node2Vec + semantica multilingue</span>
+          </div>
+          <div class="retriever-pending-item aix-delay-6s">
+            <span class="retriever-pending-dot"></span>
+            <span>Strategie pedagogiche e raccomandazioni UDL</span>
+          </div>
+          <div class="retriever-pending-item aix-delay-8s">
+            <span class="retriever-pending-dot"></span>
+            <span>Selezione dei media curati (video, articoli, OER)</span>
+          </div>
+
+        </div>
+
+        <p class="aix-footnote-sm m-0">
+          La ricerca richiede tipicamente 10–30 secondi.
+        </p>
+
+      </div>
+
+    </article>
+    <div class="aix-agent-footer-label">
+      <wa-icon name="diagram-project" class="aix-fs-sm"></wa-icon>
+      <span>Retriever · pending</span>
+    </div>
+  </div>
+
+</div>
+
+{# .retriever-pending-item / .retriever-pending-dot / @keyframes → aix-brand.css #}

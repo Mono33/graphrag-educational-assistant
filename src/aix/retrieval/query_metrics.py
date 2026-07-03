@@ -23,10 +23,10 @@ Scientific References:
 """
 
 import logging
-import re
 import random
-from typing import Dict, List, Optional
+import re
 from dataclasses import dataclass
+
 import numpy as np
 
 logger = logging.getLogger(__name__)
@@ -36,34 +36,37 @@ logger = logging.getLogger(__name__)
 # DATA CLASSES
 # ============================================================================
 
+
 @dataclass
 class QueryMetrics:
     """Container for all query metrics"""
-    context_relevance: float      # 0-100% (how relevant is retrieved context to query)
-    faithfulness: float            # 0-100% (is LLM response grounded in context)
-    query_complexity: str          # "SIMPLE" / "MEDIUM" / "COMPLEX"
-    graph_coverage: float          # Average hops (e.g., 1.5)
-    
+
+    context_relevance: float  # 0-100% (how relevant is retrieved context to query)
+    faithfulness: float  # 0-100% (is LLM response grounded in context)
+    query_complexity: str  # "SIMPLE" / "MEDIUM" / "COMPLEX"
+    graph_coverage: float  # Average hops (e.g., 1.5)
+
     # Metadata
-    evaluation_mode: str           # "simple" / "hybrid" / "research"
-    total_nodes: int               # Total nodes retrieved
-    total_relationships: int       # Total relationships retrieved
+    evaluation_mode: str  # "simple" / "hybrid" / "research"
+    total_nodes: int  # Total nodes retrieved
+    total_relationships: int  # Total relationships retrieved
 
 
 # ============================================================================
 # MAIN METRICS CALCULATOR
 # ============================================================================
 
+
 class MetricsCalculator:
     """
     Calculate RAG quality metrics with automatic multilingual support.
-    
+
     Evaluation Modes:
     - 'simple': Fast, free, keyword-based (Version A)
     - 'hybrid': Random sampling with LLM judge (Version B sample)
     - 'research': Full LLM-based evaluation (Version B) 🚀 PRODUCTION
     - 'hybrid_auto': Smart fallback (Version A + B fallback) ✅ RECOMMENDED (NEW DEFAULT)
-    
+
     Hybrid Auto Strategy (RECOMMENDED):
     • Default: Use Version A (fast, free, 99% of queries)
     • Fallback: Use Version B (LLM-based) when scores indicate edge cases:
@@ -72,7 +75,7 @@ class MetricsCalculator:
         - Total nodes < 5 → insufficient context handling
     • Cost: ~$0.30-0.50/month for 100 queries/day (1-3% trigger rate)
     • Accuracy: 85-95% (scientific-grade for edge cases, pragmatic for normal cases)
-    
+
     Args:
         mode: Evaluation mode ('simple', 'hybrid', 'research', 'hybrid_auto')
         domain: Domain filter ('udl', 'neuro', 'all') for translation
@@ -83,21 +86,21 @@ class MetricsCalculator:
         faithfulness_low_threshold: Low faithfulness threshold (default: 40%)
         faithfulness_high_threshold: High faithfulness threshold (default: 90%)
     """
-    
+
     def __init__(
-        self, 
+        self,
         mode: str = "hybrid_auto",
         domain: str = "all",
-        openai_client = None,
+        openai_client=None,
         hybrid_sample_rate: float = 0.1,
-        translator = None,
+        translator=None,
         relevance_threshold: float = 60.0,
         faithfulness_low_threshold: float = 40.0,
-        faithfulness_high_threshold: float = 90.0
+        faithfulness_high_threshold: float = 90.0,
     ):
         """
         Initialize MetricsCalculator with hybrid evaluation support.
-        
+
         Modes:
         - 'simple': Always use Version A (fast, free, keyword-based)
         - 'research': Always use Version B (accurate, LLM-based, costs API)
@@ -110,7 +113,7 @@ class MetricsCalculator:
               - Total nodes < 5 (insufficient context)
             • Cost: ~$0.30-0.50/month for 100 queries/day
             • Accuracy: 85-95% (catches edge cases)
-        
+
         Args:
             mode: Evaluation mode (default: 'hybrid_auto')
             domain: Domain filter ('udl', 'neuro', 'all')
@@ -121,29 +124,32 @@ class MetricsCalculator:
             faithfulness_low_threshold: Low faithfulness threshold (default: 40%)
             faithfulness_high_threshold: High faithfulness threshold (default: 90%)
         """
-        if mode not in ['simple', 'hybrid', 'research', 'hybrid_auto']:
-            raise ValueError(f"Invalid mode '{mode}'. Must be 'simple', 'hybrid', 'research', or 'hybrid_auto'")
-        
+        if mode not in ["simple", "hybrid", "research", "hybrid_auto"]:
+            raise ValueError(
+                f"Invalid mode '{mode}'. Must be 'simple', 'hybrid', 'research', or 'hybrid_auto'"
+            )
+
         self.mode = mode
         self.domain = domain
         self.client = openai_client
         self.hybrid_sample_rate = hybrid_sample_rate
-        
+
         # Thresholds for hybrid_auto mode
         self.relevance_threshold = relevance_threshold
         self.faithfulness_low_threshold = faithfulness_low_threshold
         self.faithfulness_high_threshold = faithfulness_high_threshold
-        
+
         # Validate dependencies
-        if mode in ['hybrid', 'research', 'hybrid_auto'] and openai_client is None:
+        if mode in ["hybrid", "research", "hybrid_auto"] and openai_client is None:
             logger.warning(f"Mode '{mode}' requires OpenAI client. Falling back to 'simple' mode.")
-            self.mode = 'simple'
-        
+            self.mode = "simple"
+
         # Load translator for multilingual support (Italian → English)
         # Uses dependency injection pattern for testability
         if translator is None:
             try:
                 from aix.retrieval.multilingual_text2cypher import MultilingualText2Cypher
+
                 self.translator = MultilingualText2Cypher()
                 logger.info(f"Multilingual translator loaded (domain={self.domain})")
             except ImportError as e:
@@ -151,13 +157,13 @@ class MetricsCalculator:
                 self.translator = None
         else:
             self.translator = translator
-        
+
         logger.info(f"MetricsCalculator initialized (mode={self.mode}, domain={self.domain})")
-    
+
     def calculate_all(
         self,
         query: str,
-        retrieved_nodes: List[Dict],
+        retrieved_nodes: list[dict],
         llm_response: str,
         cypher_query: str,
         total_relationships: int = 0,
@@ -185,7 +191,7 @@ class MetricsCalculator:
         query_domain = domain or self.domain
 
         logger.info("=" * 80)
-        logger.info(f"📊 QUERY METRICS CALCULATION START")
+        logger.info("📊 QUERY METRICS CALCULATION START")
         logger.info(f"   Original Query: {query[:100]}...")
         logger.info(f"   Domain: {query_domain}")
         logger.info(f"   Evaluation Mode: {self.mode}")
@@ -193,31 +199,33 @@ class MetricsCalculator:
         # Use pre-translated query when available — avoids a redundant API call
         if translated_query:
             query_for_metrics = translated_query
-            logger.info(f"   ✅ Using pre-translated query (skipping re-translation)")
+            logger.info("   ✅ Using pre-translated query (skipping re-translation)")
         else:
             query_for_metrics = self._prepare_query_for_metrics(query, query_domain)
-        
+
         # Determine if we should use research-grade evaluation
         use_research = self._should_use_research_eval()
-        
+
         # Calculate each metric with logging
-        logger.info(f"\n🔍 Calculating Context Relevance...")
-        context_relevance = self.calculate_context_relevance(query_for_metrics, retrieved_nodes, use_research)
+        logger.info("\n🔍 Calculating Context Relevance...")
+        context_relevance = self.calculate_context_relevance(
+            query_for_metrics, retrieved_nodes, use_research
+        )
         logger.info(f"   ✅ Context Relevance: {context_relevance}%")
-        
-        logger.info(f"\n🔍 Calculating Faithfulness...")
+
+        logger.info("\n🔍 Calculating Faithfulness...")
         faithfulness = self.calculate_faithfulness(llm_response, retrieved_nodes, use_research)
         logger.info(f"   ✅ Faithfulness: {faithfulness}%")
-        
-        logger.info(f"\n🔍 Calculating Query Complexity...")
+
+        logger.info("\n🔍 Calculating Query Complexity...")
         query_complexity = self.calculate_query_complexity(cypher_query)
         logger.info(f"   ✅ Query Complexity: {query_complexity}")
-        
-        logger.info(f"\n🔍 Calculating Graph Coverage...")
+
+        logger.info("\n🔍 Calculating Graph Coverage...")
         graph_coverage = self.calculate_graph_coverage(retrieved_nodes)
         logger.info(f"   ✅ Graph Coverage: {graph_coverage} hops")
-        
-        logger.info(f"\n📊 METRICS SUMMARY:")
+
+        logger.info("\n📊 METRICS SUMMARY:")
         logger.info(f"   Context Relevance:  {context_relevance}%")
         logger.info(f"   Faithfulness:       {faithfulness}%")
         logger.info(f"   Query Complexity:   {query_complexity}")
@@ -225,7 +233,7 @@ class MetricsCalculator:
         logger.info(f"   Total Nodes:        {len(retrieved_nodes)}")
         logger.info(f"   Total Relationships: {total_relationships}")
         logger.info("=" * 80)
-        
+
         return QueryMetrics(
             context_relevance=context_relevance,
             faithfulness=faithfulness,
@@ -233,27 +241,27 @@ class MetricsCalculator:
             graph_coverage=graph_coverage,
             evaluation_mode=self.mode,
             total_nodes=len(retrieved_nodes),
-            total_relationships=total_relationships
+            total_relationships=total_relationships,
         )
-    
+
     def _prepare_query_for_metrics(self, query: str, domain: str) -> str:
         """
         Prepare query for metrics calculation by translating if needed.
-        
+
         This method automatically handles Italian → English translation using
         the existing multilingual_text2cypher dictionaries. This ensures that
         metrics calculations (which compare query keywords with English node names)
         work correctly for Italian queries.
-        
+
         ✅ Handles Italian → English translation automatically
         ✅ Reuses existing multilingual_text2cypher dictionaries
         ✅ Domain-aware (uses correct term dictionary: udl vs neuro)
         ✅ Falls back gracefully if translator not available
-        
+
         Args:
             query: Original query (Italian or English)
             domain: Domain filter ('udl', 'neuro', 'all')
-            
+
         Returns:
             Query ready for metrics calculation (translated if Italian)
         """
@@ -261,351 +269,416 @@ class MetricsCalculator:
         if self.translator is None:
             logger.warning("[METRICS] No translator available, using query as-is")
             return query
-        
+
         try:
             # Detect language using existing multilingual logic
             lang = self.translator.detect_language(query)
             logger.info(f"   🌍 Language Detected: {lang.upper()}")
-            
+
             if lang == "italian":
                 # Use existing translation logic from aix.retrieval.multilingual_text2cypher
                 enhanced_query = self.translator.enhance_italian_query(query, domain=domain)
-                
+
                 # Remove context prefix (e.g., "Neuroscience query: ")
                 # to get clean translated query for metrics
                 if ": " in enhanced_query:
                     query_for_metrics = enhanced_query.split(": ", 1)[1]
                 else:
                     query_for_metrics = enhanced_query
-                
-                logger.info(f"   🔄 Translation:")
+
+                logger.info("   🔄 Translation:")
                 logger.info(f"      Original: {query[:80]}...")
                 logger.info(f"      Translated: {query_for_metrics[:80]}...")
                 return query_for_metrics
             else:
                 # Already in English, use as-is
-                logger.info(f"   ✅ Query already in English, no translation needed")
+                logger.info("   ✅ Query already in English, no translation needed")
                 return query
-                
+
         except Exception as e:
             logger.warning(f"[METRICS] Error translating query: {e}. Using original query.")
             return query
-    
+
     def _should_use_research_eval(self) -> bool:
         """
         Determine if current query should use research-grade evaluation.
-        
+
         Returns:
             True if research-grade eval should be used, False otherwise
         """
-        if self.mode == 'simple':
+        if self.mode == "simple":
             return False
-        elif self.mode == 'research':
+        elif self.mode == "research":
             return True
-        elif self.mode == 'hybrid':
+        elif self.mode == "hybrid":
             # Random sampling for hybrid mode
             return random.random() < self.hybrid_sample_rate
         return False
-    
+
     # ========================================================================
     # METRIC 1: CONTEXT RELEVANCE
     # ========================================================================
-    
+
     def calculate_context_relevance(
-        self, 
-        query: str, 
-        retrieved_nodes: List[Dict],
-        use_research: bool = False
+        self, query: str, retrieved_nodes: list[dict], use_research: bool = False
     ) -> float:
         """
         Measures how relevant retrieved context is to the query.
-        
+
         Hybrid Strategy (when mode='hybrid_auto'):
         1. Try Version A (fast, free, keyword-based)
         2. If score < threshold (default 50%), use Version B (LLM-based)
         3. Use the higher score (Version B is more accurate)
-        
+
         Version A (Simple): Keyword overlap (Jaccard similarity)
         Version B (Research): Embeddings + cosine similarity
-        
+
         Args:
             query: Natural language query
             retrieved_nodes: List of retrieved nodes
             use_research: If True, force use embeddings (Version B)
-            
+
         Returns:
             0-100 (percentage)
         """
         # HYBRID AUTO MODE: Smart fallback based on initial score
-        if self.mode == 'hybrid_auto' and not use_research:
+        if self.mode == "hybrid_auto" and not use_research:
             # Step 1: Try Version A first (fast, free)
             version_a_score = self._context_relevance_simple(query, retrieved_nodes)
-            
+
             # Step 2: Check if fallback is needed
             needs_fallback = (
-                version_a_score < self.relevance_threshold or  # Score too low
-                len(retrieved_nodes) < 5  # Insufficient context
+                version_a_score < self.relevance_threshold  # Score too low
+                or len(retrieved_nodes) < 5  # Insufficient context
             )
-            
+
             if needs_fallback and self.client:
                 logger.warning(
                     f"[HYBRID] Context Relevance {version_a_score:.1f}% < {self.relevance_threshold}% "
                     f"or nodes={len(retrieved_nodes)} < 5. Using Version B (embeddings)..."
                 )
-                
+
                 # Step 3: Use Version B for better accuracy
                 version_b_score = self._context_relevance_embeddings(query, retrieved_nodes)
-                
+
                 # Step 4: Use the higher score (Version B is typically more accurate)
                 final_score = max(version_a_score, version_b_score)
-                
+
                 logger.info(
                     f"[HYBRID] Context Relevance: Version A={version_a_score:.1f}%, "
                     f"Version B={version_b_score:.1f}%, Final={final_score:.1f}%"
                 )
-                
+
                 return final_score
             else:
                 # No fallback needed, Version A is sufficient
                 if not needs_fallback:
-                    logger.info(f"[HYBRID] Context Relevance {version_a_score:.1f}% >= {self.relevance_threshold}%. Using Version A.")
+                    logger.info(
+                        f"[HYBRID] Context Relevance {version_a_score:.1f}% >= {self.relevance_threshold}%. Using Version A."
+                    )
                 return version_a_score
-        
+
         # STANDARD MODES (simple, research, hybrid)
-        if use_research or self.mode == 'research':
+        if use_research or self.mode == "research":
             return self._context_relevance_embeddings(query, retrieved_nodes)
         else:
             return self._context_relevance_simple(query, retrieved_nodes)
-    
-    def _context_relevance_simple(self, query: str, nodes: List[Dict]) -> float:
+
+    def _context_relevance_simple(self, query: str, nodes: list[dict]) -> float:
         """
         VERSION A (SIMPLE): Keyword overlap approach
-        
+
         Algorithm: Jaccard similarity between query keywords and node text (names + labels)
         - Fast: <1ms per query
         - Free: No API costs
         - Accuracy: ~60-70% correlation with human judgment
-        
+
         **OPTIMIZED**: Extracts keywords from both node NAMES and LABELS (not descriptions).
         This is crucial because many nodes have single-word names (e.g., "Autonomy") but
         their labels contain the full concept (e.g., "IntrinsicMotivation").
-        
+
         Returns: 0-100 (percentage)
         """
         if not nodes:
-            logger.info(f"      ⚠️ No nodes retrieved, score = 0%")
+            logger.info("      ⚠️ No nodes retrieved, score = 0%")
             return 0.0
-        
+
         # Extract keywords from query (normalize and filter stopwords)
         query_keywords = self._extract_keywords(query.lower())
-        logger.info(f"      📝 Query Keywords ({len(query_keywords)}): {sorted(list(query_keywords))[:10]}")
-        
+        logger.info(
+            f"      📝 Query Keywords ({len(query_keywords)}): {sorted(list(query_keywords))[:10]}"
+        )
+
         # Extract text from retrieved nodes (NAMES + LABELS for better accuracy)
         # Labels often contain the core concept (e.g., "IntrinsicMotivation")
         # even when node names are single words (e.g., "Autonomy")
         node_texts = []
         for node in nodes:
             text_parts = []
-            
+
             # Add node name
-            if 'name' in node and node['name']:
-                text_parts.append(node['name'].lower())
-            
+            if "name" in node and node["name"]:
+                text_parts.append(node["name"].lower())
+
             # Add node labels (CRITICAL for matching!)
             # Example: node "Autonomy" has label "IntrinsicMotivation"
             # IMPORTANT: Split PascalCase labels into separate words first!
-            if 'labels' in node and node['labels']:
-                for label in node['labels']:
+            if "labels" in node and node["labels"]:
+                for label in node["labels"]:
                     if label:  # Skip empty labels
                         # Split PascalCase: 'IntrinsicMotivation' → 'Intrinsic Motivation'
                         split_label = self._split_pascal_case(label)
                         text_parts.append(split_label.lower())
-            
+
             if text_parts:
-                node_texts.append(' '.join(text_parts))
-        
+                node_texts.append(" ".join(text_parts))
+
         if not node_texts:
-            logger.info(f"      ⚠️ No node text found, score = 0%")
+            logger.info("      ⚠️ No node text found, score = 0%")
             return 0.0
-        
+
         # Extract keywords from node names + labels
-        node_keywords = self._extract_keywords(' '.join(node_texts))
-        logger.info(f"      📝 Node Keywords (names+labels) ({len(node_keywords)}): {sorted(list(node_keywords))[:10]}")
-        
+        node_keywords = self._extract_keywords(" ".join(node_texts))
+        logger.info(
+            f"      📝 Node Keywords (names+labels) ({len(node_keywords)}): {sorted(list(node_keywords))[:10]}"
+        )
+
         # Calculate Jaccard similarity
         if not query_keywords or not node_keywords:
-            logger.info(f"      ⚠️ Empty keyword sets, score = 0%")
+            logger.info("      ⚠️ Empty keyword sets, score = 0%")
             return 0.0
-        
+
         intersection = query_keywords & node_keywords
         union = query_keywords | node_keywords
-        
-        logger.info(f"      🔗 Matching Keywords ({len(intersection)}): {sorted(list(intersection))[:10]}")
+
+        logger.info(
+            f"      🔗 Matching Keywords ({len(intersection)}): {sorted(list(intersection))[:10]}"
+        )
         logger.info(f"      📊 Jaccard: intersection={len(intersection)}, union={len(union)}")
-        
+
         jaccard_score = (len(intersection) / len(union)) if union else 0.0
-        
+
         # Convert to percentage and scale (Jaccard often gives low scores)
         # Apply scaling factor to make scores more interpretable
         scaled_score = min(100, jaccard_score * 200)  # Scale up for better UX
-        
-        logger.info(f"      📈 Raw Jaccard Score: {jaccard_score:.3f} → Scaled: {scaled_score:.1f}%")
-        
+
+        logger.info(
+            f"      📈 Raw Jaccard Score: {jaccard_score:.3f} → Scaled: {scaled_score:.1f}%"
+        )
+
         return round(scaled_score, 1)
-    
-    def _context_relevance_embeddings(self, query: str, nodes: List[Dict]) -> float:
+
+    def _context_relevance_embeddings(self, query: str, nodes: list[dict]) -> float:
         """
         VERSION B (RESEARCH): Semantic embeddings approach
-        
+
         Algorithm: Cosine similarity between query and context embeddings
         - Accuracy: ~85-95% correlation with human judgment
         - Cost: ~$0.0001 per query (text-embedding-3-small)
         - Latency: ~200ms per query
-        
+
         Reference: RAGAS Framework (https://arxiv.org/abs/2309.15217)
-        
+
         Returns: 0-100 (percentage)
         """
         if not self.client:
             logger.error("OpenAI client required for embeddings mode")
             return self._context_relevance_simple(query, nodes)
-        
+
         if not nodes:
             return 0.0
-        
+
         try:
             # Get query embedding
             query_emb_response = self.client.embeddings.create(
-                model="text-embedding-3-small",
-                input=query
+                model="text-embedding-3-small", input=query
             )
             query_emb = np.array(query_emb_response.data[0].embedding)
-            
+
             # Build context text from nodes
-            context_text = ' '.join([
-                f"{n.get('name', '')} {n.get('description', '')} {n.get('category', '')}" 
-                for n in nodes
-            ]).strip()
-            
+            context_text = " ".join(
+                [
+                    f"{n.get('name', '')} {n.get('description', '')} {n.get('category', '')}"
+                    for n in nodes
+                ]
+            ).strip()
+
             if not context_text:
                 return 0.0
-            
+
             # Get context embedding
             context_emb_response = self.client.embeddings.create(
-                model="text-embedding-3-small",
-                input=context_text
+                model="text-embedding-3-small", input=context_text
             )
             context_emb = np.array(context_emb_response.data[0].embedding)
-            
+
             # Cosine similarity
             similarity = np.dot(query_emb, context_emb) / (
                 np.linalg.norm(query_emb) * np.linalg.norm(context_emb)
             )
-            
+
             # Convert to percentage (cosine similarity is in [-1, 1], usually [0, 1] for text)
             score = max(0, similarity) * 100
-            
+
             return round(score, 1)
-        
+
         except Exception as e:
             logger.error(f"Error in embeddings calculation: {e}")
             # Fallback to simple method
             return self._context_relevance_simple(query, nodes)
-    
+
     def _split_pascal_case(self, text: str) -> str:
         """
         Split PascalCase/camelCase strings into separate words.
-        
+
         This is CRITICAL for matching node labels like 'IntrinsicMotivation'
         with query keywords like 'intrinsic' and 'motivation'.
-        
+
         Examples:
             'IntrinsicMotivation' → 'Intrinsic Motivation'
             'ExecutiveFunctions' → 'Executive Functions'
             'GrowthMindset' → 'Growth Mindset'
             'PositiveStressEustress' → 'Positive Stress Eustress'
-        
+
         Args:
             text: PascalCase or camelCase string
-            
+
         Returns:
             Space-separated words
         """
         # Insert space before uppercase letters (except at start)
-        return re.sub(r'(?<!^)(?=[A-Z])', ' ', text)
-    
+        return re.sub(r"(?<!^)(?=[A-Z])", " ", text)
+
     def _extract_keywords(self, text: str) -> set:
         """
         Extract meaningful keywords from text.
-        
+
         Args:
             text: Input text (should be lowercase)
-            
+
         Returns:
             Set of keywords (stopwords removed)
         """
         # Italian stopwords (common words to filter)
         italian_stopwords = {
-            'il', 'lo', 'la', 'i', 'gli', 'le', 'un', 'uno', 'una',
-            'di', 'a', 'da', 'in', 'con', 'su', 'per', 'tra', 'fra',
-            'e', 'o', 'ma', 'se', 'come', 'quando', 'dove', 'perché',
-            'che', 'chi', 'cui', 'quale', 'questo', 'quello', 'mio', 'tuo', 'suo',
-            'sono', 'è', 'hai', 'ha', 'ho', 'abbiamo', 'hanno', 'essere', 'avere',
-            'ci', 'c', 'è', 'può', 'possono', 'posso', 'puoi', 'fare', 'fa', 'fanno',
-            'the', 'a', 'an', 'and', 'or', 'but', 'if', 'how', 'what', 'where', 'when', 'why'
+            "il",
+            "lo",
+            "la",
+            "i",
+            "gli",
+            "le",
+            "un",
+            "uno",
+            "una",
+            "di",
+            "a",
+            "da",
+            "in",
+            "con",
+            "su",
+            "per",
+            "tra",
+            "fra",
+            "e",
+            "o",
+            "ma",
+            "se",
+            "come",
+            "quando",
+            "dove",
+            "perché",
+            "che",
+            "chi",
+            "cui",
+            "quale",
+            "questo",
+            "quello",
+            "mio",
+            "tuo",
+            "suo",
+            "sono",
+            "è",
+            "hai",
+            "ha",
+            "ho",
+            "abbiamo",
+            "hanno",
+            "essere",
+            "avere",
+            "ci",
+            "c",
+            "può",
+            "possono",
+            "posso",
+            "puoi",
+            "fare",
+            "fa",
+            "fanno",
+            "the",
+            "an",
+            "and",
+            "or",
+            "but",
+            "if",
+            "how",
+            "what",
+            "where",
+            "when",
+            "why",
         }
-        
+
         # Tokenize and filter
-        words = re.findall(r'\b\w+\b', text.lower())
+        words = re.findall(r"\b\w+\b", text.lower())
         keywords = {w for w in words if len(w) > 2 and w not in italian_stopwords}
-        
+
         return keywords
-    
+
     # ========================================================================
     # METRIC 2: FAITHFULNESS (GROUNDEDNESS)
     # ========================================================================
-    
+
     def calculate_faithfulness(
-        self, 
-        llm_response: str, 
-        retrieved_nodes: List[Dict],
-        use_research: bool = False
+        self, llm_response: str, retrieved_nodes: list[dict], use_research: bool = False
     ) -> float:
         """
         Measures if LLM response is grounded in retrieved context.
-        
+
         Hybrid Strategy (when mode='hybrid_auto'):
         1. Try Version A (fast, free, concept overlap)
         2. If score is in danger zone (< 40% or > 90%), use Version B (LLM judge)
         3. Use Version B score (more accurate for edge cases)
-        
+
         Version A (Simple): Concept overlap check
         Version B (Research): GPT-4 as judge
-        
+
         Args:
             llm_response: LLM's generated response
             retrieved_nodes: List of retrieved nodes
             use_research: If True, force use LLM judge (Version B)
-            
+
         Returns:
             0-100 (percentage)
         """
         # HYBRID AUTO MODE: Smart fallback for edge cases
-        if self.mode == 'hybrid_auto' and not use_research:
+        if self.mode == "hybrid_auto" and not use_research:
             # Step 1: Try Version A first (fast, free)
             version_a_score = self._faithfulness_simple(llm_response, retrieved_nodes)
-            
+
             # Calculate average concept length (to detect long multi-word names)
-            avg_words_per_concept = sum(len(n.get('name', '').split()) for n in retrieved_nodes) / max(len(retrieved_nodes), 1)
-            
+            avg_words_per_concept = sum(
+                len(n.get("name", "").split()) for n in retrieved_nodes
+            ) / max(len(retrieved_nodes), 1)
+
             # Step 2: Check if fallback is needed (edge cases)
             needs_fallback = (
-                version_a_score < self.faithfulness_low_threshold or  # Too low (hallucination risk)
-                version_a_score > self.faithfulness_high_threshold or  # Too high (copy-paste risk)
-                len(retrieved_nodes) < 5 or  # Insufficient context
-                (version_a_score < 60 and avg_words_per_concept > 2.5)  # Long node names + low score
+                version_a_score < self.faithfulness_low_threshold  # Too low (hallucination risk)
+                or version_a_score > self.faithfulness_high_threshold  # Too high (copy-paste risk)
+                or len(retrieved_nodes) < 5  # Insufficient context
+                or (
+                    version_a_score < 60 and avg_words_per_concept > 2.5
+                )  # Long node names + low score
             )
-            
+
             if needs_fallback and self.client:
                 if version_a_score < self.faithfulness_low_threshold:
                     reason = f"< {self.faithfulness_low_threshold}% (hallucination risk)"
@@ -614,21 +687,23 @@ class MetricsCalculator:
                 elif len(retrieved_nodes) < 5:
                     reason = f"nodes={len(retrieved_nodes)} < 5 (insufficient context)"
                 else:
-                    reason = f"< 60% with avg {avg_words_per_concept:.1f} words/concept (long names)"
-                
+                    reason = (
+                        f"< 60% with avg {avg_words_per_concept:.1f} words/concept (long names)"
+                    )
+
                 logger.warning(
                     f"[HYBRID] Faithfulness {version_a_score:.1f}% {reason}. "
                     f"Using Version B (LLM judge)..."
                 )
-                
+
                 # Step 3: Use Version B for better accuracy in edge cases
                 version_b_score = self._faithfulness_llm_judge(llm_response, retrieved_nodes)
-                
+
                 logger.info(
                     f"[HYBRID] Faithfulness: Version A={version_a_score:.1f}%, "
                     f"Version B={version_b_score:.1f}%, Final={version_b_score:.1f}% (using B)"
                 )
-                
+
                 # Use Version B score (more accurate for edge cases)
                 return version_b_score
             else:
@@ -639,36 +714,36 @@ class MetricsCalculator:
                         f"({self.faithfulness_low_threshold}%-{self.faithfulness_high_threshold}%). Using Version A."
                     )
                 return version_a_score
-        
+
         # STANDARD MODES (simple, research, hybrid)
-        if use_research or self.mode == 'research':
+        if use_research or self.mode == "research":
             return self._faithfulness_llm_judge(llm_response, retrieved_nodes)
         else:
             return self._faithfulness_simple(llm_response, retrieved_nodes)
-    
-    def _faithfulness_simple(self, response: str, nodes: List[Dict]) -> float:
+
+    def _faithfulness_simple(self, response: str, nodes: list[dict]) -> float:
         """
         VERSION A (SIMPLE): Concept overlap check
-        
+
         Algorithm: Count how many retrieved concepts are mentioned in response
         - Fast: <1ms per query
         - Free: No API costs
         - Accuracy: ~50-60% at detecting hallucinations
-        
+
         Returns: 0-100 (percentage)
         """
         if not nodes:
-            logger.info(f"      ⚠️ No nodes, neutral score = 50%")
+            logger.info("      ⚠️ No nodes, neutral score = 50%")
             return 50.0  # Neutral score if no context
-        
+
         # Extract concept names from nodes
         retrieved_concepts = set()
         for node in nodes:
-            if 'name' in node and node['name']:
+            if "name" in node and node["name"]:
                 # Normalize concept name
-                concept = node['name'].lower().strip()
+                concept = node["name"].lower().strip()
                 retrieved_concepts.add(concept)
-                
+
                 # Also add individual words from multi-word concepts
                 # This gives credit for partial matches (e.g., "internal" from "internal satisfaction")
                 words = concept.split()
@@ -676,71 +751,77 @@ class MetricsCalculator:
                     for word in words:
                         if len(word) > 3:  # Only meaningful words
                             retrieved_concepts.add(word)
-        
+
         if not retrieved_concepts:
-            logger.info(f"      ⚠️ No concepts extracted, neutral score = 50%")
+            logger.info("      ⚠️ No concepts extracted, neutral score = 50%")
             return 50.0  # Neutral score
-        
-        logger.info(f"      📝 Retrieved Concepts ({len(retrieved_concepts)}): {sorted(list(retrieved_concepts))[:10]}")
-        
+
+        logger.info(
+            f"      📝 Retrieved Concepts ({len(retrieved_concepts)}): {sorted(list(retrieved_concepts))[:10]}"
+        )
+
         # Check how many concepts appear in response
         response_lower = response.lower()
         mentioned_count = 0
         mentioned_concepts = []
-        
+
         for concept in retrieved_concepts:
             if concept in response_lower:
                 mentioned_count += 1
                 mentioned_concepts.append(concept)
-        
-        logger.info(f"      ✅ Mentioned in Response ({mentioned_count}): {sorted(mentioned_concepts)[:10]}")
-        
+
+        logger.info(
+            f"      ✅ Mentioned in Response ({mentioned_count}): {sorted(mentioned_concepts)[:10]}"
+        )
+
         # Calculate faithfulness score
         # Higher score = more retrieved concepts are mentioned in response
         mention_rate = (mentioned_count / len(retrieved_concepts)) if retrieved_concepts else 0
-        
-        logger.info(f"      📊 Mention Rate: {mentioned_count}/{len(retrieved_concepts)} = {mention_rate:.2%}")
-        
+
+        logger.info(
+            f"      📊 Mention Rate: {mentioned_count}/{len(retrieved_concepts)} = {mention_rate:.2%}"
+        )
+
         # Scale to 0-100 (good responses should mention 30-50% of concepts)
         # Score = 100 if mention_rate >= 0.5, linear scaling below
         score = min(100, mention_rate * 200)
-        
+
         # Ensure minimum score of 20 if any concepts are mentioned
         if mentioned_count > 0:
             score = max(20, score)
-        
+
         logger.info(f"      📈 Scaled Score: {score:.1f}%")
-        
+
         return round(score, 1)
-    
-    def _faithfulness_llm_judge(self, response: str, nodes: List[Dict]) -> float:
+
+    def _faithfulness_llm_judge(self, response: str, nodes: list[dict]) -> float:
         """
         VERSION B (RESEARCH): GPT-4 as judge
-        
+
         Algorithm: Use GPT-4 to verify if response is grounded in context
         - Accuracy: ~90-95% at detecting hallucinations (human-level)
         - Cost: ~$0.001-0.005 per query (gpt-4o-mini)
         - Latency: ~1-2 seconds per query
-        
+
         Reference: G-Eval (https://arxiv.org/abs/2303.16634)
-        
+
         Returns: 0-100 (percentage)
         """
         if not self.client:
             logger.error("OpenAI client required for LLM judge mode")
             return self._faithfulness_simple(response, nodes)
-        
+
         if not nodes:
             return 50.0  # Neutral score
-        
+
         try:
             # Build context from nodes
             context_lines = []
             for node in nodes:
-                name = node.get('name', '')
-                desc = node.get('description', '')
-                category = node.get('category', '')
-                
+                name = node.get("name", "")
+                desc = node.get("description", "")
+                category = node.get("category", "")
+
                 if name:
                     line = f"- **{name}**"
                     if category:
@@ -748,12 +829,12 @@ class MetricsCalculator:
                     if desc:
                         line += f": {desc}"
                     context_lines.append(line)
-            
-            context = '\n'.join(context_lines[:20])  # Limit to top 20 nodes to avoid token limits
-            
+
+            context = "\n".join(context_lines[:20])  # Limit to top 20 nodes to avoid token limits
+
             if not context.strip():
                 return 50.0
-            
+
             # GPT-4 judge prompt (based on G-Eval paper)
             judge_prompt = f"""You are a faithfulness evaluator for an educational AI system.
 
@@ -783,63 +864,63 @@ Return ONLY a number from 0-100, nothing else."""
                 model="gpt-4o-mini",  # Cheaper than gpt-4, still very accurate
                 messages=[{"role": "user", "content": judge_prompt}],
                 temperature=0,
-                max_tokens=10
+                max_tokens=10,
             )
-            
+
             score_text = result.choices[0].message.content.strip()
             score = float(score_text)
-            
+
             # Ensure score is in valid range
             score = max(0, min(100, score))
-            
+
             return round(score, 1)
-        
+
         except Exception as e:
             logger.error(f"Error in LLM judge: {e}")
             # Fallback to simple method
             return self._faithfulness_simple(response, nodes)
-    
+
     # ========================================================================
     # METRIC 3: QUERY COMPLEXITY
     # ========================================================================
-    
+
     def calculate_query_complexity(self, cypher_query: str) -> str:
         """
         Classify query difficulty based on Cypher structure.
-        
+
         Algorithm: Count structural elements (MATCH, UNION, relationships)
         - Simple: Single MATCH, 1-2 relationships
         - Medium: Multiple MATCH or OPTIONAL, 3-5 relationships
         - Complex: UNION queries, 6+ relationships, nested patterns
-        
+
         Args:
             cypher_query: Generated Cypher query
-            
+
         Returns:
             "SIMPLE" / "MEDIUM" / "COMPLEX"
         """
         if not cypher_query:
             return "SIMPLE"
-        
+
         query_upper = cypher_query.upper()
-        
+
         # Count structural elements
-        match_count = query_upper.count('MATCH')
-        union_count = query_upper.count('UNION')
-        optional_count = query_upper.count('OPTIONAL')
-        relationship_count = query_upper.count('-[')
-        where_count = query_upper.count('WHERE')
-        
+        match_count = query_upper.count("MATCH")
+        union_count = query_upper.count("UNION")
+        optional_count = query_upper.count("OPTIONAL")
+        relationship_count = query_upper.count("-[")
+        where_count = query_upper.count("WHERE")
+
         # Calculate complexity score
         # Weights based on GraphRAG best practices
         score = (
-            match_count * 1.0 +
-            union_count * 3.0 +      # UNIONs are complex
-            optional_count * 1.5 +   # OPTIONAL adds complexity
-            relationship_count * 0.5 +
-            where_count * 0.5
+            match_count * 1.0
+            + union_count * 3.0  # UNIONs are complex
+            + optional_count * 1.5  # OPTIONAL adds complexity
+            + relationship_count * 0.5
+            + where_count * 0.5
         )
-        
+
         # Classify based on score
         if score <= 2.5:
             return "SIMPLE"
@@ -847,52 +928,52 @@ Return ONLY a number from 0-100, nothing else."""
             return "MEDIUM"
         else:
             return "COMPLEX"
-    
+
     # ========================================================================
     # METRIC 4: GRAPH COVERAGE
     # ========================================================================
-    
-    def calculate_graph_coverage(self, retrieved_nodes: List[Dict]) -> float:
+
+    def calculate_graph_coverage(self, retrieved_nodes: list[dict]) -> float:
         """
         Average hop distance from initial query concepts.
-        
+
         Algorithm: Track how deep into the graph we explored
         - 1.0: Only direct query matches
         - 2.0: 1-hop neighbors (good exploration)
         - 3.0+: 2+ hop neighbors (deep exploration)
-        
+
         Args:
             retrieved_nodes: List of retrieved nodes
-            
+
         Returns:
             1.0-3.0+ (average hop distance)
         """
         if not retrieved_nodes:
             return 1.0
-        
+
         # Extract hop distances from node metadata
         hop_distances = []
-        
+
         for node in retrieved_nodes:
             # Try to get hop_distance from metadata
-            hop = node.get('hop_distance', None)
-            
+            hop = node.get("hop_distance", None)
+
             # If not available, infer from source
             if hop is None:
-                source = node.get('source', 'graph')
-                if source == 'semantic':
+                source = node.get("source", "graph")
+                if source == "semantic":
                     hop = 1  # Semantic nodes are typically 1-hop similar
                 else:
                     hop = 1  # Default to 1 for graph nodes
-            
+
             hop_distances.append(hop)
-        
+
         if not hop_distances:
             return 1.0
-        
+
         # Calculate average hop distance
         avg_hops = np.mean(hop_distances)
-        
+
         return round(avg_hops, 1)
 
 
@@ -902,20 +983,20 @@ Return ONLY a number from 0-100, nothing else."""
 
 if __name__ == "__main__":
     """Test the metrics calculator with mock data"""
-    
+
     # Configure logging
     logging.basicConfig(level=logging.INFO)
-    
+
     print("=" * 80)
     print("QUERY METRICS CALCULATOR - TEST")
     print("=" * 80)
-    
+
     # Create calculator in hybrid_auto mode (will fallback to simple if no OpenAI client)
     # For testing without API costs, we don't provide an OpenAI client
     # In production (Streamlit), the client is provided automatically
     calculator = MetricsCalculator(mode="hybrid_auto", openai_client=None)
     print(f"\n💡 Mode: {calculator.mode} (Note: Falls back to 'simple' without OpenAI client)\n")
-    
+
     # Mock data
     test_query = "Come funziona la memoria di lavoro?"
     test_nodes = [
@@ -925,7 +1006,7 @@ if __name__ == "__main__":
             "description": "Short-term storage system for information processing",
             "labels": ["CognitiveProcess"],
             "source": "graph",
-            "hop_distance": 1
+            "hop_distance": 1,
         },
         {
             "name": "Executive Functions",
@@ -933,7 +1014,7 @@ if __name__ == "__main__":
             "description": "Higher-order cognitive processes for goal-directed behavior",
             "labels": ["ExecutiveFunctions"],
             "source": "graph",
-            "hop_distance": 1
+            "hop_distance": 1,
         },
         {
             "name": "Attention",
@@ -941,12 +1022,12 @@ if __name__ == "__main__":
             "description": "Selective focus on relevant information",
             "labels": ["Attention"],
             "source": "semantic",
-            "hop_distance": 2
-        }
+            "hop_distance": 2,
+        },
     ]
     test_response = "La memoria di lavoro è un sistema di archiviazione a breve termine che supporta l'elaborazione delle informazioni. È strettamente collegata alle funzioni esecutive e all'attenzione selettiva."
     test_cypher = "MATCH (m:WorkingMemory)-[r:SUPPORTS]->(e:ExecutiveFunctions) RETURN m, r, e"
-    
+
     # Calculate metrics
     print("\n📊 Calculating metrics...")
     metrics = calculator.calculate_all(
@@ -954,9 +1035,9 @@ if __name__ == "__main__":
         retrieved_nodes=test_nodes,
         llm_response=test_response,
         cypher_query=test_cypher,
-        total_relationships=1
+        total_relationships=1,
     )
-    
+
     # Display results
     print("\n✅ RESULTS:")
     print(f"  Context Relevance:   {metrics.context_relevance}%")
@@ -966,8 +1047,7 @@ if __name__ == "__main__":
     print(f"  Evaluation Mode:     {metrics.evaluation_mode}")
     print(f"  Total Nodes:         {metrics.total_nodes}")
     print(f"  Total Relationships: {metrics.total_relationships}")
-    
+
     print("\n" + "=" * 80)
     print("✅ Test completed successfully!")
     print("=" * 80)
-

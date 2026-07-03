@@ -49,6 +49,10 @@
          class="aix-nav-link {% if nav_active == 'new' %}is-active{% endif %}">
         Crea lezione
       </a>
+      <a href="/webui/about-ai"
+         class="aix-nav-link {% if nav_active == 'about' %}is-active{% endif %}">
+        Come funziona l'IA
+      </a>
       <a href="/docs"
          class="aix-nav-link {% if nav_active == 'resources' %}is-active{% endif %}">
         Risorse
@@ -61,14 +65,11 @@
        for now Enter just submits the disabled form (no-op). #}
     <form action="#" method="get" class="aix-nav-search hidden md:flex"
           onsubmit="event.preventDefault();">
-      <wa-icon name="magnifying-glass" style="font-size:13px;"></wa-icon>
+      <wa-icon name="magnifying-glass" class="aix-fs-13"></wa-icon>
       <input type="search" placeholder="Cerca…"
              aria-label="Cerca"
-             style="background:transparent; border:0; outline:none;
-                    color:var(--aix-text-on-dark); width:100%; font-size:13px;">
-      <kbd style="font-size:10px; opacity:0.7; padding:1px 5px;
-                  border:1px solid var(--aix-border-on-dark);
-                  border-radius:4px;">⌘K</kbd>
+             class="aix-nav-search-input">
+      <kbd class="aix-fs-11 aix-kbd-shortcut">⌘K</kbd>
     </form>
 
     {# User affordance: avatar + dropdown for authenticated users, login /
@@ -82,7 +83,7 @@
                    @wa-select="if ($event.detail.item.value) { window.location.href = $event.detail.item.value }">
         <button slot="trigger" type="button" class="aix-nav-avatar">
           <span class="aix-nav-avatar-circle">{{ initials }}</span>
-          <wa-icon name="chevron-down" style="font-size:11px; opacity:0.7;"></wa-icon>
+          <wa-icon name="chevron-down" class="aix-fs-11 aix-nav-chevron"></wa-icon>
         </button>
 
         <wa-dropdown-item disabled>
@@ -104,8 +105,7 @@
         </wa-dropdown-item>
       </wa-dropdown>
     {% else %}
-      <a href="/auth/login" class="aix-btn aix-btn-outline aix-btn-sm"
-         style="border-color:var(--aix-border-on-dark); color:var(--aix-text-on-dark);">
+      <a href="/auth/login" class="aix-btn aix-btn-outline aix-btn-sm aix-btn-nav-auth">
         Accedi
       </a>
       <a href="/auth/register" class="aix-btn aix-btn-primary aix-btn-sm">

@@ -32,7 +32,7 @@
   {% endif %}
 {% endif %}
 
-<div class="aix-agent-shell">
+<div id="critic-card-rev{{ p.get('write_revision', 1) }}" hx-swap-oob="outerHTML" class="aix-agent-shell">
 
   <div class="aix-agent-avatar aix-agent-avatar--critic">
     <wa-icon name="shield-check"></wa-icon>
@@ -43,31 +43,31 @@
 
       <header class="aix-agent-card-header aix-agent-card-header--critic">
         <div class="aix-agent-card-title">
-          <strong>Critic Agent</strong>
+          <strong>Revisione pedagogica</strong>
           <span class="aix-agent-card-role">· revisione {{ rev_count }}/{{ max_rev }}</span>
         </div>
+        <span class="aix-arched-phase">Quality Assurance</span>
         {% if approved %}
           <span class="aix-pill aix-pill-success">
-            <wa-icon name="circle-check" style="font-size:0.7rem;"></wa-icon>
+            <wa-icon name="circle-check" class="aix-fs-xs"></wa-icon>
             approvata
           </span>
         {% else %}
           <span class="aix-pill aix-pill-warning">
-            <wa-icon name="rotate" style="font-size:0.7rem;"></wa-icon>
+            <wa-icon name="rotate" class="aix-fs-xs"></wa-icon>
             revisione richiesta
           </span>
         {% endif %}
       </header>
 
-      <div class="aix-agent-card-body" style="display:flex; flex-direction:column; gap:12px;">
+      <div class="aix-agent-card-body aix-col-12">
 
         {# Score visualization #}
         {% if score_pct is not none %}
-          <div style="display:flex; flex-direction:column; gap:4px;">
-            <div style="display:flex; align-items:center; justify-content:space-between;
-                        font-size:12px;">
-              <span style="color:var(--aix-text-tertiary);">Punteggio qualità</span>
-              <span style="font-weight:600; color:var(--aix-text-primary);">{{ score_pct }}%</span>
+          <div class="aix-col-4">
+            <div class="flex items-center justify-between aix-fs-12">
+              <span class="aix-color-tertiary">Punteggio qualità</span>
+              <span class="aix-color-primary aix-fw-600">{{ score_pct }}%</span>
             </div>
             <div class="aix-score-bar">
               <div class="aix-score-bar-fill {{ _score_class }}" style="width: {{ score_pct }}%;"></div>
@@ -78,11 +78,10 @@
         {# Critic's narrative feedback #}
         {% if p.get('critique') %}
           <details>
-            <summary class="aix-section-label" style="cursor:pointer; user-select:none;">
+            <summary class="aix-section-label aix-clickable">
               Mostra la valutazione completa
             </summary>
-            <p style="margin:8px 0 0; font-size:13px; line-height:1.6;
-                      color:var(--aix-text-primary); white-space:pre-wrap;">
+            <p class="aix-color-primary aix-fs-13 aix-critique-body">
               {{ p.critique }}
             </p>
           </details>
@@ -90,22 +89,19 @@
 
         {# Revision instructions (if not approved) #}
         {% if not approved and p.get('revision_instructions') %}
-          <div style="border:1px solid rgba(212,164,90,0.32);
-                      background:var(--aix-amber-soft);
-                      border-radius:var(--aix-radius-sm); padding:8px 12px;">
-            <div class="aix-section-label" style="color:var(--aix-amber-hover);">
-              <wa-icon name="lightbulb" style="font-size:0.7rem;"></wa-icon>
+          <div class="aix-revision-box">
+            <div class="aix-section-label aix-color-amber">
+              <wa-icon name="lightbulb" class="aix-fs-xs"></wa-icon>
               Istruzioni di revisione passate al Writer
             </div>
-            <p style="margin:4px 0 0; font-size:13px; color:var(--aix-text-primary);
-                      white-space:pre-wrap;">
+            <p class="aix-color-primary aix-fs-13 aix-revision-instructions">
               {{ p.revision_instructions }}
             </p>
           </div>
         {% endif %}
 
         {% if not approved and rev_count >= max_rev %}
-          <p style="font-size:12px; font-style:italic; color:var(--aix-text-tertiary); margin:0;">
+          <p class="aix-footnote-sm m-0">
             Limite revisioni raggiunto: l'ultima bozza viene presentata
             comunque come risultato finale.
           </p>
@@ -115,7 +111,7 @@
 
     </article>
     <div class="aix-agent-footer-label">
-      <wa-icon name="shield-check" style="font-size:0.75rem;"></wa-icon>
+      <wa-icon name="shield-check" class="aix-fs-sm"></wa-icon>
       <span>Critic · {% if approved %}approvata{% else %}revisione {{ rev_count }}{% endif %}</span>
     </div>
   </div>

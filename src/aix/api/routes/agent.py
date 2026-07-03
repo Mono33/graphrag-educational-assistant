@@ -24,8 +24,11 @@ Routes
 Both routes:
     * Reuse ``aix.webui.agent.service.stream_agent_events`` — a DB-less
       sibling of the webui's ``run_agent_stream``. Zero new agent code.
-    * Authenticate via fastapi-users' ``current_active_user`` — accepts
-      either the webui cookie OR ``Authorization: Bearer <jwt>``.
+    * Authenticate via ``_require_caller`` — accepts any of:
+        - webui cookie (browser)
+        - ``Authorization: Bearer <jwt>`` (API / Postman)
+        - HTTP Basic Auth with ``GRAPH_API_USERNAME`` / ``GRAPH_API_PWD``
+          env vars (service-to-service, e.g. AixLearning Dramatiq worker)
     * Are strictly additive: they do NOT touch the existing
       ``/api/v1/context``, ``/webui/*``, or ``/auth/*`` surfaces.
 
@@ -36,29 +39,69 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import secrets
 import uuid
-from typing import AsyncIterator, Optional
+from collections.abc import AsyncIterator
+from typing import Optional
 
-from fastapi import APIRouter, Body, Depends, HTTPException, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Response, status
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from sse_starlette.sse import EventSourceResponse
 
+from aix.core.ai_marking import AI_GENERATED_HEADER, AI_GENERATED_HEADER_VALUE
+
 from aix.api.schemas import (
+    AgentRunMeta,
     AgentRunRequest,
     AgentRunResponse,
-    AgentRunMeta,
     CriticScores,
     MediaCounts,
     PlannerInfo,
     RetrieverInfo,
 )
-from aix.webui.auth import current_active_user
-from aix.webui.auth.models import User
+from aix.core.concurrency import (
+    AtCapacity,
+    RateLimited,
+    check_user_rate_limit,
+    run_slot,
+)
 from aix.webui.agent.service import StreamEvent, stream_agent_events
+from aix.webui.auth.dependencies import optional_current_user
+from aix.webui.auth.models import User
 
 logger = logging.getLogger(__name__)
 
 
 router = APIRouter(prefix="/agent", tags=["agent"])
+
+# ---------------------------------------------------------------------------
+# Dual-auth dependency: accepts Bearer JWT / cookie (webui) OR HTTP Basic Auth
+# (service-to-service, e.g. AixLearning Dramatiq worker calling this endpoint
+# from the internal Docker network).  Basic Auth credentials are read from
+# GRAPH_API_USERNAME / GRAPH_API_PWD env vars — the same pair already used by
+# AixLearning's existing GraphRagService wrapper for /api/v1/context.
+# ---------------------------------------------------------------------------
+
+_basic_security = HTTPBasic(auto_error=False)
+
+
+async def _require_caller(
+    basic: Optional[HTTPBasicCredentials] = Depends(_basic_security),
+    user: Optional[User] = Depends(optional_current_user),
+) -> User | str:
+    """Authenticate via JWT/cookie (browser/webui) OR Basic Auth (service account)."""
+    if basic is not None:
+        svc_user = os.getenv("GRAPH_API_USERNAME", "")
+        svc_pwd = os.getenv("GRAPH_API_PWD", "")
+        if svc_user and svc_pwd:
+            user_ok = secrets.compare_digest(basic.username.encode(), svc_user.encode())
+            pwd_ok = secrets.compare_digest(basic.password.encode(), svc_pwd.encode())
+            if user_ok and pwd_ok:
+                return "service_account"
+    if user is not None:
+        return user
+    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
 
 # ---------------------------------------------------------------------------
@@ -109,7 +152,7 @@ _AGENT_REQUEST_OPENAPI_EXAMPLES: dict = {
             ),
             "domain": "neuro",
             "language": "it",
-            "max_revisions": 2,
+            "max_revisions": 1,
             "educational_profile": {
                 "group": {
                     "title": "3A Liceo Scientifico",
@@ -246,11 +289,12 @@ def _retriever_payload_to_pydantic(payload: dict) -> RetrieverInfo:
     },
 )
 async def run_agent(
+    response: Response,
     payload: AgentRunRequest = Body(
         ...,
         openapi_examples=_AGENT_REQUEST_OPENAPI_EXAMPLES,
     ),
-    user: User = Depends(current_active_user),
+    caller: User | str = Depends(_require_caller),
 ) -> AgentRunResponse:
     """
     Drain ``stream_agent_events`` to completion and assemble the final
@@ -275,48 +319,79 @@ async def run_agent(
     final_meta: Optional[AgentRunMeta] = None
     error_message: Optional[str] = None
 
-    async for event in stream_agent_events(
-        query=payload.query,
-        domain=payload.domain,
-        language=payload.language,
-        session_id=session_id,
-        educational_profile=profile_dict,
-        teacher_provided_context=payload.teacher_provided_context,
-        max_revisions=payload.max_revisions,
-    ):
-        if event.kind == "planner":
-            planner_info = _planner_payload_to_pydantic(event.payload or {})
-        elif event.kind == "retriever":
-            retriever_info = _retriever_payload_to_pydantic(event.payload or {})
-        elif event.kind == "done":
-            final_lesson_plan = event.lesson_plan_md or ""
-            final_meta = _meta_to_pydantic(event.meta or {})
-        elif event.kind == "error":
-            error_message = event.error or "Unknown agent error"
-            # Don't break — the stream is finite; we'll fall through and
-            # raise after the loop terminates so we always release any
-            # outstanding state.
-
-    if error_message is not None or final_meta is None:
-        # 502 (Bad Gateway) communicates "the agent pipeline failed", which
-        # is more accurate than a 500 (we, the route, didn't crash) and
-        # tells partner clients the request is potentially retryable.
+    # CORE 6 #33 — per-user rate limit. Checked before the run slot so an
+    # abusive caller is rejected cheaply (429) without consuming a slot.
+    caller_id = caller if isinstance(caller, str) else caller.email
+    try:
+        check_user_rate_limit(f"api:{caller_id}")
+    except RateLimited as exc:
         raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=error_message or "Agent finished without a lesson plan",
-        )
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=(
+                "Hai inviato troppe richieste in poco tempo. "
+                f"Riprova tra {int(exc.retry_after) + 1} secondi."
+            ),
+            headers={"Retry-After": str(int(exc.retry_after) + 1)},
+        ) from exc
 
-    logger.info(
-        "[api.agent] /run complete user=%s session=%s duration=%.1fs",
-        user.email, session_id, final_meta.duration_seconds,
-    )
+    # CORE 6 #31/#34 — acquire a global generation slot or shed load with a
+    # 503 (Service Unavailable) so partner clients know to back off / retry.
+    try:
+        async with run_slot(label=f"api-run:{session_id}"):
+            async for event in stream_agent_events(
+                query=payload.query,
+                domain=payload.domain,
+                language=payload.language,
+                session_id=session_id,
+                educational_profile=profile_dict,
+                teacher_provided_context=payload.teacher_provided_context,
+                max_revisions=payload.max_revisions,
+            ):
+                if event.kind == "planner":
+                    planner_info = _planner_payload_to_pydantic(event.payload or {})
+                elif event.kind == "retriever":
+                    retriever_info = _retriever_payload_to_pydantic(event.payload or {})
+                elif event.kind == "done":
+                    final_lesson_plan = event.lesson_plan_md or ""
+                    final_meta = _meta_to_pydantic(event.meta or {})
+                elif event.kind == "error":
+                    error_message = event.error or "Unknown agent error"
+                    # Don't break — the stream is finite; we'll fall through and
+                    # raise after the loop terminates so we always release any
+                    # outstanding state.
 
-    return AgentRunResponse(
-        lesson_plan_md=final_lesson_plan,
-        meta=final_meta,
-        planner=planner_info,
-        retriever=retriever_info,
-    )
+            if error_message is not None or final_meta is None:
+                # 502 (Bad Gateway) communicates "the agent pipeline failed",
+                # which is more accurate than a 500 (we, the route, didn't
+                # crash) and tells partner clients the request is retryable.
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail=error_message or "Agent finished without a lesson plan",
+                )
+
+            logger.info(
+                "[api.agent] /run complete caller=%s session=%s duration=%.1fs",
+                caller_id,
+                session_id,
+                final_meta.duration_seconds,
+            )
+
+            # EU AI Act Art. 50 (#21) — machine-readable marking on the response.
+            response.headers[AI_GENERATED_HEADER] = AI_GENERATED_HEADER_VALUE
+            return AgentRunResponse(
+                lesson_plan_md=final_lesson_plan,
+                meta=final_meta,
+                planner=planner_info,
+                retriever=retriever_info,
+            )
+    except AtCapacity as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Il sistema è momentaneamente occupato: troppe generazioni in corso. "
+                "Riprova tra qualche istante."
+            ),
+        ) from exc
 
 
 @router.post(
@@ -349,7 +424,7 @@ async def stream_agent(
         ...,
         openapi_examples=_AGENT_REQUEST_OPENAPI_EXAMPLES,
     ),
-    user: User = Depends(current_active_user),
+    caller: User | str = Depends(_require_caller),
 ) -> EventSourceResponse:
     """
     Wrap ``stream_agent_events`` in an SSE response that JSON-encodes
@@ -363,9 +438,27 @@ async def stream_agent(
         else None
     )
 
+    caller_id = caller if isinstance(caller, str) else caller.email
+
+    # CORE 6 #33 — per-user rate limit. Rejected before the stream opens
+    # (and before a run slot is acquired) with a 429 + Retry-After.
+    try:
+        check_user_rate_limit(f"api:{caller_id}")
+    except RateLimited as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=(
+                "Hai inviato troppe richieste in poco tempo. "
+                f"Riprova tra {int(exc.retry_after) + 1} secondi."
+            ),
+            headers={"Retry-After": str(int(exc.retry_after) + 1)},
+        ) from exc
+
     logger.info(
-        "[api.agent] /stream open user=%s session=%s domain=%s",
-        user.email, session_id, payload.domain,
+        "[api.agent] /stream open caller=%s session=%s domain=%s",
+        caller_id,
+        session_id,
+        payload.domain,
     )
 
     async def _publisher() -> AsyncIterator[dict]:
@@ -373,21 +466,45 @@ async def stream_agent(
         # ``dict`` (with ``event`` / ``data`` / ``id`` keys) or a string.
         # We always yield a dict so the consumer sees per-event ``event:``
         # lines, useful for clients that filter on event type.
-        async for event in stream_agent_events(
-            query=payload.query,
-            domain=payload.domain,
-            language=payload.language,
-            session_id=session_id,
-            educational_profile=profile_dict,
-            teacher_provided_context=payload.teacher_provided_context,
-            max_revisions=payload.max_revisions,
-        ):
-            body = _serialise_event(event)
+        #
+        # CORE 6 #31/#34 — acquire a global generation slot or shed load with
+        # an ``error`` event so SSE clients can surface "sistema occupato".
+        try:
+            async with run_slot(label=f"api-stream:{session_id}"):
+                async for event in stream_agent_events(
+                    query=payload.query,
+                    domain=payload.domain,
+                    language=payload.language,
+                    session_id=session_id,
+                    educational_profile=profile_dict,
+                    teacher_provided_context=payload.teacher_provided_context,
+                    max_revisions=payload.max_revisions,
+                ):
+                    body = _serialise_event(event)
+                    yield {
+                        "event": event.kind,
+                        "data": json.dumps(body, ensure_ascii=False, default=str),
+                    }
+        except AtCapacity:
             yield {
-                "event": event.kind,
-                "data": json.dumps(body, ensure_ascii=False, default=str),
+                "event": "error",
+                "data": json.dumps(
+                    {
+                        "kind": "error",
+                        "error": (
+                            "Il sistema è momentaneamente occupato: troppe generazioni "
+                            "in corso. Riprova tra qualche istante."
+                        ),
+                    },
+                    ensure_ascii=False,
+                ),
             }
 
     # ``ping=15`` keeps proxies / load balancers from killing idle
     # connections during the slow Writer call (60-90s LLM round-trip).
-    return EventSourceResponse(_publisher(), ping=15)
+    # EU AI Act Art. 50 (#21) — machine-readable marking on the SSE response.
+    return EventSourceResponse(
+        _publisher(),
+        ping=15,
+        headers={AI_GENERATED_HEADER: AI_GENERATED_HEADER_VALUE},
+    )

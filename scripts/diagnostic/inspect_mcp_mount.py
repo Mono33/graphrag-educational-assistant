@@ -16,7 +16,7 @@ print("=" * 70)
 print("STEP 1: Import aix.mcp.http_app directly")
 print("=" * 70)
 try:
-    from aix.mcp.http_app import build_mcp_http_app, MCP_MOUNT_PATH
+    from aix.mcp.http_app import MCP_MOUNT_PATH, build_mcp_http_app
 
     print(f"OK — MCP_MOUNT_PATH = {MCP_MOUNT_PATH}")
 except Exception as exc:
@@ -40,7 +40,7 @@ print("=" * 70)
 print("STEP 3: Import aix.api.main (full FastAPI app)")
 print("=" * 70)
 try:
-    from aix.api.main import app, _mcp_http_app
+    from aix.api.main import _mcp_http_app, app
 
     print(f"OK — _mcp_http_app = {type(_mcp_http_app).__name__ if _mcp_http_app else 'None'}")
 except Exception as exc:

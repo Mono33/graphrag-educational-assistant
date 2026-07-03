@@ -52,7 +52,9 @@ Reentrancy / concurrency:
     The compiled graph and its underlying agents are module-level singletons
     inside ``aix.agent.graph.nodes``. That's fine for a single user dev box
     but worth re-evaluating in CORE 6 deploy. The route layer enforces
-    one in-flight run per ``lesson.id`` via ``_ACTIVE_RUNS``.
+    one in-flight run per ``lesson.id`` via the run registry
+    (``aix.core.run_registry`` — in-memory on SQLite dev, shared Postgres
+    ``agent_run`` table across workers in prod, #37).
 """
 
 from __future__ import annotations
@@ -60,11 +62,14 @@ from __future__ import annotations
 import logging
 import os
 import time
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
+from typing import Any, Optional
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from aix.core.ai_marking import ensure_marking
 
 logger = logging.getLogger(__name__)
 
@@ -115,16 +120,17 @@ _INTENT_LABELS: dict[str, str] = {
 # partial / out_of_scope are "warning" (amber) because the lesson will be
 # composed primarily from external sources (Wikipedia, OER).
 _SCOPE_LABELS: dict[str, tuple[str, str]] = {
-    "in_scope":      ("Nel Knowledge Graph",     "success"),
-    "partial_scope": ("Parzialmente nel KG",     "warning"),
-    "out_of_scope":  ("Fuori dal KG",            "warning"),
-    "unknown":       ("Scope sconosciuto",       "neutral"),
+    "in_scope": ("Nel Knowledge Graph", "success"),
+    "partial_scope": ("Parzialmente nel KG", "warning"),
+    "out_of_scope": ("Fuori dal KG", "warning"),
+    "unknown": ("Scope sconosciuto", "neutral"),
 }
 
 
 # ---------------------------------------------------------------------------
 # Event model — what the route layer / SSE rendering consumes
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class StreamEvent:
@@ -168,15 +174,20 @@ class StreamEvent:
                      scores, nodes_count, recommendations_count,
                      media_counts, search_queries_count }
 
+        kind=="writer_chunk"
+            payload = { token: "<raw text delta from streaming Writer LLM>" }
+            Emitted many times during write_node — one per LLM output token.
+            The webUI JS appends each token to #writer-stream-{lesson_id}.
+
         kind=="error"
             error = "<short message, ≤ 480 chars>"
     """
 
     kind: str
-    payload: Dict[str, Any] = field(default_factory=dict)
+    payload: dict[str, Any] = field(default_factory=dict)
     lesson_plan_md: Optional[str] = None
     error: Optional[str] = None
-    meta: Dict[str, Any] = field(default_factory=dict)
+    meta: dict[str, Any] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -253,14 +264,10 @@ def _get_lingua_detector() -> Any:
             Language.FRENCH,
         ]
         _lingua_detector = (
-            LanguageDetectorBuilder
-            .from_languages(*languages)
-            .with_low_accuracy_mode()
-            .build()
+            LanguageDetectorBuilder.from_languages(*languages).with_low_accuracy_mode().build()
         )
         logger.info(
-            "[language] lingua-language-detector initialized (4 languages, "
-            "low-accuracy mode)"
+            "[language] lingua-language-detector initialized (4 languages, low-accuracy mode)"
         )
         return _lingua_detector
     except Exception as exc:  # ImportError, runtime errors, etc.
@@ -269,7 +276,8 @@ def _get_lingua_detector() -> Any:
             "[language] lingua-language-detector unavailable (%s) — "
             "falling back to default %r. To enable statistical detection: "
             "pip install lingua-language-detector",
-            exc, _DEFAULT_LANGUAGE,
+            exc,
+            _DEFAULT_LANGUAGE,
         )
         return None
 
@@ -305,9 +313,10 @@ def _detect_language(query: str) -> str:
         # Defensive: detector should be pure-python and side-effect-free,
         # but we don't want a language-detection blip to crash the run.
         logger.warning(
-            "[language] lingua detection failed for query (len=%d): %s — "
-            "defaulting to %r",
-            len(text), exc, _DEFAULT_LANGUAGE,
+            "[language] lingua detection failed for query (len=%d): %s — defaulting to %r",
+            len(text),
+            exc,
+            _DEFAULT_LANGUAGE,
         )
         return _DEFAULT_LANGUAGE
 
@@ -348,21 +357,17 @@ def _query_from_lesson(lesson: Any) -> str:
     return " ".join(parts)
 
 
-def _extract_lesson_plan_md(final_state: Dict[str, Any]) -> str:
+def _extract_lesson_plan_md(final_state: dict[str, Any]) -> str:
     """
     The lesson plan ends up under ``final_lesson_plan`` after a successful
     run, or ``lesson_plan_draft`` if the critic loop bailed out before
     approving. Empty string if neither is present (degenerate case — the
     route layer will surface this as an error).
     """
-    return (
-        final_state.get("final_lesson_plan")
-        or final_state.get("lesson_plan_draft")
-        or ""
-    )
+    return final_state.get("final_lesson_plan") or final_state.get("lesson_plan_draft") or ""
 
 
-def _count_media(media: Optional[Dict[str, Any]]) -> Dict[str, int]:
+def _count_media(media: Optional[dict[str, Any]]) -> dict[str, int]:
     """
     Reduce the ``curated_media`` dict to a flat tallied summary suitable
     for the retriever card and the final run summary.
@@ -389,9 +394,10 @@ def _count_media(media: Optional[Dict[str, Any]]) -> Dict[str, int]:
         return len(value) if isinstance(value, (list, dict)) else 0
 
     return {
-        "videos":   _len_of("videos"),
+        "videos": _len_of("videos"),
         "articles": _len_of("citations"),
-        "oer":      _len_of("resources") + _len_of("open_textbooks"),
+        "oer": _len_of("resources") + _len_of("open_textbooks"),
+        "web": _len_of("web_links"),
     }
 
 
@@ -458,7 +464,7 @@ _HISTORY_USER_EXCERPT_CHARS = 1500
 async def _load_conversation_history(
     session: AsyncSession,
     lesson_id: Any,
-) -> List[Dict[str, str]]:
+) -> list[dict[str, str]]:
     """
     Load the prior-turn ``LessonMessage`` rows (excluding the current
     in-progress turn) and shape them into the
@@ -478,8 +484,7 @@ async def _load_conversation_history(
     from aix.webui.lessons.models import LessonMessage
 
     latest_turn = await session.scalar(
-        select(func.max(LessonMessage.turn_index))
-        .where(LessonMessage.lesson_id == lesson_id)
+        select(func.max(LessonMessage.turn_index)).where(LessonMessage.lesson_id == lesson_id)
     )
     if not latest_turn or latest_turn < 2:
         # Either no rows (legacy lesson with backfill skipped, or the
@@ -493,7 +498,7 @@ async def _load_conversation_history(
         .where(LessonMessage.turn_index < latest_turn)
         .order_by(LessonMessage.turn_index, LessonMessage.created_at)
     )
-    history: List[Dict[str, str]] = []
+    history: list[dict[str, str]] = []
     for msg in rows_result.scalars().all():
         if msg.role not in ("user", "assistant"):
             # Reserved roles (``system`` for #10.4 summary buffer) are
@@ -505,7 +510,7 @@ async def _load_conversation_history(
 
 def _augment_query_with_history(
     raw_query: str,
-    history: List[Dict[str, str]],
+    history: list[dict[str, str]],
     summary: Optional[str],
     language: str,
 ) -> str:
@@ -542,14 +547,14 @@ def _augment_query_with_history(
 
     is_it = (language or "it").lower().startswith("it")
 
-    history_label  = "Conversazione precedente"        if is_it else "Previous conversation"
-    summary_label  = "Sintesi dei turni più vecchi"    if is_it else "Summary of older turns"
-    turn_label     = "Turno"                            if is_it else "Turn"
-    user_label     = "Docente"                          if is_it else "Teacher"
-    asst_label     = "Risposta dell'assistente"         if is_it else "Assistant reply"
-    request_label  = "Nuova richiesta del docente"     if is_it else "New request from the teacher"
+    history_label = "Conversazione precedente" if is_it else "Previous conversation"
+    summary_label = "Sintesi dei turni più vecchi" if is_it else "Summary of older turns"
+    turn_label = "Turno" if is_it else "Turn"
+    user_label = "Docente" if is_it else "Teacher"
+    asst_label = "Risposta dell'assistente" if is_it else "Assistant reply"
+    request_label = "Nuova richiesta del docente" if is_it else "New request from the teacher"
 
-    parts: List[str] = [f"## {history_label}", ""]
+    parts: list[str] = [f"## {history_label}", ""]
 
     if summary and summary.strip():
         parts.append(f"### {summary_label}")
@@ -626,9 +631,9 @@ def _window_turns_from_env() -> int:
 
 
 async def _maybe_window_history(
-    history: List[Dict[str, str]],
+    history: list[dict[str, str]],
     language: str,
-) -> Tuple[Optional[str], List[Dict[str, str]]]:
+) -> tuple[Optional[str], list[dict[str, str]]]:
     """
     Apply summary-buffer windowing to ``history`` when it exceeds the
     configured window size.
@@ -660,7 +665,8 @@ async def _maybe_window_history(
     except Exception as exc:  # noqa: BLE001
         logger.warning(
             "[webui.agent] history summarisation failed: %s; "
-            "passing full history without windowing", exc,
+            "passing full history without windowing",
+            exc,
         )
         return None, history
 
@@ -676,13 +682,15 @@ async def _maybe_window_history(
     logger.info(
         "[webui.agent] windowing applied: summarised %s older messages "
         "into %s chars; kept %s recent messages verbatim",
-        len(older), len(summary), len(recent),
+        len(older),
+        len(summary),
+        len(recent),
     )
     return summary.strip(), recent
 
 
 async def _summarise_history(
-    older_messages: List[Dict[str, str]],
+    older_messages: list[dict[str, str]],
     language: str,
 ) -> str:
     """
@@ -699,7 +707,9 @@ async def _summarise_history(
     # Local import to avoid pulling the OpenAI stack into the module's
     # cold import path (test collection, etc.). Mirrors the pattern in
     # ``run_agent_stream``.
-    from aix.core.config import config as app_config, extract_response_content
+    from aix.core.concurrency import guarded_chat_completion
+    from aix.core.config import config as app_config
+    from aix.core.config import extract_response_content
 
     if not older_messages:
         return ""
@@ -707,7 +717,7 @@ async def _summarise_history(
     # Format the older messages as a compact transcript. Truncate each
     # individual message at 1200 chars so a single long lesson plan can't
     # blow the summariser's input budget.
-    transcript_lines: List[str] = []
+    transcript_lines: list[str] = []
     for m in older_messages:
         role = (m.get("role") or "").strip().lower()
         content = (m.get("content") or "").strip()
@@ -734,8 +744,7 @@ async def _summarise_history(
             "Non aggiungere commenti, scrivi solo il riassunto."
         )
         user_prompt = (
-            "Riassumi la seguente conversazione (turni più vecchi) in "
-            "italiano:\n\n" + transcript
+            "Riassumi la seguente conversazione (turni più vecchi) in italiano:\n\n" + transcript
         )
     else:
         system_prompt = (
@@ -747,8 +756,7 @@ async def _summarise_history(
             "commentary — output only the summary."
         )
         user_prompt = (
-            "Summarise the following conversation (older turns) in "
-            "English:\n\n" + transcript
+            "Summarise the following conversation (older turns) in English:\n\n" + transcript
         )
 
     client = app_config.openai.get_async_client()
@@ -756,7 +764,8 @@ async def _summarise_history(
         temperature=0.2,
         max_tokens=600,
     )
-    response = await client.chat.completions.create(
+    response = await guarded_chat_completion(
+        client,
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
@@ -770,7 +779,7 @@ async def _persist_assistant_turn(
     session: AsyncSession,
     lesson_id: Any,
     content_md: str,
-    meta: Dict[str, Any],
+    meta: dict[str, Any],
 ) -> None:
     """
     Append the assistant's response for the current turn to the
@@ -794,20 +803,25 @@ async def _persist_assistant_turn(
     from aix.webui.lessons.models import LessonMessage
 
     try:
-        latest_turn = await session.scalar(
-            select(func.max(LessonMessage.turn_index))
-            .where(LessonMessage.lesson_id == lesson_id)
-            .where(LessonMessage.role == "user")
-        ) or 1
+        latest_turn = (
+            await session.scalar(
+                select(func.max(LessonMessage.turn_index))
+                .where(LessonMessage.lesson_id == lesson_id)
+                .where(LessonMessage.role == "user")
+            )
+            or 1
+        )
 
-        session.add(LessonMessage(
-            lesson_id=lesson_id,
-            role="assistant",
-            content_md=content_md,
-            turn_index=int(latest_turn),
-            agent_kind="writer",
-            meta_json=meta or None,
-        ))
+        session.add(
+            LessonMessage(
+                lesson_id=lesson_id,
+                role="assistant",
+                content_md=content_md,
+                turn_index=int(latest_turn),
+                agent_kind="writer",
+                meta_json=meta or None,
+            )
+        )
         await session.commit()
     except Exception:  # noqa: BLE001
         logger.exception(
@@ -824,7 +838,7 @@ async def _persist_assistant_turn(
             pass
 
 
-def _build_planner_payload(state: Dict[str, Any]) -> Dict[str, Any]:
+def _build_planner_payload(state: dict[str, Any]) -> dict[str, Any]:
     """Shape the post-plan state into the planner card's context."""
     intent = state.get("query_intent") or "unknown"
     scope = state.get("scope_status") or "unknown"
@@ -849,6 +863,7 @@ def _is_corrective_rag_enabled() -> bool:
     by ``build_lesson_planner_graph_async``. Imported here lazily to
     avoid a circular import on cold start (service → nodes → service)."""
     from aix.agent.graph.nodes import _corrective_rag_enabled
+
     return _corrective_rag_enabled()
 
 
@@ -865,7 +880,7 @@ def _resolve_max_attempts() -> int:
         return 2
 
 
-def _grader_will_retry(state: Dict[str, Any]) -> bool:
+def _grader_will_retry(state: dict[str, Any]) -> bool:
     """Mirror the routing logic of :func:`should_retry_retrieval` in
     ``nodes.py``. Returns True iff the corrective-RAG router will send
     the run BACK to the retriever instead of forward to the writer.
@@ -910,8 +925,8 @@ def _grader_will_retry(state: Dict[str, Any]) -> bool:
 # mutually exclusive (the template's outer guards see to that).
 # ---------------------------------------------------------------------------
 
-_DOMAIN_LABELS: Dict[str, Dict[str, str]] = {
-    "udl":   {"short": "UDL",   "long": "UDL (pedagogia inclusiva)"},
+_DOMAIN_LABELS: dict[str, dict[str, str]] = {
+    "udl": {"short": "UDL", "long": "UDL (pedagogia inclusiva)"},
     "neuro": {"short": "Neuro", "long": "Neuro"},
 }
 
@@ -934,7 +949,7 @@ def _coverage_healthy_threshold() -> int:
         return _COVERAGE_HEALTHY_DEFAULT
 
 
-def _resolve_domain_labels(domain: Optional[str]) -> Dict[str, str]:
+def _resolve_domain_labels(domain: Optional[str]) -> dict[str, str]:
     """Return the ``{short, long}`` label pair for ``domain``.
 
     Unknown domains fall back to the raw value as both short and long
@@ -973,8 +988,8 @@ _GRADER_EXCEPTION_REASON_PREFIX = "Grader exception:"
 
 
 def _compute_retrieval_outcome(
-    state: Dict[str, Any],
-    media_counts: Dict[str, int],
+    state: dict[str, Any],
+    media_counts: dict[str, int],
 ) -> str:
     """CORE 2 #9.UX-3 — derive the single ``retrieval_outcome`` token that
     drives the chat card's color, headline, and explanatory copy.
@@ -1006,7 +1021,7 @@ def _compute_retrieval_outcome(
     the rendered card is byte-identical to pre-#9.
     """
     grade = state.get("retrieval_grade")
-    reason = (state.get("retrieval_grade_reason") or "")
+    reason = state.get("retrieval_grade_reason") or ""
 
     if reason.startswith(_GRADER_EXCEPTION_REASON_PREFIX):
         return "grader_error"
@@ -1030,8 +1045,7 @@ def _compute_retrieval_outcome(
     # hybrid signal here — we want a clean "external content arrived"
     # indicator.
     has_hybrid_media = (
-        int(media_counts.get("articles") or 0)
-        + int(media_counts.get("oer") or 0)
+        int(media_counts.get("articles") or 0) + int(media_counts.get("oer") or 0)
     ) > 0
 
     if has_external or has_hybrid_media:
@@ -1039,7 +1053,7 @@ def _compute_retrieval_outcome(
     return "limited_kg_only"
 
 
-def _build_retriever_payload(state: Dict[str, Any]) -> Dict[str, Any]:
+def _build_retriever_payload(state: dict[str, Any]) -> dict[str, Any]:
     """Shape the post-retrieve state into the retriever card's context."""
     nodes = state.get("retrieved_nodes") or []
     rels = state.get("retrieved_relationships") or []
@@ -1128,12 +1142,12 @@ def _build_retriever_payload(state: Dict[str, Any]) -> Dict[str, Any]:
         # template never sees a dictionary lookup or a hardcoded label.
         "domain": (domain_raw or "").lower() or None,
         "domain_label_short": domain_labels["short"],
-        "domain_label_long":  domain_labels["long"],
+        "domain_label_long": domain_labels["long"],
         "coverage_tier": coverage_tier,
     }
 
 
-def _build_critic_payload(state: Dict[str, Any]) -> Dict[str, Any]:
+def _build_critic_payload(state: dict[str, Any]) -> dict[str, Any]:
     """Shape the post-critique state into the critic card's context."""
     score = state.get("critique_score")
     score_pct: Optional[int] = None
@@ -1150,7 +1164,7 @@ def _build_critic_payload(state: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "approved": bool(state.get("approved", False)),
         "revision_count": int(state.get("revision_count", 0)),
-        "max_revisions": int(state.get("max_revisions", 2)),
+        "max_revisions": int(state.get("max_revisions", 1)),
         "score": score,
         "score_pct": score_pct,
         "critique": (state.get("critique") or "").strip(),
@@ -1158,9 +1172,36 @@ def _build_critic_payload(state: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _extract_meta(final_state: Dict[str, Any]) -> Dict[str, Any]:
+def _extract_meta(final_state: dict[str, Any]) -> dict[str, Any]:
     """Run summary used by the final lesson card and the run-complete banner."""
     media = final_state.get("curated_media") or {}
+
+    # F5: UDL 3.0 Coverage Badge — count retrieved nodes tagged with UDL labels.
+    # The three UDL principles are identified by label prefixes/fragments in the KG.
+    # Only computed when the domain is "udl" or "all"; None otherwise.
+    udl_coverage: dict[str, Any] | None = None
+    domain = final_state.get("domain", "neuro")
+    if domain in ("udl", "all"):
+        nodes = final_state.get("retrieved_nodes") or []
+        rep = act = eng = 0
+        for node in nodes:
+            labels = [str(lbl).upper() for lbl in (node.get("labels") or [])]
+            any_label = " ".join(labels)
+            if "REPRESENT" in any_label or "PERCEPTION" in any_label:
+                rep += 1
+            elif "ACTION" in any_label or "EXPRESSION" in any_label:
+                act += 1
+            elif "ENGAGE" in any_label or "MOTIVATION" in any_label:
+                eng += 1
+        total = rep + act + eng
+        if total > 0:
+            udl_coverage = {
+                "representation": rep,
+                "action": act,
+                "engagement": eng,
+                "total": total,
+            }
+
     return {
         "approved": bool(final_state.get("approved", False)),
         "revision_count": int(final_state.get("revision_count", 0)),
@@ -1169,12 +1210,14 @@ def _extract_meta(final_state: Dict[str, Any]) -> Dict[str, Any]:
         "recommendations_count": len(final_state.get("recommendations") or []),
         "media_counts": _count_media(media),
         "search_queries_count": len(final_state.get("search_queries") or []),
+        "udl_coverage": udl_coverage,
     }
 
 
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 async def run_agent_stream(
     lesson: Any,
@@ -1209,7 +1252,7 @@ async def run_agent_stream(
     in-place via an OOB swap on the unique ``writer-card-rev{N}`` id.
     """
     started_at = time.monotonic()
-    final_state: Dict[str, Any] = {}
+    final_state: dict[str, Any] = {}
     write_revision_idx = 0  # 1-based counter once first writer_pending fires
 
     # ── Setup phase. Anything that can blow up here (import errors, OpenAI
@@ -1224,7 +1267,15 @@ async def run_agent_stream(
         from aix.agent.graph.state import create_initial_state
         from aix.agent.orchestrator import AgentOrchestrator
 
-        profile_dict = lesson.educational_profile_json or None
+        profile_dict = dict(lesson.educational_profile_json or {}) or None
+
+        # Extract transient fields that are stored in profile_json but should
+        # be passed as separate state params (not part of the profile itself).
+        pedagogical_intent: str | None = None
+        refinement_instruction: str | None = None
+        if profile_dict:
+            pedagogical_intent = profile_dict.get("pedagogical_intent")
+            refinement_instruction = profile_dict.pop("__refinement__", None)
 
         # Use the persisted teacher_query if the user supplied one in the
         # form; otherwise synthesize from the profile and *write it back*
@@ -1288,6 +1339,7 @@ async def run_agent_stream(
         # see #10.3 which adds the user-facing follow_up / regenerate
         # / new modes on top of this plumbing).
         from aix.agent.graph.checkpointer import thread_config
+
         run_config = thread_config(str(lesson.id))
 
         teacher_ctx = _teacher_upload_context(lesson)
@@ -1306,6 +1358,8 @@ async def run_agent_stream(
             # plan_node can apply user-vs-history precedence on duration
             # (and any other profile-vs-history conflicts in future).
             raw_user_turn=raw_query,
+            pedagogical_intent=pedagogical_intent,
+            refinement_instruction=refinement_instruction,
         )
 
         # CORE 2 #9.UX-5 hotfix — pre-seed final_state with initial_state so
@@ -1319,7 +1373,9 @@ async def run_agent_stream(
         logger.info(
             "[webui.agent] starting run lesson_id=%s domain=%s query=%r "
             "uploads=%s thread_id=%s history_turns=%s",
-            lesson.id, lesson.domain, raw_query[:80],
+            lesson.id,
+            lesson.domain,
+            raw_query[:80],
             len(getattr(lesson, "uploaded_files_json", None) or []),
             run_config["configurable"]["thread_id"],
             # Number of completed prior turns (= half of history length,
@@ -1333,7 +1389,8 @@ async def run_agent_stream(
         await session.commit()
     except Exception as exc:  # noqa: BLE001
         logger.exception(
-            "[webui.agent] setup FAILED lesson_id=%s", lesson.id,
+            "[webui.agent] setup FAILED lesson_id=%s",
+            lesson.id,
         )
         msg = str(exc) or exc.__class__.__name__
         short_msg = msg[:480] + ("…" if len(msg) > 480 else "")
@@ -1349,17 +1406,20 @@ async def run_agent_stream(
         yield StreamEvent(kind="error", error=short_msg)
         return
 
+    # ── Run the graph ───────────────────────────────────────────────────────
+    from aix.agent.graph import (
+        write_stream as _write_stream,  # lazy — avoids circular at module level
+    )
+
+    _write_stream.register(str(lesson.id))
     try:
         async for chunk in graph.astream(
-            initial_state, config=run_config, stream_mode="updates",
+            initial_state,
+            config=run_config,
+            stream_mode="updates",
         ):
-            # ``chunk`` is ``{node_name: partial_state_update}``. In normal
-            # operation a chunk has exactly one key — the node that just
-            # finished. We tolerate the multi-key shape defensively.
             for node_name, state_diff in chunk.items():
                 if node_name not in PHASE_LABELS:
-                    # START / END pseudo-nodes, or any future internal node
-                    # we don't have a label for — silently ignore.
                     continue
                 if isinstance(state_diff, dict):
                     final_state.update(state_diff)
@@ -1369,20 +1429,10 @@ async def run_agent_stream(
                         kind="planner",
                         payload=_build_planner_payload(final_state),
                     )
+                    yield StreamEvent(kind="retriever_pending", payload={})
 
                 elif node_name == "retrieve":
-                    # CORE 2 #9.UX-1 — when corrective-RAG is ENABLED, the
-                    # ``grade_retrieval`` node will run next and become the
-                    # sole emitter of ``kind=retriever`` (with the grading
-                    # verdict already populated in the payload). We skip
-                    # the emit here to avoid producing TWO retriever cards
-                    # per turn, because ``#chat-cards`` uses
-                    # ``hx-swap=beforeend`` (i.e. append, not replace).
-                    #
-                    # When the flag is OFF, ``grade_retrieval`` is not in
-                    # the LangGraph topology at all, so this branch keeps
-                    # its pre-#9 responsibility: emit the retriever card
-                    # AND ``writer_pending``. Backward-compatible.
+                    # CORE 2 #9.UX-1 — symmetric with stream_agent_events.
                     if not _is_corrective_rag_enabled():
                         yield StreamEvent(
                             kind="retriever",
@@ -1399,21 +1449,7 @@ async def run_agent_stream(
                         )
 
                 elif node_name == "grade_retrieval":
-                    # CORE 2 #9 + #9.UX-1 + #9.UX-2 — when corrective-RAG
-                    # is ON, this is the SOLE place we emit
-                    # ``kind=retriever`` for the turn. The grade_retrieval
-                    # node may run MULTIPLE times in a turn (once per
-                    # attempt) when the grader requests a retry. Without
-                    # gating we'd emit one card per attempt and
-                    # ``hx-swap=beforeend`` would stack them in the chat.
-                    # The fix (#9.UX-2): only emit on the FINAL iteration
-                    # (when the router decided NOT to retry) — i.e. either
-                    # the grade is relevant, or the attempt budget is
-                    # exhausted. The retriever card therefore appears
-                    # once, with the final ``retrieval_attempts`` already
-                    # settled (e.g. "Tentativi: 2/2"). The payload's
-                    # ``retrieval_outcome`` token (#9.UX-3) drives the
-                    # card's color and copy.
+                    # CORE 2 #9.UX-2 — emit once on final attempt.
                     if not _grader_will_retry(final_state):
                         yield StreamEvent(
                             kind="retriever",
@@ -1435,18 +1471,21 @@ async def run_agent_stream(
                         payload={"revision": write_revision_idx},
                         lesson_plan_md=final_state.get("lesson_plan_draft") or "",
                     )
+                    yield StreamEvent(
+                        kind="critic_pending",
+                        payload={"write_revision": write_revision_idx},
+                    )
 
                 elif node_name == "critique":
+                    _critic_pl = _build_critic_payload(final_state)
+                    _critic_pl["write_revision"] = write_revision_idx
                     yield StreamEvent(
                         kind="critic",
-                        payload=_build_critic_payload(final_state),
+                        payload=_critic_pl,
                     )
-                    # Will the graph loop back into write? Mirror the
-                    # routing in ``build_lesson_planner_graph``: revise
-                    # while not approved AND under max_revisions.
                     approved = final_state.get("approved", False)
                     rev_count = int(final_state.get("revision_count", 0))
-                    max_rev = int(final_state.get("max_revisions", 2))
+                    max_rev = int(final_state.get("max_revisions", 1))
                     if (not approved) and rev_count < max_rev:
                         write_revision_idx += 1
                         yield StreamEvent(
@@ -1454,34 +1493,34 @@ async def run_agent_stream(
                             payload={
                                 "revision": write_revision_idx,
                                 "is_revision": True,
-                                "feedback": (final_state.get("revision_instructions") or "").strip(),
+                                "feedback": (
+                                    final_state.get("revision_instructions") or ""
+                                ).strip(),
                             },
                         )
 
-        # ── Run finished cleanly ─────────────────────────────────────────
+        # ── Run finished cleanly ─────────────────────────────────────────────
         elapsed = time.monotonic() - started_at
         lesson_plan_md = _extract_lesson_plan_md(final_state)
         meta = _extract_meta(final_state)
         meta["duration_seconds"] = round(elapsed, 1)
 
-        # If the writer never produced anything, the run technically didn't
-        # crash but it's still useless to the user — surface as error.
         if not lesson_plan_md.strip():
             raise RuntimeError(
-                "L'agente ha terminato senza produrre una lezione "
-                "(stato finale vuoto)."
+                "L'agente ha terminato senza produrre una lezione (stato finale vuoto)."
             )
+
+        # EU AI Act Art. 50 (#21) — stamp the machine-readable provenance comment
+        # once, here at finalization, so the stored plan, the persisted assistant
+        # turn, every export, and the SSE ``done`` payload all carry it. Drafts
+        # (writer events) intentionally stay unmarked. ``trace_id`` falls back to
+        # the lesson id until Langfuse run-tracing lands (#24).
+        lesson_plan_md = ensure_marking(lesson_plan_md, trace_id=str(lesson.id))
 
         lesson.status = "complete"
         lesson.lesson_plan_md = lesson_plan_md
         await session.commit()
 
-        # ── Multi-turn persistence (#10.3) ───────────────────────────
-        # Append the assistant turn to lesson_messages so the chat pane
-        # renders the full transcript on reload + the next follow-up's
-        # history-loader picks it up. Failures are logged + swallowed —
-        # the lesson row is the load-bearing persistence; the message
-        # log is the render index.
         await _persist_assistant_turn(
             session=session,
             lesson_id=lesson.id,
@@ -1492,7 +1531,10 @@ async def run_agent_stream(
         logger.info(
             "[webui.agent] run complete lesson_id=%s duration=%.1fs "
             "approved=%s revisions=%s thread_id=%s",
-            lesson.id, elapsed, meta["approved"], meta["revision_count"],
+            lesson.id,
+            elapsed,
+            meta["approved"],
+            meta["revision_count"],
             run_config["configurable"]["thread_id"],
         )
 
@@ -1502,28 +1544,26 @@ async def run_agent_stream(
             meta=meta,
         )
 
-    except Exception as exc:  # noqa: BLE001 — we *do* want every failure
+    except Exception as exc:  # noqa: BLE001
         logger.exception(
             "[webui.agent] run FAILED lesson_id=%s after %.1fs",
-            lesson.id, time.monotonic() - started_at,
+            lesson.id,
+            time.monotonic() - started_at,
         )
         msg = str(exc) or exc.__class__.__name__
-        # Truncate to the model column width (500). Hard slice so a giant
-        # traceback string doesn't blow the row.
         short_msg = msg[:480] + ("…" if len(msg) > 480 else "")
-
         try:
             lesson.status = "error"
             lesson.error_message = short_msg
             await session.commit()
         except Exception:  # noqa: BLE001
-            # Don't let a secondary commit failure mask the original error.
             logger.exception(
                 "[webui.agent] failed to persist error state for lesson_id=%s",
                 lesson.id,
             )
-
         yield StreamEvent(kind="error", error=short_msg)
+    finally:
+        _write_stream.deregister(str(lesson.id))
 
 
 # ---------------------------------------------------------------------------
@@ -1556,7 +1596,7 @@ async def stream_agent_events(
     domain: str = "neuro",
     language: str = "it",
     session_id: Optional[str] = None,
-    educational_profile: Optional[Dict[str, Any]] = None,
+    educational_profile: Optional[dict[str, Any]] = None,
     teacher_provided_context: Optional[str] = None,
     max_revisions: Optional[int] = None,
 ) -> AsyncIterator[StreamEvent]:
@@ -1582,7 +1622,7 @@ async def stream_agent_events(
     boundary; failures are domain data.
     """
     started_at = time.monotonic()
-    final_state: Dict[str, Any] = {}
+    final_state: dict[str, Any] = {}
     write_revision_idx = 0
 
     # ── Setup. Mirrors the guard in run_agent_stream so a missing API
@@ -1635,7 +1675,10 @@ async def stream_agent_events(
         logger.info(
             "[api.agent] starting run session_id=%s thread_id=%s domain=%s query=%r "
             "max_revisions=%s profile=%s teacher_ctx_chars=%s",
-            session_id, effective_thread_id, domain, query[:80],
+            session_id,
+            effective_thread_id,
+            domain,
+            query[:80],
             effective_max_revisions,
             "yes" if educational_profile else "no",
             len(teacher_provided_context or ""),
@@ -1649,7 +1692,9 @@ async def stream_agent_events(
 
     try:
         async for chunk in graph.astream(
-            initial_state, config=run_config, stream_mode="updates",
+            initial_state,
+            config=run_config,
+            stream_mode="updates",
         ):
             for node_name, state_diff in chunk.items():
                 if node_name not in PHASE_LABELS:
@@ -1719,7 +1764,7 @@ async def stream_agent_events(
                     )
                     approved = final_state.get("approved", False)
                     rev_count = int(final_state.get("revision_count", 0))
-                    max_rev = int(final_state.get("max_revisions", 2))
+                    max_rev = int(final_state.get("max_revisions", 1))
                     if (not approved) and rev_count < max_rev:
                         write_revision_idx += 1
                         yield StreamEvent(
@@ -1727,7 +1772,9 @@ async def stream_agent_events(
                             payload={
                                 "revision": write_revision_idx,
                                 "is_revision": True,
-                                "feedback": (final_state.get("revision_instructions") or "").strip(),
+                                "feedback": (
+                                    final_state.get("revision_instructions") or ""
+                                ).strip(),
                             },
                         )
 
@@ -1739,15 +1786,22 @@ async def stream_agent_events(
 
         if not lesson_plan_md.strip():
             raise RuntimeError(
-                "L'agente ha terminato senza produrre una lezione "
-                "(stato finale vuoto)."
+                "L'agente ha terminato senza produrre una lezione (stato finale vuoto)."
             )
+
+        # EU AI Act Art. 50 (#21) — machine-readable provenance comment on the
+        # API ``done`` payload too. ``session_id`` is the available identifier
+        # on this (DB-less) path until Langfuse run-tracing lands (#24).
+        lesson_plan_md = ensure_marking(lesson_plan_md, trace_id=session_id)
 
         logger.info(
             "[api.agent] run complete session_id=%s thread_id=%s duration=%.1fs "
             "approved=%s revisions=%s",
-            session_id, effective_thread_id, elapsed,
-            meta["approved"], meta["revision_count"],
+            session_id,
+            effective_thread_id,
+            elapsed,
+            meta["approved"],
+            meta["revision_count"],
         )
 
         yield StreamEvent(
@@ -1759,7 +1813,8 @@ async def stream_agent_events(
     except Exception as exc:  # noqa: BLE001
         logger.exception(
             "[api.agent] run FAILED session_id=%s after %.1fs",
-            session_id, time.monotonic() - started_at,
+            session_id,
+            time.monotonic() - started_at,
         )
         msg = str(exc) or exc.__class__.__name__
         short_msg = msg[:480] + ("…" if len(msg) > 480 else "")

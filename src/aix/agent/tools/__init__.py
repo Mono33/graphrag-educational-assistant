@@ -8,4 +8,3 @@ The GraphRAGTool wraps the existing GraphRAG engine without modifying it.
 from aix.agent.tools.graphrag_tool import GraphRAGTool
 
 __all__ = ["GraphRAGTool"]
-

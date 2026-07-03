@@ -33,9 +33,7 @@ def register(mcp: FastMCP) -> None:
     from aix.mcp.prompts import educational_prompts
 
     educational_prompts.register(mcp)
-    logger.info(
-        "[MCP] Registered Phase 2 prompts (educational-query, lesson-plan-request)"
-    )
+    logger.info("[MCP] Registered Phase 2 prompts (educational-query, lesson-plan-request)")
 
 
 __all__ = ["register"]

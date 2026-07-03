@@ -18,7 +18,7 @@ Source: ported from `FEM-modena/graphrag-aixlearning` branch `Angelo`,
 """
 
 from enum import Enum
-from typing import List, Optional
+from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -46,16 +46,16 @@ class GradeLevel(str, Enum):
 class DisabilityType(str, Enum):
     """BES (Bisogni Educativi Speciali) types matching `party.models.StudentDisabilities`."""
 
-    DSA = "DSA"      # Disturbi specifici dell'apprendimento
-    ADHD = "ADHD"    # Disturbo dell'attenzione
-    DOP = "DOP"      # Disturbo oppositivo provocatorio
-    DF = "DF"        # Disabilità fisica
-    DCGL = "DCGL"    # Disabilità cognitiva di grado lieve
-    DCGM = "DCGM"    # Disabilità cognitiva di grado medio
-    DCGS = "DCGS"    # Disabilità cognitiva di grado severo
-    DLDS = "DLDS"    # Difficoltà linguistiche (studente straniero/a)
-    PD = "PD"        # Plusdotazione
-    SA = "SA"        # Disturbo dello spettro autistico
+    DSA = "DSA"  # Disturbi specifici dell'apprendimento
+    ADHD = "ADHD"  # Disturbo dell'attenzione
+    DOP = "DOP"  # Disturbo oppositivo provocatorio
+    DF = "DF"  # Disabilità fisica
+    DCGL = "DCGL"  # Disabilità cognitiva di grado lieve
+    DCGM = "DCGM"  # Disabilità cognitiva di grado medio
+    DCGS = "DCGS"  # Disabilità cognitiva di grado severo
+    DLDS = "DLDS"  # Difficoltà linguistiche (studente straniero/a)
+    PD = "PD"  # Plusdotazione
+    SA = "SA"  # Disturbo dello spettro autistico
 
 
 # ============================================================================
@@ -142,15 +142,15 @@ class EducationalGroup(BaseModel):
         None,
         description="Grade level (school level).",
     )
-    disabilities: List[DisabilityType] = Field(
+    disabilities: list[DisabilityType] = Field(
         default_factory=list,
         description="Special Educational Needs (BES) present in the class.",
     )
-    class_features: List[ClassFeature] = Field(
+    class_features: list[ClassFeature] = Field(
         default_factory=list,
         description="Class characteristics (cohesion, motivation, etc.).",
     )
-    student_attributes: List[StudentAttribute] = Field(
+    student_attributes: list[StudentAttribute] = Field(
         default_factory=list,
         description="Population-level attributes (excellence/difficulty, motivation, etc.).",
     )
@@ -256,6 +256,15 @@ class EducationalProfile(BaseModel):
         None,
         description="Specific topic within the subject.",
     )
+    pedagogical_intent: Optional[str] = Field(
+        None,
+        description=(
+            "Teacher's pedagogical intent for this lesson. Stored as "
+            "'{code}: {optional_detail}' (e.g. 'misconception: practice alone "
+            "doesn't increase WM capacity'). Code alone is valid when no detail "
+            "is provided."
+        ),
+    )
 
     class Config:
         json_schema_extra = {
@@ -338,6 +347,54 @@ OWN_DEVICE_LABELS: dict[str, str] = {
     "BES": "Solo studenti con BES",
 }
 
+# ============================================================================
+# PEDAGOGICAL INTENT OPTIONS (for UI chip selector)
+# code → {"label": ..., "prompt": ...}
+# "prompt" is injected verbatim into the writer prompt when the code is used.
+# ============================================================================
+
+PEDAGOGICAL_INTENT_OPTIONS: list[dict] = [
+    {
+        "code": "intro",
+        "label": "Prima introduzione",
+        "description": "Nessun prerequisito richiesto",
+        "prompt": "Introduce the concept for the first time — assume no prior knowledge",
+    },
+    {
+        "code": "deepening",
+        "label": "Approfondimento",
+        "description": "La classe conosce già il concetto",
+        "prompt": "Deepen understanding of a concept the class has already encountered",
+    },
+    {
+        "code": "misconception",
+        "label": "Correggere un'idea errata",
+        "description": "Sfidare un errore concettuale frequente",
+        "prompt": "Challenge and correct a common misconception about this topic",
+    },
+    {
+        "code": "assessment",
+        "label": "Preparazione verifica",
+        "description": "Consolidare prima della valutazione",
+        "prompt": "Consolidate knowledge and prepare students for an upcoming assessment",
+    },
+    {
+        "code": "practice",
+        "label": "Applicazione pratica",
+        "description": "Focus su esercizi e attività concrete",
+        "prompt": "Focus on practical exercises, activities, and concrete application",
+    },
+    {
+        "code": "interdisciplinary",
+        "label": "Collegamento interdisciplinare",
+        "description": "Collegare più materie o ambiti",
+        "prompt": "Build bridges between this concept and other subject areas",
+    },
+]
+
+# Quick lookup by code
+PEDAGOGICAL_INTENT_BY_CODE: dict[str, dict] = {o["code"]: o for o in PEDAGOGICAL_INTENT_OPTIONS}
+
 
 __all__ = [
     # Enums
@@ -358,4 +415,6 @@ __all__ = [
     "STUDENT_ATTR_LABELS",
     "FORNITURE_MOBILITY_LABELS",
     "OWN_DEVICE_LABELS",
+    "PEDAGOGICAL_INTENT_OPTIONS",
+    "PEDAGOGICAL_INTENT_BY_CODE",
 ]

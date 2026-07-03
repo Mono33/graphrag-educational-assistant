@@ -340,4 +340,3 @@ Domain: {domain}
 Language: {language}
 
 FIRST, classify the query intent. Then create a JSON retrieval plan following the format specified."""
-

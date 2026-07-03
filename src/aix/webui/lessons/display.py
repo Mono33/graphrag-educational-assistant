@@ -19,7 +19,6 @@ from typing import Any, Optional
 
 from aix.webui.lessons.models import Lesson
 
-
 # ---------------------------------------------------------------------------
 # Status → display tuple
 # ---------------------------------------------------------------------------
@@ -35,10 +34,10 @@ from aix.webui.lessons.models import Lesson
 # ``aix.webui.lessons.models``. Adding a new status only requires a new entry.
 # ---------------------------------------------------------------------------
 STATUS_DISPLAY: dict[str, tuple[str, str, str]] = {
-    "draft":    ("Bozza",         "aix-pill-warning", "aix-dot-warning"),
-    "running":  ("In corso",      "aix-pill-info",    "aix-dot-info"),
-    "complete": ("✓ Completata",  "aix-pill-success", "aix-dot-success"),
-    "error":    ("Errore",        "aix-pill-error",   "aix-dot-error"),
+    "draft": ("Bozza", "aix-pill-warning", "aix-dot-warning"),
+    "running": ("In corso", "aix-pill-info", "aix-dot-info"),
+    "complete": ("✓ Completata", "aix-pill-success", "aix-dot-success"),
+    "error": ("Errore", "aix-pill-error", "aix-dot-error"),
 }
 
 
@@ -55,18 +54,43 @@ def status_display(status: str) -> tuple[str, str, str]:
 # ---------------------------------------------------------------------------
 
 _MONTHS_IT = [
-    "gen", "feb", "mar", "apr", "mag", "giu",
-    "lug", "ago", "set", "ott", "nov", "dic",
+    "gen",
+    "feb",
+    "mar",
+    "apr",
+    "mag",
+    "giu",
+    "lug",
+    "ago",
+    "set",
+    "ott",
+    "nov",
+    "dic",
 ]
 
 _DAYS_IT = [
-    "Lunedì", "Martedì", "Mercoledì", "Giovedì",
-    "Venerdì", "Sabato", "Domenica",
+    "Lunedì",
+    "Martedì",
+    "Mercoledì",
+    "Giovedì",
+    "Venerdì",
+    "Sabato",
+    "Domenica",
 ]
 
 _MONTHS_FULL_IT = [
-    "gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno",
-    "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre",
+    "gennaio",
+    "febbraio",
+    "marzo",
+    "aprile",
+    "maggio",
+    "giugno",
+    "luglio",
+    "agosto",
+    "settembre",
+    "ottobre",
+    "novembre",
+    "dicembre",
 ]
 
 
@@ -118,6 +142,7 @@ def relative_time_it(dt: Optional[datetime]) -> str:
 # EducationalProfile JSON → template-friendly summary
 # ---------------------------------------------------------------------------
 
+
 def profile_summary(profile: dict[str, Any] | None) -> dict[str, Any]:
     """
     Pull a small, template-friendly subset out of the ``educational_profile_json``
@@ -135,19 +160,20 @@ def profile_summary(profile: dict[str, Any] | None) -> dict[str, Any]:
     if isinstance(class_features, str):
         class_features = [class_features]
     return {
-        "subject_area":    profile.get("subject_area") or "",
-        "specific_topic":  profile.get("specific_topic") or "",
-        "duration_min":    profile.get("time_available_minutes"),
-        "group_title":     group.get("title") or "",
+        "subject_area": profile.get("subject_area") or "",
+        "specific_topic": profile.get("specific_topic") or "",
+        "duration_min": profile.get("time_available_minutes"),
+        "group_title": group.get("title") or "",
         "students_number": group.get("students_number"),
-        "disabilities":    [d for d in disabilities if d],
-        "class_features":  [c for c in class_features if c],
+        "disabilities": [d for d in disabilities if d],
+        "class_features": [c for c in class_features if c],
     }
 
 
 # ---------------------------------------------------------------------------
 # Lesson → row dict
 # ---------------------------------------------------------------------------
+
 
 def lesson_to_row(lesson: Lesson) -> dict[str, Any]:
     """
@@ -179,32 +205,33 @@ def lesson_to_row(lesson: Lesson) -> dict[str, Any]:
     label, pill_cls, dot_cls = status_display(lesson.status)
     summary = profile_summary(lesson.educational_profile_json)
     return {
-        "id":              lesson.id,
-        "title":           lesson.title or "Lezione senza titolo",
-        "domain":          lesson.domain or "",
-        "subject":         summary["subject_area"],
-        "topic":           summary["specific_topic"],
-        "duration_min":    summary["duration_min"],
-        "group_title":     summary["group_title"],
+        "id": lesson.id,
+        "title": lesson.title or "Lezione senza titolo",
+        "domain": lesson.domain or "",
+        "subject": summary["subject_area"],
+        "topic": summary["specific_topic"],
+        "duration_min": summary["duration_min"],
+        "group_title": summary["group_title"],
         "students_number": summary["students_number"],
-        "disabilities":    summary["disabilities"],
-        "class_features":  summary["class_features"],
-        "status":          lesson.status or "",
-        "status_label":    label,
-        "pill_class":      pill_cls,
-        "dot_class":       dot_cls,
-        "created_at":      lesson.created_at,
-        "updated_at":      lesson.updated_at,
-        "created_full":    full_date_it(lesson.created_at),
-        "updated_full":    full_date_it(lesson.updated_at),
-        "updated_short":   short_date_it(lesson.updated_at),
-        "updated_rel":     relative_time_it(lesson.updated_at),
+        "disabilities": summary["disabilities"],
+        "class_features": summary["class_features"],
+        "status": lesson.status or "",
+        "status_label": label,
+        "pill_class": pill_cls,
+        "dot_class": dot_cls,
+        "created_at": lesson.created_at,
+        "updated_at": lesson.updated_at,
+        "created_full": full_date_it(lesson.created_at),
+        "updated_full": full_date_it(lesson.updated_at),
+        "updated_short": short_date_it(lesson.updated_at),
+        "updated_rel": relative_time_it(lesson.updated_at),
     }
 
 
 # ---------------------------------------------------------------------------
 # Activity feed derivation (Dashboard "Attività recente")
 # ---------------------------------------------------------------------------
+
 
 def activity_event_for_lesson(lesson: Lesson) -> dict[str, Any]:
     """
@@ -224,7 +251,7 @@ def activity_event_for_lesson(lesson: Lesson) -> dict[str, Any]:
         verb = "aggiornata"
     title = lesson.title or "Lezione senza titolo"
     return {
-        "lesson_id":   lesson.id,
-        "rel":         relative_time_it(lesson.updated_at),
+        "lesson_id": lesson.id,
+        "rel": relative_time_it(lesson.updated_at),
         "description": f"Lezione {title} {verb}",
     }
