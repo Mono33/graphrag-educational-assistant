@@ -506,6 +506,18 @@ body.aix-body {
 .aix-footer a:hover { color: var(--aix-text-primary); }
 .aix-footer-sep { color: var(--aix-border-medium); }
 
+/* EU AI Act Art. 50 — persistent AI-generated disclosure strip. */
+.aix-footer-ai {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 10px 32px 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--aix-text-secondary);
+  font-size: 12px;
+}
+
 /* -----------------------------------------------------------------------------
    Inputs (used by Create-Lesson form on later pages, declared here so the
    foundation pass already covers it)

@@ -171,6 +171,32 @@ async def home(
     )
 
 
+@_pages_router.get("/about-ai", response_class=HTMLResponse, name="webui_about_ai")
+async def about_ai(
+    request: Request,
+    user: Optional[User] = Depends(optional_current_user),
+) -> HTMLResponse:
+    """
+    "Come funziona l'IA" — teacher AI-literacy guide (Wave 5 #23).
+
+    EU AI Act Art. 4 (AI literacy) deliverable: a static, non-technical page
+    explaining the 4-agent pipeline, the curated knowledge base, the
+    grounded-vs-general coverage signal, the human-in-the-loop design, and the
+    system's limits. Purely additive — no agent / SSE / DB / route changes.
+    Anonymous access is allowed so the guide is reachable from the public
+    footer without bouncing through the login wall.
+    """
+    return templates.TemplateResponse(
+        "pages/about_ai.html",
+        {
+            "request": request,
+            "title": "Come funziona l'IA · AixLearning",
+            "user": user,
+            "active_nav": "about",
+        },
+    )
+
+
 @_pages_router.get("/health", response_class=HTMLResponse, name="webui_health")
 async def health_fragment() -> HTMLResponse:
     """

@@ -45,9 +45,11 @@ import uuid
 from collections.abc import AsyncIterator
 from typing import Optional
 
-from fastapi import APIRouter, Body, Depends, HTTPException, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Response, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from sse_starlette.sse import EventSourceResponse
+
+from aix.core.ai_marking import AI_GENERATED_HEADER, AI_GENERATED_HEADER_VALUE
 
 from aix.api.schemas import (
     AgentRunMeta,
@@ -57,6 +59,12 @@ from aix.api.schemas import (
     MediaCounts,
     PlannerInfo,
     RetrieverInfo,
+)
+from aix.core.concurrency import (
+    AtCapacity,
+    RateLimited,
+    check_user_rate_limit,
+    run_slot,
 )
 from aix.webui.agent.service import StreamEvent, stream_agent_events
 from aix.webui.auth.dependencies import optional_current_user
@@ -281,6 +289,7 @@ def _retriever_payload_to_pydantic(payload: dict) -> RetrieverInfo:
     },
 )
 async def run_agent(
+    response: Response,
     payload: AgentRunRequest = Body(
         ...,
         openapi_examples=_AGENT_REQUEST_OPENAPI_EXAMPLES,
@@ -310,51 +319,79 @@ async def run_agent(
     final_meta: Optional[AgentRunMeta] = None
     error_message: Optional[str] = None
 
-    async for event in stream_agent_events(
-        query=payload.query,
-        domain=payload.domain,
-        language=payload.language,
-        session_id=session_id,
-        educational_profile=profile_dict,
-        teacher_provided_context=payload.teacher_provided_context,
-        max_revisions=payload.max_revisions,
-    ):
-        if event.kind == "planner":
-            planner_info = _planner_payload_to_pydantic(event.payload or {})
-        elif event.kind == "retriever":
-            retriever_info = _retriever_payload_to_pydantic(event.payload or {})
-        elif event.kind == "done":
-            final_lesson_plan = event.lesson_plan_md or ""
-            final_meta = _meta_to_pydantic(event.meta or {})
-        elif event.kind == "error":
-            error_message = event.error or "Unknown agent error"
-            # Don't break — the stream is finite; we'll fall through and
-            # raise after the loop terminates so we always release any
-            # outstanding state.
-
-    if error_message is not None or final_meta is None:
-        # 502 (Bad Gateway) communicates "the agent pipeline failed", which
-        # is more accurate than a 500 (we, the route, didn't crash) and
-        # tells partner clients the request is potentially retryable.
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=error_message or "Agent finished without a lesson plan",
-        )
-
+    # CORE 6 #33 — per-user rate limit. Checked before the run slot so an
+    # abusive caller is rejected cheaply (429) without consuming a slot.
     caller_id = caller if isinstance(caller, str) else caller.email
-    logger.info(
-        "[api.agent] /run complete caller=%s session=%s duration=%.1fs",
-        caller_id,
-        session_id,
-        final_meta.duration_seconds,
-    )
+    try:
+        check_user_rate_limit(f"api:{caller_id}")
+    except RateLimited as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=(
+                "Hai inviato troppe richieste in poco tempo. "
+                f"Riprova tra {int(exc.retry_after) + 1} secondi."
+            ),
+            headers={"Retry-After": str(int(exc.retry_after) + 1)},
+        ) from exc
 
-    return AgentRunResponse(
-        lesson_plan_md=final_lesson_plan,
-        meta=final_meta,
-        planner=planner_info,
-        retriever=retriever_info,
-    )
+    # CORE 6 #31/#34 — acquire a global generation slot or shed load with a
+    # 503 (Service Unavailable) so partner clients know to back off / retry.
+    try:
+        async with run_slot(label=f"api-run:{session_id}"):
+            async for event in stream_agent_events(
+                query=payload.query,
+                domain=payload.domain,
+                language=payload.language,
+                session_id=session_id,
+                educational_profile=profile_dict,
+                teacher_provided_context=payload.teacher_provided_context,
+                max_revisions=payload.max_revisions,
+            ):
+                if event.kind == "planner":
+                    planner_info = _planner_payload_to_pydantic(event.payload or {})
+                elif event.kind == "retriever":
+                    retriever_info = _retriever_payload_to_pydantic(event.payload or {})
+                elif event.kind == "done":
+                    final_lesson_plan = event.lesson_plan_md or ""
+                    final_meta = _meta_to_pydantic(event.meta or {})
+                elif event.kind == "error":
+                    error_message = event.error or "Unknown agent error"
+                    # Don't break — the stream is finite; we'll fall through and
+                    # raise after the loop terminates so we always release any
+                    # outstanding state.
+
+            if error_message is not None or final_meta is None:
+                # 502 (Bad Gateway) communicates "the agent pipeline failed",
+                # which is more accurate than a 500 (we, the route, didn't
+                # crash) and tells partner clients the request is retryable.
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail=error_message or "Agent finished without a lesson plan",
+                )
+
+            logger.info(
+                "[api.agent] /run complete caller=%s session=%s duration=%.1fs",
+                caller_id,
+                session_id,
+                final_meta.duration_seconds,
+            )
+
+            # EU AI Act Art. 50 (#21) — machine-readable marking on the response.
+            response.headers[AI_GENERATED_HEADER] = AI_GENERATED_HEADER_VALUE
+            return AgentRunResponse(
+                lesson_plan_md=final_lesson_plan,
+                meta=final_meta,
+                planner=planner_info,
+                retriever=retriever_info,
+            )
+    except AtCapacity as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Il sistema è momentaneamente occupato: troppe generazioni in corso. "
+                "Riprova tra qualche istante."
+            ),
+        ) from exc
 
 
 @router.post(
@@ -402,6 +439,21 @@ async def stream_agent(
     )
 
     caller_id = caller if isinstance(caller, str) else caller.email
+
+    # CORE 6 #33 — per-user rate limit. Rejected before the stream opens
+    # (and before a run slot is acquired) with a 429 + Retry-After.
+    try:
+        check_user_rate_limit(f"api:{caller_id}")
+    except RateLimited as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=(
+                "Hai inviato troppe richieste in poco tempo. "
+                f"Riprova tra {int(exc.retry_after) + 1} secondi."
+            ),
+            headers={"Retry-After": str(int(exc.retry_after) + 1)},
+        ) from exc
+
     logger.info(
         "[api.agent] /stream open caller=%s session=%s domain=%s",
         caller_id,
@@ -414,21 +466,45 @@ async def stream_agent(
         # ``dict`` (with ``event`` / ``data`` / ``id`` keys) or a string.
         # We always yield a dict so the consumer sees per-event ``event:``
         # lines, useful for clients that filter on event type.
-        async for event in stream_agent_events(
-            query=payload.query,
-            domain=payload.domain,
-            language=payload.language,
-            session_id=session_id,
-            educational_profile=profile_dict,
-            teacher_provided_context=payload.teacher_provided_context,
-            max_revisions=payload.max_revisions,
-        ):
-            body = _serialise_event(event)
+        #
+        # CORE 6 #31/#34 — acquire a global generation slot or shed load with
+        # an ``error`` event so SSE clients can surface "sistema occupato".
+        try:
+            async with run_slot(label=f"api-stream:{session_id}"):
+                async for event in stream_agent_events(
+                    query=payload.query,
+                    domain=payload.domain,
+                    language=payload.language,
+                    session_id=session_id,
+                    educational_profile=profile_dict,
+                    teacher_provided_context=payload.teacher_provided_context,
+                    max_revisions=payload.max_revisions,
+                ):
+                    body = _serialise_event(event)
+                    yield {
+                        "event": event.kind,
+                        "data": json.dumps(body, ensure_ascii=False, default=str),
+                    }
+        except AtCapacity:
             yield {
-                "event": event.kind,
-                "data": json.dumps(body, ensure_ascii=False, default=str),
+                "event": "error",
+                "data": json.dumps(
+                    {
+                        "kind": "error",
+                        "error": (
+                            "Il sistema è momentaneamente occupato: troppe generazioni "
+                            "in corso. Riprova tra qualche istante."
+                        ),
+                    },
+                    ensure_ascii=False,
+                ),
             }
 
     # ``ping=15`` keeps proxies / load balancers from killing idle
     # connections during the slow Writer call (60-90s LLM round-trip).
-    return EventSourceResponse(_publisher(), ping=15)
+    # EU AI Act Art. 50 (#21) — machine-readable marking on the SSE response.
+    return EventSourceResponse(
+        _publisher(),
+        ping=15,
+        headers={AI_GENERATED_HEADER: AI_GENERATED_HEADER_VALUE},
+    )

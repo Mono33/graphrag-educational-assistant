@@ -14,6 +14,7 @@ from typing import Optional
 from openai import AsyncOpenAI
 
 from aix.agent.prompts.planner_prompt import PLANNER_SYSTEM_PROMPT, PLANNER_USER_TEMPLATE
+from aix.core.concurrency import guarded_chat_completion
 from aix.core.config import config as app_config
 from aix.core.config import extract_response_content
 
@@ -198,7 +199,8 @@ class PlannerAgent:
                 max_tokens=2000,
                 json_mode=True,
             )
-            response = await client.chat.completions.create(
+            response = await guarded_chat_completion(
+                client,
                 messages=[
                     {"role": "system", "content": PLANNER_SYSTEM_PROMPT},
                     {"role": "user", "content": user_prompt},

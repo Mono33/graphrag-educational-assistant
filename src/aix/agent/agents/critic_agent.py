@@ -48,6 +48,7 @@ from aix.agent.prompts.critic_prompt import (
     get_critic_prompts,
     is_lesson_intent,
 )
+from aix.core.concurrency import guarded_chat_completion
 from aix.core.config import config as app_config
 from aix.core.config import extract_response_content
 
@@ -252,7 +253,8 @@ class CriticAgent:
                 json_mode=True,
                 model_override=_CRITIC_MODEL,
             )
-            response = await client.chat.completions.create(
+            response = await guarded_chat_completion(
+                client,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},

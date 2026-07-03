@@ -9,4 +9,6 @@ services:
     image: rg.fr-par.scw.cloud/wonderful-education/graphrag-aixlearning:latest
     restart: unless-stopped
     ports:
-      - "8000:80"
+      # Container now serves on 8765 (aligned with deploy/ Caddy + healthcheck);
+      # host 8000 still reaches the dev API at http://localhost:8000.
+      - "8000:8765"

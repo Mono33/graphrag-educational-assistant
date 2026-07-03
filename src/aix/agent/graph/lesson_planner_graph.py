@@ -154,8 +154,9 @@ async def build_lesson_planner_graph_async() -> Any:
     Build the lesson planner state machine *with* a checkpointer when
     available (CORE 2 #10.2).
 
-    Looks up the process-singleton ``AsyncSqliteSaver`` (or ``None`` if
-    ``langgraph-checkpoint-sqlite`` is not installed), and compiles the
+    Looks up the process-singleton checkpointer (``AsyncPostgresSaver`` when
+    ``LANGGRAPH_DATABASE_URL`` is a Postgres URL, else ``AsyncSqliteSaver``,
+    or ``None`` if the relevant backend package is missing), and compiles the
     graph with it attached. Falls back to the no-checkpointer path on
     graceful degradation.
 
@@ -176,7 +177,12 @@ async def build_lesson_planner_graph_async() -> Any:
     workflow = _build_workflow()
 
     if saver is not None:
-        logger.info("[LessonPlannerGraph] Building graph with AsyncSqliteSaver checkpointer...")
+        # Report the ACTUAL backend (AsyncPostgresSaver / AsyncSqliteSaver),
+        # not a hardcoded name — the saver is chosen at runtime from the env.
+        logger.info(
+            "[LessonPlannerGraph] Building graph with %s checkpointer...",
+            type(saver).__name__,
+        )
         compiled = workflow.compile(checkpointer=saver)
         logger.info("[LessonPlannerGraph] Graph compiled successfully (multi-turn memory: ENABLED)")
     else:

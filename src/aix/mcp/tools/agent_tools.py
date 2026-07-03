@@ -55,6 +55,7 @@ from aix.api.schemas.agent import (
     RetrieverInfo,
 )
 from aix.api.schemas.educational_profile import EducationalProfile
+from aix.core.concurrency import AtCapacity, run_slot
 
 logger = logging.getLogger(__name__)
 
@@ -247,52 +248,67 @@ def register(mcp: FastMCP) -> None:
             len(teacher_provided_context or ""),
         )
 
-        async for event in stream_agent_events(
-            query=query,
-            domain=domain,
-            language=language,
-            session_id=effective_session_id,
-            educational_profile=profile_dict,
-            teacher_provided_context=teacher_provided_context,
-            max_revisions=max_revisions,
-        ):
-            await _emit_progress(event.kind)
+        # CORE 6 #31/#34 — MCP shares the same global generation cap as the
+        # HTTP API and the webui. Acquire a run slot (or shed) so MCP clients
+        # can't bypass the limit. On capacity we raise — FastMCP renders it as
+        # isError=true, matching the existing failure contract above.
+        try:
+            async with run_slot(label=f"mcp:{effective_session_id}"):
+                async for event in stream_agent_events(
+                    query=query,
+                    domain=domain,
+                    language=language,
+                    session_id=effective_session_id,
+                    educational_profile=profile_dict,
+                    teacher_provided_context=teacher_provided_context,
+                    max_revisions=max_revisions,
+                ):
+                    await _emit_progress(event.kind)
 
-            if event.kind == "planner":
-                planner_info = _planner_payload_to_pydantic(event.payload or {})
-            elif event.kind == "retriever":
-                retriever_info = _retriever_payload_to_pydantic(event.payload or {})
-            elif event.kind == "done":
-                final_lesson_plan = event.lesson_plan_md or ""
-                final_meta = _meta_to_pydantic(event.meta or {})
-            elif event.kind == "error":
-                error_message = event.error or "Unknown agent error"
-                # Fall through — the stream is finite; we raise after
-                # the loop terminates so any in-flight state releases.
+                    if event.kind == "planner":
+                        planner_info = _planner_payload_to_pydantic(event.payload or {})
+                    elif event.kind == "retriever":
+                        retriever_info = _retriever_payload_to_pydantic(event.payload or {})
+                    elif event.kind == "done":
+                        final_lesson_plan = event.lesson_plan_md or ""
+                        final_meta = _meta_to_pydantic(event.meta or {})
+                    elif event.kind == "error":
+                        error_message = event.error or "Unknown agent error"
+                        # Fall through — the stream is finite; we raise after
+                        # the loop terminates so any in-flight state releases.
 
-        if error_message is not None or final_meta is None:
-            detail = error_message or "Agent finished without a lesson plan"
+                if error_message is not None or final_meta is None:
+                    detail = error_message or "Agent finished without a lesson plan"
+                    logger.warning(
+                        "[mcp.agent] /run_lesson_plan FAILED session=%s detail=%r",
+                        effective_session_id,
+                        detail[:200],
+                    )
+                    raise RuntimeError(detail)
+
+                logger.info(
+                    "[mcp.agent] /run_lesson_plan complete session=%s duration=%.1fs "
+                    "approved=%s revisions=%s",
+                    effective_session_id,
+                    final_meta.duration_seconds,
+                    final_meta.approved,
+                    final_meta.revision_count,
+                )
+
+                return AgentRunResponse(
+                    lesson_plan_md=final_lesson_plan,
+                    meta=final_meta,
+                    planner=planner_info,
+                    retriever=retriever_info,
+                )
+        except AtCapacity as exc:
             logger.warning(
-                "[mcp.agent] /run_lesson_plan FAILED session=%s detail=%r",
+                "[mcp.agent] /run_lesson_plan at capacity — shedding session=%s",
                 effective_session_id,
-                detail[:200],
             )
-            raise RuntimeError(detail)
-
-        logger.info(
-            "[mcp.agent] /run_lesson_plan complete session=%s duration=%.1fs "
-            "approved=%s revisions=%s",
-            effective_session_id,
-            final_meta.duration_seconds,
-            final_meta.approved,
-            final_meta.revision_count,
-        )
-
-        return AgentRunResponse(
-            lesson_plan_md=final_lesson_plan,
-            meta=final_meta,
-            planner=planner_info,
-            retriever=retriever_info,
-        )
+            raise RuntimeError(
+                "Il sistema è momentaneamente occupato: troppe generazioni in corso. "
+                "Riprova tra qualche istante."
+            ) from exc
 
     _ = agent_run_lesson_plan  # silence "unused" lint — FastMCP registers it

@@ -278,9 +278,9 @@ Implement the regulatory items identified in `Regulatory_Alignment_EU_AI_Act_UNI
 
 | # | Activity | Source | Effort | Owner | Notes |
 |---|---|---|---|---|---|
-| 21 | **Machine-readable AI-generated content marking** *(Markdown comment + HTTP header + C2PA metadata in exports)* | Reg. doc action #1 | 1 day | LM | `<!-- ai-generated: true, system: agentic-graphrag, trace_id: ... -->` at top of every `lesson_plan_md`; `X-AI-Generated: true` HTTP header; PDF/DOCX exports include first-page notice |
-| 22 | **Visible "Generato dall'IA" disclosure** *(persistent footer + per-message badge)* | Reg. doc action #2 | 2 h | LM | Django/template change; existing aix-brand.css styling reused |
-| 23 | **"How the AI works" teacher guide** *(static page accessible from header)* | Reg. doc action #6 | 2 h | LM | Plain-Italian explanation of the 4-agent pipeline; non-technical, for AI literacy obligations |
+| 21 | **Machine-readable AI-generated content marking** *(Markdown comment + HTTP header + C2PA metadata in exports)* | Reg. doc action #1 | 1 day | LM | ✅ **DONE (2026-06-28):** `src/aix/core/ai_marking.py`; HTML comment prepended to finalized `lesson_plan_md` (`trace_id` = lesson id / session id); `X-AI-Generated: true` on API `/run` + `/stream` and WebUI export/print routes; TXT export uses human-readable notice (comment stripped). **Still open:** C2PA metadata in PDF/DOCX exports. |
+| 22 | **Visible "Generato dall'IA" disclosure** *(persistent footer + per-message badge)* | Reg. doc action #2 | 2 h | LM | ✅ **DONE (2026-06-28):** persistent footer strip in `_base.html` + per-card `Generato dall'IA` badge on lesson card and history; print/PDF indigo notice banner. Verified live on WebUI + MD download. |
+| 23 | **"How the AI works" teacher guide** *(static page accessible from header)* | Reg. doc action #6 | 2 h | LM | ✅ **DONE (2026-06-28):** `pages/about_ai.html` at `GET /webui/about-ai` (anonymous-OK); plain-Italian 4-agent pipeline, UDL/Neuro base, grounded-vs-general coverage, human-in-the-loop, limits; linked from navbar + footer disclosure. Purely additive — no agent/SSE/DB/route changes; reuses existing `aix-brand.css`. |
 | 24 | **Environmental sustainability telemetry** *(`total_tokens`, `estimated_kwh`, `co2eq_grams` per run)* | Reg. doc action #3 (UNI 11621-8 Theme 2) | 1 day | LM | Add to `AgentRunMeta` and Langfuse traces; conversion factor ~0.001-0.003 kWh per 1k tokens |
 
 **Wave 5 deliverable:** every lesson plan is clearly marked as AI-generated in both UI and exported artifacts; the system is Article 50 compliant by the regulatory deadline.
@@ -363,12 +363,14 @@ This section answers a recurring product-team question ("can it handle many teac
 
 Ordered so the highest-value, lowest-risk items come first. None require a horizontal-scale refactor.
 
+> **Status — 2026-06-28:** #31, #32, #33, #34 ✅ **implemented and merged** (all per-process via `src/aix/core/concurrency.py`, env-configurable, wired across WebUI + JSON API + MCP; 16/16 Phase-A unit tests green). #35/#36 (load test + vertical sizing) remain open.
+
 | # | Activity | Effort | Owner | Notes |
 |---|---|---|---|---|
-| 31 | **Global generation queue + bounded concurrency** *(`asyncio.Semaphore` caps N in-flight pipelines; excess requests queue)* | 4-6 h | LM | The single biggest lever. Surface an "in coda…" state in the WebUI when queued; cap is env-configurable (e.g. `AIX_MAX_CONCURRENT_RUNS`) |
-| 32 | **Process-wide concurrent-LLM-call cap** *(token bucket / semaphore across planner+writer+critic)* | 3-4 h | LM | Protects against OpenRouter 429s and cost spikes independent of #31; tune to provider limits |
-| 33 | **Per-user rate limiting** *(e.g. 30 lessons/day, 10/hour)* | 2 h | LM | Same item as Wave 3 #13 — listed here for completeness; slowapi middleware, per-role config |
-| 34 | **Load-shedding / graceful "sistema occupato"** *(reject at capacity instead of failing mid-run)* | 2-3 h | LM | When queue (#31) is full, return a friendly "riprova tra poco" rather than a hard error or a slow run |
+| 31 | **Global generation queue + bounded concurrency** *(`asyncio.Semaphore` caps N in-flight pipelines; excess requests queue)* | 4-6 h | LM | ✅ Done. The single biggest lever. `AIX_MAX_CONCURRENT_RUNS` (default 6) + `AIX_RUN_QUEUE_TIMEOUT_S` short queue window before shedding |
+| 32 | **Process-wide concurrent-LLM-call cap** *(token bucket / semaphore across planner+writer+critic)* | 3-4 h | LM | ✅ Done. `AIX_MAX_CONCURRENT_LLM_CALLS` (default 12) via `llm_slot()`/`guarded_chat_completion`; protects against OpenRouter 429s/cost spikes independent of #31 |
+| 33 | **Per-user rate limiting** *(e.g. 30 lessons/day, 10/hour)* | 2 h | LM | ✅ Done — **in-house** rolling-window limiter in `aix.core.concurrency` (`AIX_USER_RATE_LIMIT` / `AIX_USER_RATE_WINDOW_S`), **no new dependency** (slowapi avoided). Per-process; checked at run initiation so SSE reconnects don't count. Cross-worker fairness deferred to Phase B (Redis) |
+| 34 | **Load-shedding / graceful "sistema occupato"** *(reject at capacity instead of failing mid-run)* | 2-3 h | LM | ✅ Done. When #31's queue window expires, callers get `AtCapacity` → WebUI busy card / API 503 / MCP error, not a hard error or slow run |
 | 35 | **Concurrency load test** *(k6 / Locust: simulate N concurrent teachers; measure P95, 429 rate, RAM)* | 4-6 h | LM | Produces the real "safe concurrent users on this VM" number; feeds #36 |
 | 36 | **Vertical capacity sizing** *(measure per-run RAM/CPU; decide CX22 4 GB → CCX13 8 GB if needed)* | 2 h | LM + FEM | Cheapest scale-up is a bigger single VM (see §3.2); revisit only if #35 shows headroom is short |
 
@@ -378,10 +380,18 @@ Ordered so the highest-value, lowest-risk items come first. None require a horiz
 
 | # | Activity | Effort | Owner | Notes |
 |---|---|---|---|---|
-| 37 | **DB-backed run registry** *(replace in-memory `_ACTIVE_RUNS` with a Postgres row + heartbeat)* | 1-1.5 d | LM | Prereq for >1 worker: lets workers see each other's in-flight runs and recover stale rows after a crash |
-| 38 | **Revisit module-level singletons** *(graph + agents → worker pool or per-request graph; verify async/thread safety)* | 1-2 d | LM | Removes the shared-mutable-state risk under truly parallel runs; consolidate streaming into one `aix.agent.streaming` module (per Tech Doc §17.2) |
-| 39 | **Multi-worker / multi-replica deploy** *(uvicorn `--workers` or replicas behind Caddy)* | 0.5-1 d | LM + FEM | Safe only after #37 + #38; Postgres checkpointer + WebUI DB are already shared, so state is ready |
+| 37 | **DB-backed run registry** *(replace in-memory `_ACTIVE_RUNS` with a Postgres row + heartbeat)* | 1-1.5 d | LM | ✅ Implemented locally (2026-06-28): `agent_run` coordination table + `aix.core.run_registry` abstraction; SQLite/dev keeps in-memory behavior, Postgres/prod auto-selects DB-backed claims; heartbeat TTL recovers stale rows after crashes. Unit tests + local Postgres smoke passed. |
+| 38 | **Revisit module-level singletons + stream-loop consolidation** *(graph + agents → worker pool or per-request graph; verify async/thread safety; consolidate streaming into one `aix.agent.streaming` module)* | 1-2 d | LM | The correctness-critical retriever bug is ✅ hot-fixed via per-domain cache. Remaining stream-loop consolidation is a maintainability cleanup, not a hard dependency for #37. Defer until after the multi-worker safety path unless tests show it blocks #37. |
+| 39 | **Multi-worker / multi-replica deploy** *(uvicorn `--workers` or replicas behind Caddy)* | 0.5-1 d | LM + FEM | 🟡 Code change landed + local validation passed (2026-07-01). The only code change #39 required: concurrent first-boot DDL is now serialised by a transaction-scoped Postgres advisory lock in `init_db()` (`aix.webui.db._init_ddl_lock_stmt`) so N workers booting against a fresh DB don't race `create_all`; SQLite/dev keeps its lock-free single-worker path (backward compatible). Validated with a multi-process harness against dev Postgres: 6 concurrent `init_db()` processes all bootstrapped cleanly (tables created once), and 2 concurrent `claim()` processes on the same lesson yielded exactly one winner. Unit test `tests/unit/test_init_db_locking.py` guards the dialect selection + idempotent SQLite bootstrap. **Remaining (staging/Linux, needs FEM VM):** the full `uvicorn --workers 2` app run with real lessons behind Caddy (2-tab dedup, cross-worker "già in corso", crash-recovery takeover after heartbeat TTL) + re-size the PER-PROCESS caps and Postgres `max_connections` for the chosen worker count (see §7.3 notes below). |
 | 40 | **Operational concurrency dashboard** *(active runs, queue depth, LLM call rate, cost/run, 429 rate)* | 0.5 d | LM | Extends the Langfuse work in Wave 4 #15; the cockpit for tuning #31/#32 caps |
+
+**#39 multi-worker configuration notes (when enabling `--workers N`):**
+
+- **Worker count** is set via `API_CMD_ARGS=--workers N` (the prod `Dockerfile` CMD passes `$API_CMD_ARGS` through to uvicorn). Default stays single-worker — nothing changes until N is set, so this is opt-in / backward compatible.
+- **Re-size the per-process caps.** The `AIX_MAX_CONCURRENT_RUNS` / `AIX_MAX_CONCURRENT_LLM_CALLS` semaphores in `aix.core.concurrency` are per-process, so the effective ceiling is `N × value`. Divide the desired *aggregate* by N (e.g. target 6 total runs with 3 workers → `AIX_MAX_CONCURRENT_RUNS=2`) so the box + OpenRouter rate limit aren't exceeded.
+- **Budget Postgres connections.** Each worker opens its own asyncpg pool (WebUI DB) + psycopg pool (checkpointer, `max_size≈20`). Ensure `N × (webui_pool + checkpointer_pool) + headroom ≤` Postgres `max_connections` (default 100), or cap the pool sizes.
+- **Per-user rate limiter (#33) stays per-process** → a user's true budget becomes `N ×` looser. Acceptable for the pilot; a strict cross-worker guarantee needs a shared store (Redis) — deferred.
+- **No sticky sessions needed.** With `--workers N` behind one Caddy upstream, the #37 registry makes any worker correctly answer "già in corso" for a lesson another worker is driving; the token stream simply flows on the owning worker.
 
 ### 7.4 Recommendation
 
@@ -415,7 +425,65 @@ These must now be resolved before the production pilot can be opened to users:
 
 ---
 
+## 10. Finalized pre-deploy sequence (deploy-readiness consolidation)
+
+> Added 2026-06-27 *(updated 2026-06-28)*. This section does not change any decision above; it consolidates the §5 launch blockers and the §7 concurrency roadmap into a single executable order, updated with code-grounded findings from a pre-deploy review: WebUI authentication is already implemented; the EU AI Act Article 50 marking (#21/#22) and the AI-literacy guide (#23) are **now implemented (2026-06-28)**; the default local WebUI database is still SQLite, but the Postgres code path has started local validation successfully; and the per-domain retriever singleton swap has since been **hot-fixed** (per-domain cache in `get_retriever`, see §10.2), with the broader singleton review + stream-loop consolidation still tracked under Phase B #38.
+
+### 10.1 Decision — full concurrency (Phase A + Phase B)
+
+Direction now expects significantly more than the original 5-10 pilot users. The real driver of load is **concurrent in-flight generations** (each a 30-60 s, multi-LLM-call run), not the number of *registered* teachers — but to be production-grade for many simultaneous users we target the **full** roadmap (§7 Phase A **and** Phase B), not just the pilot safety nets. Phase B is **required, not optional**, because of the singleton correctness hazard in §10.2.
+
+### 10.2 Code-grounded findings (2026-06-27)
+
+| Finding | Where | Impact |
+|---|---|---|
+| WebUI DB defaults to SQLite; Postgres path validated locally | `WEBUI_DATABASE_URL` → SQLite by default, or `postgresql+asyncpg://...` when set | SQLite remains the backward-compatible dev default. Phase B / FEM deploy must set Postgres. Local smoke on 2026-06-28: Docker Postgres 16 started; Windows selector loop activated; WebUI DB bootstrapped on Postgres. |
+| Per-domain retriever singleton swap | `get_retriever(domain)` in `src/aix/agent/graph/nodes.py` | Two concurrent runs in different domains (neuro + udl) used to overwrite a shared `_retriever` → wrong-domain retrieval. **Correctness bug — ✅ hot-fixed (2026-06-28):** now a per-domain cache (`_retrievers: dict[str, RetrieverAgent]`) + 2 unit tests (`test_retriever_singleton_per_domain.py`). Broader singleton review + stream-loop consolidation still tracked under Phase B #38. |
+| Per-process registries | `_ACTIVE_RUNS` (`src/aix/webui/lessons/routes.py`), writer `write_stream` (`src/aix/webui/agent/service.py`) | ✅ `_ACTIVE_RUNS` replaced by #37 run registry (SQLite/dev in-memory, Postgres/prod shared `agent_run` table + heartbeat). Writer `write_stream` remains local to one streaming response and is not a cross-worker coordination primitive. |
+| Two near-duplicate stream loops | `run_agent_stream` + `stream_agent_events` (`src/aix/webui/agent/service.py`) | Consolidate into one `aix.agent.streaming` module as part of #38 |
+| EU AI Act marking (#21/#22) | `src/aix/core/ai_marking.py`; footer + badge + MD comment + export headers | ✅ **DONE (2026-06-28)** — C2PA in PDF/DOCX still open; `co2eq` telemetry is Wave 5 #24 |
+| Auth present | `src/aix/webui/auth/` (register/login/logout, cookie JWT) | Wave 3 #10/#11 effectively done; only an admin-bootstrap path to confirm |
+
+### 10.3 Execution order
+
+1. **Phase A — single-worker safety nets** *(≈1.5-2 days)* — ✅ **complete (2026-06-28)**: #31 global generation queue + `asyncio.Semaphore` (`AIX_MAX_CONCURRENT_RUNS`), #32 process-wide concurrent-LLM cap, #34 load-shedding "sistema occupato", #33 per-user rate limiting (**in-house** rolling-window limiter — no new dependency; slowapi avoided).
+2. **Phase B — true multi-user** *(≈4-6 days; dependency-based order)*: validate Postgres first (`WEBUI_DATABASE_URL` + `LANGGRAPH_DATABASE_URL`) → ✅ #37 DB-backed run registry → #39 multi-worker/replicas behind Caddy → #40 concurrency dashboard → #38 remaining stream-loop consolidation as a carefully tested cleanup. Rationale: the #38 correctness-critical retriever bug is already hot-fixed, and `_ACTIVE_RUNS` lived in the WebUI route layer, so #37 did not require stream-loop consolidation first. Deferring the SSE refactor reduces risk to the already-working streaming path.
+3. **Deploy configuration (CD)**: fill `.env.prod` (Postgres URLs for **both** `WEBUI_DATABASE_URL` and `LANGGRAPH_DATABASE_URL`), `WEBUI_CORS_ALLOW_ORIGINS` lockdown, `AIX_TLS_EMAIL`, `AIX_DOMAIN`; resolve the `agente`/`graph` hostname question (§8).
+4. **EU AI Act Article 50 marking** (Wave 5 #21/#22) — ✅ **complete (2026-06-28):** HTTP header + Markdown comment + visible "Generato dall'IA" + export/print notices. **Hard legal deadline August 2, 2026.** Remaining polish: C2PA in PDF/DOCX (optional enhancement within #21).
+5. **Production smoke test (Wave 6 #25) + launch** — see §10.5 for exactly when this runs relative to the CD pipeline.
+
+**Hard ordering rule:** never enable uvicorn `--workers > 1` or multiple replicas before Postgres validation and #37 (DB-backed registry) are merged and smoke-tested. Both are done, and the #39 code prerequisite (concurrent-safe startup DDL) has now landed and passed a local multi-process validation. The remaining #39 gate before production replicas is the full `uvicorn --workers 2` app run on Linux/staging (2-tab dedup, cross-worker "già in corso", crash-recovery takeover) plus sizing the per-process caps + Postgres `max_connections`. The retriever singleton corruption hazard is already fixed via per-domain cache; the remaining #38 stream-loop consolidation is still important, but it is no longer a blocker for the first safe multi-worker validation.
+
+### 10.4 Local pre-deploy verification checklist (before merging to CD)
+
+- [ ] **CORS**: set `WEBUI_CORS_ALLOW_ORIGINS` to the prod origin and confirm the startup log no longer shows `origins=['*']`.
+- [x] **Postgres WebUI DB startup**: point `WEBUI_DATABASE_URL` at local Postgres 16; confirm clean startup + table bootstrap. ✅ 2026-06-28 local smoke: `docker-compose.dev-postgres.yml` started `aix-postgres-dev`; app logged Windows selector-loop activation and `WebUI DB ready (postgresql+asyncpg://...)`.
+- [x] **Postgres LangGraph checkpointer**: ✅ 2026-06-28 — `scripts/ops/smoke_postgres_checkpointer.py` passed all steps against `aix-postgres-dev`: `[checkpointer] AsyncPostgresSaver ready (pool max_size=20, multi-turn enabled)`, 3 checkpoint tables bootstrapped, `aput`→`aget_tuple` round-trip persisted+retrieved, clean close. **Two Windows-only blockers found and fixed:** (1) psycopg async needs the selector loop — `scripts/ops/run_local.py` sets `WindowsSelectorEventLoopPolicy` before uvicorn builds its loop; (2) libpq resolves `localhost` to IPv6 `::1` first, but Docker publishes the port on IPv4 `127.0.0.1` only, so `localhost` stalled the pool (30s `PoolTimeout`) — `checkpointer._prefer_ipv4_localhost_on_windows()` now rewrites the host to `127.0.0.1` on Windows (no-op on Linux/prod). Both are dev-on-Windows issues only; Linux/Docker production was never affected. Remaining: one real lesson through the running app via `run_local.py` for the full end-to-end confirmation.
+- [x] **DB-backed run registry (#37)**: ✅ 2026-06-28 — `agent_run` table + `aix.core.run_registry` wired into the WebUI SSE lifecycle. SQLite/dev auto-selects in-memory behavior for backward compatibility; Postgres/prod auto-selects DB-backed claims with heartbeat/stale-row takeover. Tests: `tests/unit/test_run_registry.py` + `tests/unit/test_concurrency_limits.py` passed (19/19). Local Postgres smoke passed: backend=`postgres`, first claim active, second same-lesson claim refused, release cleared active state.
+- [x] **Concurrent-safe startup DDL (#39 code change)**: ✅ 2026-07-01 — `init_db()` serialises `create_all` under a transaction-scoped Postgres advisory lock so concurrent `--workers` don't race on a fresh DB (`aix.webui.db._init_ddl_lock_stmt`; SQLite unchanged). Unit test `tests/unit/test_init_db_locking.py` (4 tests) + local multi-process validation against dev Postgres passed (6 concurrent `init_db()` → clean bootstrap; 2 concurrent same-lesson `claim()` → exactly one winner).
+- [ ] **Multi-worker app run (#39 staging gate)**: on Linux/Docker (FEM VM or local prod compose) boot `uvicorn --workers 2` and verify end-to-end: same-lesson 2-tab dedup ("già in corso") across workers, two different lessons run concurrently, and crash-recovery takeover after the heartbeat TTL when the owning worker is killed mid-run. Record the chosen worker count + re-sized caps + Postgres `max_connections` (see §7.3 #39 notes).
+- [ ] **Concurrency correctness**: run two simultaneous generations in **different domains** (neuro + udl); confirm no cross-domain contamination (the `get_retriever` hazard was hot-fixed 2026-06-28 via a per-domain cache — this check now verifies the fix holds end-to-end under real concurrent load).
+- [ ] **Production image**: `docker compose -f deploy/docker-compose.prod.yml build` and `/api/v1/health` returns 200.
+- [x] **AI Act marking** present on a generated lesson (#21 MD comment + #22 footer/badge verified 2026-06-28).
+
+### 10.5 Where the "production smoke test" sits relative to the CD pipeline
+
+FEM's model is **merge/push to GitHub → CD auto-deploys to the VM**, so there are **two distinct smoke gates**:
+
+1. **Pre-merge (local/staging) smoke — BEFORE the CD pipeline.** Runs on a developer machine (the local `uvicorn` run) and on the production Docker image build (`deploy/docker-compose.prod.yml` + healthcheck). Catches startup/config/build failures before they ever reach the VM. This is the §10.4 checklist.
+2. **Production smoke (Wave 6 #25) — AFTER the CD pipeline deploys, BEFORE opening access to users.** Runs against the live `https://agente.aiforlearning.digital` with a real account, real KG, real LLM, and full UDL + Neuro queries; verifies TLS, the CORS lockdown, the latency budget, and that the AI-Act marking is present. CORS stays locked and no pilot accounts are provisioned until this gate is green.
+
+Because the merge itself triggers the deploy, there is **no manual hold** between deploy and live. The safety net for a failed production smoke is **rollback** (redeploy the previous commit/tag — Wave 6 #26), not a pre-publish staging slot. If FEM can provide a separate **staging** instance, gate #2 can run there first; today the plan assumes a single CD-managed production instance.
+
+---
+
 **Document owner:** LM (AI Team)
 **Intended reviewers:** FEM Direction, AI Team (LM + AG), Operations
-**Version:** 1.1
+**Version:** 2.0 *(2026-07-01 — Phase B #39 code prerequisite landed: `init_db()` now serialises first-boot `create_all` under a transaction-scoped Postgres advisory lock so concurrent `uvicorn --workers` processes don't race the DDL on a fresh DB; SQLite/dev keeps its lock-free single-worker path (backward compatible). Verified by `tests/unit/test_init_db_locking.py` + a local multi-process validation against dev Postgres (6 concurrent `init_db()` bootstraps cleanly; 2 concurrent same-lesson `claim()` → exactly one winner). Added §7.3 multi-worker configuration notes (worker count via `API_CMD_ARGS=--workers N`, per-process cap re-sizing, Postgres connection budgeting). Remaining #39 gate: the full `--workers 2` app run on Linux/staging behind Caddy. Also reverted a real `WEBUI_AUTH_SECRET` that had been pasted into the committed `deploy/.env.prod.example` back to a placeholder — real secrets belong only in the gitignored `.env.prod`.)*
+
+**Prior version:** 1.9 *(2026-06-28 — Phase B #37 DB-backed run registry implemented and locally smoke-tested: SQLite/dev preserves the old in-memory behavior; Postgres/prod auto-selects a shared `agent_run` table with heartbeat + stale-row takeover so multiple workers can see each other's in-flight lesson generations. Tests and local Postgres registry smoke passed. Next gate: #39 multi-worker validation behind the already-validated Postgres WebUI DB + LangGraph checkpointer.)*
+
+**Prior version:** 1.8 *(2026-06-28 — Phase B Postgres validation complete: both the WebUI DB (asyncpg) and the LangGraph checkpointer (psycopg `AsyncPostgresSaver`) are validated on local Docker Postgres 16. Two Windows-only dev blockers were diagnosed and fixed: psycopg requires the selector event loop (`run_local.py` launcher), and `localhost` must resolve to IPv4 because Docker publishes only on `127.0.0.1` while Windows libpq prefers IPv6 `::1` (checkpointer now auto-rewrites the host on Windows). Neither affects Linux/Docker production. Phase B order unchanged: Postgres validation → #37 DB-backed registry → #39 multi-worker → #40 dashboard; #38 stream-loop consolidation deferred as non-blocking cleanup.)*
+
+**Prior version:** 1.7 *(2026-06-28 — Phase B order corrected after code-grounded dependency review: Postgres validation → #37 DB-backed registry → #39 multi-worker → #40 dashboard; #38 remaining stream-loop consolidation deferred as non-blocking cleanup because the retriever singleton correctness bug is already hot-fixed and `_ACTIVE_RUNS` lives in the route layer. Also records local Postgres WebUI DB startup smoke as passed; LangGraph checkpointer smoke remained pending until a real lesson run.)*
 **Next review:** After FEM confirms hostname/CD configuration for `agente.aiforlearning.digital` and `graph.aiforlearning.digital`

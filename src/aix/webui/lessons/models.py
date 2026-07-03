@@ -282,3 +282,55 @@ class LessonMessage(Base):
         # walk delivers messages in O(log N + K).
         Index("ix_lesson_message_lesson_turn", "lesson_id", "turn_index"),
     )
+
+
+class AgentRun(Base):
+    """Cross-worker registry of *in-flight* agent runs (CORE 6 #37).
+
+    One row exists **only while a generation is running**: it is INSERTed when a
+    run is claimed and DELETEd when it finishes. This replaces the per-process
+    ``_ACTIVE_RUNS`` set so multiple uvicorn workers / replicas share a single
+    source of truth for "is this lesson already being generated?" — the
+    prerequisite for the multi-worker deploy (#39).
+
+    Ephemeral by design: this is a coordination table, not run history (that
+    lives in ``LessonMessage`` + Langfuse). Keeping only live rows keeps it tiny
+    and the duplicate-attach check a single indexed point-lookup.
+
+    Crash recovery: ``heartbeat_at`` is refreshed periodically by the owning
+    worker. A row whose heartbeat is older than the configured TTL is treated as
+    *stale* (the worker crashed mid-run) — it is ignored by ``is_active`` and may
+    be taken over by a new ``claim`` — so a crash never permanently blocks a
+    lesson from being re-run. This reproduces the old in-memory semantic where
+    the set was simply lost on restart.
+
+    Timestamps are stored as naive UTC (``datetime.utcnow()``, written by the
+    app) rather than ``timezone=True`` + ``func.now()``: the staleness check
+    compares app-clock values and must behave identically on SQLite (tests /
+    dev) and Postgres (prod), avoiding aware/naive comparison pitfalls.
+    """
+
+    __tablename__ = "agent_run"
+
+    # One in-flight run per lesson → lesson_id is the natural claim key / PK.
+    lesson_id: Mapped[uuid.UUID] = mapped_column(GUID, primary_key=True)
+
+    # Per-claim identity. ``release``/``heartbeat`` filter on this so a worker
+    # never deletes/refreshes a successor's row after a stale takeover.
+    run_id: Mapped[uuid.UUID] = mapped_column(GUID, nullable=False, default=uuid.uuid4)
+
+    # Owning user (for the #40 dashboard). Nullable — coordination doesn't
+    # depend on it, and we never want a missing owner to block a claim.
+    owner_id: Mapped[Optional[uuid.UUID]] = mapped_column(GUID, nullable=True)
+
+    # host:pid of the process driving the run — diagnostics + dashboard.
+    worker_id: Mapped[str] = mapped_column(String(128), nullable=False)
+
+    started_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    heartbeat_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+    __table_args__ = (
+        # Supports the dashboard's "all live runs" scan and the staleness
+        # cutoff comparison.
+        Index("ix_agent_run_heartbeat", "heartbeat_at"),
+    )

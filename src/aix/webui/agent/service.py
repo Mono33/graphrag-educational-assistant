@@ -52,7 +52,9 @@ Reentrancy / concurrency:
     The compiled graph and its underlying agents are module-level singletons
     inside ``aix.agent.graph.nodes``. That's fine for a single user dev box
     but worth re-evaluating in CORE 6 deploy. The route layer enforces
-    one in-flight run per ``lesson.id`` via ``_ACTIVE_RUNS``.
+    one in-flight run per ``lesson.id`` via the run registry
+    (``aix.core.run_registry`` — in-memory on SQLite dev, shared Postgres
+    ``agent_run`` table across workers in prod, #37).
 """
 
 from __future__ import annotations
@@ -66,6 +68,8 @@ from typing import Any, Optional
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from aix.core.ai_marking import ensure_marking
 
 logger = logging.getLogger(__name__)
 
@@ -703,6 +707,7 @@ async def _summarise_history(
     # Local import to avoid pulling the OpenAI stack into the module's
     # cold import path (test collection, etc.). Mirrors the pattern in
     # ``run_agent_stream``.
+    from aix.core.concurrency import guarded_chat_completion
     from aix.core.config import config as app_config
     from aix.core.config import extract_response_content
 
@@ -759,7 +764,8 @@ async def _summarise_history(
         temperature=0.2,
         max_tokens=600,
     )
-    response = await client.chat.completions.create(
+    response = await guarded_chat_completion(
+        client,
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
@@ -1504,6 +1510,13 @@ async def run_agent_stream(
                 "L'agente ha terminato senza produrre una lezione (stato finale vuoto)."
             )
 
+        # EU AI Act Art. 50 (#21) — stamp the machine-readable provenance comment
+        # once, here at finalization, so the stored plan, the persisted assistant
+        # turn, every export, and the SSE ``done`` payload all carry it. Drafts
+        # (writer events) intentionally stay unmarked. ``trace_id`` falls back to
+        # the lesson id until Langfuse run-tracing lands (#24).
+        lesson_plan_md = ensure_marking(lesson_plan_md, trace_id=str(lesson.id))
+
         lesson.status = "complete"
         lesson.lesson_plan_md = lesson_plan_md
         await session.commit()
@@ -1775,6 +1788,11 @@ async def stream_agent_events(
             raise RuntimeError(
                 "L'agente ha terminato senza produrre una lezione (stato finale vuoto)."
             )
+
+        # EU AI Act Art. 50 (#21) — machine-readable provenance comment on the
+        # API ``done`` payload too. ``session_id`` is the available identifier
+        # on this (DB-less) path until Langfuse run-tracing lands (#24).
+        lesson_plan_md = ensure_marking(lesson_plan_md, trace_id=session_id)
 
         logger.info(
             "[api.agent] run complete session_id=%s thread_id=%s duration=%.1fs "

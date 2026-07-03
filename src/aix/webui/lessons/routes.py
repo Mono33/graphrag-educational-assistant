@@ -61,6 +61,7 @@ SSE event vocabulary (single ``card`` event, terminating ``final`` / ``error``):
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import re
 import uuid
@@ -85,6 +86,21 @@ from aix.api.schemas.educational_profile import (
     PEDAGOGICAL_INTENT_OPTIONS,
     STUDENT_ATTR_LABELS,
 )
+from aix.core.ai_marking import (
+    AI_GENERATED_HEADER,
+    AI_GENERATED_HEADER_VALUE,
+    DISCLOSURE_LONG,
+    DISCLOSURE_SHORT,
+    strip_marking,
+)
+from aix.core.concurrency import (
+    AtCapacity,
+    RateLimited,
+    acquire_run_slot,
+    check_user_rate_limit,
+    release_run_slot,
+)
+from aix.core.run_registry import get_run_registry, heartbeat_loop
 from aix.webui.agent import run_agent_stream
 from aix.webui.auth.dependencies import optional_current_user
 from aix.webui.auth.models import User
@@ -105,20 +121,22 @@ templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
 router = APIRouter(prefix="/webui", tags=["webui-lessons"])
 
 
-# Per-process registry of in-flight agent runs. Used by the SSE endpoint to
+# In-flight agent run registry (CORE 6 #37). Used by the SSE endpoint to
 # detect when a second client (a duplicate browser tab, an aggressive
-# auto-reconnect) tries to attach to a lesson we're already streaming, and
-# to gracefully surface that as an error rather than silently kicking off a
+# auto-reconnect) tries to attach to a lesson we're already streaming, and to
+# gracefully surface that as an error rather than silently kicking off a
 # second concurrent run.
 #
-# Limitations (acknowledged):
-#   • Per-process only. With multiple workers (gunicorn, multi-replica
-#     deploys) two workers wouldn't see each other's runs. Fine for dev,
-#     replaced by a real run registry (DB row + heartbeat) in CORE 6.
-#   • Doesn't survive a server restart. That's intentional: a stale
-#     ``lesson.status == "running"`` row should *not* keep us out of
-#     re-running the lesson after a crash — without it we'd never recover.
-_ACTIVE_RUNS: set[uuid.UUID] = set()
+# Backend is chosen at runtime by ``get_run_registry()``:
+#   • SQLite / single-worker dev → in-memory set (the original behaviour;
+#     nothing about the dev workflow changes, and a restart simply clears it —
+#     so a crash never permanently blocks re-running a lesson).
+#   • Postgres / multi-worker prod → shared ``agent_run`` table + heartbeat, so
+#     workers/replicas see each other's in-flight runs and stale rows from a
+#     crashed worker self-heal after one TTL. This is what unblocks #39.
+#
+# Both backends expose the same async surface (claim / heartbeat / release /
+# is_active), so the lifecycle below is identical regardless of backend.
 
 
 def _label_dicts() -> dict[str, Any]:
@@ -1086,6 +1104,25 @@ async def lesson_run(
             status_code=409,
         )
 
+    # ── Per-user rate limit (#33) ─────────────────────────────────────
+    # Cap how often a single teacher can *start* runs (rolling window).
+    # Checked here at the run-initiation POST rather than in the SSE GET,
+    # so legitimate stream reconnects never count against the budget.
+    try:
+        check_user_rate_limit(f"webui:{user.id}")
+    except RateLimited as exc:
+        return HTMLResponse(
+            content=(
+                '<div class="rounded-lg border border-amber-200 bg-amber-50 '
+                'text-amber-900 px-3 py-2 text-sm">'
+                "Hai avviato troppe generazioni in poco tempo. Attendi "
+                f"{int(exc.retry_after) + 1} secondi e riprova."
+                "</div>"
+            ),
+            status_code=429,
+            headers={"Retry-After": str(int(exc.retry_after) + 1)},
+        )
+
     # ── Multi-turn mode detection (#10.3c) ────────────────────────────
     # Computed early so the phase-1/phase-2 logic below can branch on it.
     is_follow_up = lesson.status in ("complete", "error")
@@ -1491,6 +1528,29 @@ async def lesson_stream(
         # replay the whole run forever.
         terminal_marker = {"event": "end", "data": "ok"}
 
+        # #37 — shared in-flight run registry (cross-worker on Postgres,
+        # in-memory on SQLite dev). Resolved once per stream.
+        _registry = get_run_registry()
+
+        def _busy_event() -> dict[str, str]:
+            """Friendly 'already running elsewhere' SSE card. Emitted both for
+            the up-front duplicate-attach check and when an atomic claim loses a
+            cross-worker race after that check."""
+            return {
+                "event": "error",
+                "data": _render_partial(
+                    request,
+                    "partials/chat_error.html",
+                    {
+                        "lesson": lesson,
+                        "error": (
+                            "Una generazione è già in corso in un'altra finestra. "
+                            "Attendi il termine e ricarica la pagina."
+                        ),
+                    },
+                ),
+            }
+
         # ── REPLAY paths ─────────────────────────────────────────────
         if lesson.status == "complete":
             # Send the same small placeholder used by the live run path.
@@ -1541,22 +1601,10 @@ async def lesson_stream(
 
         # status == "running". Guard against a duplicate concurrent attach
         # (second tab, aggressive reconnect) — only one connection drives
-        # the agent at a time, the rest get a friendly error and close.
-        if lesson.id in _ACTIVE_RUNS:
-            yield {
-                "event": "error",
-                "data": _render_partial(
-                    request,
-                    "partials/chat_error.html",
-                    {
-                        "lesson": lesson,
-                        "error": (
-                            "Una generazione è già in corso in un'altra finestra. "
-                            "Attendi il termine e ricarica la pagina."
-                        ),
-                    },
-                ),
-            }
+        # the agent at a time, the rest get a friendly error and close. On
+        # Postgres this check sees runs owned by *other* workers too.
+        if await _registry.is_active(lesson.id):
+            yield _busy_event()
             yield terminal_marker
             return
 
@@ -1568,7 +1616,13 @@ async def lesson_stream(
         # → Phase 2 (full pipeline) starts.
         _profile_j = lesson.educational_profile_json or {}
         if _profile_j.get("__planner_only__"):
-            _ACTIVE_RUNS.add(lesson.id)
+            # Atomically claim the lesson. ``None`` → another (live) connection
+            # or worker won the race between our is_active() check and here.
+            _token = await _registry.claim(lesson.id, owner_id=lesson.owner_id)
+            if _token is None:
+                yield _busy_event()
+                yield terminal_marker
+                return
             try:
                 from aix.agent.agents.planner_agent import PlannerAgent
                 from aix.api.schemas.educational_profile import (
@@ -1638,11 +1692,58 @@ async def lesson_stream(
                     ),
                 }
             finally:
-                _ACTIVE_RUNS.discard(lesson.id)
+                await _registry.release(lesson.id, _token)
                 yield terminal_marker
             return
 
-        _ACTIVE_RUNS.add(lesson.id)
+        # CORE 6 #31/#34 — global generation cap + graceful load-shedding.
+        # Acquire one of the process-wide run slots before starting the full
+        # pipeline; if all slots are busy past the queue window, shed load
+        # with a friendly "sistema occupato" card instead of piling on a
+        # new concurrent pipeline (which would spike LLM cost / 429s).
+        try:
+            await acquire_run_slot(label=f"webui:{lesson.id}")
+        except AtCapacity:
+            # Shed gracefully (#34). The POST /run handler already flipped the
+            # row to "running" before this SSE stream opened, so revert it to
+            # its pre-run state — otherwise the lesson list shows a stale
+            # spinner for a run that never started. Reverting (rather than
+            # marking "error") keeps a retry on the correct mode: "draft" for a
+            # first turn, "complete" for a follow-up on an already-finished
+            # lesson (see lesson_run mode auto-detection).
+            lesson.status = "complete" if (lesson.lesson_plan_md or "").strip() else "draft"
+            await session.commit()
+            yield {
+                "event": "error",
+                "data": _render_partial(
+                    request,
+                    "partials/chat_error.html",
+                    {
+                        "lesson": lesson,
+                        "error": (
+                            "Il sistema è momentaneamente occupato: troppe generazioni "
+                            "in corso in questo momento. Attendi qualche istante e riprova."
+                        ),
+                    },
+                ),
+            }
+            yield terminal_marker
+            return
+
+        # Atomically claim the lesson before driving the full pipeline. If we
+        # lose the race (another worker/tab claimed it after our is_active()
+        # check), hand the run slot back and surface the friendly card.
+        _token = await _registry.claim(lesson.id, owner_id=lesson.owner_id)
+        if _token is None:
+            release_run_slot()
+            yield _busy_event()
+            yield terminal_marker
+            return
+
+        # Keep the registry row fresh for the lifetime of the (30-60s) run so
+        # other workers don't mistake it for a crashed/stale run. No-op on the
+        # in-memory backend.
+        _hb_task = asyncio.create_task(heartbeat_loop(_registry, lesson.id, _token))
         try:
             async for event in run_agent_stream(lesson, session):
                 # Bail early if the client disconnected (closed tab,
@@ -1668,7 +1769,11 @@ async def lesson_stream(
                     )
                     yield sse_message
         finally:
-            _ACTIVE_RUNS.discard(lesson.id)
+            _hb_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await _hb_task
+            await _registry.release(lesson.id, _token)
+            release_run_slot()
             # End-of-stream marker. Triggers ``sse-close="end"`` on the
             # client, which calls ``eventSource.close()`` and prevents
             # the browser's default auto-reconnect.
@@ -1912,16 +2017,23 @@ async def lesson_export(
     slug = "".join(c if c.isalnum() or c in "-_" else "-" for c in slug).strip("-")[:60]
 
     if format == "md":
+        # Keep the machine-readable Art. 50 comment that the agent stamped at
+        # the top of the markdown; add the header too (#21).
         return Response(
             content=lesson.lesson_plan_md,
             media_type="text/markdown; charset=utf-8",
-            headers={"Content-Disposition": f'attachment; filename="{slug}.md"'},
+            headers={
+                "Content-Disposition": f'attachment; filename="{slug}.md"',
+                AI_GENERATED_HEADER: AI_GENERATED_HEADER_VALUE,
+            },
         )
 
     if format == "txt":
         import re
 
-        text = lesson.lesson_plan_md
+        # The HTML comment is meaningless in plain text — strip it and replace
+        # it with a human-readable Art. 50 notice at the top (#21).
+        text = strip_marking(lesson.lesson_plan_md)
         text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)  # links
         text = re.sub(r"!\[[^\]]*\]\([^)]+\)", "", text)  # images
         text = re.sub(r"#{1,6}\s*", "", text)  # headings
@@ -1929,10 +2041,14 @@ async def lesson_export(
         text = re.sub(r"`{1,3}[^`]*`{1,3}", lambda m: m.group().strip("`"), text)  # code
         text = re.sub(r"_{1,2}([^_]+)_{1,2}", r"\1", text)  # underscores
         text = re.sub(r"^\s*[-*+]\s+", "• ", text, flags=re.MULTILINE)  # bullets
+        notice = f"[{DISCLOSURE_SHORT}] {DISCLOSURE_LONG}\n{'-' * 60}\n\n"
         return Response(
-            content=text,
+            content=notice + text.lstrip(),
             media_type="text/plain; charset=utf-8",
-            headers={"Content-Disposition": f'attachment; filename="{slug}.txt"'},
+            headers={
+                "Content-Disposition": f'attachment; filename="{slug}.txt"',
+                AI_GENERATED_HEADER: AI_GENERATED_HEADER_VALUE,
+            },
         )
 
     raise HTTPException(
@@ -1968,7 +2084,11 @@ async def lesson_print(
             "request": request,
             "lesson": lesson,
             "lesson_plan_html": _markdown_to_html(lesson.lesson_plan_md or ""),
+            # EU AI Act Art. 50 (#21) — visible notice on the print/PDF artifact.
+            "ai_disclosure_short": DISCLOSURE_SHORT,
+            "ai_disclosure_long": DISCLOSURE_LONG,
         },
+        headers={AI_GENERATED_HEADER: AI_GENERATED_HEADER_VALUE},
     )
 
 

@@ -24,6 +24,7 @@ from aix.agent.prompts.writer_prompt import (
     format_external_resources,
     get_writer_prompts,
 )
+from aix.core.concurrency import guarded_chat_completion, llm_slot
 from aix.core.config import config as app_config
 from aix.core.config import extract_response_content
 
@@ -106,52 +107,61 @@ class WriterAgent:
         content_parts: list[str] = []
         last_finish_reason: Optional[str] = None
         think_chunks_seen = 0
-        stream = await client.chat.completions.create(
-            messages=messages,
-            stream=True,
-            **completion_kwargs,
-        )
-        async for chunk in stream:
-            choice = chunk.choices[0] if chunk.choices else None
-            if choice is None:
-                continue
-            # Thinking tokens — OpenRouter may expose them in several places
-            # depending on the SDK version and model family. Check all variants
-            # defensively so an unexpected structure never kills the content stream.
-            if token_bus:
-                try:
-                    # Variant A: reasoning_details list (OpenRouter standard for R1 + Claude)
-                    rd_list = (
-                        getattr(choice.delta, "reasoning_details", None)
-                        or (getattr(choice.delta, "model_extra", None) or {}).get(
-                            "reasoning_details"
-                        )
-                        or []
-                    )
-                    for rd in rd_list:
-                        text = (
-                            rd.get("text", "") if isinstance(rd, dict) else getattr(rd, "text", "")
-                        )
-                        if text:
-                            token_bus.put_nowait(("think", text))
-                            think_chunks_seen += 1
-                    # Variant B: reasoning_content string (some OpenRouter models)
-                    rc = getattr(choice.delta, "reasoning_content", None) or (
-                        getattr(choice.delta, "model_extra", None) or {}
-                    ).get("reasoning_content")
-                    if rc:
-                        token_bus.put_nowait(("think", rc))
-                        think_chunks_seen += 1
-                except Exception as _think_exc:
-                    logger.debug("[WriterAgent] thinking-token extraction skipped: %s", _think_exc)
-            # Lesson content tokens
-            delta = choice.delta.content or ""
-            if delta:
-                content_parts.append(delta)
+        # CORE 6 #32 — hold a global LLM slot across the ENTIRE streaming call
+        # (open + token consumption), since the request is in-flight the whole
+        # time. Releasing after ``create()`` would under-count the slowest LLM
+        # call we make. The slot is released when the stream is fully drained.
+        async with llm_slot():
+            stream = await client.chat.completions.create(
+                messages=messages,
+                stream=True,
+                **completion_kwargs,
+            )
+            async for chunk in stream:
+                choice = chunk.choices[0] if chunk.choices else None
+                if choice is None:
+                    continue
+                # Thinking tokens — OpenRouter may expose them in several places
+                # depending on the SDK version and model family. Check all variants
+                # defensively so an unexpected structure never kills the content stream.
                 if token_bus:
-                    token_bus.put_nowait(("content", delta))
-            if choice.finish_reason:
-                last_finish_reason = choice.finish_reason
+                    try:
+                        # Variant A: reasoning_details list (OpenRouter standard for R1 + Claude)
+                        rd_list = (
+                            getattr(choice.delta, "reasoning_details", None)
+                            or (getattr(choice.delta, "model_extra", None) or {}).get(
+                                "reasoning_details"
+                            )
+                            or []
+                        )
+                        for rd in rd_list:
+                            text = (
+                                rd.get("text", "")
+                                if isinstance(rd, dict)
+                                else getattr(rd, "text", "")
+                            )
+                            if text:
+                                token_bus.put_nowait(("think", text))
+                                think_chunks_seen += 1
+                        # Variant B: reasoning_content string (some OpenRouter models)
+                        rc = getattr(choice.delta, "reasoning_content", None) or (
+                            getattr(choice.delta, "model_extra", None) or {}
+                        ).get("reasoning_content")
+                        if rc:
+                            token_bus.put_nowait(("think", rc))
+                            think_chunks_seen += 1
+                    except Exception as _think_exc:
+                        logger.debug(
+                            "[WriterAgent] thinking-token extraction skipped: %s", _think_exc
+                        )
+                # Lesson content tokens
+                delta = choice.delta.content or ""
+                if delta:
+                    content_parts.append(delta)
+                    if token_bus:
+                        token_bus.put_nowait(("content", delta))
+                if choice.finish_reason:
+                    last_finish_reason = choice.finish_reason
         if think_chunks_seen:
             logger.info("[WriterAgent] Streamed %d thinking chunks to bus", think_chunks_seen)
         return "".join(content_parts), last_finish_reason
@@ -500,7 +510,8 @@ class WriterAgent:
                     content += extra
             else:
                 # Non-streaming path (revisions, non-webUI callers).
-                response = await client.chat.completions.create(
+                response = await guarded_chat_completion(
+                    client,
                     messages=messages,
                     **completion_kwargs,
                 )
@@ -531,7 +542,8 @@ class WriterAgent:
                         {"role": "assistant", "content": content},
                         {"role": "user", "content": _CONTINUATION_INSTRUCTION},
                     ]
-                    cont_response = await client.chat.completions.create(
+                    cont_response = await guarded_chat_completion(
+                        client,
                         messages=cont_messages,
                         **completion_kwargs,
                     )
@@ -605,7 +617,8 @@ class WriterAgent:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ]
-            response = await client.chat.completions.create(
+            response = await guarded_chat_completion(
+                client,
                 messages=messages,
                 **completion_kwargs,
             )
@@ -636,7 +649,8 @@ class WriterAgent:
                     {"role": "assistant", "content": revised_content},
                     {"role": "user", "content": _CONTINUATION_INSTRUCTION},
                 ]
-                cont_response = await client.chat.completions.create(
+                cont_response = await guarded_chat_completion(
+                    client,
                     messages=cont_messages,
                     **completion_kwargs,
                 )

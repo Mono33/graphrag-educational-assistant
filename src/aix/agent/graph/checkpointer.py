@@ -82,10 +82,17 @@ know which thread you mean::
 
 Windows note
 ------------
-psycopg's async mode requires the Selector event loop. On Windows, set
-``asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())``
-*before* the loop starts if you run the app against Postgres locally.
-Production runs on Linux (Docker), where this is a no-op.
+Running the Postgres checkpointer on Windows needs TWO local-only fixes; both
+are no-ops on Linux (Docker), where production runs:
+
+1. **Selector event loop.** psycopg's async mode refuses the default
+   ``ProactorEventLoop``. Set
+   ``asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())``
+   *before* the loop starts (``scripts/ops/run_local.py`` does this).
+2. **IPv4 host.** libpq resolves ``localhost`` to IPv6 ``::1`` first, but
+   Docker publishes the dev port on IPv4 ``127.0.0.1`` only, so ``localhost``
+   stalls the pool. ``_prefer_ipv4_localhost_on_windows()`` rewrites the host
+   to ``127.0.0.1`` automatically on Windows.
 """
 
 from __future__ import annotations
@@ -93,8 +100,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import sys
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import urlsplit, urlunsplit
 
 logger = logging.getLogger(__name__)
 
@@ -157,6 +166,57 @@ def _normalize_pg_url(url: str) -> str:
     return url
 
 
+def _prefer_ipv4_localhost_on_windows(url: str) -> str:
+    """
+    On Windows only, rewrite a ``localhost`` host to ``127.0.0.1``.
+
+    Why this is needed
+    ------------------
+    psycopg (which backs ``AsyncPostgresSaver``) connects through libpq, which
+    resolves ``localhost`` to **IPv6 ``::1`` first** on Windows. Docker
+    Desktop publishes the dev Postgres port on **IPv4 ``127.0.0.1`` only**, so
+    the ``::1`` attempt has no listener and stalls until the OS TCP timeout.
+    Inside the async pool every worker stalls the same way and the 30s
+    ``pool.open(wait=True)`` budget is blown → ``PoolTimeout`` → multi-turn
+    memory silently degrades to single-turn.
+
+    ``asyncpg`` (the WebUI driver) does happy-eyeballs IPv4/IPv6 fallback and
+    is unaffected, which is why the WebUI DB connects but the checkpointer did
+    not — same URL, different driver behaviour.
+
+    Forcing IPv4 sidesteps the stall (connect drops from ~6s/timeout to
+    ~0.05s). Guarded to ``win32`` so Linux/prod — where ``localhost`` resolves
+    correctly and DB hosts are service names like ``postgres`` — is untouched.
+    """
+    if sys.platform != "win32":
+        return url
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return url
+    if (parts.hostname or "").lower() != "localhost":
+        return url
+
+    userinfo = ""
+    if parts.username:
+        userinfo = parts.username
+        if parts.password:
+            userinfo += f":{parts.password}"
+        userinfo += "@"
+    netloc = f"{userinfo}127.0.0.1"
+    if parts.port:
+        netloc += f":{parts.port}"
+    rewritten = urlunsplit(
+        (parts.scheme, netloc, parts.path, parts.query, parts.fragment)
+    )
+    logger.info(
+        "[checkpointer] Windows detected -> rewrote Postgres host "
+        "'localhost' to '127.0.0.1' to avoid the IPv6 (::1) connect stall "
+        "that breaks psycopg's async pool."
+    )
+    return rewritten
+
+
 def _resolve_postgres_url() -> Optional[str]:
     """
     Return a normalised Postgres URL if one is configured, else ``None``.
@@ -169,7 +229,7 @@ def _resolve_postgres_url() -> Optional[str]:
     for var in ("LANGGRAPH_DATABASE_URL", "LANGGRAPH_CHECKPOINTER_URL"):
         val = os.getenv(var)
         if val and _is_postgres_url(val):
-            return _normalize_pg_url(val)
+            return _prefer_ipv4_localhost_on_windows(_normalize_pg_url(val))
     return None
 
 

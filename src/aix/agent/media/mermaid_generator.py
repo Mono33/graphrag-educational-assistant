@@ -31,6 +31,8 @@ from typing import Any, Optional
 import aiohttp
 from openai import AsyncOpenAI
 
+from aix.core.concurrency import guarded_chat_completion
+
 logger = logging.getLogger(__name__)
 
 
@@ -321,7 +323,8 @@ class MermaidGenerator:
         try:
             client = await self._get_client()
 
-            response = await client.chat.completions.create(
+            response = await guarded_chat_completion(
+                client,
                 model="gpt-4o-mini",  # Fast and cheap for code generation
                 messages=[
                     {

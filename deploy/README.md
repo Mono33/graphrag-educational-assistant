@@ -21,6 +21,71 @@ on container port `8765`, and expose a baked-in `/api/v1/health`
 `HEALTHCHECK`. Nothing here duplicates the dev compose file at the repo
 root — that one stays in place for Angelo's local build/push workflow.
 
+> **2026-07-02 — production image hardening.** The top-level `Dockerfile` was
+> corrected to (a) serve on **8765** (it previously started uvicorn on port 80,
+> which mismatched Caddy's `reverse_proxy app:8765` and the compose healthcheck →
+> would 502), (b) install from `requirements.lock.txt` (hash-pinned), (c) run as
+> the non-root `aix` user, and (d) bake in the `/api/v1/health` HEALTHCHECK. If
+> you built an image before this date, rebuild.
+
+---
+
+## 0. Deploy flow (branches + CD) and pre-flight checklist — READ FIRST
+
+### 0.1 Branch → deploy flow
+
+The FEM production VM deploys from the **`production`** branch on the **`fem`**
+remote (`fem/production`) via FEM's GitHub continuous-deployment pipeline. To
+ship the current production-ready code:
+
+```bash
+git checkout production
+git merge --no-ff chore/repo-reorg      # bring the reorg + all Phase A/B work in
+git push fem production                  # this push is what triggers FEM's CD
+```
+
+> ⚠️ **Unverified assumption — confirm with FEM before Friday.** The above only
+> deploys the stack **if FEM's CD pipeline actually builds/runs
+> `deploy/docker-compose.prod.yml`**. If their pipeline has its own compose/config
+> and doesn't know about this folder, pushing to `production` will *not* stand up
+> this stack. Until that's confirmed, prefer the **manual first deploy** (§3) over
+> "push and pray".
+
+### 0.2 Pre-flight checklist (tick before the first production deploy)
+
+- [ ] **App image** rebuilt after the 2026-07-02 Dockerfile fix (serves 8765).
+- [ ] **`deploy/.env.prod`** created on the VM from `.env.prod.example`,
+      `chmod 600`, and every `replace-with-...` filled — at minimum:
+  - [ ] `POSTGRES_PASSWORD` (strong, random)
+  - [ ] `NEO4J_PASSWORD` (prod Neo4j)
+  - [ ] `OPENROUTER_API_KEY` (production-billing key, not a personal one)
+  - [ ] `WEBUI_AUTH_SECRET` — **generate a fresh one on the VM**:
+        `python -c "import secrets; print(secrets.token_urlsafe(48))"`
+        (never reuse a value that has been pasted into git/chat/logs)
+  - [ ] `AIX_TLS_EMAIL` — a **real, monitored** mailbox (Let's Encrypt needs it)
+  - [ ] `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` (optional but recommended —
+        this is the observability goal), `SENTRY_DSN` (optional)
+- [ ] **DNS**: `agente.aiforlearning.digital` → VM IP (`91.99.147.27`) — done.
+- [ ] **Ports 80/443 free** on the reused VM for Caddy. The existing GraphRAG
+      instance must **not** already bind them with another reverse proxy, or
+      Caddy can't start / can't obtain the TLS cert. Verify: `sudo ss -tlnp | grep -E ':80 |:443 '`.
+- [ ] **Neo4j reachable** from the VM: `bolt+s://graph.aiforlearning.digital:7687`.
+- [ ] **First deploy validated**: build + up + `GET /api/v1/health` returns `200`
+      (this is also the still-open "production image build + healthcheck on Linux"
+      gate in the deployment plan §10.4 — the port bug above is exactly what it
+      would have caught).
+
+### 0.3 Re-deploy note — artifacts volume ownership (non-root app)
+
+The app now runs as the non-root `aix` user (uid `10001`). A **fresh**
+`aix-app-artifacts` volume inherits writable ownership automatically on first
+mount. Only if you are **re-deploying over a volume created by an older
+root-based image** do you need to fix ownership once:
+
+```bash
+docker run --rm -v aix-app-artifacts:/a alpine chown -R 10001:10001 /a
+```
+
 ---
 
 ## 1. What this stack runs

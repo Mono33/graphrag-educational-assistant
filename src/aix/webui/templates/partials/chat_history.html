@@ -97,18 +97,25 @@
                 </div>
               </div>
             </div>
-            {% if m.get('approved') is not none %}
-              {% if m.approved %}
-                <span class="aix-pill aix-pill-success">
-                  <wa-icon name="circle-check" class="aix-fs-xs"></wa-icon>
-                  approvata dal critic
-                </span>
-              {% else %}
-                <span class="aix-pill aix-pill-warning">
-                  limite revisioni raggiunto
-                </span>
+            <div class="aix-irow-8">
+              {# EU AI Act Art. 50 (#22) — per-card AI-generated badge. #}
+              <span class="aix-pill aix-pill-info" title="Contenuto generato dall'intelligenza artificiale">
+                <wa-icon name="sparkles" class="aix-fs-xs"></wa-icon>
+                Generato dall'IA
+              </span>
+              {% if m.get('approved') is not none %}
+                {% if m.approved %}
+                  <span class="aix-pill aix-pill-success">
+                    <wa-icon name="circle-check" class="aix-fs-xs"></wa-icon>
+                    approvata dal critic
+                  </span>
+                {% else %}
+                  <span class="aix-pill aix-pill-warning">
+                    limite revisioni raggiunto
+                  </span>
+                {% endif %}
               {% endif %}
-            {% endif %}
+            </div>
           </header>
 
           {# Compact per-turn metadata strip — only render fields that are present #}

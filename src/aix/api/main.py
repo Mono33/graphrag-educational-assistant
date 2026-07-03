@@ -57,6 +57,44 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
+# Phase B (#37/#39 readiness) — Windows + Postgres event-loop guard.
+# psycopg's async driver (which backs LangGraph's AsyncPostgresSaver) requires
+# the Selector event loop; Windows' default ProactorEventLoop raises at connect
+# time. We switch the policy ONLY when (a) we're on Windows AND (b) a Postgres
+# backend is actually configured — so the existing SQLite dev path keeps the
+# default Proactor loop completely untouched. No-op on Linux/prod, where the
+# default loop already supports psycopg async. Must run at import time, before
+# uvicorn creates the event loop.
+def _maybe_set_windows_selector_loop() -> None:
+    if sys.platform != "win32":
+        return
+    _pg_schemes = ("postgres://", "postgresql://", "postgres+", "postgresql+")
+    pg_configured = any(
+        (os.getenv(var) or "").startswith(_pg_schemes)
+        for var in (
+            "LANGGRAPH_DATABASE_URL",
+            "LANGGRAPH_CHECKPOINTER_URL",
+            "WEBUI_DATABASE_URL",
+        )
+    )
+    if not pg_configured:
+        return
+    selector_policy = getattr(asyncio, "WindowsSelectorEventLoopPolicy", None)
+    if selector_policy is None:  # pragma: no cover - non-Windows safety net
+        return
+    if isinstance(asyncio.get_event_loop_policy(), selector_policy):
+        return
+    asyncio.set_event_loop_policy(selector_policy())
+    logger.info(
+        "🪟 Windows + Postgres detected → WindowsSelectorEventLoopPolicy active "
+        "(required by psycopg async; no-op on Linux/prod)."
+    )
+
+
+_maybe_set_windows_selector_loop()
+
+
 # GlitchTip / Sentry error monitoring
 import sentry_sdk
 
@@ -240,6 +278,18 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     logger.info("👋 Shutting down GraphRAG Educational API...")
+
+    # Phase B readiness — release the LangGraph checkpointer cleanly so the
+    # Postgres connection pool (prod) / SQLite connection (dev) is torn down on
+    # graceful shutdown instead of being abandoned. Best-effort and idempotent:
+    # close_checkpointer() is a no-op if the checkpointer was never initialised
+    # (e.g. no lesson run happened), and never raises out of this block.
+    try:
+        from aix.agent.graph.checkpointer import close_checkpointer
+
+        await close_checkpointer()
+    except Exception as e:  # noqa: BLE001
+        logger.warning("⚠️ Checkpointer shutdown failed: %s", e)
 
 
 # Create FastAPI app

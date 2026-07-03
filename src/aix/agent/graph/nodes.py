@@ -25,7 +25,7 @@ from aix.agent.graph.state import AgentState
 # from the conversation history. Word-boundary anchored to avoid matching
 # stray digits inside concept names ("UDL 7.2" must not trigger).
 _DURATION_MENTION_RE = re.compile(
-    r"\b\d+\s*(?:min(?:ut[oi]|utes?)?|h(?:rs?)?|hours?|ore?)\b",
+    r"\b\d+\s*(?:min(?:ut[oi]|utes?)?|h(?:rs?)?|hours?|or[ae])\b",
     re.IGNORECASE,
 )
 
@@ -83,9 +83,15 @@ def _sanitize(obj: Any) -> Any:
 
 logger = logging.getLogger(__name__)
 
-# Initialize agents (lazy loading)
+# Initialize agents (lazy loading).
+#
+# The planner/writer/critic/grader are domain-agnostic and hold no per-call
+# state on ``self`` (only an immutable ``model`` + a concurrency-safe async
+# client), so a single shared instance is safe across concurrent runs.
+#
+# The retriever is domain-specific, so it is cached PER DOMAIN (see #38).
 _planner: PlannerAgent = None
-_retriever: RetrieverAgent = None
+_retrievers: dict[str, RetrieverAgent] = {}
 _writer: WriterAgent = None
 _critic: CriticAgent = None
 _retrieval_grader: RetrievalGraderAgent = None
@@ -99,10 +105,27 @@ def get_planner() -> PlannerAgent:
 
 
 def get_retriever(domain: str) -> RetrieverAgent:
-    global _retriever
-    if _retriever is None or _retriever.domain != domain:
-        _retriever = RetrieverAgent(domain=domain)
-    return _retriever
+    """Return the cached :class:`RetrieverAgent` for ``domain``, building it once.
+
+    #38 — previously this was a single module-level slot that got *swapped*
+    whenever the requested domain changed. Once #31 allows several pipelines
+    in flight at once, two runs in different domains (e.g. ``neuro`` + ``udl``)
+    would clobber each other's retriever mid-run → wrong-domain retrieval (a
+    correctness bug). Caching one warmed instance per domain removes the race
+    and also avoids re-instantiating the heavy ``GraphRAGTool`` (Node2Vec +
+    embeddings) on every domain switch.
+
+    Safe to share across concurrent same-domain runs: ``RetrieverAgent`` keeps
+    no per-call state on ``self`` (only domain-scoped, lazily-built tools).
+    The get-or-create has no ``await`` between the read and the write, so it is
+    atomic on the single-threaded event loop — no lock required. Bounded by the
+    number of domains (currently 2), so memory is trivially scalable.
+    """
+    retriever = _retrievers.get(domain)
+    if retriever is None:
+        retriever = RetrieverAgent(domain=domain)
+        _retrievers[domain] = retriever
+    return retriever
 
 
 def get_writer() -> WriterAgent:
