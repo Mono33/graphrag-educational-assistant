@@ -17,7 +17,7 @@ jobs:
         name: Set Staging image version
         id: set_image_version_staging
         if: ${{ github.ref_name == 'staging' }}
-        run: echo "image-version=latest" >> $GITHUB_ENV
+        run: echo "image-version=staging" >> $GITHUB_ENV
 
       -
         name: Set Production image version
