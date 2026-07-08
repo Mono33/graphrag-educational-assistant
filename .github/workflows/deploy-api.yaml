@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - production
+      - staging
   workflow_dispatch:
 jobs:
   deploy-graphrag-api:
@@ -11,6 +12,12 @@ jobs:
       -
         name: Checkout
         uses: actions/checkout@v4
+
+      -
+        name: Set Staging image version
+        id: set_image_version_staging
+        if: ${{ github.ref_name == 'staging' }}
+        run: echo "image-version=staging" >> $GITHUB_ENV
 
       -
         name: Set Production image version
