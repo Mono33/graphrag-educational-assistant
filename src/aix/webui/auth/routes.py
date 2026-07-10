@@ -121,9 +121,10 @@ async def register_get(
     if user is not None:
         return RedirectResponse(_safe_next(next), status_code=303)
     return templates.TemplateResponse(
-        "pages/auth_register.html",
+        request,
+
+            "pages/auth_register.html",
         {
-            "request": request,
             "title": "Registrazione · AixLearning",
             "phase": "P1 — Auth",
             "next": _safe_next(next),
@@ -144,9 +145,10 @@ async def login_get(
     if user is not None:
         return RedirectResponse(_safe_next(next), status_code=303)
     return templates.TemplateResponse(
-        "pages/auth_login.html",
+        request,
+
+            "pages/auth_login.html",
         {
-            "request": request,
             "title": "Accesso · AixLearning",
             "phase": "P1 — Auth",
             "next": _safe_next(next),
@@ -188,9 +190,10 @@ async def register_post(
         )
     except ValidationError as exc:
         return templates.TemplateResponse(
-            "pages/auth_register.html",
+            request,
+
+                "pages/auth_register.html",
             {
-                "request": request,
                 "title": "Registrazione · AixLearning",
                 "phase": "P1 — Auth",
                 "next": redirect_to,
@@ -205,9 +208,10 @@ async def register_post(
         user = await user_manager.create(user_create, safe=True, request=request)
     except UserAlreadyExists:
         return templates.TemplateResponse(
-            "pages/auth_register.html",
+            request,
+
+                "pages/auth_register.html",
             {
-                "request": request,
                 "title": "Registrazione · AixLearning",
                 "phase": "P1 — Auth",
                 "next": redirect_to,
@@ -224,9 +228,10 @@ async def register_post(
         # fastapi-users wraps the reason in exc.reason
         reason = getattr(exc, "reason", "Password non valida.")
         return templates.TemplateResponse(
-            "pages/auth_register.html",
+            request,
+
+                "pages/auth_register.html",
             {
-                "request": request,
                 "title": "Registrazione · AixLearning",
                 "phase": "P1 — Auth",
                 "next": redirect_to,
@@ -268,9 +273,10 @@ async def login_post(
     user = await user_manager.authenticate(credentials)
     if user is None or not user.is_active:
         return templates.TemplateResponse(
-            "pages/auth_login.html",
+            request,
+
+                "pages/auth_login.html",
             {
-                "request": request,
                 "title": "Accesso · AixLearning",
                 "phase": "P1 — Auth",
                 "next": redirect_to,
