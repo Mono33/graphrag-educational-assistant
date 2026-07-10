@@ -422,9 +422,10 @@ async def lesson_list(
     }
 
     return templates.TemplateResponse(
-        "pages/lesson_list.html",
+        request,
+
+            "pages/lesson_list.html",
         {
-            "request": request,
             "user": user,
             "lessons": lessons,  # legacy context var, kept for compat
             "rows": rows,  # new shape for the brand template
@@ -520,9 +521,10 @@ async def lesson_card_fragment(
         len(lesson.lesson_plan_md or ""),
     )
     return templates.TemplateResponse(
-        "partials/chat_lesson_card.html",
+        request,
+
+            "partials/chat_lesson_card.html",
         {
-            "request": request,
             "lesson": lesson,
             "lesson_plan_html": _markdown_to_html(lesson.lesson_plan_md or ""),
             "meta": {"approved": lesson.status == "complete", "revision_count": 0},
@@ -607,9 +609,10 @@ async def lesson_media_live(
         len(panel.get("wikipedia") or []),
     )
     return templates.TemplateResponse(
-        "partials/media_live_sections.html",
+        request,
+
+            "partials/media_live_sections.html",
         {
-            "request": request,
             "videos": panel.get("videos") or [],
             "citations": panel.get("citations") or [],
             "wikipedia": panel.get("wikipedia") or [],
@@ -670,9 +673,10 @@ async def lesson_chat_input_fragment(
         lesson.status,
     )
     return templates.TemplateResponse(
-        "partials/chat_input.html",
+        request,
+
+            "partials/chat_input.html",
         {
-            "request": request,
             "lesson": lesson,
             # _oob=False because this response is targeted explicitly via
             # htmx.ajax(target: '#chat-input-wrapper', swap: 'outerHTML') —
@@ -734,9 +738,10 @@ async def lesson_new_get(
     saved_profiles = list(sp_all.scalars().all())
 
     return templates.TemplateResponse(
-        "pages/lesson_new.html",
+        request,
+
+            "pages/lesson_new.html",
         {
-            "request": request,
             "title": "Nuova lezione · AixLearning",
             "phase": "P3 — Chat workspace + allegati",
             "user": user,
@@ -808,9 +813,10 @@ async def lesson_create(
             .order_by(SavedProfile.created_at.desc())
         )
         return templates.TemplateResponse(
-            "pages/lesson_new.html",
+            request,
+
+                "pages/lesson_new.html",
             {
-                "request": request,
                 "title": "Nuova lezione · AixLearning",
                 "phase": "P3 — Chat workspace + allegati",
                 "user": user,
@@ -957,9 +963,10 @@ async def lesson_show(
                 logger.warning("[lesson_show] what_next failed: %s", _e)
 
     return templates.TemplateResponse(
-        "pages/lesson_show.html",
+        request,
+
+            "pages/lesson_show.html",
         {
-            "request": request,
             "title": (lesson.title or "Lezione") + " · AixLearning",
             "phase": "P3 — Chat workspace + allegati",
             "user": user,
@@ -1318,9 +1325,10 @@ async def lesson_run(
     messages = await _load_chat_messages(session, lesson.id)
 
     return templates.TemplateResponse(
-        "partials/chat_conversation.html",
+        request,
+
+            "partials/chat_conversation.html",
         {
-            "request": request,
             "lesson": lesson,
             "user": user,
             "messages": messages,
@@ -1420,8 +1428,9 @@ async def lesson_upload(
         )
 
     return templates.TemplateResponse(
+        request,
         "partials/chat_attachments.html",
-        {"request": request, "lesson": lesson},
+        {"lesson": lesson},
     )
 
 
@@ -1470,8 +1479,9 @@ async def lesson_upload_delete(
         )
 
     return templates.TemplateResponse(
+        request,
         "partials/chat_attachments.html",
-        {"request": request, "lesson": lesson},
+        {"lesson": lesson},
     )
 
 
@@ -1873,8 +1883,9 @@ async def lesson_profile(
         raise HTTPException(status_code=404, detail="Lezione non trovata")
 
     return templates.TemplateResponse(
+        request,
         "partials/profile_sidebar.html",
-        {"request": request, "lesson": lesson, **_label_dicts()},
+        {"lesson": lesson, **_label_dicts()},
     )
 
 
@@ -1901,9 +1912,10 @@ async def lesson_profile_edit(
         raise HTTPException(status_code=404, detail="Lezione non trovata")
 
     return templates.TemplateResponse(
-        "partials/profile_sidebar_edit.html",
+        request,
+
+            "partials/profile_sidebar_edit.html",
         {
-            "request": request,
             "lesson": lesson,
             "profile_errors": None,
             **_label_dicts(),
@@ -1944,9 +1956,10 @@ async def lesson_profile_save(
     except ValidationError as exc:
         logger.info("Profile edit validation failed: %s", exc.errors())
         return templates.TemplateResponse(
-            "partials/profile_sidebar_edit.html",
+            request,
+
+                "partials/profile_sidebar_edit.html",
             {
-                "request": request,
                 "lesson": lesson,
                 "profile_errors": [
                     f"{'.'.join(str(p) for p in err.get('loc', ()))}: "
@@ -1979,8 +1992,9 @@ async def lesson_profile_save(
     )
 
     return templates.TemplateResponse(
+        request,
         "partials/profile_sidebar.html",
-        {"request": request, "lesson": lesson, **_label_dicts()},
+        {"lesson": lesson, **_label_dicts()},
     )
 
 
@@ -2079,9 +2093,10 @@ async def lesson_print(
         raise HTTPException(status_code=404, detail="Lezione non trovata")
 
     return templates.TemplateResponse(
-        "pages/lesson_print.html",
+        request,
+
+            "pages/lesson_print.html",
         {
-            "request": request,
             "lesson": lesson,
             "lesson_plan_html": _markdown_to_html(lesson.lesson_plan_md or ""),
             # EU AI Act Art. 50 (#21) — visible notice on the print/PDF artifact.
@@ -2311,8 +2326,9 @@ async def saved_profiles_list(
     )
     saved_profiles = list(result.scalars().all())
     return templates.TemplateResponse(
+        request,
         "partials/saved_profiles.html",
-        {"request": request, "saved_profiles": saved_profiles},
+        {"saved_profiles": saved_profiles},
     )
 
 
@@ -2353,8 +2369,9 @@ async def saved_profiles_create(
     )
     saved_profiles = list(result.scalars().all())
     return templates.TemplateResponse(
+        request,
         "partials/saved_profiles.html",
-        {"request": request, "saved_profiles": saved_profiles},
+        {"saved_profiles": saved_profiles},
     )
 
 
