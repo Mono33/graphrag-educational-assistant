@@ -3,8 +3,8 @@
 **Progetto:** Agentic GraphRAG — Sistema multi-agente per la pianificazione delle lezioni
 **Owner:** FEM AI Team
 **Tipo di documento:** Riferimento tecnico per ingegneria, integrazione e operazioni
-**Versione:** 1.2
-**Ultimo aggiornamento:** Giugno 2026
+**Versione:** 1.3
+**Ultimo aggiornamento:** Luglio 2026
 
 ---
 
@@ -16,6 +16,7 @@
 | 1.0 | Maggio 2026 | Prima bozza completa: §2–§18 scritte e ancorate al codice |
 | 1.1 | Giugno 2026 | Aggiunto il livello media dinamici (§7.8) e le variabili `AIX_MEDIA_*` (§8.2); note sulla media-cache (§3.4/§7.5); item di test e runbook per i media live (§10.3/§16.1); riconciliazione YouTube (§7.6); indice riallineato ai titoli reali. |
 | 1.2 | Giugno 2026 | storia delle modifiche spostata in testa al documento; alleggerimenti redazionali. |
+| 1.3 | Luglio 2026 | Riallineamento al codice corrente: UX docente WebUI a due fasi, profili salvati, intento pedagogico, raffinamento SAM, badge UDL, pannello "Cosa esplorare dopo", export MD/TXT/PDF, default Writer aggiornato, note CSS, registrazione primo utente e concorrenza multi-worker con registro run su database. |
 
 ---
 
@@ -254,7 +255,7 @@ Il sistema Agentic GraphRAG trasforma una richiesta in linguaggio naturale di un
 3. **scrive** un piano di lezione completo specializzato sul profilo della classe,
 4. **revisiona** il risultato rispetto a criteri di qualità e lo rivede se necessario.
 
-Il sistema esegue due modalità complementari da un **singolo processo FastAPI**:
+Il sistema espone due modalità complementari dalla **stessa applicazione FastAPI**:
 
 - una **WebUI docente standalone** (`/webui/*`) usata dal pilot interno FEM, e
 - un'**API pubblica JSON + SSE** (`/api/v1/agent/*`) consumata da client non-browser (il backend AixLearning, Postman/curl, app future).
@@ -268,6 +269,8 @@ Entrambe le modalità pilotano la **stessa pipeline di agenti** e lo **stesso li
 - **Rilevamento dello scope** rispetto al Knowledge Graph (`in_scope` / `partial_scope` / `out_of_scope`).
 - **Retrieval ibrido**: traversal del grafo Neo4j + embeddings Node2Vec/semantici + media curati + fonti esterne verificate (Wikipedia, OpenAlex, OER, YouTube).
 - **Specializzazione per profilo educativo**: ogni richiesta può portare un profilo strutturato di classe/aula (grado, BES/DSA, risorse, budget di tempo).
+- **UX docente guidata**: nella WebUI il primo turno può fermarsi al Planner, mostrare una scheda di selezione dell'intento pedagogico e avviare la pipeline completa solo dopo conferma del docente.
+- **Libreria e riuso**: lezioni, storico multi-turno, profili educativi salvati e export MD/TXT/PDF sono gestiti nella WebUI standalone.
 - **Memoria conversazionale multi-turno** tramite un checkpointer LangGraph (SQLite in dev, PostgreSQL in produzione), con windowing a summary-buffer per i thread lunghi.
 - **Streaming**: Server-Sent Events per fase per una UI incrementale; streaming live dei token del Writer nella WebUI.
 - **Controllo qualità**: un agente Critic valuta la bozza e può innescare un ciclo di revisione limitato.
@@ -279,8 +282,8 @@ Entrambe le modalità pilotano la **stessa pipeline di agenti** e lo **stesso li
 
 ```
                          ┌────────────────────────────────────────────┐
-   Browser (teacher)     │                FastAPI process              │
-   ───────────────►──────┤  (single uvicorn app — aix.api.main:app)    │
+   Browser (teacher)     │                FastAPI app                  │
+   ───────────────►──────┤  (1+ uvicorn worker — aix.api.main:app)     │
    /webui/*  (HTML+SSE)   │                                            │
                           │   /webui/*        Teacher WebUI (htmx)      │
    Non-browser client     │   /api/v1/context Legacy GraphRAG API       │
@@ -312,7 +315,7 @@ Entrambe le modalità pilotano la **stessa pipeline di agenti** e lo **stesso li
 
 | Livello | Tecnologia |
 |---|---|
-| API + serving | FastAPI (singolo processo uvicorn), `sse-starlette` |
+| API + serving | FastAPI (`aix.api.main:app`, 1+ worker uvicorn), `sse-starlette` |
 | Orchestrazione agenti | LangChain + LangGraph |
 | Knowledge Graph | Neo4j (istanza Aura / gestita da FEM) |
 | Embeddings | Node2Vec (grafo) + text embeddings OpenAI-compatible (ibrido) |
@@ -362,7 +365,7 @@ Quando `AIX_CORRECTIVE_RAG_ENABLED=true`, un nodo extra `grade_retrieval` viene 
 
 ### 3.3 Architettura a runtime
 
-Un singolo processo uvicorn (`aix.api.main:app`) ospita ogni superficie. All'import/avvio:
+La stessa app uvicorn (`aix.api.main:app`) ospita ogni superficie; in produzione può essere eseguita con uno o più worker. All'import/avvio di ciascun worker:
 
 - applica uno shim della event-loop policy di Windows quando Postgres è configurato (psycopg async richiede il selector loop su Windows; la produzione Linux non è interessata);
 - inizializza opzionalmente Sentry/GlitchTip quando `SENTRY_DSN` è impostata;
@@ -425,7 +428,7 @@ La trattazione completa è in §14.
 Il progetto usa il moderno **src layout**: tutto il codice importabile vive sotto `src/aix/`, esposto come package `aix.*` tramite `pip install -e .`.
 
 ```
-graphaixlearning/
+<repo-root>/
 ├── src/aix/            # All importable source (import as aix.*)
 ├── apps/               # User-facing entry points (NOT importable libs)
 │   ├── streamlit/      #   Legacy Streamlit demo (retirement banner)
@@ -477,7 +480,7 @@ src/aix/
 │   └── graphrag_client.py    # helper client for the DEV team
 ├── webui/                    # Teacher WebUI (htmx + WebAwesome)
 │   ├── auth/                 # FastAPI-Users: manager, backend, dependencies, models, routes
-│   ├── lessons/              # lesson CRUD, uploads, schemas, models, display
+│   ├── lessons/              # lesson CRUD, uploads, saved profiles, export, display
 │   ├── agent/service.py      # run_agent_stream + stream_agent_events (the engine seam)
 │   ├── templates/            # Jinja2: _base.html, pages/, partials/
 │   ├── routes.py             # /webui/* handlers
@@ -489,6 +492,8 @@ src/aix/
 │   ├── tools/ resources/ prompts/
 └── domains/                  # Domain configs (udl_domain.py, neuro_domain.py, base_config.py)
 ```
+
+Nota frontend: `src/aix/webui/static/css/aix-brand.css` è la fonte di verità per lo styling teacher-facing. I componenti WebAwesome forniscono i widget base, le classi `.aix-*` possiedono brand, colori, tipografia, card e stati, mentre Tailwind resta limitato al layout (`flex`, `grid`, spacing). Evitare nuovi `style="..."` inline nei template: se un valore visivo ricorre o appartiene al brand, aggiungerlo come token/classe in `aix-brand.css`.
 
 ### 4.3 Cartella `deploy/`
 
@@ -673,7 +678,7 @@ Tutti i campi sono opzionali; omettere il profilo fa sì che l'agente ricada su 
 
 `src/aix/agent/graph/state.py` definisce `AgentState`, un `TypedDict(total=False)` che attraversa ogni nodo. È raggruppato in input, output per agente, campi corrective-RAG, metadati e output finale. Campi chiave:
 
-- **Input**: `teacher_query`, `domain`, `language`, `session_id`, `educational_profile`, `teacher_provided_context`, `conversation_history`, `conversation_summary`, `raw_user_turn`.
+- **Input**: `teacher_query`, `domain`, `language`, `session_id`, `educational_profile`, `pedagogical_intent`, `refinement_instruction`, `teacher_provided_context`, `conversation_history`, `conversation_summary`, `raw_user_turn`.
 - **Output Planner**: `query_intent`, `lesson_type`, `target_grade`, `key_concepts`, `search_queries`, `scope_status`, `scope_confidence`, `subject_concepts`, `pedagogy_concepts`.
 - **Output Retriever**: `graphrag_results`, `retrieved_nodes`, `retrieved_relationships`, `recommendations`, `retrieval_confidence`, `curated_media`, `external_resources`.
 - **Corrective-RAG** (solo quando abilitato): `retrieval_grade`, `retrieval_grade_reason`, `retrieval_attempts`, `retrieval_rewritten_query`, `retrieval_warning`.
@@ -681,7 +686,7 @@ Tutti i campi sono opzionali; omettere il profilo fa sì che l'agente ricada su 
 - **Output Critic**: `critique`, `critique_score`, `approved`, `revision_instructions`.
 - **Metadati / finale**: `revision_count`, `max_revisions`, `current_step`, `error`, `final_lesson_plan`, `final_metadata`.
 
-`create_initial_state(...)` è l'unica fonte di verità per la forma di input dell'agente; sia il servizio WebUI sia l'API pubblica costruiscono lo stato tramite essa. I nuovi campi nullable sono pensati per essere additivi così che i chiamanti più vecchi si comportino in modo identico.
+`create_initial_state(...)` è l'unica fonte di verità per la forma di input dell'agente; sia il servizio WebUI sia l'API pubblica costruiscono lo stato tramite essa. `pedagogical_intent` porta l'obiettivo didattico scelto dal docente (`"{code}"` o `"{code}: {detail}"`), mentre `refinement_instruction` è il comando transitorio prodotto dal pannello SAM quando il docente rigenera una lezione. I nuovi campi nullable sono pensati per essere additivi così che i chiamanti più vecchi si comportino in modo identico.
 
 ### 6.2 Agente Planner
 
@@ -693,7 +698,7 @@ Tutti i campi sono opzionali; omettere il profilo fa sì che l'agente ricada su 
 
 ### 6.4 Agente Writer
 
-`agent/agents/writer_agent.py` (nodo `write`) genera il piano di lezione. Il suo prompt è assemblato dal **prompt specifico per intento** (`agent/prompts/`), dall'**estensione di prompt di dominio** (`agent/configs/`), dal **profilo educativo**, dal **contesto recuperato + media**, dall'eventuale **contesto fornito dal docente** e da qualsiasi **storico/riassunto della conversazione**. La lunghezza dell'output è limitata da `AIX_WRITER_MAX_TOKENS` (default 3500) con fino a `AIX_WRITER_MAX_CONTINUATIONS` continuazioni automatiche quando il modello raggiunge `finish_reason="length"`. Nella WebUI i token del writer fanno streaming live (`writer_chunk`); l'API pubblica consegna l'output del writer come singolo evento `writer` per revisione.
+`agent/agents/writer_agent.py` (nodo `write`) genera il piano di lezione. Il suo prompt è assemblato dal **prompt specifico per intento** (`agent/prompts/`), dall'**estensione di prompt di dominio** (`agent/configs/`), dal **profilo educativo**, dall'eventuale **intento pedagogico confermato dal docente**, dal **contesto recuperato + media**, dall'eventuale **contesto fornito dal docente**, dall'eventuale **istruzione di raffinamento SAM** e da qualsiasi **storico/riassunto della conversazione**. La lunghezza dell'output è limitata da `AIX_WRITER_MAX_TOKENS` (default codice 8000; il template prod può impostare un cap più conservativo, es. 2000) con fino a `AIX_WRITER_MAX_CONTINUATIONS` continuazioni automatiche quando il modello raggiunge `finish_reason="length"`. Nella WebUI i token del writer fanno streaming live (`writer_chunk`); l'API pubblica consegna l'output del writer come singolo evento `writer` per revisione.
 
 ### 6.5 Agente Critic e ciclo di revisione
 
@@ -858,7 +863,7 @@ La configurazione è guidata dall'ambiente. `src/aix/core/config.py` carica le v
 | Variabile | Default | Scopo |
 |---|---|---|
 | `AIX_MAX_REVISIONS` | `1` | Cicli di revisione Writer→Critic (0–4) |
-| `AIX_WRITER_MAX_TOKENS` | `3500` | Tetto di output del Writer |
+| `AIX_WRITER_MAX_TOKENS` | `8000` codice; `2000` nel template prod | Tetto di output del Writer; abbassarlo in produzione limita costo e latenza |
 | `AIX_WRITER_MAX_CONTINUATIONS` | `1` | Auto-continuazione su taglio per lunghezza |
 | `AIX_THINKING_EFFORT` | `low` | Budget di reasoning token (`low`/`medium`/`high`) |
 | `AIX_CRITIC_MODEL` | (→ `TEXT2CYPHER_MODEL`) | Modello Critic (veloce/economico) |
@@ -933,7 +938,7 @@ La configurazione è guidata dall'ambiente. `src/aix/core/config.py` carica le v
 ### 9.2 Installazione
 
 ```bash
-git clone <repo-url> && cd graphaixlearning
+git clone <repo-url> && cd <repo-root>
 python -m venv venv && . venv/Scripts/activate      # PowerShell: venv\Scripts\Activate.ps1
 pip install -e ".[dev]"                              # editable install + dev extras (pytest, ruff, mypy)
 cp .env.example .env                                 # then fill credentials
@@ -949,7 +954,7 @@ Il comando canonico per il test end-to-end locale (serve ogni superficie su una 
 python -m uvicorn aix.api.main:app --host 127.0.0.1 --port 8765 --log-level info
 ```
 
-Questo singolo processo serve `/docs`, `/webui/`, `/api/v1/context`, `/api/v1/agent/run`, `/api/v1/agent/stream`, `/mcp/` e `/auth/jwt/login`. Aggiungere `--reload` per l'autoreload durante lo sviluppo. Altri entry point:
+Questo singolo processo serve `/docs`, `/webui/`, `/api/v1/context`, `/api/v1/agent/run`, `/api/v1/agent/stream`, `/mcp/` e `/auth/jwt/login`. Per usare la WebUI in locale dopo il primo avvio, creare il primo utente browser da `/auth/register` e poi entrare da `/auth/login`; senza un utente registrato le pagine protette di `/webui/` reindirizzano al login. Aggiungere `--reload` per l'autoreload durante lo sviluppo. Altri entry point:
 
 ```bash
 python apps/cli/run_agent.py                  # interactive agent CLI (or: make agent)
@@ -983,6 +988,7 @@ Anche gli artefatti Node2Vec sono inclusi pre-addestrati; ri-addestrare solo se 
 - Il package `aix` si risolve solo dopo `pip install -e .`; puntare l'interprete alla venv del progetto.
 - Ruff è l'unico formatter/linter (Black-compatible, line length 100, double quotes). Configurare il "format on save" dell'editor per usare Ruff ed evitare churn nei diff.
 - Su Windows, quando Postgres è configurato, l'app applica una selector-event-loop policy all'import; è un no-op su Linux e per lo sviluppo SQLite.
+- Per i template WebUI, seguire la regola a tre livelli: componenti WebAwesome per i controlli, classi `.aix-*` in `aix-brand.css` per brand/stato/componenti, Tailwind solo per layout. Non aggiungere CSS inline salvo casi eccezionali e locali.
 
 ---
 
@@ -1165,6 +1171,15 @@ Fare riferimento al documento normativo per la mappatura completa agli obblighi 
 
 Il servizio agenti esegue lo stack completo (§11.2) ed espone la WebUI docente su `https://<AIX_DOMAIN>/webui/`. I docenti si autenticano (cookie session), creano lezioni con un profilo educativo, opzionalmente caricano file di contesto e guardano l'agente fare streaming delle sue fasi live. È la modalità **pilot interno FEM** e non richiede lavoro dal team DEV AixLearning oltre all'infrastruttura (VM + DNS + CD).
 
+Il flusso principale della WebUI è server-driven (Jinja2 + htmx + SSE) e oggi include:
+
+1. **Creazione guidata in due fasi.** Sul primo invio di una nuova lezione il backend può eseguire solo il Planner, renderizzare la card Planner e mostrare una card di scelta dell'intento pedagogico. Quando il docente sceglie un chip, il form htmx reinvia `intent_confirmed=1` insieme a `pedagogical_intent_code`/dettaglio; solo allora parte la pipeline completa Planner → Retriever → Writer → Critic. `intent_confirmed` è un dettaglio del contratto WebUI, non un campo dell'API pubblica `/api/v1/agent/run`.
+2. **Profili educativi salvati.** Il docente può salvare, ricaricare e cancellare preset di profilo da `/webui/profiles`; i chip precompilano il form di creazione senza legare il profilo a una singola lezione.
+3. **Storico e biblioteca lezioni.** Le lezioni e i turni conversazionali sono persistiti in SQL (`lesson`, `lesson_message`) e alimentano la libreria, il dettaglio lezione e i follow-up multi-turno.
+4. **Raffinamento SAM.** Nel footer della lezione il pannello "Raffina" offre cinque opzioni (`Semplifica`, `Approfondisci`, `Più attività`, `Adatta alla classe`, `Personalizza`) che diventano `refinement_instruction` per una nuova run sulla stessa lezione.
+5. **Segnali pedagogici in UI.** La card finale mostra pill di intento pedagogico, badge UDL quando sono disponibili conteggi sui tre principi e il pannello "Cosa esplorare dopo" con concetti KG adiacenti.
+6. **Export.** Ogni lezione finalizzata espone download MD/TXT e una pagina print-friendly per generare PDF tramite il dialog di stampa del browser.
+
 ### 14.2 Mode B — integrazione nativa AixLearning
 
 La piattaforma Django AixLearning integra il servizio agenti nello stesso modo in cui ha già integrato l'endpoint GraphRAG legacy `/api/v1/context`:
@@ -1230,7 +1245,7 @@ Per `/stream`, il primo evento `planner` dovrebbe raggiungere il client entro po
 ### 15.4 Assunzioni di costo & capacità
 
 - Il costo per interazione è dominato dalla chiamata LLM del Writer (e dai thinking token). Critic e Text2Cypher usano modelli veloci più economici per mantenere basso il costo per run.
-- Il pilot è dimensionato per un singolo host (2 vCPU / 4 GB RAM / ~50 GB disco, Debian) con il graph/agenti come singleton a livello di processo e una run in-flight per lezione. È adeguato per la concorrenza del pilot interno; lo scaling orizzontale e un refactor dello stato condiviso sono rimandati (§17). Le cache di embedding persistono in un volume così che restart/rebuild evitino il re-embed.
+- Il pilot è dimensionato per un singolo host (2 vCPU / 4 GB RAM / ~50 GB disco, Debian) con agenti e grafo compilato come singleton per processo. In Postgres, il registro `agent_run` coordina una run in-flight per lezione anche con più worker uvicorn; i cap di concorrenza LLM restano per-processo e vanno dimensionati considerando `workers × cap`. Le cache di embedding persistono in un volume così che restart/rebuild evitino il re-embed.
 
 ---
 
@@ -1259,7 +1274,7 @@ Per `/stream`, il primo evento `planner` dovrebbe raggiungere il client entro po
 
 ### 16.3 Restart / redeploy
 
-- **Redeploy (CD):** pushare un merge commit sul branch di deployment — la pipeline CD di FEM ricostruisce e riavvia lo stack.
+- **Redeploy (CD):** pushare un merge commit sul branch di deployment — `staging` produce l'immagine con tag `staging`, `production` produce il tag `latest`; la pipeline/ambiente FEM a valle decide pull e riavvio dello stack.
 - **Restart manuale:** `docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.prod up -d` (ricrea i servizi cambiati; i volumi persistono).
 - **Singolo servizio:** `docker compose … restart app` (o `caddy`). Confermare la salute via `/api/v1/health` e lo stato health del compose.
 
@@ -1277,15 +1292,17 @@ Per `/stream`, il primo evento `planner` dovrebbe raggiungere il client entro po
 
 Elementi intenzionalmente fuori scope per il pilot attuale (tracciati nel backlog di progetto):
 
-- Libreria delle lezioni + storico + export PDF; rifinitura della copy italiana, accessibilità, breakpoint mobile, build Tailwind CLI.
+- Rifinitura della copy italiana, accessibilità, breakpoint mobile e build Tailwind CLI dedicata.
 - Copertura end-to-end automatica completa della pipeline media e del flusso di upsell (attualmente validati manualmente — §10.3).
 - Parità di contenuti UDL (arricchimento del media-mapping) e criteri Critic UDL arricchiti; integrazione del Critic con le domain-config rispecchiando il pattern del Writer.
-- Rate limiting a livello applicativo e autorizzazione per-tenant.
+- Rate limiting condiviso a livello applicativo e autorizzazione per-tenant.
 - Decisione su `lesson_template.txt` (collegarlo al Writer o rimuoverlo).
 
 ### 17.2 Concorrenza & scaling
 
-Il grafo compilato e gli agenti sono singleton a livello di modulo e la WebUI impone una run in-flight per lezione (tramite un registro in-memory `_ACTIVE_RUNS`). Per concorrenza più alta, l'engine di streaming andrebbe consolidato in un singolo modulo `aix.agent.streaming` e l'assunzione di singleton andrebbe rivista (worker pool / grafo per-richiesta). Mancano inoltre, per molti utenti simultanei, controlli espliciti di carico: coda globale delle generazioni, cap globale di chiamate LLM concorrenti, coordinamento cross-worker del registro run. La roadmap dettagliata in due fasi (Phase A single-worker, Phase B multi-worker) è mantenuta nel piano di deployment interno. Tracciato come follow-up di deploy.
+Il grafo compilato e gli agenti sono singleton a livello di modulo, quindi ogni worker uvicorn possiede la propria copia in memoria. La WebUI impone una run in-flight per lezione tramite un `RunRegistry`: in SQLite/dev usa il backend in-memory, mentre in Postgres/prod usa la tabella condivisa `agent_run` con heartbeat e recupero delle righe stale. Questo evita doppie generazioni della stessa lezione anche quando due richieste arrivano su worker diversi.
+
+La fase multi-worker ha anche una protezione sulla DDL di startup: `init_db()` serializza `create_all` su Postgres con un advisory lock transazionale, così più worker possono avviarsi insieme su un DB fresco senza gare `DuplicateTable`. Restano da trattare come limiti di scaling: rate limiting realmente condiviso (es. Redis), coda globale delle generazioni, cap globale delle chiamate LLM concorrenti, dashboard operativa dei run attivi e validazione staging/Linux prima di aumentare i worker oltre il profilo pilota.
 
 ### 17.3 Migrazione RS256 / JWT multi-issuer
 
@@ -1317,6 +1334,9 @@ Estende il glossario di §1.5:
 - **Text2Cypher** — il layer di conversione NL→Cypher (con traduzione IT/EN).
 - **Corrective RAG** — ciclo opzionale di grading del retrieval che ritenta il retrieval quando l'ancoraggio è debole.
 - **Profilo educativo** — contesto strutturato di classe/aula/tempo/materia allegato a una richiesta.
+- **Intento pedagogico** — obiettivo didattico scelto o confermato dal docente nella WebUI e passato al Writer come vincolo di prompt.
+- **SAM / raffinamento guidato** — pannello WebUI che trasforma una richiesta di revisione docente in una `refinement_instruction` per rigenerare la lezione.
+- **Run Registry / `agent_run`** — registro delle run in-flight; in produzione usa il database per coordinare più worker o repliche.
 - **Coverage tier** — segnale UI (`healthy`/`limited`/`out_of_scope`) derivato dal numero di nodi del KG.
 - **Checkpointer** — componente LangGraph che persiste lo stato dell'agente per-thread (SQLite dev / Postgres prod).
 - **Thread / `thread_id`** — la chiave di conversazione che abilita la memoria multi-turno.
@@ -1338,5 +1358,3 @@ Documenti consegnati insieme a questo riferimento tecnico (parte del repository)
 > La storia delle modifiche del documento è in testa (sezione **Storia delle modifiche**).
 
 ---
-
-*Fine del documento.*
