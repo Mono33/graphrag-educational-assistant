@@ -37,18 +37,35 @@ ARG GIT_SHA
 # Copy application files and install project in editable mode (deps already
 # satisfied from the lockfile above, so --no-deps avoids re-resolving them).
 COPY . .
+
+# Fail the image build when a required, versioned retrieval asset was omitted
+# from git or accidentally re-excluded by .dockerignore. These assets are
+# immutable image content; only artifacts/media_cache is writable at runtime.
+RUN set -ex \
+    && test -s data/media/kg_neuro_media_pool.json \
+    && test -s data/media/kg_udl_media_pool.json \
+    && test -s artifacts/node2vec/neuro_node2vec_model.pkl \
+    && test -s artifacts/node2vec/neuro_node2vec_embeddings.npz \
+    && test -s artifacts/node2vec/udl_node2vec_model.pkl \
+    && test -s artifacts/node2vec/udl_node2vec_embeddings.npz \
+    && test -s artifacts/embeddings_cache/neuro_openai_embeddings.json \
+    && test -s artifacts/embeddings_cache/udl_openai_embeddings.json
+
 RUN $VIRTUAL_ENV/bin/pip install --no-deps -e .
 # Enable venv
 ENV PATH="/opt/venv/bin:$PATH"
 ENV CODE_VERSION=${GIT_SHA}
 
-# Defense-in-depth: run as a non-root user. Create the artifacts mount point
-# and hand the whole app tree to `aix` so the mounted artifacts volume inherits
-# writable ownership on its first mount (Docker seeds an empty named volume with
-# the image path's ownership).
+# Defense-in-depth: run as a non-root user. Static retrieval assets stay
+# read-only image content; the live-media cache is the only writable artifact
+# path and may be mounted independently by Compose.
 RUN useradd --create-home --uid 10001 aix \
-    && mkdir -p /graphrag-aixlearning/artifacts \
-    && chown -R aix:aix /graphrag-aixlearning
+    && mkdir -p /graphrag-aixlearning/artifacts/media_cache \
+    && chown -R aix:aix /graphrag-aixlearning \
+    && chmod -R a-w \
+        /graphrag-aixlearning/data/media \
+        /graphrag-aixlearning/artifacts/node2vec \
+        /graphrag-aixlearning/artifacts/embeddings_cache
 USER aix
 
 # Serve on 8765 — the port Caddy proxies to (deploy/Caddyfile) and the compose

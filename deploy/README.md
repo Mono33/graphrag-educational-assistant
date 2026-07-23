@@ -75,16 +75,24 @@ git push fem production                  # this push is what triggers FEM's CD
       gate in the deployment plan §10.4 — the port bug above is exactly what it
       would have caught).
 
-### 0.3 Re-deploy note — artifacts volume ownership (non-root app)
+### 0.3 Re-deploy note — immutable retrieval assets
 
-The app now runs as the non-root `aix` user (uid `10001`). A **fresh**
-`aix-app-artifacts` volume inherits writable ownership automatically on first
-mount. Only if you are **re-deploying over a volume created by an older
-root-based image** do you need to fix ownership once:
+Curated media pools, Node2Vec models and semantic embedding caches are
+versioned with the code and baked into the image. The Docker build fails if a
+mandatory asset is missing. Compose persists only the writable live-media
+cache at `artifacts/media_cache`; it must never mount a volume over the whole
+`artifacts/` directory, because that would hide the assets shipped in the
+image.
 
-```bash
-docker run --rm -v aix-app-artifacts:/a alpine chown -R 10001:10001 /a
-```
+If an older deployment still uses the former `aix-app-artifacts` volume:
+
+1. update to the current Compose file (cache-only mount);
+2. recreate the app container;
+3. after rollback is no longer needed, remove the obsolete volume manually:
+   `docker volume rm aix-app-artifacts`.
+
+The app runs as the non-root `aix` user (uid `10001`). A fresh
+`aix-app-media-cache` volume inherits writable ownership from the image.
 
 ---
 
@@ -158,6 +166,19 @@ Expected health-check sequence (visible in `docker compose ps`):
 Browse to `https://agente.aiforlearning.digital/api/v1/health` from a
 machine outside the VM. A `200` response with
 `{"status":"healthy",...}` means the stack is live end-to-end.
+
+Before pilot traffic, run one neuro and one UDL lesson and confirm the app
+logs contain all three asset signals:
+
+```text
+[MediaLookup] Loaded verified pool ... concepts
+Node2Vec model loaded successfully (domain: neuro|udl)
+[SemanticEmbedder] Loaded ... cached embeddings
+```
+
+The media panel must show at least one `Verificato` item, not only the
+DuckDuckGo `auto` section. Live YouTube is optional and additionally requires
+`YOUTUBE_API_KEY`; curated videos work without it.
 
 ---
 

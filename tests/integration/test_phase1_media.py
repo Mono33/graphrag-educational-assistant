@@ -8,12 +8,33 @@ import asyncio
 import logging
 import sys
 
+import pytest
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+
+@pytest.mark.parametrize("domain", ("neuro", "udl"))
+def test_curated_media_pool_loads_with_verified_content(domain: str) -> None:
+    """Both production domains must load a non-empty verified media pool."""
+    from aix.agent.media import MediaLookup
+
+    lookup = MediaLookup(domain=domain)
+    stats = lookup.get_stats()
+
+    assert lookup.loaded, f"Curated media pool did not load for {domain}"
+    assert stats["pool_format"] is True
+    assert stats["concepts"] > 0
+    assert (
+        stats["total_videos"]
+        + stats["total_citations"]
+        + stats.get("total_wikipedia", 0)
+        > 0
+    ), f"Curated media pool has no usable verified content for {domain}"
 
 
 def test_media_lookup():

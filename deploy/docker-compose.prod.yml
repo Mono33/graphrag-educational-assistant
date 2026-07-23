@@ -75,9 +75,10 @@ services:
       WEBUI_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       LANGGRAPH_DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
     volumes:
-      # Persist embeddings / Node2Vec artifacts so a container rebuild
-      # doesn't trigger a full re-embed of the KG.
-      - app_artifacts:/graphrag-aixlearning/artifacts
+      # Curated pools, Node2Vec and semantic embeddings are immutable image
+      # assets. Persist only the writable live-media cache so a volume can
+      # never mask the versioned retrieval assets baked into the image.
+      - app_media_cache:/graphrag-aixlearning/artifacts/media_cache
     healthcheck:
       # /api/v1/health verifies Neo4j connectivity + domain configs. This
       # mirrors the Dockerfile HEALTHCHECK but keeps compose status explicit.
@@ -110,8 +111,8 @@ services:
 volumes:
   pg_data:
     name: aix-pg-data
-  app_artifacts:
-    name: aix-app-artifacts
+  app_media_cache:
+    name: aix-app-media-cache
   caddy_data:
     name: aix-caddy-data
   caddy_config:

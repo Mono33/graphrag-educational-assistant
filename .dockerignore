@@ -37,9 +37,22 @@ Thumbs.db
 *.swp
 *.swo
 
-# --- runtime data + caches that must never bake into the image --------
-data/
-artifacts/
+# --- runtime data + caches (default deny; immutable runtime assets allowed) --
+# The application loads curated media and retrieval models from repo-relative
+# filesystem paths. Keep the broad deny-list, but include only the versioned,
+# read-only assets required for production parity. Runtime/user data and
+# generated caches remain outside the image.
+data/**
+!data/media/
+!data/media/kg_neuro_media_pool.json
+!data/media/kg_udl_media_pool.json
+
+artifacts/**
+!artifacts/node2vec/
+!artifacts/node2vec/*_model.pkl
+!artifacts/node2vec/*_embeddings.npz
+!artifacts/embeddings_cache/
+!artifacts/embeddings_cache/*_openai_embeddings.json
 logs/
 tmp/
 *.log
