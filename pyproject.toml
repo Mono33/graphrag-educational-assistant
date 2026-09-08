@@ -68,6 +68,16 @@ dev = [
     "mypy>=1.10",
 ]
 
+# The SQLite checkpointer, for developers who want multi-turn memory without
+# running Postgres locally. Deliberately NOT part of [dev]: it is mutually
+# exclusive with langgraph-checkpoint-postgres in requirements.txt, because the
+# two pull incompatible majors of langgraph-checkpoint (see the note there).
+# Installing this on top of the base requirements will downgrade or conflict —
+# use it in a separate environment, not alongside the Postgres saver.
+sqlite-checkpointer = [
+    "langgraph-checkpoint-sqlite>=3.0,<4.0",
+]
+
 [project.urls]
 Repository = "https://github.com/FEM-modena/graphrag-aixlearning"
 

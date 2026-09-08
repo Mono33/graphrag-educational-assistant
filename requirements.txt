@@ -66,12 +66,27 @@ langgraph>=1.0.0,<2.0.0
 # LangGraph's backend-agnostic BaseCheckpointSaver protocol, so the agent graph
 # is identical across environments — only the saver class differs.
 #
-# SQLite (dev): using 3.x — 2.0.11 (last 2.x) calls aiosqlite Connection.is_alive()
-# which was removed in aiosqlite 0.20+.
-langgraph-checkpoint-sqlite>=3.0,<4.0
 # Postgres (prod): AsyncPostgresSaver + a psycopg_pool connection pool for
 # concurrent, multi-replica-safe, durable thread storage.
 langgraph-checkpoint-postgres>=2.0,<3.0
+#
+# The SQLite dev fallback is NOT here, and cannot be: the two savers pull
+# incompatible versions of their shared core, so declaring both makes this file
+# unsatisfiable and `pip install -e ".[dev]"` fails with ResolutionImpossible.
+#
+#     langgraph-checkpoint-postgres 2.x  -> langgraph-checkpoint <3
+#     langgraph-checkpoint-sqlite   3.x  -> langgraph-checkpoint >=3
+#
+# Nor can the sqlite pin simply move back to 2.x: 2.0.11 (the last 2.x) calls
+# aiosqlite Connection.is_alive(), removed in aiosqlite 0.20+.
+#
+# Postgres wins the base install because it is what production runs. Developers
+# who want the SQLite saver install the mutually-exclusive extra instead:
+#
+#     pip install -e ".[sqlite-checkpointer]"
+#
+# With neither installed, aix.agent.graph.checkpointer degrades to no
+# checkpointer at all — the graph still runs, single-turn.
 psycopg[binary,pool]>=3.1,<4.0
 
 # Error Monitoring (GlitchTip — Sentry-compatible)
