@@ -343,8 +343,8 @@ def _live_media_ranking_query(lesson: Lesson) -> Optional[str]:
     parts = [
         profile.get("specific_topic"),  # argomento (most specific)
         _clean_lesson_query((getattr(lesson, "teacher_query", None) or "").strip()),
-        profile.get("subject_area"),     # materia (context only)
-        group.get("grade"),              # school level (context only)
+        profile.get("subject_area"),  # materia (context only)
+        group.get("grade"),  # school level (context only)
     ]
     ordered: list[str] = []
     seen: set[str] = set()
@@ -423,8 +423,7 @@ async def lesson_list(
 
     return templates.TemplateResponse(
         request,
-
-            "pages/lesson_list.html",
+        "pages/lesson_list.html",
         {
             "user": user,
             "lessons": lessons,  # legacy context var, kept for compat
@@ -522,8 +521,7 @@ async def lesson_card_fragment(
     )
     return templates.TemplateResponse(
         request,
-
-            "partials/chat_lesson_card.html",
+        "partials/chat_lesson_card.html",
         {
             "lesson": lesson,
             "lesson_plan_html": _markdown_to_html(lesson.lesson_plan_md or ""),
@@ -610,8 +608,7 @@ async def lesson_media_live(
     )
     return templates.TemplateResponse(
         request,
-
-            "partials/media_live_sections.html",
+        "partials/media_live_sections.html",
         {
             "videos": panel.get("videos") or [],
             "citations": panel.get("citations") or [],
@@ -674,8 +671,7 @@ async def lesson_chat_input_fragment(
     )
     return templates.TemplateResponse(
         request,
-
-            "partials/chat_input.html",
+        "partials/chat_input.html",
         {
             "lesson": lesson,
             # _oob=False because this response is targeted explicitly via
@@ -739,8 +735,7 @@ async def lesson_new_get(
 
     return templates.TemplateResponse(
         request,
-
-            "pages/lesson_new.html",
+        "pages/lesson_new.html",
         {
             "title": "Nuova lezione · AixLearning",
             "phase": "P3 — Chat workspace + allegati",
@@ -814,8 +809,7 @@ async def lesson_create(
         )
         return templates.TemplateResponse(
             request,
-
-                "pages/lesson_new.html",
+            "pages/lesson_new.html",
             {
                 "title": "Nuova lezione · AixLearning",
                 "phase": "P3 — Chat workspace + allegati",
@@ -964,8 +958,7 @@ async def lesson_show(
 
     return templates.TemplateResponse(
         request,
-
-            "pages/lesson_show.html",
+        "pages/lesson_show.html",
         {
             "title": (lesson.title or "Lezione") + " · AixLearning",
             "phase": "P3 — Chat workspace + allegati",
@@ -1326,8 +1319,7 @@ async def lesson_run(
 
     return templates.TemplateResponse(
         request,
-
-            "partials/chat_conversation.html",
+        "partials/chat_conversation.html",
         {
             "lesson": lesson,
             "user": user,
@@ -1913,8 +1905,7 @@ async def lesson_profile_edit(
 
     return templates.TemplateResponse(
         request,
-
-            "partials/profile_sidebar_edit.html",
+        "partials/profile_sidebar_edit.html",
         {
             "lesson": lesson,
             "profile_errors": None,
@@ -1957,8 +1948,7 @@ async def lesson_profile_save(
         logger.info("Profile edit validation failed: %s", exc.errors())
         return templates.TemplateResponse(
             request,
-
-                "partials/profile_sidebar_edit.html",
+            "partials/profile_sidebar_edit.html",
             {
                 "lesson": lesson,
                 "profile_errors": [
@@ -2094,8 +2084,7 @@ async def lesson_print(
 
     return templates.TemplateResponse(
         request,
-
-            "pages/lesson_print.html",
+        "pages/lesson_print.html",
         {
             "lesson": lesson,
             "lesson_plan_html": _markdown_to_html(lesson.lesson_plan_md or ""),

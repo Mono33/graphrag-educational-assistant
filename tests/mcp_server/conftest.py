@@ -42,12 +42,7 @@ os.environ.setdefault("WEBUI_CORS_ALLOW_ORIGINS", "*")
 os.environ.setdefault("AIX_MCP_REQUIRE_AUTH", "1")
 os.environ.setdefault(
     "WEBUI_DB_PATH",
-    str(
-        Path(__file__).resolve().parents[2]
-        / "data"
-        / "webui"
-        / "test_p20_mcp.db"
-    ),
+    str(Path(__file__).resolve().parents[2] / "data" / "webui" / "test_p20_mcp.db"),
 )
 
 # Ensure ``src/`` is on sys.path even if pip-install -e wasn't run (CI safety).

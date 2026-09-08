@@ -30,12 +30,22 @@ CKPT_PATH_TPL = "data/media/checkpoint_{domain}.json"
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Clear incomplete concepts from checkpoint for retry")
+    parser = argparse.ArgumentParser(
+        description="Clear incomplete concepts from checkpoint for retry"
+    )
     parser.add_argument("--domain", required=True, help="Domain name (e.g. neuro, udl)")
-    parser.add_argument("--missing-videos", action="store_true", help="Retry concepts with no videos")
-    parser.add_argument("--missing-citations", action="store_true", help="Retry concepts with no citations")
-    parser.add_argument("--missing-wikipedia", action="store_true", help="Retry concepts with no wikipedia")
-    parser.add_argument("--dry-run", action="store_true", help="Show what would be cleared without changing files")
+    parser.add_argument(
+        "--missing-videos", action="store_true", help="Retry concepts with no videos"
+    )
+    parser.add_argument(
+        "--missing-citations", action="store_true", help="Retry concepts with no citations"
+    )
+    parser.add_argument(
+        "--missing-wikipedia", action="store_true", help="Retry concepts with no wikipedia"
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Show what would be cleared without changing files"
+    )
     args = parser.parse_args()
 
     # If no specific flags given, check all fields
@@ -108,7 +118,9 @@ def main():
     print(f"Remaining done    : {len(checkpoint)}")
     print()
     print("Now run:")
-    print(f"  python scripts/media_pool/01_run_pool_agent.py --domain {args.domain} --workers 4 --resume")
+    print(
+        f"  python scripts/media_pool/01_run_pool_agent.py --domain {args.domain} --workers 4 --resume"
+    )
 
 
 if __name__ == "__main__":

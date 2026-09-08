@@ -122,8 +122,7 @@ async def register_get(
         return RedirectResponse(_safe_next(next), status_code=303)
     return templates.TemplateResponse(
         request,
-
-            "pages/auth_register.html",
+        "pages/auth_register.html",
         {
             "title": "Registrazione · AixLearning",
             "phase": "P1 — Auth",
@@ -146,8 +145,7 @@ async def login_get(
         return RedirectResponse(_safe_next(next), status_code=303)
     return templates.TemplateResponse(
         request,
-
-            "pages/auth_login.html",
+        "pages/auth_login.html",
         {
             "title": "Accesso · AixLearning",
             "phase": "P1 — Auth",
@@ -191,8 +189,7 @@ async def register_post(
     except ValidationError as exc:
         return templates.TemplateResponse(
             request,
-
-                "pages/auth_register.html",
+            "pages/auth_register.html",
             {
                 "title": "Registrazione · AixLearning",
                 "phase": "P1 — Auth",
@@ -209,8 +206,7 @@ async def register_post(
     except UserAlreadyExists:
         return templates.TemplateResponse(
             request,
-
-                "pages/auth_register.html",
+            "pages/auth_register.html",
             {
                 "title": "Registrazione · AixLearning",
                 "phase": "P1 — Auth",
@@ -229,8 +225,7 @@ async def register_post(
         reason = getattr(exc, "reason", "Password non valida.")
         return templates.TemplateResponse(
             request,
-
-                "pages/auth_register.html",
+            "pages/auth_register.html",
             {
                 "title": "Registrazione · AixLearning",
                 "phase": "P1 — Auth",
@@ -274,8 +269,7 @@ async def login_post(
     if user is None or not user.is_active:
         return templates.TemplateResponse(
             request,
-
-                "pages/auth_login.html",
+            "pages/auth_login.html",
             {
                 "title": "Accesso · AixLearning",
                 "phase": "P1 — Auth",

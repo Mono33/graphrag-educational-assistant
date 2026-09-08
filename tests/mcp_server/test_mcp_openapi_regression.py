@@ -21,10 +21,7 @@ from pathlib import Path
 import pytest
 
 _BASELINE_PATH = (
-    Path(__file__).resolve().parents[2]
-    / "data"
-    / "diagnostic"
-    / "openapi_before_p20.txt"
+    Path(__file__).resolve().parents[2] / "data" / "diagnostic" / "openapi_before_p20.txt"
 )
 
 
@@ -48,7 +45,11 @@ def _baseline_routes() -> list[str]:
         for line in fh:
             parts = line.split()
             if len(parts) >= 2 and parts[0] in {
-                "GET", "POST", "PUT", "PATCH", "DELETE",
+                "GET",
+                "POST",
+                "PUT",
+                "PATCH",
+                "DELETE",
             }:
                 expected.append(f"{parts[0]} {parts[1]}")
     return expected

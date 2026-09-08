@@ -40,7 +40,10 @@ def preflight_check():
     print("\n2️⃣ Testing Neo4j connectivity...")
     try:
         from neo4j import GraphDatabase
-        driver = GraphDatabase.driver(config.neo4j.uri, auth=(config.neo4j.user, config.neo4j.password))
+
+        driver = GraphDatabase.driver(
+            config.neo4j.uri, auth=(config.neo4j.user, config.neo4j.password)
+        )
 
         with driver.session() as session:
             result = session.run("MATCH (n) RETURN count(n) as node_count")
@@ -54,7 +57,9 @@ def preflight_check():
     # Check 3: APOC availability
     print("\n3️⃣ Testing APOC procedures...")
     try:
-        with GraphDatabase.driver(config.neo4j.uri, auth=(config.neo4j.user, config.neo4j.password)).session() as session:
+        with GraphDatabase.driver(
+            config.neo4j.uri, auth=(config.neo4j.user, config.neo4j.password)
+        ).session() as session:
             # Test essential APOC functions
             session.run("RETURN apoc.create.uuid() as test_uuid")
             session.run("RETURN apoc.text.slug('Test String') as test_slug")
@@ -93,7 +98,9 @@ def preflight_check():
     # Check 6: Current data state
     print("\n6️⃣ Checking current data state...")
     try:
-        with GraphDatabase.driver(config.neo4j.uri, auth=(config.neo4j.user, config.neo4j.password)).session() as session:
+        with GraphDatabase.driver(
+            config.neo4j.uri, auth=(config.neo4j.user, config.neo4j.password)
+        ).session() as session:
             # Check if migrations already applied
             result = session.run("MATCH (n) WHERE n.uuid IS NOT NULL RETURN count(n) as with_uuid")
             uuid_count = result.single()["with_uuid"]
@@ -122,6 +129,7 @@ def preflight_check():
     else:
         print("❌ NOT READY - Fix issues above before proceeding")
         return False
+
 
 if __name__ == "__main__":
     success = preflight_check()

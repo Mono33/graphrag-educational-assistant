@@ -167,7 +167,9 @@ class MediaCache:
         cfg = cfg or MediaConfig.from_env()
         backend = _build_backend(cfg)
         cache = cls(backend, cfg.cache_namespace, cfg.cache_ttl)
-        logger.debug("[media-cache] initialized backend=%s ns=%s", cache.backend_name, cfg.cache_namespace)
+        logger.debug(
+            "[media-cache] initialized backend=%s ns=%s", cache.backend_name, cfg.cache_namespace
+        )
         return cache
 
     def key(self, *parts: Any) -> str:

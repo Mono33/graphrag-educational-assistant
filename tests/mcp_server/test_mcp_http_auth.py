@@ -51,8 +51,7 @@ def test_mcp_unauthenticated_returns_401(http_client):
         content=json.dumps(_INITIALIZE_BODY),
     )
     assert resp.status_code == 401, (
-        f"Expected 401 for unauthenticated /mcp/, got {resp.status_code}: "
-        f"{resp.text[:200]}"
+        f"Expected 401 for unauthenticated /mcp/, got {resp.status_code}: {resp.text[:200]}"
     )
 
 
@@ -72,8 +71,7 @@ def test_mcp_with_fake_token_returns_401(http_client, invalid_jwt_token):
         content=json.dumps(_INITIALIZE_BODY),
     )
     assert resp.status_code == 401, (
-        f"Expected 401 for wrong-secret JWT, got {resp.status_code}: "
-        f"{resp.text[:200]}"
+        f"Expected 401 for wrong-secret JWT, got {resp.status_code}: {resp.text[:200]}"
     )
 
 
@@ -96,8 +94,7 @@ async def test_mcp_with_valid_jwt_returns_2xx(http_client, fresh_user_token):
         content=json.dumps(_INITIALIZE_BODY),
     )
     assert 200 <= resp.status_code < 300, (
-        f"Expected 2xx for valid Bearer token on /mcp/, got "
-        f"{resp.status_code}: {resp.text[:200]}"
+        f"Expected 2xx for valid Bearer token on /mcp/, got {resp.status_code}: {resp.text[:200]}"
     )
 
 

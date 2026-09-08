@@ -73,6 +73,7 @@ def app():
     # state (DB engine, fastapi-users wiring) is fine to share across
     # tests inside this module since each test owns its own user.
     from aix.api.main import app as live_app
+
     return live_app
 
 
@@ -80,6 +81,7 @@ def app():
 def client(app):
     """A regular httpx-based TestClient. Starlette's lifespan is exercised."""
     from fastapi.testclient import TestClient
+
     with TestClient(app) as c:
         yield c
 
@@ -221,41 +223,51 @@ async def test_agent_run_happy_path(client, fresh_user_token, monkeypatch):
     With a stubbed agent emitting planner→retriever→writer→critic→done,
     the route returns a 200 with the full ``AgentRunResponse``.
     """
-    _patch_stream(monkeypatch, [
-        {"kind": "planner", "payload": {
-            "intent": "lesson_creation",
-            "intent_label": "Creazione lezione",
-            "scope": "in_scope",
-            "scope_label": "Nel Knowledge Graph",
-            "key_concepts": ["attenzione", "memoria"],
-            "search_queries": ["strategie attenzione"],
-        }},
-        {"kind": "retriever", "payload": {
-            "nodes_count": 7,
-            "relationships_count": 12,
-            "recommendations_count": 3,
-            "media_counts": {"videos": 2, "articles": 1, "oer": 4},
-            "media": {"videos": [], "resources": []},
-            "top_concepts": ["Attenzione sostenuta"],
-            "retrieval_confidence": "HIGH",
-        }},
-        {"kind": "writer_pending", "payload": {"revision": 1}},
-        {"kind": "writer", "payload": {"revision": 1},
-         "lesson_plan_md": "# Bozza"},
-        {"kind": "critic", "payload": {"approved": True, "score": 4.5}},
-        {"kind": "done",
-         "lesson_plan_md": "# Lezione finale\n\nContenuto.",
-         "meta": {
-             "duration_seconds": 12.3,
-             "approved": True,
-             "revision_count": 0,
-             "scores": {"average_score": 4.5},
-             "nodes_count": 7,
-             "recommendations_count": 3,
-             "media_counts": {"videos": 2, "articles": 1, "oer": 4},
-             "search_queries_count": 1,
-         }},
-    ])
+    _patch_stream(
+        monkeypatch,
+        [
+            {
+                "kind": "planner",
+                "payload": {
+                    "intent": "lesson_creation",
+                    "intent_label": "Creazione lezione",
+                    "scope": "in_scope",
+                    "scope_label": "Nel Knowledge Graph",
+                    "key_concepts": ["attenzione", "memoria"],
+                    "search_queries": ["strategie attenzione"],
+                },
+            },
+            {
+                "kind": "retriever",
+                "payload": {
+                    "nodes_count": 7,
+                    "relationships_count": 12,
+                    "recommendations_count": 3,
+                    "media_counts": {"videos": 2, "articles": 1, "oer": 4},
+                    "media": {"videos": [], "resources": []},
+                    "top_concepts": ["Attenzione sostenuta"],
+                    "retrieval_confidence": "HIGH",
+                },
+            },
+            {"kind": "writer_pending", "payload": {"revision": 1}},
+            {"kind": "writer", "payload": {"revision": 1}, "lesson_plan_md": "# Bozza"},
+            {"kind": "critic", "payload": {"approved": True, "score": 4.5}},
+            {
+                "kind": "done",
+                "lesson_plan_md": "# Lezione finale\n\nContenuto.",
+                "meta": {
+                    "duration_seconds": 12.3,
+                    "approved": True,
+                    "revision_count": 0,
+                    "scores": {"average_score": 4.5},
+                    "nodes_count": 7,
+                    "recommendations_count": 3,
+                    "media_counts": {"videos": 2, "articles": 1, "oer": 4},
+                    "search_queries_count": 1,
+                },
+            },
+        ],
+    )
 
     resp = client.post(
         "/api/v1/agent/run",
@@ -284,9 +296,12 @@ async def test_agent_run_happy_path(client, fresh_user_token, monkeypatch):
 @pytest.mark.asyncio
 async def test_agent_run_propagates_runtime_error(client, fresh_user_token, monkeypatch):
     """An ``error`` StreamEvent → HTTP 502 with the message preserved."""
-    _patch_stream(monkeypatch, [
-        {"kind": "error", "error": "Knowledge Graph unreachable"},
-    ])
+    _patch_stream(
+        monkeypatch,
+        [
+            {"kind": "error", "error": "Knowledge Graph unreachable"},
+        ],
+    )
 
     resp = client.post(
         "/api/v1/agent/run",
@@ -303,16 +318,25 @@ async def test_agent_stream_serialises_events(client, fresh_user_token, monkeypa
     SSE stream emits one ``event:`` + ``data:`` pair per StreamEvent, with
     the JSON ``data`` payload matching the public envelope shape.
     """
-    _patch_stream(monkeypatch, [
-        {"kind": "planner", "payload": {"intent": "lesson_creation"}},
-        {"kind": "done",
-         "lesson_plan_md": "# Done",
-         "meta": {"duration_seconds": 1.0, "approved": True,
-                  "revision_count": 0, "nodes_count": 0,
-                  "recommendations_count": 0,
-                  "media_counts": {"videos": 0, "articles": 0, "oer": 0},
-                  "search_queries_count": 0}},
-    ])
+    _patch_stream(
+        monkeypatch,
+        [
+            {"kind": "planner", "payload": {"intent": "lesson_creation"}},
+            {
+                "kind": "done",
+                "lesson_plan_md": "# Done",
+                "meta": {
+                    "duration_seconds": 1.0,
+                    "approved": True,
+                    "revision_count": 0,
+                    "nodes_count": 0,
+                    "recommendations_count": 0,
+                    "media_counts": {"videos": 0, "articles": 0, "oer": 0},
+                    "search_queries_count": 0,
+                },
+            },
+        ],
+    )
 
     with client.stream(
         "POST",
@@ -407,6 +431,7 @@ def pytest_collection_modifyitems(config, items):
     """Run async tests on a fresh event loop if pytest-asyncio is missing."""
     try:
         import pytest_asyncio  # noqa: F401
+
         return
     except ImportError:
         pass

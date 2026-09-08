@@ -38,17 +38,16 @@ async def test_intent_detection():
             correct += 1
 
         print(f'{status} Query: "{query}"')
-        print(f'   Expected: {expected}')
-        print(f'   Got: {plan.query_intent} (confidence: {plan.intent_confidence})')
+        print(f"   Expected: {expected}")
+        print(f"   Got: {plan.query_intent} (confidence: {plan.intent_confidence})")
         if plan.key_concepts:
-            print(f'   Concepts: {", ".join(plan.key_concepts[:3])}')
+            print(f"   Concepts: {', '.join(plan.key_concepts[:3])}")
         print()
 
     print("=" * 60)
-    print(f"Results: {correct}/{total} correct ({100*correct/total:.0f}%)")
+    print(f"Results: {correct}/{total} correct ({100 * correct / total:.0f}%)")
     print("=" * 60)
 
 
 if __name__ == "__main__":
     asyncio.run(test_intent_detection())
-

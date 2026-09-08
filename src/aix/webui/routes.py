@@ -161,8 +161,7 @@ async def home(
     dashboard = await _build_dashboard_context(session, user)
     return templates.TemplateResponse(
         request,
-
-            "pages/home.html",
+        "pages/home.html",
         {
             "title": "AixLearning · Agentic GraphRAG",
             "user": user,
@@ -189,8 +188,7 @@ async def about_ai(
     """
     return templates.TemplateResponse(
         request,
-
-            "pages/about_ai.html",
+        "pages/about_ai.html",
         {
             "title": "Come funziona l'IA · AixLearning",
             "user": user,

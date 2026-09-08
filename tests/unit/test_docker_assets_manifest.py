@@ -24,4 +24,6 @@ def test_mandatory_docker_asset_exists_and_is_nonempty(relative_path: str) -> No
     asset = REPO_ROOT / relative_path
 
     assert asset.is_file(), f"Mandatory Docker asset is missing: {relative_path}"
-    assert asset.stat().st_size > 1024, f"Mandatory Docker asset is unexpectedly small: {relative_path}"
+    assert asset.stat().st_size > 1024, (
+        f"Mandatory Docker asset is unexpectedly small: {relative_path}"
+    )

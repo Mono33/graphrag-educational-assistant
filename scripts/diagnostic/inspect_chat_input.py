@@ -65,10 +65,7 @@ def _login(client: httpx.Client, email: str, password: str) -> None:
         follow_redirects=False,
     )
     if r.status_code not in (200, 303, 302):
-        sys.exit(
-            f"❌ Login failed: HTTP {r.status_code}\n"
-            f"   Response: {r.text[:200]}"
-        )
+        sys.exit(f"❌ Login failed: HTTP {r.status_code}\n   Response: {r.text[:200]}")
 
     # httpx.Cookies stores entries as http.cookiejar.Cookie objects; iterating
     # ``client.cookies`` yields names (strings), iterating ``client.cookies.jar``
@@ -101,10 +98,7 @@ def _pick_lesson_id(client: httpx.Client, override: str | None) -> str:
         most_recent = matches[0]
         print(f"  ✅ Found lesson id on home page: {most_recent}")
         return most_recent
-    return input(
-        "  Could not auto-detect a lesson on /webui/. "
-        "Paste a lesson id (UUID): "
-    ).strip()
+    return input("  Could not auto-detect a lesson on /webui/. Paste a lesson id (UUID): ").strip()
 
 
 def _fetch_lesson(client: httpx.Client, lesson_id: str) -> str:
@@ -140,7 +134,7 @@ def _inspect(html: str) -> None:
         ),
         (
             "Paperclip wa-icon is in the response",
-            "<wa-icon name=\"paperclip\"",
+            '<wa-icon name="paperclip"',
             "→ The icon element itself is missing — likely a templating bug.",
         ),
         (
@@ -150,11 +144,11 @@ def _inspect(html: str) -> None:
         ),
         (
             "wa-tooltip wraps the chat-input action buttons",
-            re.compile(r'<wa-tooltip[^>]*>\s*<button', re.I | re.S),
+            re.compile(r"<wa-tooltip[^>]*>\s*<button", re.I | re.S),
             "→ The tooltip wrapper isn't there. That would be unusual.",
         ),
         (
-            "Send button (<wa-button … type=\"submit\">) is rendered",
+            'Send button (<wa-button … type="submit">) is rendered',
             re.compile(r'<wa-button[^>]*type="submit"', re.I),
             "→ Send button missing too — bigger problem than just the paperclip.",
         ),
@@ -190,7 +184,7 @@ def _inspect(html: str) -> None:
     print("\n──────────── Chat-input action block (excerpt) ────────────")
     m = re.search(
         r'(<input type="file"[^>]*id="chat-upload-input".*?</wa-tooltip>'
-        r'\s*<wa-tooltip[^>]*>\s*<button[^>]*disabled[^>]*>.*?</wa-tooltip>)',
+        r"\s*<wa-tooltip[^>]*>\s*<button[^>]*disabled[^>]*>.*?</wa-tooltip>)",
         html,
         flags=re.S | re.I,
     )

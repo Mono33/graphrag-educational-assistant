@@ -102,7 +102,11 @@ async def _print_listing() -> None:
         if len(desc) > 100:
             desc = desc[:97] + "..."
         line = f"  - {tool.name:<22} | {desc}"
-        print(line.encode(sys.stdout.encoding or "utf-8", errors="replace").decode(sys.stdout.encoding or "utf-8", errors="replace"))
+        print(
+            line.encode(sys.stdout.encoding or "utf-8", errors="replace").decode(
+                sys.stdout.encoding or "utf-8", errors="replace"
+            )
+        )
 
     try:
         resources = await mcp.list_resources()
@@ -116,7 +120,11 @@ async def _print_listing() -> None:
         templates = await mcp.list_resource_templates()
         print(f"\nResource templates registered: {len(templates)}")
         for tpl in templates:
-            uri = getattr(tpl, "uriTemplate", None) or getattr(tpl, "uri_template", None) or getattr(tpl, "uri", "?")
+            uri = (
+                getattr(tpl, "uriTemplate", None)
+                or getattr(tpl, "uri_template", None)
+                or getattr(tpl, "uri", "?")
+            )
             print(f"  - {uri}")
     except Exception as exc:
         print(f"\nResource templates: unavailable ({exc})")
@@ -151,9 +159,7 @@ async def _call_tool(name: str, arguments: dict[str, Any]) -> None:
     elif hasattr(result, "data") and result.data is not None:
         payload = result.data
     elif hasattr(result, "content"):
-        payload = [
-            getattr(c, "text", str(c)) for c in (result.content or [])
-        ]
+        payload = [getattr(c, "text", str(c)) for c in (result.content or [])]
     else:
         payload = str(result)
 
@@ -213,15 +219,19 @@ async def _phase2_verify() -> None:
                     if "label_categories" in d:
                         extras.append(f"label_categories={len(d.get('label_categories') or {})}")
                     if "methodology_categories" in d:
-                        extras.append(f"methodology_categories={len(d.get('methodology_categories') or {})}")
+                        extras.append(
+                            f"methodology_categories={len(d.get('methodology_categories') or {})}"
+                        )
                     if "concepts_with_media" in d:
                         extras.append(f"concepts_with_media={d.get('concepts_with_media')}")
                     if "by_kind" in d:
                         extras.append(f"by_kind={d.get('by_kind')}")
                     print(f"   - {name}: {', '.join(extras) if extras else d}")
             elif "concepts" in payload and isinstance(payload["concepts"], list):
-                print(f"  domain={payload.get('domain')!r}, count={payload.get('count')}, "
-                      f"first 5 concepts={payload['concepts'][:5]}")
+                print(
+                    f"  domain={payload.get('domain')!r}, count={payload.get('count')}, "
+                    f"first 5 concepts={payload['concepts'][:5]}"
+                )
         else:
             preview = json.dumps(payload, ensure_ascii=False, default=str)
             if len(preview) > 400:
@@ -394,9 +404,7 @@ async def _phase3_verify() -> None:
                 continue
             counts = entry.get("counts") or {}
             print(
-                f"   - {entry.get('concept_name'):<28} "
-                f"found={entry.get('found')}  "
-                f"counts={counts}"
+                f"   - {entry.get('concept_name'):<28} found={entry.get('found')}  counts={counts}"
             )
 
         if not matched:
@@ -650,14 +658,9 @@ async def _phase5_verify(
             if hasattr(payload, "model_dump"):
                 payload = payload.model_dump()
 
-            concepts = (
-                (payload or {}).get("concepts", [])
-                if isinstance(payload, dict)
-                else []
-            )
+            concepts = (payload or {}).get("concepts", []) if isinstance(payload, dict) else []
             print(
-                f"[5/5] kg.list_concepts(domain=neuro, limit=5): "
-                f"{len(concepts)} concepts returned"
+                f"[5/5] kg.list_concepts(domain=neuro, limit=5): {len(concepts)} concepts returned"
             )
             for c in concepts[:5]:
                 print(f"        - {c}")
@@ -744,9 +747,7 @@ async def _render_prompt(name: str, arguments: dict[str, Any]) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Smoke-test the Aix MCP server in-process."
-    )
+    parser = argparse.ArgumentParser(description="Smoke-test the Aix MCP server in-process.")
     parser.add_argument(
         "--call",
         metavar="TOOL_NAME",
@@ -808,8 +809,7 @@ def main() -> None:
         "--email",
         default=None,
         help=(
-            "Teacher account email for Phase 5 login. Falls back to "
-            "AIX_TEST_USER_EMAIL env var."
+            "Teacher account email for Phase 5 login. Falls back to AIX_TEST_USER_EMAIL env var."
         ),
     )
     parser.add_argument(
@@ -892,9 +892,7 @@ def main() -> None:
         default=None,
         help="Optional session id for agent.run_lesson_plan log tracing.",
     )
-    parser.add_argument(
-        "--topic", default=None, help="Topic for prompt rendering."
-    )
+    parser.add_argument("--topic", default=None, help="Topic for prompt rendering.")
     parser.add_argument(
         "--profile",
         default=None,
@@ -1034,18 +1032,13 @@ def main() -> None:
         elif args.call == "media.generate_diagram":
             concept = args.concept or args.query
             if not concept:
-                print(
-                    "ERROR: --concept (or --query) is required for "
-                    "media.generate_diagram"
-                )
+                print("ERROR: --concept (or --query) is required for media.generate_diagram")
                 sys.exit(2)
             arguments["concept"] = concept
             arguments["diagram_type"] = args.diagram_type
             if args.related_concepts:
                 arguments["related_concepts"] = [
-                    c.strip()
-                    for c in args.related_concepts.split(",")
-                    if c.strip()
+                    c.strip() for c in args.related_concepts.split(",") if c.strip()
                 ]
             arguments["validate"] = not args.no_validate
         else:

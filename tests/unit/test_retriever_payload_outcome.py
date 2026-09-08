@@ -47,6 +47,7 @@ from aix.webui.agent.service import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _state(**overrides: Any) -> dict[str, Any]:
     """Build a minimal post-retrieve state dict and apply overrides.
 
@@ -73,6 +74,7 @@ def _state(**overrides: Any) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # The four canonical outcomes — one test per outcome
 # ---------------------------------------------------------------------------
+
 
 def test_outcome_success_when_grade_relevant() -> None:
     """grade=relevant → outcome="success" (green ✅).
@@ -164,8 +166,7 @@ def test_outcome_limited_kg_only_when_irrelevant_without_external_resources() ->
     state = _state(
         retrieval_grade="irrelevant",
         retrieval_grade_reason=(
-            "Neither the KG nodes nor the recommendations cover the "
-            "subject content of the query."
+            "Neither the KG nodes nor the recommendations cover the subject content of the query."
         ),
         retrieval_attempts=2,
         retrieval_warning=True,
@@ -213,6 +214,7 @@ def test_outcome_grader_error_when_reason_has_sentinel_prefix() -> None:
 # ---------------------------------------------------------------------------
 # Edge cases
 # ---------------------------------------------------------------------------
+
 
 def test_outcome_success_when_grade_is_none() -> None:
     """Corrective-RAG flag OFF → grade is None → outcome="success".
@@ -262,50 +264,66 @@ def test_compute_retrieval_outcome_pure_function() -> None:
     """``_compute_retrieval_outcome`` is the pure decision function —
     test it in isolation from the payload-shaping wrapper."""
     # success — relevant
-    assert _compute_retrieval_outcome(
-        {"retrieval_grade": "relevant", "retrieval_grade_reason": "ok"},
-        {"articles": 0, "oer": 0, "videos": 0},
-    ) == "success"
+    assert (
+        _compute_retrieval_outcome(
+            {"retrieval_grade": "relevant", "retrieval_grade_reason": "ok"},
+            {"articles": 0, "oer": 0, "videos": 0},
+        )
+        == "success"
+    )
 
     # success — flag off
-    assert _compute_retrieval_outcome(
-        {"retrieval_grade": None, "retrieval_grade_reason": None},
-        {"articles": 0, "oer": 0, "videos": 0},
-    ) == "success"
+    assert (
+        _compute_retrieval_outcome(
+            {"retrieval_grade": None, "retrieval_grade_reason": None},
+            {"articles": 0, "oer": 0, "videos": 0},
+        )
+        == "success"
+    )
 
     # adapted_with_hybrid — irrelevant + external dict
-    assert _compute_retrieval_outcome(
-        {
-            "retrieval_grade": "irrelevant",
-            "retrieval_grade_reason": "out of scope",
-            "external_resources": {"wikipedia": [{"x": 1}]},
-        },
-        {"articles": 0, "oer": 0, "videos": 0},
-    ) == "adapted_with_hybrid"
+    assert (
+        _compute_retrieval_outcome(
+            {
+                "retrieval_grade": "irrelevant",
+                "retrieval_grade_reason": "out of scope",
+                "external_resources": {"wikipedia": [{"x": 1}]},
+            },
+            {"articles": 0, "oer": 0, "videos": 0},
+        )
+        == "adapted_with_hybrid"
+    )
 
     # limited_kg_only — irrelevant + nothing else
-    assert _compute_retrieval_outcome(
-        {
-            "retrieval_grade": "irrelevant",
-            "retrieval_grade_reason": "out of scope",
-            "external_resources": None,
-        },
-        {"articles": 0, "oer": 0, "videos": 0},
-    ) == "limited_kg_only"
+    assert (
+        _compute_retrieval_outcome(
+            {
+                "retrieval_grade": "irrelevant",
+                "retrieval_grade_reason": "out of scope",
+                "external_resources": None,
+            },
+            {"articles": 0, "oer": 0, "videos": 0},
+        )
+        == "limited_kg_only"
+    )
 
     # grader_error — sentinel reason wins over grade=relevant
-    assert _compute_retrieval_outcome(
-        {
-            "retrieval_grade": "relevant",
-            "retrieval_grade_reason": "Grader exception: ConnectionError",
-        },
-        {"articles": 0, "oer": 0, "videos": 0},
-    ) == "grader_error"
+    assert (
+        _compute_retrieval_outcome(
+            {
+                "retrieval_grade": "relevant",
+                "retrieval_grade_reason": "Grader exception: ConnectionError",
+            },
+            {"articles": 0, "oer": 0, "videos": 0},
+        )
+        == "grader_error"
+    )
 
 
 # ---------------------------------------------------------------------------
 # Tentativi: N/M badge data + retry semantics (#9.UX-2)
 # ---------------------------------------------------------------------------
+
 
 def test_retrieval_attempts_max_resolves_from_env() -> None:
     """``retrieval_attempts_max`` must reflect the configured env var so
@@ -346,22 +364,21 @@ def test_grader_will_retry_mirrors_router_logic() -> None:
 
     with patch.dict("os.environ", {"AIX_CORRECTIVE_RAG_MAX_ATTEMPTS": "2"}):
         # irrelevant + attempts < max → retry.
-        assert _grader_will_retry(
-            {"retrieval_grade": "irrelevant", "retrieval_attempts": 1}
-        ) is True
+        assert (
+            _grader_will_retry({"retrieval_grade": "irrelevant", "retrieval_attempts": 1}) is True
+        )
         # irrelevant + attempts == max → do NOT retry (loop terminates).
-        assert _grader_will_retry(
-            {"retrieval_grade": "irrelevant", "retrieval_attempts": 2}
-        ) is False
+        assert (
+            _grader_will_retry({"retrieval_grade": "irrelevant", "retrieval_attempts": 2}) is False
+        )
         # ambiguous behaves like irrelevant.
-        assert _grader_will_retry(
-            {"retrieval_grade": "ambiguous", "retrieval_attempts": 1}
-        ) is True
+        assert _grader_will_retry({"retrieval_grade": "ambiguous", "retrieval_attempts": 1}) is True
 
 
 # ---------------------------------------------------------------------------
 # Backward-compat
 # ---------------------------------------------------------------------------
+
 
 def test_payload_shape_unchanged_when_grading_off() -> None:
     """When corrective-RAG is OFF (grade=None), every grading-related
@@ -393,6 +410,7 @@ def test_payload_shape_unchanged_when_grading_off() -> None:
 # ---------------------------------------------------------------------------
 # CORE 2 #9.UX-5 — domain-aware coverage banner (Corrective-RAG-OFF only)
 # ---------------------------------------------------------------------------
+
 
 def test_coverage_tier_classifier_boundaries() -> None:
     """Pure tier classifier locks the three coverage-band boundaries:
@@ -447,7 +465,7 @@ def test_resolve_domain_labels_known_and_unknown() -> None:
     # explanatory parenthetical used in the Tier 0 "out of scope" copy.
     udl = _resolve_domain_labels("udl")
     assert udl["short"] == "UDL"
-    assert udl["long"]  == "UDL (pedagogia inclusiva)"
+    assert udl["long"] == "UDL (pedagogia inclusiva)"
 
     # Case-insensitive lookup — state["domain"] may arrive as "UDL".
     assert _resolve_domain_labels("UDL") == udl
@@ -456,18 +474,18 @@ def test_resolve_domain_labels_known_and_unknown() -> None:
     # ClickUp #9.UX-5: "Neuro is fine").
     neuro = _resolve_domain_labels("neuro")
     assert neuro["short"] == "Neuro"
-    assert neuro["long"]  == "Neuro"
+    assert neuro["long"] == "Neuro"
 
     # Unknown / None / empty — fall back gracefully to either the raw
     # value (so a future "stem" domain renders "stem" until labelled)
     # or a generic phrase. Never raises KeyError.
     unknown = _resolve_domain_labels("stem")
     assert unknown["short"] == "stem"
-    assert unknown["long"]  == "stem"
+    assert unknown["long"] == "stem"
 
     none_labels = _resolve_domain_labels(None)
     assert none_labels["short"] == "il dominio attivo"
-    assert none_labels["long"]  == "il dominio attivo"
+    assert none_labels["long"] == "il dominio attivo"
 
 
 def test_retriever_payload_carries_domain_and_coverage_tier() -> None:
@@ -484,19 +502,21 @@ def test_retriever_payload_carries_domain_and_coverage_tier() -> None:
         3. neuro + 0 nodes → out_of_scope + "Neuro"
     """
     # 1. Healthy on UDL (the ADHD smoke shape).
-    healthy = _build_retriever_payload(_state(
-        domain="udl",
-        retrieved_nodes=[{"title": f"Node {i}"} for i in range(11)],
-        recommendations=[{"strategy": f"S{i}"} for i in range(88)],
-        curated_media={
-            "videos":    [{"title": "v1"}, {"title": "v2"}],
-            "citations": [{"title": "c1"}, {"title": "c2"}, {"title": "c3"}],
-            "resources": [{"title": "r1"}],
-        },
-    ))
+    healthy = _build_retriever_payload(
+        _state(
+            domain="udl",
+            retrieved_nodes=[{"title": f"Node {i}"} for i in range(11)],
+            recommendations=[{"strategy": f"S{i}"} for i in range(88)],
+            curated_media={
+                "videos": [{"title": "v1"}, {"title": "v2"}],
+                "citations": [{"title": "c1"}, {"title": "c2"}, {"title": "c3"}],
+                "resources": [{"title": "r1"}],
+            },
+        )
+    )
     assert healthy["domain"] == "udl"
     assert healthy["domain_label_short"] == "UDL"
-    assert healthy["domain_label_long"]  == "UDL (pedagogia inclusiva)"
+    assert healthy["domain_label_long"] == "UDL (pedagogia inclusiva)"
     assert healthy["coverage_tier"] == "healthy"
     assert healthy["nodes_count"] == 11
     assert healthy["recommendations_count"] == 88
@@ -504,12 +524,18 @@ def test_retriever_payload_carries_domain_and_coverage_tier() -> None:
     assert healthy["media_total"] == 6
 
     # 2. Limited on UDL — partial coverage.
-    limited = _build_retriever_payload(_state(
-        domain="udl",
-        retrieved_nodes=[{"title": "Working Memory"}, {"title": "Scaffolding"}, {"title": "Chunking"}],
-        recommendations=[{"strategy": "s1"}, {"strategy": "s2"}],
-        curated_media={},
-    ))
+    limited = _build_retriever_payload(
+        _state(
+            domain="udl",
+            retrieved_nodes=[
+                {"title": "Working Memory"},
+                {"title": "Scaffolding"},
+                {"title": "Chunking"},
+            ],
+            recommendations=[{"strategy": "s1"}, {"strategy": "s2"}],
+            curated_media={},
+        )
+    )
     assert limited["domain"] == "udl"
     assert limited["domain_label_short"] == "UDL"
     assert limited["coverage_tier"] == "limited"
@@ -517,15 +543,17 @@ def test_retriever_payload_carries_domain_and_coverage_tier() -> None:
     assert limited["media_total"] == 0
 
     # 3. Out of scope on neuro — KG returned nothing.
-    oos = _build_retriever_payload(_state(
-        domain="neuro",
-        retrieved_nodes=[],
-        recommendations=[],
-        curated_media={},
-    ))
+    oos = _build_retriever_payload(
+        _state(
+            domain="neuro",
+            retrieved_nodes=[],
+            recommendations=[],
+            curated_media={},
+        )
+    )
     assert oos["domain"] == "neuro"
     assert oos["domain_label_short"] == "Neuro"
-    assert oos["domain_label_long"]  == "Neuro"
+    assert oos["domain_label_long"] == "Neuro"
     assert oos["coverage_tier"] == "out_of_scope"
     assert oos["nodes_count"] == 0
     assert oos["media_total"] == 0

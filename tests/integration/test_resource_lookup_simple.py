@@ -10,16 +10,14 @@ import sys
 from pathlib import Path
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+
 
 def test_json_structure():
     """Test that the JSON file is valid and has correct structure"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 1: JSON Structure Validation")
-    print("="*60)
+    print("=" * 60)
 
     json_path = Path("kg_neuro_resources.json")
 
@@ -28,32 +26,32 @@ def test_json_structure():
         return False
 
     try:
-        with open(json_path, encoding='utf-8') as f:
+        with open(json_path, encoding="utf-8") as f:
             data = json.load(f)
 
         print("[OK] JSON is valid")
 
         # Check metadata
-        metadata = data.get('metadata', {})
+        metadata = data.get("metadata", {})
         print("[OK] Metadata found:")
         print(f"     Domain: {metadata.get('domain')}")
         print(f"     Version: {metadata.get('version')}")
         print(f"     Total resources: {metadata.get('statistics', {}).get('total_resources')}")
 
         # Check resources
-        resources = data.get('resources', [])
+        resources = data.get("resources", [])
         print(f"[OK] Resources array: {len(resources)} items")
 
         # Check topic mappings
-        topic_mappings = data.get('topic_mappings', {})
+        topic_mappings = data.get("topic_mappings", {})
         print(f"[OK] Topic mappings: {len(topic_mappings)} topics")
 
         # Check by_type
-        by_type = data.get('by_type', {})
+        by_type = data.get("by_type", {})
         print(f"[OK] Type groupings: {list(by_type.keys())}")
 
         # Check by_audience
-        by_audience = data.get('by_audience', {})
+        by_audience = data.get("by_audience", {})
         print(f"[OK] Audience groupings: {list(by_audience.keys())}")
 
         return True
@@ -68,17 +66,17 @@ def test_json_structure():
 
 def test_resource_fields():
     """Test that all resources have required fields"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 2: Resource Fields Validation")
-    print("="*60)
+    print("=" * 60)
 
-    required_fields = ['id', 'title', 'url', 'type', 'license', 'copyright_safe']
+    required_fields = ["id", "title", "url", "type", "license", "copyright_safe"]
 
     try:
-        with open("kg_neuro_resources.json", encoding='utf-8') as f:
+        with open("kg_neuro_resources.json", encoding="utf-8") as f:
             data = json.load(f)
 
-        resources = data.get('resources', [])
+        resources = data.get("resources", [])
         errors = []
 
         for r in resources:
@@ -102,17 +100,17 @@ def test_resource_fields():
 
 def test_copyright_safety():
     """Test that all resources are marked as copyright-safe"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 3: Copyright Safety Check")
-    print("="*60)
+    print("=" * 60)
 
     try:
-        with open("kg_neuro_resources.json", encoding='utf-8') as f:
+        with open("kg_neuro_resources.json", encoding="utf-8") as f:
             data = json.load(f)
 
-        resources = data.get('resources', [])
+        resources = data.get("resources", [])
 
-        unsafe = [r for r in resources if not r.get('copyright_safe', False)]
+        unsafe = [r for r in resources if not r.get("copyright_safe", False)]
 
         if unsafe:
             print(f"WARNING: {len(unsafe)} resources NOT marked as copyright-safe:")
@@ -125,7 +123,7 @@ def test_copyright_safety():
             # Show license distribution
             license_counts = {}
             for r in resources:
-                lic = r.get('license', 'unknown')
+                lic = r.get("license", "unknown")
                 license_counts[lic] = license_counts.get(lic, 0) + 1
 
             print("\nLicense distribution:")
@@ -141,18 +139,18 @@ def test_copyright_safety():
 
 def test_topic_mappings():
     """Test that topic mappings reference valid resource IDs"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 4: Topic Mappings Validation")
-    print("="*60)
+    print("=" * 60)
 
     try:
-        with open("kg_neuro_resources.json", encoding='utf-8') as f:
+        with open("kg_neuro_resources.json", encoding="utf-8") as f:
             data = json.load(f)
 
-        resources = data.get('resources', [])
-        resource_ids = {r['id'] for r in resources}
+        resources = data.get("resources", [])
+        resource_ids = {r["id"] for r in resources}
 
-        topic_mappings = data.get('topic_mappings', {})
+        topic_mappings = data.get("topic_mappings", {})
 
         errors = []
         for topic, ids in topic_mappings.items():
@@ -179,9 +177,9 @@ def test_topic_mappings():
 
 def test_resource_lookup_class():
     """Test the ResourceLookup class directly"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 5: ResourceLookup Class")
-    print("="*60)
+    print("=" * 60)
 
     try:
         # Import just the resource_lookup module directly
@@ -189,9 +187,9 @@ def test_resource_lookup_class():
 
         # Direct import to avoid external_apis dependency
         import importlib.util
+
         spec = importlib.util.spec_from_file_location(
-            "resource_lookup",
-            Path("agent/media/resource_lookup.py")
+            "resource_lookup", Path("agent/media/resource_lookup.py")
         )
         resource_lookup = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(resource_lookup)
@@ -207,7 +205,9 @@ def test_resource_lookup_class():
 
         # Test find by topic
         collection = lookup.find_resources_for_topic("metacognition")
-        print(f"[OK] find_resources_for_topic('metacognition'): {len(collection.resources)} results")
+        print(
+            f"[OK] find_resources_for_topic('metacognition'): {len(collection.resources)} results"
+        )
 
         # Test find by type
         textbooks = lookup.find_by_type("textbook")
@@ -228,14 +228,15 @@ def test_resource_lookup_class():
     except Exception as e:
         print(f"ERROR: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
 
 def main():
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("EXPERT RESOURCES JSON VALIDATION")
-    print("="*60)
+    print("=" * 60)
 
     results = []
 
@@ -246,9 +247,9 @@ def main():
     results.append(("ResourceLookup Class", test_resource_lookup_class()))
 
     # Summary
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST SUMMARY")
-    print("="*60)
+    print("=" * 60)
 
     all_passed = True
     for name, passed in results:
@@ -257,7 +258,7 @@ def main():
         if not passed:
             all_passed = False
 
-    print("="*60)
+    print("=" * 60)
 
     if all_passed:
         print("All tests passed! kg_neuro_resources.json is ready to use.")

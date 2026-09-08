@@ -31,31 +31,25 @@ LABEL_TO_CATEGORY = {
     "ExecutiveFunctions": "Executive Functions",
     "ProblemSolving": "Cognitive Skills",
     "CriticalThinking": "Higher-Order Cognition",
-
     # Affective Processes
     "Emotions": "Affective States",
     "Motivation": "Motivational Types",
     "Stress": "Affective States",
     "Mindset": "Belief Systems",
-
     # Metacognition
     "Metacognition": "Metacognitive Processes",
-
     # Learning Processes
     "LearningOutcomes": "Educational Results",
     "SocialLearning": "Learning Processes",
     "Creativity": "Creative Processes",
-
     # Support Systems
     "TeachingPractices": "Pedagogical Strategies",
     "EducationalSupport": "Support Systems",
-
     # UDL-specific
     "PedagogicalMethodology": "Teaching Methods",
     "StudentWithSpecialNeeds": "Special Education",
     "StudentCharacteristic": "Student Profiles",
     "LearningEnvironment": "Environmental Factors",
-
     # Neuroscience
     "Neuroplasticity": "Neuroscience Foundations",
     "SpecialEducationNeeds": "Special Education",
@@ -68,6 +62,7 @@ LABEL_TO_CATEGORY = {
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
+
 
 def sanitize_label(label: str) -> str:
     """Sanitize label to be Neo4j-compatible (no spaces, special chars)
@@ -83,28 +78,28 @@ def sanitize_label(label: str) -> str:
         Neo4j-compatible label (PascalCase, no spaces)
     """
     # Replace special separators with spaces first
-    label = label.replace('–', ' ')  # En dash
-    label = label.replace('—', ' ')  # Em dash
-    label = label.replace('-', ' ')  # Hyphen
-    label = label.replace('/', ' ')  # Slash
-    label = label.replace('_', ' ')  # Underscore
+    label = label.replace("–", " ")  # En dash
+    label = label.replace("—", " ")  # Em dash
+    label = label.replace("-", " ")  # Hyphen
+    label = label.replace("/", " ")  # Slash
+    label = label.replace("_", " ")  # Underscore
 
     # Remove non-alphanumeric chars (except spaces)
-    label = re.sub(r'[^\w\s]', '', label)
+    label = re.sub(r"[^\w\s]", "", label)
 
     # Split by spaces, drop purely numeric tokens, and capitalize (PascalCase)
-    words = [w for w in label.split() if not re.match(r'^\d+$', w)]
-    pascal_case = ''.join(word.capitalize() for word in words)
+    words = [w for w in label.split() if not re.match(r"^\d+$", w)]
+    pascal_case = "".join(word.capitalize() for word in words)
 
     # Normalize CamelCase boundaries: "Teachingpractices" → "TeachingPractices"
     # Splits on existing uppercase boundaries and re-capitalizes each part
-    parts = re.findall(r'[A-Z][a-z]*|[a-z]+|\d+', pascal_case)
-    pascal_case = ''.join(part.capitalize() for part in parts)
+    parts = re.findall(r"[A-Z][a-z]*|[a-z]+|\d+", pascal_case)
+    pascal_case = "".join(part.capitalize() for part in parts)
 
     # Neo4j labels cannot start with a digit; strip any remaining leading digits
-    pascal_case = re.sub(r'^\d+', '', pascal_case)
+    pascal_case = re.sub(r"^\d+", "", pascal_case)
 
-    return pascal_case or 'GeneralConcept'
+    return pascal_case or "GeneralConcept"
 
 
 def generate_node_id(name: str) -> str:
@@ -116,14 +111,14 @@ def generate_node_id(name: str) -> str:
     id_base = name.lower()
 
     # Replace special characters with underscores
-    id_base = re.sub(r'[^\w\s-]', '', id_base)  # Remove special chars except spaces and hyphens
-    id_base = id_base.replace(' ', '_').replace('-', '_')
+    id_base = re.sub(r"[^\w\s-]", "", id_base)  # Remove special chars except spaces and hyphens
+    id_base = id_base.replace(" ", "_").replace("-", "_")
 
     # Remove duplicate underscores
-    id_base = re.sub(r'_+', '_', id_base)
+    id_base = re.sub(r"_+", "_", id_base)
 
     # Remove leading/trailing underscores
-    id_base = id_base.strip('_')
+    id_base = id_base.strip("_")
 
     return f"concept_{id_base}"
 
@@ -150,7 +145,9 @@ def get_node_category(label: str, original_category: str = None) -> str:
     return "Cognitive Processes"
 
 
-def generate_node_description(name: str, label: str, category: str, context: list[str] = None) -> str:
+def generate_node_description(
+    name: str, label: str, category: str, context: list[str] = None
+) -> str:
     """Generate educational description for a node
 
     Args:
@@ -188,12 +185,17 @@ def generate_node_description(name: str, label: str, category: str, context: lis
     }
 
     # Get template or use default
-    template = templates.get(label, f"A {category.lower()} concept related to {name.lower()}, relevant to neuroscience of learning and educational practice.")
+    template = templates.get(
+        label,
+        f"A {category.lower()} concept related to {name.lower()}, relevant to neuroscience of learning and educational practice.",
+    )
 
     return template
 
 
-def validate_nodes_and_relationships(nodes: list[dict], relationships: list[dict]) -> tuple[bool, list[str]]:
+def validate_nodes_and_relationships(
+    nodes: list[dict], relationships: list[dict]
+) -> tuple[bool, list[str]]:
     """Validate that all relationships reference existing nodes
 
     Returns:
@@ -202,12 +204,12 @@ def validate_nodes_and_relationships(nodes: list[dict], relationships: list[dict
     errors = []
 
     # Build set of all node IDs
-    node_ids = {node['ID'] for node in nodes}
+    node_ids = {node["ID"] for node in nodes}
 
     # Check each relationship
     for idx, rel in enumerate(relationships, 1):
-        from_id = rel['From_ID']
-        to_id = rel['To_ID']
+        from_id = rel["From_ID"]
+        to_id = rel["To_ID"]
 
         if from_id not in node_ids:
             errors.append(f"Relationship {idx}: From_ID '{from_id}' not found in nodes")
@@ -227,30 +229,33 @@ def generate_statistics(nodes: list[dict], relationships: list[dict]) -> dict:
     # Count nodes by label
     label_counts = defaultdict(int)
     for node in nodes:
-        label_counts[node['Label']] += 1
+        label_counts[node["Label"]] += 1
 
     # Count relationships by type
     rel_type_counts = defaultdict(int)
     for rel in relationships:
-        rel_type_counts[rel['Relationship_Type']] += 1
+        rel_type_counts[rel["Relationship_Type"]] += 1
 
     # Calculate average nodes per label
     avg_nodes_per_label = len(nodes) / len(label_counts) if label_counts else 0
 
     return {
-        'total_nodes': len(nodes),
-        'total_relationships': len(relationships),
-        'unique_labels': len(label_counts),
-        'label_distribution': dict(sorted(label_counts.items(), key=lambda x: x[1], reverse=True)),
-        'relationship_types': len(rel_type_counts),
-        'relationship_distribution': dict(sorted(rel_type_counts.items(), key=lambda x: x[1], reverse=True)),
-        'avg_nodes_per_label': round(avg_nodes_per_label, 1)
+        "total_nodes": len(nodes),
+        "total_relationships": len(relationships),
+        "unique_labels": len(label_counts),
+        "label_distribution": dict(sorted(label_counts.items(), key=lambda x: x[1], reverse=True)),
+        "relationship_types": len(rel_type_counts),
+        "relationship_distribution": dict(
+            sorted(rel_type_counts.items(), key=lambda x: x[1], reverse=True)
+        ),
+        "avg_nodes_per_label": round(avg_nodes_per_label, 1),
     }
 
 
 # ============================================================================
 # MAIN TRANSFORMATION FUNCTIONS
 # ============================================================================
+
 
 def extract_nodes_from_excel(df: pd.DataFrame) -> list[dict]:
     """Extract unique nodes from 8-column Excel structure
@@ -269,39 +274,39 @@ def extract_nodes_from_excel(df: pd.DataFrame) -> list[dict]:
 
     for _idx, row in df.iterrows():
         # Collect context (relationship descriptions) for each node
-        description = row.get('Description', '')
+        description = row.get("Description", "")
         if not pd.isna(description):
-            value_a_id = generate_node_id(row['Value A'])
-            value_b_id = generate_node_id(row['Value B'])
+            value_a_id = generate_node_id(row["Value A"])
+            value_b_id = generate_node_id(row["Value B"])
             node_contexts[value_a_id].append(description)
             node_contexts[value_b_id].append(description)
 
         # Extract Node A
-        node_a_id = generate_node_id(row['Value A'])
+        node_a_id = generate_node_id(row["Value A"])
         if node_a_id not in seen_nodes:
-            label_a = sanitize_label(row['Concept A'])  # ✅ Sanitize label
-            category_a = get_node_category(label_a, row.get('Category A'))
+            label_a = sanitize_label(row["Concept A"])  # ✅ Sanitize label
+            category_a = get_node_category(label_a, row.get("Category A"))
 
             seen_nodes[node_a_id] = {
-                'Label': label_a,
-                'ID': node_a_id,
-                'Name': row['Value A'],
-                'Category': category_a,
-                'Description': ''  # Will be filled later with context
+                "Label": label_a,
+                "ID": node_a_id,
+                "Name": row["Value A"],
+                "Category": category_a,
+                "Description": "",  # Will be filled later with context
             }
 
         # Extract Node B
-        node_b_id = generate_node_id(row['Value B'])
+        node_b_id = generate_node_id(row["Value B"])
         if node_b_id not in seen_nodes:
-            label_b = sanitize_label(row['Concept B'])  # ✅ Sanitize label
-            category_b = get_node_category(label_b, row.get('Category B'))
+            label_b = sanitize_label(row["Concept B"])  # ✅ Sanitize label
+            category_b = get_node_category(label_b, row.get("Category B"))
 
             seen_nodes[node_b_id] = {
-                'Label': label_b,
-                'ID': node_b_id,
-                'Name': row['Value B'],
-                'Category': category_b,
-                'Description': ''  # Will be filled later with context
+                "Label": label_b,
+                "ID": node_b_id,
+                "Name": row["Value B"],
+                "Category": category_b,
+                "Description": "",  # Will be filled later with context
             }
 
     # Generate descriptions using context
@@ -309,11 +314,8 @@ def extract_nodes_from_excel(df: pd.DataFrame) -> list[dict]:
 
     for node_id, node in seen_nodes.items():
         context = node_contexts.get(node_id, [])
-        node['Description'] = generate_node_description(
-            node['Name'],
-            node['Label'],
-            node['Category'],
-            context
+        node["Description"] = generate_node_description(
+            node["Name"], node["Label"], node["Category"], context
         )
 
     return list(seen_nodes.values())
@@ -334,26 +336,34 @@ def extract_relationships_from_excel(df: pd.DataFrame) -> list[dict]:
     relationships = []
 
     for _idx, row in df.iterrows():
-        from_id = generate_node_id(row['Value A'])
-        to_id = generate_node_id(row['Value B'])
+        from_id = generate_node_id(row["Value A"])
+        to_id = generate_node_id(row["Value B"])
 
-        relationships.append({
-            'From_ID': from_id,
-            'To_ID': to_id,
-            'Relationship_Type': row['Relationship'],
-            'From_Name': row['Value A'],
-            'To_Name': row['Value B'],
-            'Description': row.get('Description', '') if not pd.isna(row.get('Description')) else f"{row['Value A']} {row['Relationship'].lower().replace('_', ' ')} {row['Value B']}"
-        })
+        relationships.append(
+            {
+                "From_ID": from_id,
+                "To_ID": to_id,
+                "Relationship_Type": row["Relationship"],
+                "From_Name": row["Value A"],
+                "To_Name": row["Value B"],
+                "Description": row.get("Description", "")
+                if not pd.isna(row.get("Description"))
+                else f"{row['Value A']} {row['Relationship'].lower().replace('_', ' ')} {row['Value B']}",
+            }
+        )
 
     print(f"   ✅ Extracted {len(relationships)} relationships")
 
     return relationships
 
 
-def create_intermediary_excel(df_original: pd.DataFrame, nodes: list[dict],
-                              relationships: list[dict], team_name: str,
-                              output_path: str):
+def create_intermediary_excel(
+    df_original: pd.DataFrame,
+    nodes: list[dict],
+    relationships: list[dict],
+    team_name: str,
+    output_path: str,
+):
     """Create 3-sheet Excel with original data, nodes, and relationships
 
     Args:
@@ -370,24 +380,27 @@ def create_intermediary_excel(df_original: pd.DataFrame, nodes: list[dict],
     df_relationships = pd.DataFrame(relationships)
 
     # Write to Excel with 3 sheets
-    with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
+    with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
         # Sheet 1: Original data
-        df_original.to_excel(writer, sheet_name='original_data', index=False)
+        df_original.to_excel(writer, sheet_name="original_data", index=False)
         print(f"   ✅ Sheet 1: 'original_data' ({len(df_original)} rows)")
 
         # Sheet 2: Nodes template
-        df_nodes.to_excel(writer, sheet_name=f'{team_name}_template_nodes', index=False)
+        df_nodes.to_excel(writer, sheet_name=f"{team_name}_template_nodes", index=False)
         print(f"   ✅ Sheet 2: '{team_name}_template_nodes' ({len(df_nodes)} rows)")
 
         # Sheet 3: Relationships template
-        df_relationships.to_excel(writer, sheet_name=f'{team_name}_template_relationships', index=False)
+        df_relationships.to_excel(
+            writer, sheet_name=f"{team_name}_template_relationships", index=False
+        )
         print(f"   ✅ Sheet 3: '{team_name}_template_relationships' ({len(df_relationships)} rows)")
 
     print(f"\n💾 Saved: {output_path}")
 
 
-def create_neo4j_json(nodes: list[dict], relationships: list[dict],
-                     team_name: str, output_path: str):
+def create_neo4j_json(
+    nodes: list[dict], relationships: list[dict], team_name: str, output_path: str
+):
     """Create Neo4j-ready JSON file
 
     Args:
@@ -408,8 +421,8 @@ def create_neo4j_json(nodes: list[dict], relationships: list[dict],
                     "name": node["Name"],
                     "category": node["Category"],
                     "description": node["Description"],
-                    "domain": team_name  # Add domain tag for filtering
-                }
+                    "domain": team_name,  # Add domain tag for filtering
+                },
             }
             for node in nodes
         ],
@@ -421,15 +434,15 @@ def create_neo4j_json(nodes: list[dict], relationships: list[dict],
                 "properties": {
                     "from_name": rel["From_Name"],
                     "to_name": rel["To_Name"],
-                    "description": rel["Description"]
-                }
+                    "description": rel["Description"],
+                },
             }
             for rel in relationships
-        ]
+        ],
     }
 
     # Write JSON
-    with open(output_path, 'w', encoding='utf-8') as f:
+    with open(output_path, "w", encoding="utf-8") as f:
         json.dump(json_data, f, indent=2, ensure_ascii=False)
 
     print(f"   ✅ Nodes: {len(json_data['nodes'])}")
@@ -455,8 +468,16 @@ def transform_team_data(team_name: str, input_file: str, output_dir: str = "."):
     print(f"   ✅ Loaded {len(df)} rows")
 
     # Validate input structure
-    expected_columns = ['Category A', 'Concept A', 'Value A', 'Relationship',
-                       'Value B', 'Concept B', 'Category B', 'Description']
+    expected_columns = [
+        "Category A",
+        "Concept A",
+        "Value A",
+        "Relationship",
+        "Value B",
+        "Concept B",
+        "Category B",
+        "Description",
+    ]
 
     if not all(col in df.columns for col in expected_columns):
         print("\n❌ ERROR: Input file must have 8 columns:")
@@ -493,7 +514,7 @@ def transform_team_data(team_name: str, input_file: str, output_dir: str = "."):
     print(f"   • Relationship types: {stats['relationship_types']}")
 
     print("\n📋 Top 10 Labels:")
-    for i, (label, count) in enumerate(list(stats['label_distribution'].items())[:10], 1):
+    for i, (label, count) in enumerate(list(stats["label_distribution"].items())[:10], 1):
         print(f"   {i:2d}. {label:<30} {count:>4} nodes")
 
     # Define output paths
@@ -526,10 +547,10 @@ def transform_team_data(team_name: str, input_file: str, output_dir: str = "."):
       python data_ingestion_neo4j.py {json_output} --domain {team_name}
 
 💡 Quality Metrics:
-   • Avg nodes/label: {stats['avg_nodes_per_label']} (target: >10) {'✅' if stats['avg_nodes_per_label'] > 10 else '⚠️'}
-   • Total nodes: {stats['total_nodes']}
-   • Total relationships: {stats['total_relationships']}
-   • Node-to-relationship ratio: {stats['total_nodes']/stats['total_relationships']:.2f}
+   • Avg nodes/label: {stats["avg_nodes_per_label"]} (target: >10) {"✅" if stats["avg_nodes_per_label"] > 10 else "⚠️"}
+   • Total nodes: {stats["total_nodes"]}
+   • Total relationships: {stats["total_relationships"]}
+   • Node-to-relationship ratio: {stats["total_nodes"] / stats["total_relationships"]:.2f}
     """)
 
 
@@ -537,24 +558,28 @@ def transform_team_data(team_name: str, input_file: str, output_dir: str = "."):
 # COMMAND LINE INTERFACE
 # ============================================================================
 
+
 def main():
     parser = argparse.ArgumentParser(
-        description='Universal transformer for team knowledge graph data',
+        description="Universal transformer for team knowledge graph data",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   python transform_team_data.py --team neuro --input KG_NEURO_Origin_CORRECTED.xlsx
   python transform_team_data.py --team udl --input UDL_Data.xlsx --output-dir ./output
   python transform_team_data.py --team game --input GBL_Knowledge.xlsx
-        """
+        """,
     )
 
-    parser.add_argument('--team', required=True,
-                       help='Team name (e.g., neuro, udl, game)')
-    parser.add_argument('--input', required=True,
-                       help='Path to corrected Excel file (8-column structure)')
-    parser.add_argument('--output-dir', default='.',
-                       help='Directory to save output files (default: current directory)')
+    parser.add_argument("--team", required=True, help="Team name (e.g., neuro, udl, game)")
+    parser.add_argument(
+        "--input", required=True, help="Path to corrected Excel file (8-column structure)"
+    )
+    parser.add_argument(
+        "--output-dir",
+        default=".",
+        help="Directory to save output files (default: current directory)",
+    )
 
     args = parser.parse_args()
 
@@ -564,4 +589,3 @@ Examples:
 
 if __name__ == "__main__":
     main()
-

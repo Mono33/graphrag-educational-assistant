@@ -44,10 +44,7 @@ _DEFAULT_MODEL = os.getenv("LLM_MODEL", "openai/gpt-4o")
 load_dotenv()
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 # ============================================================================
@@ -291,13 +288,16 @@ async def generate_media_for_concept(
     Returns:
         Media recommendations dict or None on failure
     """
-    name = concept.get('name', 'Unknown')
-    category = concept.get('category', 'Unknown')
-    description = concept.get('description', 'No description')
-    label = concept.get('label', '')
+    name = concept.get("name", "Unknown")
+    category = concept.get("category", "Unknown")
+    description = concept.get("description", "No description")
+    label = concept.get("label", "")
 
     user_prompt = _get_user_prompt(domain).format(
-        name=name, category=category, label=label, description=description,
+        name=name,
+        category=category,
+        label=label,
+        description=description,
     )
 
     try:
@@ -316,15 +316,15 @@ async def generate_media_for_concept(
         media_data = json.loads(content)
 
         return {
-            "id": concept.get('id', ''),
+            "id": concept.get("id", ""),
             "name": name,
             "category": category,
             "label": label,
-            "videos": media_data.get('videos', []),
-            "images": media_data.get('images', []),
-            "resources": media_data.get('resources', []),
-            "citations": media_data.get('citations', []),
-            "open_textbooks": media_data.get('open_textbooks', []),
+            "videos": media_data.get("videos", []),
+            "images": media_data.get("images", []),
+            "resources": media_data.get("resources", []),
+            "citations": media_data.get("citations", []),
+            "open_textbooks": media_data.get("open_textbooks", []),
         }
 
     except json.JSONDecodeError as e:
@@ -345,18 +345,18 @@ def extract_unique_concepts(kg_path: str) -> list[dict[str, Any]]:
     Returns:
         List of unique concepts with their properties
     """
-    with open(kg_path, encoding='utf-8') as f:
+    with open(kg_path, encoding="utf-8") as f:
         data = json.load(f)
 
-    nodes = data.get('nodes', [])
+    nodes = data.get("nodes", [])
 
     # Deduplicate by name and extract relevant properties
     seen_names = set()
     concepts = []
 
     for node in nodes:
-        props = node.get('properties', {})
-        name = props.get('name', '')
+        props = node.get("properties", {})
+        name = props.get("name", "")
 
         # Skip if already seen or empty
         if not name or name.lower() in seen_names:
@@ -364,14 +364,16 @@ def extract_unique_concepts(kg_path: str) -> list[dict[str, Any]]:
 
         seen_names.add(name.lower())
 
-        concepts.append({
-            'id': props.get('id', ''),
-            'name': name,
-            'category': props.get('category', ''),
-            'description': props.get('description', ''),
-            'label': node.get('label', ''),
-            'domain': props.get('domain', 'neuro')
-        })
+        concepts.append(
+            {
+                "id": props.get("id", ""),
+                "name": name,
+                "category": props.get("category", ""),
+                "description": props.get("description", ""),
+                "label": node.get("label", ""),
+                "domain": props.get("domain", "neuro"),
+            }
+        )
 
     logger.info(f"Extracted {len(concepts)} unique concepts from KG")
     return concepts
@@ -401,16 +403,13 @@ async def process_concepts_batch(
     total = len(concepts)
 
     for i in range(0, total, batch_size):
-        batch = concepts[i:i + batch_size]
+        batch = concepts[i : i + batch_size]
         batch_num = i // batch_size + 1
         total_batches = (total + batch_size - 1) // batch_size
 
         logger.info(f"Processing batch {batch_num}/{total_batches} ({len(batch)} concepts)...")
 
-        tasks = [
-            generate_media_for_concept(client, c, model=model, domain=domain)
-            for c in batch
-        ]
+        tasks = [generate_media_for_concept(client, c, model=model, domain=domain) for c in batch]
         batch_results = await asyncio.gather(*tasks)
 
         for result in batch_results:
@@ -426,41 +425,85 @@ async def process_concepts_batch(
 
 
 _NEURO_PRIORITY_CATEGORIES = [
-    'attention types', 'memory systems', 'executive functions',
-    'cognitive processes', 'learning processes', 'motivational types',
-    'metacognitive processes', 'belief systems', 'emotions',
-    'neuroscience foundations', 'cognitive load',
+    "attention types",
+    "memory systems",
+    "executive functions",
+    "cognitive processes",
+    "learning processes",
+    "motivational types",
+    "metacognitive processes",
+    "belief systems",
+    "emotions",
+    "neuroscience foundations",
+    "cognitive load",
 ]
 
 _NEURO_PRIORITY_LABELS = [
-    'Attention', 'Memory', 'ExecutiveFunctions', 'Metacognition',
-    'Motivation', 'Emotions', 'CognitiveLoad', 'Neuroplasticity',
-    'Creativity', 'LearningStrategies',
+    "Attention",
+    "Memory",
+    "ExecutiveFunctions",
+    "Metacognition",
+    "Motivation",
+    "Emotions",
+    "CognitiveLoad",
+    "Neuroplasticity",
+    "Creativity",
+    "LearningStrategies",
 ]
 
 _UDL_PRIORITY_CATEGORIES = [
-    'learner variability', 'pedagogical barrier', 'barriers',
-    'udl', 'udl framework', 'design principle',
-    'executive functions', 'executive function support',
-    'metacognitive processes', 'metacognitive strategy',
-    'self-regulation', 'affective factors', 'affective & motivational factors',
-    'sensory processing', 'cognitive load', 'cognitive processes',
-    'pedagogical support', 'universal support',
-    'instructional design', 'inclusive design',
-    'environmental barrier', 'environmental design',
-    'digital support', 'learning strategy',
+    "learner variability",
+    "pedagogical barrier",
+    "barriers",
+    "udl",
+    "udl framework",
+    "design principle",
+    "executive functions",
+    "executive function support",
+    "metacognitive processes",
+    "metacognitive strategy",
+    "self-regulation",
+    "affective factors",
+    "affective & motivational factors",
+    "sensory processing",
+    "cognitive load",
+    "cognitive processes",
+    "pedagogical support",
+    "universal support",
+    "instructional design",
+    "inclusive design",
+    "environmental barrier",
+    "environmental design",
+    "digital support",
+    "learning strategy",
 ]
 
 _UDL_PRIORITY_LABELS = [
-    'Adhd', 'AutismSpectrum', 'Dyslexia', 'Dyscalculia',
-    'SensoryDisabilities', 'PhysicalDisabilities', 'Gifted', 'ForeignStudents',
-    'Barrier', 'Principle', 'Guideline', 'Checkpoint',
-    'LearningFramework', 'Framework',
-    'Metacognition', 'CognitiveLoad', 'SelfRegulationProcesses',
-    'InstructionalStrategy', 'LearningMethodology', 'EducationalApproach',
-    'InclusiveDesign', 'InclusiveLearning',
-    'SensoryProcessing', 'SensoryAccommodation',
-    'EnvironmentalDesignForMobility',
+    "Adhd",
+    "AutismSpectrum",
+    "Dyslexia",
+    "Dyscalculia",
+    "SensoryDisabilities",
+    "PhysicalDisabilities",
+    "Gifted",
+    "ForeignStudents",
+    "Barrier",
+    "Principle",
+    "Guideline",
+    "Checkpoint",
+    "LearningFramework",
+    "Framework",
+    "Metacognition",
+    "CognitiveLoad",
+    "SelfRegulationProcesses",
+    "InstructionalStrategy",
+    "LearningMethodology",
+    "EducationalApproach",
+    "InclusiveDesign",
+    "InclusiveLearning",
+    "SensoryProcessing",
+    "SensoryAccommodation",
+    "EnvironmentalDesignForMobility",
 ]
 
 
@@ -485,8 +528,8 @@ def prioritize_concepts(
         priority_labels = _NEURO_PRIORITY_LABELS
 
     def get_priority(concept: dict) -> int:
-        category = concept.get('category', '').lower()
-        label = concept.get('label', '')
+        category = concept.get("category", "").lower()
+        label = concept.get("label", "")
 
         for i, cat in enumerate(priority_categories):
             if cat in category:
@@ -504,27 +547,28 @@ def prioritize_concepts(
 async def main():
     """Main entry point for media mapping generation"""
     parser = argparse.ArgumentParser(
-        description='Generate media mapping for Knowledge Graph concepts'
+        description="Generate media mapping for Knowledge Graph concepts"
     )
     parser.add_argument(
-        '--domain', type=str, default='neuro',
-        help='Knowledge domain (neuro or udl)'
+        "--domain", type=str, default="neuro", help="Knowledge domain (neuro or udl)"
     )
     parser.add_argument(
-        '--batch-size', type=int, default=5,
-        help='Batch size for concurrent API calls'
+        "--batch-size", type=int, default=5, help="Batch size for concurrent API calls"
     )
     parser.add_argument(
-        '--limit', type=int, default=None,
-        help='Limit number of concepts to process (for testing)'
+        "--limit", type=int, default=None, help="Limit number of concepts to process (for testing)"
     )
     parser.add_argument(
-        '--output', type=str, default=None,
-        help='Output file path (default: kg_{domain}_media_mapping.json)'
+        "--output",
+        type=str,
+        default=None,
+        help="Output file path (default: kg_{domain}_media_mapping.json)",
     )
     parser.add_argument(
-        '--model', type=str, default=_DEFAULT_MODEL,
-        help='Model to use (via OpenRouter if OPENROUTER_API_KEY is set)'
+        "--model",
+        type=str,
+        default=_DEFAULT_MODEL,
+        help="Model to use (via OpenRouter if OPENROUTER_API_KEY is set)",
     )
 
     args = parser.parse_args()
@@ -532,8 +576,10 @@ async def main():
     # Paths — resolve relative to repo root, not script location
     repo_root = Path(__file__).resolve().parent.parent.parent
     kg_path = repo_root / "data" / "kg" / args.domain / f"kg_{args.domain}_neo4j.json"
-    output_path = Path(args.output) if args.output else (
-        repo_root / "data" / "media" / f"kg_{args.domain}_media_mapping.json"
+    output_path = (
+        Path(args.output)
+        if args.output
+        else (repo_root / "data" / "media" / f"kg_{args.domain}_media_mapping.json")
     )
 
     if not kg_path.exists():
@@ -541,11 +587,11 @@ async def main():
         sys.exit(1)
 
     # Check API key — prefer OpenRouter, fall back to direct OpenAI
-    api_key = os.getenv('OPENROUTER_API_KEY') or os.getenv('OPENAI_API_KEY')
+    api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
     if not api_key:
         logger.error("OPENROUTER_API_KEY (or OPENAI_API_KEY) not set in environment")
         sys.exit(1)
-    use_openrouter = bool(os.getenv('OPENROUTER_API_KEY'))
+    use_openrouter = bool(os.getenv("OPENROUTER_API_KEY"))
 
     logger.info("=" * 60)
     logger.info("Media Mapping Generator for Agentic GraphRAG")
@@ -561,7 +607,7 @@ async def main():
     concepts = prioritize_concepts(concepts, domain=args.domain)
 
     if args.limit:
-        concepts = concepts[:args.limit]
+        concepts = concepts[: args.limit]
         logger.info(f"Limited to {args.limit} concepts")
 
     # Initialize client — point to OpenRouter when OPENROUTER_API_KEY is set
@@ -575,8 +621,11 @@ async def main():
     start_time = datetime.now()
 
     media_mappings = await process_concepts_batch(
-        client, concepts, batch_size=args.batch_size,
-        model=args.model, domain=args.domain,
+        client,
+        concepts,
+        batch_size=args.batch_size,
+        model=args.model,
+        domain=args.domain,
     )
 
     elapsed = datetime.now() - start_time
@@ -591,28 +640,28 @@ async def main():
             "generation_time_seconds": elapsed.total_seconds(),
             "version": "1.0.0",
             "description": "Media mapping for Knowledge Graph concepts. "
-                          "Can be reviewed and improved by domain experts."
+            "Can be reviewed and improved by domain experts.",
         },
-        "concepts": media_mappings
+        "concepts": media_mappings,
     }
 
     # Calculate statistics
-    total_videos = sum(len(c.get('videos', [])) for c in media_mappings)
-    total_images = sum(len(c.get('images', [])) for c in media_mappings)
-    total_resources = sum(len(c.get('resources', [])) for c in media_mappings)
-    total_citations = sum(len(c.get('citations', [])) for c in media_mappings)
-    total_textbooks = sum(len(c.get('open_textbooks', [])) for c in media_mappings)
+    total_videos = sum(len(c.get("videos", [])) for c in media_mappings)
+    total_images = sum(len(c.get("images", [])) for c in media_mappings)
+    total_resources = sum(len(c.get("resources", [])) for c in media_mappings)
+    total_citations = sum(len(c.get("citations", [])) for c in media_mappings)
+    total_textbooks = sum(len(c.get("open_textbooks", [])) for c in media_mappings)
 
     output_data["metadata"]["statistics"] = {
         "total_videos": total_videos,
         "total_images": total_images,
         "total_resources": total_resources,
         "total_citations": total_citations,
-        "total_open_textbooks": total_textbooks
+        "total_open_textbooks": total_textbooks,
     }
 
     # Write output
-    with open(output_path, 'w', encoding='utf-8') as f:
+    with open(output_path, "w", encoding="utf-8") as f:
         json.dump(output_data, f, indent=2, ensure_ascii=False)
 
     logger.info("\n" + "=" * 60)
@@ -637,5 +686,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-
-

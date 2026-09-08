@@ -11,10 +11,7 @@ import sys
 import pytest
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 
@@ -29,19 +26,16 @@ def test_curated_media_pool_loads_with_verified_content(domain: str) -> None:
     assert lookup.loaded, f"Curated media pool did not load for {domain}"
     assert stats["pool_format"] is True
     assert stats["concepts"] > 0
-    assert (
-        stats["total_videos"]
-        + stats["total_citations"]
-        + stats.get("total_wikipedia", 0)
-        > 0
-    ), f"Curated media pool has no usable verified content for {domain}"
+    assert stats["total_videos"] + stats["total_citations"] + stats.get("total_wikipedia", 0) > 0, (
+        f"Curated media pool has no usable verified content for {domain}"
+    )
 
 
 def test_media_lookup():
     """Test MediaLookup class directly"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 1: MediaLookup Class")
-    print("="*60)
+    print("=" * 60)
 
     try:
         from aix.agent.media import MediaLookup
@@ -74,9 +68,9 @@ def test_media_lookup():
 
 def test_retriever_backward_compat():
     """Test RetrieverAgent backward compatibility"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 2: RetrieverAgent Backward Compatibility")
-    print("="*60)
+    print("=" * 60)
 
     try:
         from aix.agent.agents.planner_agent import RetrievalPlan
@@ -94,7 +88,7 @@ def test_retriever_backward_compat():
         result_old = RetrievalResult()  # No curated_media
         print(f"✅ RetrievalResult works without curated_media: {result_old.has_media}")
 
-        result_new = RetrievalResult(curated_media={'videos': [{'title': 'Test'}]})
+        result_new = RetrievalResult(curated_media={"videos": [{"title": "Test"}]})
         print(f"✅ RetrievalResult works with curated_media: {result_new.has_media}")
 
         # Test 4: to_context_string works with and without media
@@ -111,15 +105,16 @@ def test_retriever_backward_compat():
     except Exception as e:
         print(f"❌ Backward compatibility test failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
 
 async def test_retriever_integration():
     """Test full retriever with media lookup"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 3: RetrieverAgent Integration (requires Neo4j)")
-    print("="*60)
+    print("=" * 60)
 
     try:
         from aix.agent.agents.planner_agent import RetrievalPlan
@@ -133,7 +128,7 @@ async def test_retriever_integration():
             intent_confidence="HIGH",
             lesson_type="definition",
             key_concepts=["selective attention", "working memory"],
-            search_queries=["What is selective attention?"]
+            search_queries=["What is selective attention?"],
         )
 
         print("🔄 Executing retrieval (this requires Neo4j connection)...")
@@ -160,9 +155,9 @@ async def test_retriever_integration():
 
 
 def main():
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("PHASE 1 MEDIA INTEGRATION TEST")
-    print("="*60)
+    print("=" * 60)
 
     results = []
 
@@ -180,9 +175,9 @@ def main():
         results.append(("Integration Test", True))  # Non-critical
 
     # Summary
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST SUMMARY")
-    print("="*60)
+    print("=" * 60)
 
     all_passed = True
     for name, passed in results:
@@ -191,7 +186,7 @@ def main():
         if not passed:
             all_passed = False
 
-    print("="*60)
+    print("=" * 60)
 
     if all_passed:
         print("🎉 All tests passed! Phase 1 is backward compatible.")
@@ -203,5 +198,3 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
-
-

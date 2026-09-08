@@ -147,9 +147,7 @@ async def acquire_run_slot(label: str = "") -> None:
             _run_capacity,
             timeout,
         )
-        raise AtCapacity(
-            f"All {_run_capacity} generation slots are busy (waited {timeout:.1f}s)."
-        )
+        raise AtCapacity(f"All {_run_capacity} generation slots are busy (waited {timeout:.1f}s).")
     _run_active += 1
     logger.info(
         "[concurrency] run slot acquired%s (active=%d/%d)",

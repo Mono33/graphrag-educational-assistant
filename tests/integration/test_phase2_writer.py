@@ -10,18 +10,15 @@ import logging
 import sys
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 
 def test_writer_media_formatting():
     """Test _format_media method"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 1: Writer _format_media() Method")
-    print("="*60)
+    print("=" * 60)
 
     try:
         from aix.agent.agents.writer_agent import WriterAgent
@@ -39,33 +36,30 @@ def test_writer_media_formatting():
 
         # Test with sample media
         sample_media = {
-            'videos': [
+            "videos": [
                 {
-                    'title': 'Selective Attention - CrashCourse',
-                    'url': 'https://youtube.com/watch?v=test',
-                    'duration_hint': '10:30'
+                    "title": "Selective Attention - CrashCourse",
+                    "url": "https://youtube.com/watch?v=test",
+                    "duration_hint": "10:30",
                 },
+                {"title": "Attention Test", "search_query": "selective attention test psychology"},
+            ],
+            "resources": [
                 {
-                    'title': 'Attention Test',
-                    'search_query': 'selective attention test psychology'
+                    "title": "Selective Attention - Wikipedia",
+                    "url": "https://en.wikipedia.org/wiki/Selective_attention",
+                    "type": "wikipedia",
                 }
             ],
-            'resources': [
+            "citations": [
                 {
-                    'title': 'Selective Attention - Wikipedia',
-                    'url': 'https://en.wikipedia.org/wiki/Selective_attention',
-                    'type': 'wikipedia'
+                    "title": "Visual selective attention",
+                    "authors": ["Anne Treisman", "Garner"],
+                    "year": 1980,
+                    "journal": "Cognitive Psychology",
+                    "doi": "10.1016/0010-0285(80)90005-5",
                 }
             ],
-            'citations': [
-                {
-                    'title': 'Visual selective attention',
-                    'authors': ['Anne Treisman', 'Garner'],
-                    'year': 1980,
-                    'journal': 'Cognitive Psychology',
-                    'doi': '10.1016/0010-0285(80)90005-5'
-                }
-            ]
         }
 
         result = writer._format_media(sample_media)
@@ -90,15 +84,16 @@ def test_writer_media_formatting():
     except Exception as e:
         print(f"❌ Test failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
 
 def test_writer_backward_compat():
     """Test Writer backward compatibility"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 2: Writer Backward Compatibility")
-    print("="*60)
+    print("=" * 60)
 
     try:
         from aix.agent.agents.planner_agent import RetrievalPlan
@@ -113,24 +108,24 @@ def test_writer_backward_compat():
             intent_confidence="HIGH",
             lesson_type="definition",
             key_concepts=["test concept"],
-            search_queries=["test query"]
+            search_queries=["test query"],
         )
 
         RetrievalResult(
-            nodes=[{"name": "Test Node", "description": "Test description"}],
-            recommendations=[]
+            nodes=[{"name": "Test Node", "description": "Test description"}], recommendations=[]
         )
 
         # Test that write() can be called without curated_media
         # (We won't actually call OpenAI, just verify the method signature)
         import inspect
+
         sig = inspect.signature(writer.write)
         params = list(sig.parameters.keys())
 
-        assert 'curated_media' in params, "write() should accept curated_media"
+        assert "curated_media" in params, "write() should accept curated_media"
 
         # Check default is None
-        default = sig.parameters['curated_media'].default
+        default = sig.parameters["curated_media"].default
         assert default is None, "curated_media should default to None"
 
         print("✅ write() accepts curated_media parameter")
@@ -142,15 +137,16 @@ def test_writer_backward_compat():
     except Exception as e:
         print(f"❌ Test failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
 
 async def test_full_pipeline_with_media():
     """Test full pipeline with media integration"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 3: Full Pipeline with Media (requires Neo4j + OpenAI)")
-    print("="*60)
+    print("=" * 60)
 
     try:
         from aix.agent.orchestrator import AgenticGraphRAG
@@ -164,10 +160,7 @@ async def test_full_pipeline_with_media():
         print(f"🔄 Processing query: '{query}'")
         print("   This will test the full pipeline with media lookup...")
 
-        result = await agent.create_lesson_plan(
-            teacher_query=query,
-            language="it"
-        )
+        result = await agent.create_lesson_plan(teacher_query=query, language="it")
 
         print("\n✅ Pipeline completed:")
         print(f"   Success: {result.success}")
@@ -177,8 +170,8 @@ async def test_full_pipeline_with_media():
 
         # Check if content includes media references
         content = result.lesson_plan or ""
-        has_video_refs = any(x in content.lower() for x in ['video', 'youtube', '🎥'])
-        has_citations = any(x in content.lower() for x in ['fonti', 'riferiment', 'doi'])
+        has_video_refs = any(x in content.lower() for x in ["video", "youtube", "🎥"])
+        has_citations = any(x in content.lower() for x in ["fonti", "riferiment", "doi"])
 
         print("\n📊 Media Integration Check:")
         print(f"   Contains video references: {has_video_refs}")
@@ -198,9 +191,9 @@ async def test_full_pipeline_with_media():
 
 
 def main():
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("PHASE 2 WRITER MEDIA INTEGRATION TEST")
-    print("="*60)
+    print("=" * 60)
 
     results = []
 
@@ -218,9 +211,9 @@ def main():
         results.append(("Full Pipeline", True))
 
     # Summary
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST SUMMARY")
-    print("="*60)
+    print("=" * 60)
 
     all_passed = True
     for name, passed in results:
@@ -229,7 +222,7 @@ def main():
         if not passed:
             all_passed = False
 
-    print("="*60)
+    print("=" * 60)
 
     if all_passed:
         print("🎉 All tests passed! Phase 2 is complete and backward compatible.")
@@ -241,5 +234,3 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
-
-

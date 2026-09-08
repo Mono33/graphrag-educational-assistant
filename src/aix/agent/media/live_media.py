@@ -97,9 +97,7 @@ class LiveMediaService:
             logger.warning("[live-media] ExternalMediaAPI unavailable: %s", exc)
             return None
         try:
-            return ExternalMediaAPI(
-                semantic_scholar_api_key=os.getenv("SEMANTIC_SCHOLAR_API_KEY")
-            )
+            return ExternalMediaAPI(semantic_scholar_api_key=os.getenv("SEMANTIC_SCHOLAR_API_KEY"))
         except Exception as exc:
             logger.warning("[live-media] ExternalMediaAPI init failed: %s", exc)
             return None
@@ -161,13 +159,19 @@ class LiveMediaService:
             pool = cached
             cache_state = "hit"
         else:
-            logger.info("[live-media] cache MISS (%s) — fetching %d concept(s)", cache.backend_name, len(concepts))
+            logger.info(
+                "[live-media] cache MISS (%s) — fetching %d concept(s)",
+                cache.backend_name,
+                len(concepts),
+            )
             try:
                 pool = await asyncio.wait_for(
                     self._fetch(concepts, language), timeout=_OVERALL_TIMEOUT_S
                 )
             except asyncio.TimeoutError:
-                logger.warning("[live-media] overall timeout (%.0fs) — returning empty", _OVERALL_TIMEOUT_S)
+                logger.warning(
+                    "[live-media] overall timeout (%.0fs) — returning empty", _OVERALL_TIMEOUT_S
+                )
                 return {}
             except Exception as exc:
                 logger.warning("[live-media] fetch failed — returning empty: %s", exc)
@@ -204,7 +208,9 @@ class LiveMediaService:
             return {}
 
         ranked = pool
-        attempted = self._config.rerank_enabled and bool((query or "").strip() or (content or "").strip())
+        attempted = self._config.rerank_enabled and bool(
+            (query or "").strip() or (content or "").strip()
+        )
         if attempted:
             try:
                 from .media_ranker import rank_live_media
@@ -220,7 +226,9 @@ class LiveMediaService:
                     timeout=_RANK_TIMEOUT_S,
                 )
             except Exception as exc:
-                logger.warning("[live-media] rerank step failed/timeout — keeping fetch order: %s", exc)
+                logger.warning(
+                    "[live-media] rerank step failed/timeout — keeping fetch order: %s", exc
+                )
                 ranked = pool
 
         papers = (ranked.get("papers") or [])[: self._config.max_papers]
@@ -266,6 +274,7 @@ class LiveMediaService:
         }
 
         try:
+
             async def _one(concept: str):
                 tasks: list[Any] = [
                     api.get_wikipedia_summary(concept, language=language),
@@ -287,9 +296,7 @@ class LiveMediaService:
                 videos = gathered[2] if want_videos else None
                 return concept, wiki, papers, videos
 
-            per_concept = await asyncio.gather(
-                *[_one(c) for c in concepts], return_exceptions=True
-            )
+            per_concept = await asyncio.gather(*[_one(c) for c in concepts], return_exceptions=True)
 
             seen_paper_urls: set[str] = set()
             seen_video_ids: set[str] = set()
@@ -307,10 +314,9 @@ class LiveMediaService:
                 concept, wiki, papers, videos = item
 
                 if wiki and not isinstance(wiki, Exception):
-                    wiki_key = (
-                        (getattr(wiki, "url", "") or "").strip().lower().rstrip("/")
-                        or (getattr(wiki, "title", "") or "").strip().lower()
-                    )
+                    wiki_key = (getattr(wiki, "url", "") or "").strip().lower().rstrip("/") or (
+                        getattr(wiki, "title", "") or ""
+                    ).strip().lower()
                     if wiki_key and wiki_key not in seen_wiki:
                         seen_wiki.add(wiki_key)
                         resources["wikipedia"].append(

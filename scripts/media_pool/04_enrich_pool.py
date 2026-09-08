@@ -76,6 +76,7 @@ def _filter_reason(entry: dict, min_views: int) -> str:
         return "too_long"
     return "unknown"
 
+
 # =============================================================================
 # Trusted channel whitelist (Idea 3)
 # Keys are domain names matching --domain arg; values are lowercase substrings.
@@ -84,17 +85,39 @@ def _filter_reason(entry: dict, min_views: int) -> str:
 
 TRUSTED_CHANNELS: dict[str, set[str]] = {
     "neuro": {
-        "ted", "ted-ed", "ted education", "kurzgesagt",
-        "scishow", "scishow psych", "crash course", "3blue1brown",
-        "mit opencourseware", "hhmi biointeractive", "noba project",
-        "sentis", "asap science", "the brain", "neuroscientifically",
-        "psychology today", "stanford", "harvard",
+        "ted",
+        "ted-ed",
+        "ted education",
+        "kurzgesagt",
+        "scishow",
+        "scishow psych",
+        "crash course",
+        "3blue1brown",
+        "mit opencourseware",
+        "hhmi biointeractive",
+        "noba project",
+        "sentis",
+        "asap science",
+        "the brain",
+        "neuroscientifically",
+        "psychology today",
+        "stanford",
+        "harvard",
     },
     "udl": {
-        "cast", "understood", "khan academy", "edutopia",
-        "iris center", "do-it uw", "national center on disability",
-        "pacer center", "vanderbilt", "kennedy center",
-        "special education", "inclusion", "accessibility",
+        "cast",
+        "understood",
+        "khan academy",
+        "edutopia",
+        "iris center",
+        "do-it uw",
+        "national center on disability",
+        "pacer center",
+        "vanderbilt",
+        "kennedy center",
+        "special education",
+        "inclusion",
+        "accessibility",
     },
 }
 
@@ -114,6 +137,7 @@ def _is_trusted(channel: str, domain: str) -> bool:
 
 try:
     import yt_dlp
+
     _YT_DLP_AVAILABLE = True
 except ImportError:
     _YT_DLP_AVAILABLE = False
@@ -145,6 +169,7 @@ def _fetch_yt_metadata(video_id: str) -> dict:
 # =============================================================================
 # Quality score (Idea 1 + 3)
 # =============================================================================
+
 
 def _compute_quality_score(
     view_count: int | None,
@@ -179,6 +204,7 @@ def _compute_quality_score(
 # Filters (Idea 1)
 # =============================================================================
 
+
 def _passes_filters(
     entry: dict,
     min_views: int,
@@ -200,6 +226,7 @@ def _passes_filters(
 # =============================================================================
 # Main enrichment loop
 # =============================================================================
+
 
 def enrich_pool(
     domain: str,
@@ -235,8 +262,10 @@ def enrich_pool(
                 # Re-score in case trusted list changed
                 v["trusted_channel"] = _is_trusted(v.get("channel", ""), domain)
                 v["quality_score"] = _compute_quality_score(
-                    v.get("view_count"), v.get("like_count"),
-                    v.get("duration_seconds"), v["trusted_channel"]
+                    v.get("view_count"),
+                    v.get("like_count"),
+                    v.get("duration_seconds"),
+                    v["trusted_channel"],
                 )
                 enriched_videos.append(v)
                 enriched += 1
@@ -265,7 +294,9 @@ def enrich_pool(
                 filtered += 1
                 logger.info(
                     "  [drop] views=%s dur=%ss score=%.3f",
-                    view_count, duration_s, v.get("quality_score", 0),
+                    view_count,
+                    duration_s,
+                    v.get("quality_score", 0),
                 )
                 if video_id:
                     rejected_this_run[video_id] = {
@@ -320,14 +351,27 @@ def main():
     parser = argparse.ArgumentParser(
         description="Enrich an existing media pool with YouTube engagement metrics."
     )
-    parser.add_argument("--domain", default="neuro", choices=["neuro", "udl"],
-                        help="Domain pool to enrich (default: neuro)")
-    parser.add_argument("--min-views", type=int, default=500,
-                        help="Drop videos with fewer views than this (default: 500)")
-    parser.add_argument("--yt-delay", type=float, default=1.0,
-                        help="Seconds to wait between yt-dlp calls (default: 1.0)")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="Compute scores but do not write changes to disk")
+    parser.add_argument(
+        "--domain",
+        default="neuro",
+        choices=["neuro", "udl"],
+        help="Domain pool to enrich (default: neuro)",
+    )
+    parser.add_argument(
+        "--min-views",
+        type=int,
+        default=500,
+        help="Drop videos with fewer views than this (default: 500)",
+    )
+    parser.add_argument(
+        "--yt-delay",
+        type=float,
+        default=1.0,
+        help="Seconds to wait between yt-dlp calls (default: 1.0)",
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Compute scores but do not write changes to disk"
+    )
     args = parser.parse_args()
 
     enrich_pool(
