@@ -1411,6 +1411,20 @@ async def run_agent_stream(
         write_stream as _write_stream,  # lazy — avoids circular at module level
     )
 
+    # Seed from the thread's checkpoint before streaming. ``stream_mode="updates"``
+    # yields only what each node changed, so anything carried over from an
+    # earlier turn is absent from these diffs. That was harmless while every
+    # turn re-ran the retriever; once a follow-up can reuse the corpus instead,
+    # the retriever panel would render empty for a turn that legitimately has
+    # evidence. Best-effort: a fresh thread (or a graph compiled without a
+    # checkpointer) simply has nothing to seed from.
+    try:
+        _snapshot = await graph.aget_state(run_config)
+        if _snapshot is not None and _snapshot.values:
+            final_state.update(dict(_snapshot.values))
+    except Exception:  # noqa: BLE001
+        logger.debug("[webui.agent] no prior checkpoint to seed final_state from")
+
     _write_stream.register(str(lesson.id))
     try:
         async for chunk in graph.astream(
@@ -1689,6 +1703,20 @@ async def stream_agent_events(
         short_msg = msg[:480] + ("…" if len(msg) > 480 else "")
         yield StreamEvent(kind="error", error=short_msg)
         return
+
+    # Seed from the thread's checkpoint before streaming. ``stream_mode="updates"``
+    # yields only what each node changed, so anything carried over from an
+    # earlier turn is absent from these diffs. That was harmless while every
+    # turn re-ran the retriever; once a follow-up can reuse the corpus instead,
+    # the retriever panel would render empty for a turn that legitimately has
+    # evidence. Best-effort: a fresh thread (or a graph compiled without a
+    # checkpointer) simply has nothing to seed from.
+    try:
+        _snapshot = await graph.aget_state(run_config)
+        if _snapshot is not None and _snapshot.values:
+            final_state.update(dict(_snapshot.values))
+    except Exception:  # noqa: BLE001
+        logger.debug("[api.agent] no prior checkpoint to seed final_state from")
 
     try:
         async for chunk in graph.astream(

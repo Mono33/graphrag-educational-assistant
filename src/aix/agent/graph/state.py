@@ -156,6 +156,12 @@ class AgentState(TypedDict, total=False):
     # on legacy callers that don't populate it — nodes must fall back to
     # ``teacher_query`` in that case to stay backward-compatible.
     raw_user_turn: Optional[str]
+    # Teacher's explicit override of the retrieval decision (T6). ``True``
+    # forces a fresh Knowledge Graph search, ``False`` forces reuse of what the
+    # thread already holds, ``None`` leaves the choice to the planner. Kept as a
+    # state field rather than an env knob so a UI control can set it per turn
+    # once the interaction is designed — the graph needs no further change.
+    force_retrieval: Optional[bool]
 
     # ========================================
     # PLANNER OUTPUT
@@ -186,6 +192,11 @@ class AgentState(TypedDict, total=False):
 
     # NEW Phase A: External resources for out-of-scope queries
     external_resources: Optional[dict[str, Any]]  # Wikipedia, OER, Semantic Scholar results
+    # T6 — True when this turn skipped the retriever and reused the corpus a
+    # previous turn fetched. Per-run, so it resets. Downstream readers use it to
+    # say so in the UI; the Critic will need it too, to know it is grounding
+    # against evidence it did not just see fetched.
+    retrieval_reused: Optional[bool]
 
     # ========================================
     # CORE 2 #9 — Corrective RAG (Retrieval Grading)
@@ -291,6 +302,11 @@ class AgentInput(TypedDict, total=False):
     conversation_history: Optional[list[dict[str, str]]]
     conversation_summary: Optional[str]
     raw_user_turn: Optional[str]
+    force_retrieval: Optional[bool]
+
+    # The retrieval-reuse verdict is per-turn: turn 3 must decide for itself,
+    # not inherit turn 2's answer.
+    retrieval_reused: Optional[bool]
 
     # Recomputed by the planner every turn — reset so a failed plan cannot
     # leave the previous turn's concepts in place unnoticed.
@@ -346,6 +362,7 @@ def create_initial_state(
     raw_user_turn: Optional[str] = None,
     pedagogical_intent: Optional[str] = None,
     refinement_instruction: Optional[str] = None,
+    force_retrieval: Optional[bool] = None,
 ) -> AgentInput:
     """
     Create initial state for a new lesson planning request.
@@ -401,6 +418,11 @@ def create_initial_state(
         conversation_history=conversation_history,
         conversation_summary=conversation_summary,
         raw_user_turn=raw_user_turn,
+        force_retrieval=force_retrieval,
+        # Emitted explicitly so the verdict resets: a key that is merely
+        # declared in AgentInput but absent from the payload is not
+        # written at all, so the checkpointed value would survive.
+        retrieval_reused=None,
         # Planner (empty)
         plan=None,
         query_intent=None,

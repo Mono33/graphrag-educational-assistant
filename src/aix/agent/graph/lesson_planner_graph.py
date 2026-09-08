@@ -31,6 +31,7 @@ from langgraph.types import RetryPolicy
 
 from aix.agent.graph.nodes import (
     TRANSIENT_LLM_ERRORS,
+    _conditional_retrieval_enabled,
     _corrective_rag_enabled,
     critique_node,
     # CORE 2 #9 — Corrective RAG (Retrieval Grading). Imported eagerly so
@@ -39,7 +40,9 @@ from aix.agent.graph.nodes import (
     grade_retrieval_node,
     plan_node,
     retrieve_node,
+    reuse_retrieval_node,
     should_continue_to_revision,
+    should_retrieve,
     should_retry_retrieval,
     write_node,
 )
@@ -113,7 +116,32 @@ def _build_workflow() -> StateGraph:
     workflow.add_node("critique", critique_node, retry_policy=LLM_RETRY_POLICY)
 
     workflow.set_entry_point("plan")
-    workflow.add_edge("plan", "retrieve")
+
+    if _conditional_retrieval_enabled():
+        # T6 — a follow-up that adds no new concepts reuses the corpus the
+        # thread already holds instead of searching Neo4j again:
+        #
+        #     plan ─┬─[new concepts | first turn]→ retrieve ─→ write
+        #           └─[nothing new]──────────────→ reuse ────→ write
+        #
+        # ``reuse`` is a node rather than a bare edge so the decision shows up
+        # in the stream like every other stage. Requires the input schema from
+        # the previous commit: without it the corpus is nulled before the graph
+        # starts, so there is never anything to reuse.
+        workflow.add_node("reuse", reuse_retrieval_node)
+        workflow.add_conditional_edges(
+            "plan",
+            should_retrieve,
+            {"retrieve": "retrieve", "reuse": "reuse"},
+        )
+        workflow.add_edge("reuse", "write")
+        logger.info(
+            "[LessonPlannerGraph] Conditional retrieval ENABLED — "
+            "follow-up turns may reuse the thread's corpus."
+        )
+    else:
+        # Default: unconditional, byte-identical to the pre-T6 topology.
+        workflow.add_edge("plan", "retrieve")
 
     if _corrective_rag_enabled():
         # CORE 2 #9 — Corrective RAG topology

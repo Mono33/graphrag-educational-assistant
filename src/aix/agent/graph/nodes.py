@@ -690,6 +690,128 @@ def should_continue_to_revision(state: AgentState) -> str:
 
 
 # ---------------------------------------------------------------------------
+# T6 — Conditional retrieval: reuse the corpus when the turn adds nothing new
+# ---------------------------------------------------------------------------
+#
+# Most follow-ups do not need a second Knowledge Graph search. "riscrivila più
+# corta" and "adatta per ADHD" re-use the same evidence; only a turn that
+# introduces a concept the corpus does not cover needs to go back to Neo4j.
+#
+# The decision is the planner's, not a manual toggle, because the planner
+# already extracts ``key_concepts`` for the turn — comparing those against what
+# the thread holds is free. A toggle would put the burden on the teacher to
+# predict whether their own question introduces a new concept.
+#
+# This depends on the input schema from T4: without it the previous turn's
+# retrieval is nulled before the graph starts, so there would be nothing to
+# reuse. Gated by ``AIX_CONDITIONAL_RETRIEVAL_ENABLED``; with the flag off the
+# ``plan → retrieve`` edge stays unconditional and behaviour is unchanged.
+
+
+def _conditional_retrieval_enabled() -> bool:
+    return (os.getenv("AIX_CONDITIONAL_RETRIEVAL_ENABLED") or "false").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
+def _corpus_names(state: AgentState) -> set[str]:
+    """Lower-cased names of everything the thread already retrieved."""
+    names: set[str] = set()
+    for item in (state.get("retrieved_nodes") or []) + (state.get("recommendations") or []):
+        if not isinstance(item, dict):
+            continue
+        label = item.get("name") or item.get("title")
+        if label:
+            names.add(str(label).strip().lower())
+    return names
+
+
+def _corpus_covers_this_turn(state: AgentState) -> bool:
+    """True when every concept the planner extracted is already in the corpus.
+
+    Matching is substring in both directions rather than equality: the planner
+    writes free text ("memoria di lavoro") while the graph stores node names
+    ("Memoria di Lavoro"), and Italian inflection makes exact comparison miss
+    far more often than a loose match over-matches. A false negative here only
+    costs a retrieval that was not strictly needed; a false positive answers
+    from evidence that does not cover the question, so the bias is deliberate.
+    """
+    concepts = [c.strip().lower() for c in (state.get("key_concepts") or []) if c and c.strip()]
+    if not concepts:
+        # The planner named nothing to look for, so there is nothing to add.
+        return True
+
+    corpus = _corpus_names(state)
+    if not corpus:
+        return False
+
+    return all(any(c in name or name in c for name in corpus) for c in concepts)
+
+
+def should_retrieve(state: AgentState) -> str:
+    """Conditional edge after the planner: search the graph, or reuse it.
+
+    Returns ``"retrieve"`` or ``"reuse"``. Criteria, in precedence order:
+
+    1. an upstream error — keep today's path, where every remaining node
+       no-ops its way to the end;
+    2. the feature flag, off by default;
+    3. the teacher's explicit override, which wins in both directions;
+    4. the first turn of a thread, which always searches;
+    5. an empty corpus, which leaves nothing to reuse;
+    6. whether the planner's concepts are already covered.
+    """
+    if state.get("error"):
+        return "retrieve"
+
+    if not _conditional_retrieval_enabled():
+        return "retrieve"
+
+    override = state.get("force_retrieval")
+    if override is True:
+        logger.info("[Router] retrieval forced by the teacher → retrieve")
+        return "retrieve"
+    if override is False:
+        logger.info("[Router] retrieval waived by the teacher → reuse")
+        return "reuse"
+
+    if not (state.get("conversation_history") or []):
+        return "retrieve"
+
+    if not state.get("retrieved_nodes"):
+        logger.info("[Router] no corpus on this thread yet → retrieve")
+        return "retrieve"
+
+    if _corpus_covers_this_turn(state):
+        logger.info(
+            "[Router] turn adds no new concepts (%s) → reusing the existing corpus",
+            state.get("key_concepts"),
+        )
+        return "reuse"
+
+    logger.info("[Router] turn introduces new concepts (%s) → retrieve", state.get("key_concepts"))
+    return "retrieve"
+
+
+async def reuse_retrieval_node(state: AgentState) -> dict[str, Any]:
+    """Mark the turn as reusing the thread's corpus, without touching Neo4j.
+
+    A node rather than a bare edge so the decision is visible: it shows up in
+    ``astream`` updates like every other stage, which is what lets the UI tell
+    the teacher the answer came from evidence already gathered.
+    """
+    logger.info(
+        "[Node: ReuseRetrieval] Skipping the Knowledge Graph search; "
+        "reusing %d node(s) from an earlier turn.",
+        len(state.get("retrieved_nodes") or []),
+    )
+    return {"retrieval_reused": True, "current_step": "retrieve_complete"}
+
+
+# ---------------------------------------------------------------------------
 # CORE 2 #9 — Corrective RAG: grade_retrieval_node + should_retry_retrieval
 # ---------------------------------------------------------------------------
 #
