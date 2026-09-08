@@ -9,6 +9,12 @@ import asyncio
 import logging
 import sys
 
+import pytest
+
+# These tests drive the real agents against Neo4j and the LLM provider, so
+# they only run where those exist. CI has neither, and skips this directory.
+pytestmark = pytest.mark.integration
+
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)

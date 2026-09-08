@@ -5,7 +5,13 @@ Tests that the Planner correctly identifies query intents.
 
 import asyncio
 
+import pytest
+
 from aix.agent.agents.planner_agent import PlannerAgent
+
+# These tests drive the real agents against Neo4j and the LLM provider, so
+# they only run where those exist. CI has neither, and skips this directory.
+pytestmark = pytest.mark.integration
 
 
 async def test_intent_detection():

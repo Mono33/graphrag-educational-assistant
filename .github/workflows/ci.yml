@@ -39,6 +39,12 @@ jobs:
         run: mypy src/aix/ || true
 
       - name: Pytest
-        run: pytest tests/ -v --tb=short -x
+        # tests/integration is excluded rather than deselected with `-m`:
+        # deselection happens after collection, and collection imports the
+        # modules. test_hybrid_translation.py instantiates a translator at
+        # module level, so it would fail during collection before any marker
+        # could take effect. Those tests drive the real agents against Neo4j
+        # and the LLM provider; a runner has neither.
+        run: pytest tests/ -v --tb=short -x --ignore=tests/integration
         env:
           PYTHONDONTWRITEBYTECODE: "1"

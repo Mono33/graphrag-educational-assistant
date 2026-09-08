@@ -6,7 +6,13 @@ Tests dictionary coverage and OpenAI fallback
 
 import logging
 
+import pytest
+
 from aix.retrieval.multilingual_text2cypher import MultilingualText2Cypher
+
+# These tests drive the real agents against Neo4j and the LLM provider, so
+# they only run where those exist. CI has neither, and skips this directory.
+pytestmark = pytest.mark.integration
 
 # Enable logging to see the hybrid logic
 logging.basicConfig(level=logging.INFO, format="%(levelname)s - %(message)s")

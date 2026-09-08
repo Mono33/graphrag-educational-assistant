@@ -12,10 +12,16 @@ import asyncio
 import os
 import sys
 
+import pytest
+
 # Add project path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from aix.agent.orchestrator import AgentOrchestrator, LessonPlanResult
+
+# These tests drive the real agents against Neo4j and the LLM provider, so
+# they only run where those exist. CI has neither, and skips this directory.
+pytestmark = pytest.mark.integration
 
 
 async def test_lesson_plan_result_structure():
