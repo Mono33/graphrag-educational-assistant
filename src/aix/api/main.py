@@ -525,11 +525,25 @@ async def health_check():
     except Exception:
         pass
 
+    # Which build is running, and which schema it is talking to. Both are
+    # best-effort: neither should ever turn a health check into a failure.
+    code_version = os.getenv("CODE_VERSION") or None
+
+    db_revision = None
+    try:
+        from aix.webui.db import current_db_revision
+
+        db_revision = await current_db_revision()
+    except Exception:  # noqa: BLE001
+        pass
+
     return HealthResponse(
         status="healthy" if neo4j_connected else "degraded",
         neo4j_connected=neo4j_connected,
         version=__version__,
         domain_configs_loaded=domain_configs,
+        code_version=code_version,
+        db_revision=db_revision,
     )
 
 

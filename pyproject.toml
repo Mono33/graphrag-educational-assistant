@@ -155,6 +155,12 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
+# Alembic writes these files, not us: `alembic revision --autogenerate` emits
+# its own import order and its own line lengths. Without this, every generated
+# migration would fail CI until someone hand-sorted it — which is a reliable way
+# to make people stop generating migrations.
+"alembic/versions/*.py" = ["I001", "E402", "E501", "UP035"]
+"alembic/env.py" = ["E402"]                  # model imports must follow the alembic bootstrap
 "tests/**/*.py" = ["F401", "F811"]          # allow unused-import / redefined-fixture in tests
 "apps/**/*.py" = ["E402"]                    # imports after sys.path manipulation (legacy; safe to allow)
 "scripts/**/*.py" = ["E402", "T20"]          # scripts are allowed to print

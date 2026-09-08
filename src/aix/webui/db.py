@@ -30,6 +30,7 @@ import logging
 import os
 from collections.abc import AsyncGenerator
 from pathlib import Path
+from typing import Optional
 from urllib.parse import urlsplit, urlunsplit
 
 from sqlalchemy.ext.asyncio import (
@@ -56,6 +57,17 @@ _DEFAULT_DB_URL = f"sqlite+aiosqlite:///{_DEFAULT_DB_PATH.as_posix()}"
 def _resolve_db_url() -> str:
     """Return the configured async DB URL, defaulting to dev SQLite."""
     return os.getenv("WEBUI_DATABASE_URL", _DEFAULT_DB_URL)
+
+
+def resolve_db_url() -> str:
+    """Public accessor for the configured async DB URL.
+
+    Alembic's ``env.py`` needs the same URL this module connects with. Reading
+    it from here rather than from ``alembic.ini`` keeps one source of truth: a
+    deployment that sets ``WEBUI_DATABASE_URL`` migrates the database it is
+    actually going to use, with no second place to keep in sync.
+    """
+    return _DB_URL
 
 
 def _safe_db_label(url: str) -> str:
@@ -147,93 +159,169 @@ def _init_ddl_lock_stmt(dialect_name: str):
     return None
 
 
+def _auto_migrate_enabled() -> bool:
+    """Whether startup applies migrations. Default on, and deliberately so.
+
+    The GitHub workflow that ships this code builds an image and stops there —
+    there is no deploy step in this repository where ``alembic upgrade head``
+    could be added. Migrations that travel inside the image therefore reach
+    production on the next push; migrations that need a deploy step would wait
+    on a pipeline the AI team does not own.
+
+    The switch exists for the day that changes, and for one scenario where
+    startup is the wrong place: a migration long enough to outlast the
+    container healthcheck's start period. Set ``AIX_DB_AUTO_MIGRATE=false`` and
+    run ``alembic upgrade head`` out of band.
+    """
+    return (os.getenv("AIX_DB_AUTO_MIGRATE") or "true").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
+def _alembic_config(connection):
+    """Alembic config bound to an already-open connection.
+
+    env.py uses this connection instead of opening its own, so the migration
+    runs inside the transaction that holds the advisory lock.
+    """
+    from alembic.config import Config
+
+    cfg = Config(str(_REPO_ROOT / "alembic.ini"))
+    cfg.attributes["connection"] = connection
+    return cfg
+
+
+def _schema_gaps(sync_conn) -> dict[str, list[str]]:
+    """Model columns and tables absent from the live schema.
+
+    Empty means the database already matches what the baseline migration would
+    have produced, so it can be adopted. Anything listed means it cannot.
+    """
+    from sqlalchemy import inspect
+
+    inspector = inspect(sync_conn)
+    live_tables = set(inspector.get_table_names())
+    gaps: dict[str, list[str]] = {}
+
+    for table in Base.metadata.sorted_tables:
+        if table.name not in live_tables:
+            gaps[table.name] = ["<table absent>"]
+            continue
+        live_cols = {c["name"] for c in inspector.get_columns(table.name)}
+        absent = [c.name for c in table.columns if c.name not in live_cols]
+        if absent:
+            gaps[table.name] = absent
+
+    return gaps
+
+
+def _migrate_or_adopt(sync_conn) -> None:
+    """Bring the database under migration control without ever guessing.
+
+    Three cases, and the third is the one that needs care:
+
+    1. ``alembic_version`` exists — ordinary upgrade.
+    2. No application tables — a fresh database; the baseline creates them.
+    3. Tables but no ``alembic_version`` — a database that predates migrations.
+       This is production: its schema was built by ``create_all`` plus a
+       hot-patch list that only ever ran on SQLite, so on Postgres some columns
+       may never have been applied.
+
+       Running ``upgrade`` here would fail trying to re-create existing tables.
+       Stamping blindly is worse: it would record the database as up to date
+       while columns are still missing, and no future migration would ever add
+       them. So the schema is compared against the models first, and adopted
+       only if it already matches. If it does not, nothing is changed and the
+       exact gap is logged — the schema stays exactly as it was.
+    """
+    from alembic import command
+    from sqlalchemy import inspect
+
+    live_tables = set(inspect(sync_conn).get_table_names())
+    cfg = _alembic_config(sync_conn)
+
+    if "alembic_version" in live_tables:
+        command.upgrade(cfg, "head")
+        return
+
+    if not (live_tables & {t.name for t in Base.metadata.sorted_tables}):
+        logger.info("[db] empty database — creating the schema from migrations")
+        command.upgrade(cfg, "head")
+        return
+
+    gaps = _schema_gaps(sync_conn)
+    if gaps:
+        logger.error(
+            "[db] existing schema does NOT match the migration baseline and was "
+            "left untouched. Missing: %s. Resolve it before migrations can run: "
+            "add what is missing, then `alembic stamp head` once. This is the "
+            "case the SQLite-only hot-patch list used to leave behind.",
+            {t: cols for t, cols in gaps.items()},
+        )
+        return
+
+    logger.info("[db] existing schema matches the baseline — adopting it (stamp head)")
+    command.stamp(cfg, "head")
+
+
+def _read_revision(sync_conn) -> Optional[str]:
+    from alembic.runtime.migration import MigrationContext
+
+    return MigrationContext.configure(sync_conn).get_current_revision()
+
+
+async def current_db_revision() -> Optional[str]:
+    """Alembic revision the database is at, or ``None`` if unknown.
+
+    Surfaced by ``/api/v1/health`` so "which schema is live?" is answerable
+    from outside the VM, which matters now that a deploy can migrate.
+    """
+    try:
+        async with engine.connect() as conn:
+            return await conn.run_sync(_read_revision)
+    except Exception:  # noqa: BLE001
+        return None
+
+
 async def init_db() -> None:
+    """Bring the WebUI schema up to date, under migration control.
+
+    Replaces the previous ``create_all`` plus hand-written hot-patch list. That
+    list was guarded by ``if not sqlite: return``, so a Postgres deployment
+    received none of it — the defect these migrations exist to end.
+
+    Multi-worker safe: on Postgres the work runs under a transaction-scoped
+    advisory lock, so concurrent uvicorn workers do not migrate at once.
+
+    Never raises out of the migration itself; the caller in the API lifespan
+    already treats a WebUI database problem as non-fatal, so that the public
+    ``/api/v1`` surface — which does not use this database — still comes up.
     """
-    Create all webui tables if they don't yet exist, and apply the small
-    set of dev-only column hot-adds we accumulate between phases.
-
-    Imported lazily inside the function so importing ``aix.webui.db`` doesn't
-    transitively import every model package (avoids circular imports during
-    test collection).
-
-    Idempotent: ``create_all`` is a no-op if the tables already exist, and
-    the column hot-adds skip already-present columns. This is *strictly*
-    a dev convenience while we don't have Alembic — it keeps the SQLite
-    schema in sync with model changes without forcing a wipe of the dev DB.
-    Production migrations land in P5 / CORE 6 with Alembic.
-
-    Multi-worker safe (#39): on Postgres the DDL runs under a transaction-scoped
-    advisory lock, so concurrent ``uvicorn --workers`` processes booting against
-    a fresh DB don't race ``create_all`` (see :func:`_init_ddl_lock_stmt`).
-    """
-    # Importing the model modules registers their classes against ``Base``
-    # so ``Base.metadata.create_all`` knows about every table.
+    # Importing the model modules registers their tables against ``Base``.
     from aix.webui.auth import models as _auth_models  # noqa: F401
     from aix.webui.lessons import models as _lesson_models  # noqa: F401
 
-    # Make sure the SQLite parent directory exists before connecting.
     if _DB_URL.startswith("sqlite"):
         _DEFAULT_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-    async with engine.begin() as conn:
-        # Serialise DDL across concurrent workers on Postgres (#39). No-op on
-        # SQLite. Taken inside the transaction so it is held across create_all
-        # and released on commit.
-        _lock_stmt = _init_ddl_lock_stmt(engine.dialect.name)
-        if _lock_stmt is not None:
-            await conn.execute(_lock_stmt, {"key": _INIT_DB_ADVISORY_LOCK_KEY})
-        await conn.run_sync(Base.metadata.create_all)
-        # Dev-only schema patch-up (no-op once Alembic lands).
-        await _apply_dev_schema_hotpatches(conn)
-
-    logger.info("✅ WebUI DB ready (%s)", _safe_db_label(_DB_URL))
-
-
-async def _apply_dev_schema_hotpatches(conn) -> None:
-    """
-    Add columns introduced after the initial ``create_all`` snapshot was
-    written to disk. SQLite is forgiving: ``ALTER TABLE … ADD COLUMN`` is
-    cheap and accepts any new nullable column without rewriting rows.
-
-    We can't rely on ``Base.metadata.create_all`` for this — it only creates
-    tables that don't exist; it never touches an existing table's columns.
-
-    Each entry is a (table, column, DDL) triple. We probe ``PRAGMA table_info``
-    first and only run the ALTER when the column is absent, so this is safe
-    to call on every startup.
-
-    On non-SQLite dialects this is a no-op — Postgres/asyncpg deployments
-    will move to Alembic before they accumulate schema drift.
-    """
-    from sqlalchemy import text
-
-    if not _DB_URL.startswith("sqlite"):
+    if not _auto_migrate_enabled():
+        logger.info(
+            "[db] AIX_DB_AUTO_MIGRATE is off — schema left untouched; "
+            "run `alembic upgrade head` out of band"
+        )
         return
 
-    hotpatches = [
-        # CORE 2 #6.6 P2 phase 1 — agent run lifecycle columns
-        ("lesson", "lesson_plan_md", "ALTER TABLE lesson ADD COLUMN lesson_plan_md TEXT"),
-        ("lesson", "error_message", "ALTER TABLE lesson ADD COLUMN error_message VARCHAR(500)"),
-        # CORE 2 #6.6 P2 phase 2 — chat workspace
-        # Persists the teacher's original (synthesized OR free-text) query so
-        # we can render it as the user's first chat bubble on a fresh GET,
-        # without re-deriving from the profile. Also the substrate for #10
-        # Conversation Memory (multi-turn refinement).
-        ("lesson", "teacher_query", "ALTER TABLE lesson ADD COLUMN teacher_query TEXT"),
-        # CORE 2 #6.6 P3 — chat attachments manifest. Files live on disk;
-        # this column stores [{id, filename, mime, size, text_excerpt,
-        # stored_name}, …]. The Writer reads the joined excerpts via
-        # ``AgentState.teacher_provided_context`` — the KG is untouched.
-        ("lesson", "uploaded_files_json", "ALTER TABLE lesson ADD COLUMN uploaded_files_json TEXT"),
-    ]
+    async with engine.begin() as conn:
+        lock_stmt = _init_ddl_lock_stmt(engine.dialect.name)
+        if lock_stmt is not None:
+            await conn.execute(lock_stmt, {"key": _INIT_DB_ADVISORY_LOCK_KEY})
+        await conn.run_sync(_migrate_or_adopt)
 
-    for table, column, ddl in hotpatches:
-        # PRAGMA returns one row per column — if our target column isn't in
-        # that list, we need to add it.
-        existing_cols = {
-            row[1] for row in (await conn.execute(text(f"PRAGMA table_info({table})"))).all()
-        }
-        if column in existing_cols:
-            continue
-        logger.info("🛠  Hot-patching dev schema: %s.%s", table, column)
-        await conn.execute(text(ddl))
+    logger.info(
+        "✅ WebUI DB ready (%s) at revision %s",
+        _safe_db_label(_DB_URL),
+        await current_db_revision(),
+    )

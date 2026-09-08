@@ -18,11 +18,26 @@ jinja2>=3.1.0
 sse-starlette>=2.1.0,<3.0
 
 # WebUI auth + persistence (CORE 2 #6.6 P1).
-# Async SQLAlchemy 2.x + aiosqlite for dev (SQLite at data/webui/webui.db).
-# Swap to asyncpg + Postgres in CORE 6 deploy — no model changes required.
+# Async SQLAlchemy 2.x, with both drivers: aiosqlite for the dev SQLite file
+# and asyncpg for Postgres, which is what WEBUI_DATABASE_URL points at in
+# deploy/docker-compose.prod.yml.
+#
+# asyncpg is listed here deliberately, and its absence was a real hazard:
+# requirements.lock.txt still carries it as "# via -r requirements.txt", so it
+# was a direct dependency once and was dropped from this file afterwards.
+# Production kept working only because the lock was not regenerated —
+# regenerating it would have silently removed the driver the application needs
+# to reach its own database, and the failure would have surfaced at startup on
+# the deploy after next.
 sqlalchemy[asyncio]>=2.0.25
 aiosqlite>=0.19.0
+asyncpg>=0.29,<1.0
 fastapi-users[sqlalchemy]>=14.0.0
+
+# Schema migrations for the WebUI database. Runs inside the image, so it has to
+# be a runtime dependency and not a dev extra: the production database is
+# migrated by the same container that serves the app.
+alembic>=1.13,<2.0
 
 # Markdown → HTML for the streamed lesson plan (CORE 2 #6.6 P2).
 # We render server-side so SSE 'done' events can drop ready-to-paint HTML
