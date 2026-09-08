@@ -41,7 +41,7 @@ from aix.agent.graph.nodes import (
     should_retry_retrieval,
     write_node,
 )
-from aix.agent.graph.state import AgentState, create_initial_state
+from aix.agent.graph.state import AgentInput, AgentState, create_initial_state
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +74,11 @@ def _build_workflow() -> StateGraph:
       ``retrieval_warning=True`` so the lesson carries a low-confidence
       caveat instead of pretending nothing happened.
     """
-    workflow = StateGraph(AgentState)
+    # ``input_schema`` is what makes a turn's retrieval survive into the next
+    # one: LangGraph merges only the AgentInput keys and drops the rest, so the
+    # checkpointed retrieval corpus is no longer overwritten with nulls on
+    # every follow-up. See the partition note in ``state.py``.
+    workflow = StateGraph(AgentState, input_schema=AgentInput)
 
     # Always-on agent nodes (pre-#9 topology)
     workflow.add_node("plan", plan_node)

@@ -7,7 +7,76 @@ Each agent can read and update this state.
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Optional, TypedDict
+from typing import Annotated, Any, Optional, TypedDict
+
+# ---------------------------------------------------------------------------
+# Reducers
+# ---------------------------------------------------------------------------
+#
+# Every node returns ``current_step``, and every error path returns ``error``.
+# Two nodes in the same superstep therefore both write these keys — which
+# LangGraph rejects with ``InvalidUpdateError: can receive only one value per
+# step`` unless the key declares a reducer. The corrective-RAG retry loop is
+# sequential today, but the moment a second retriever runs alongside the
+# Knowledge Graph one (the PrivateMaterialRetriever), these are the two keys
+# that would fail first.
+#
+# Both reducers are order-independent, per LINEE-GUIDA-langgraph.md §1: the
+# runtime does not apply concurrent updates in declaration order, so a
+# last-write-wins reducer would silently drop data in an unpredictable way.
+
+_STEP_RANK: dict[str, int] = {
+    "start": 0,
+    "plan_complete": 1,
+    "retrieve_complete": 2,
+    "grade_complete": 3,
+    "write_complete": 4,
+    "critique_complete": 5,
+    "error": 99,
+}
+
+
+def merge_current_step(current: Optional[str], update: Optional[str]) -> Optional[str]:
+    """Keep the furthest stage the pipeline has reached.
+
+    ``"start"`` is the one value that moves backwards: it marks a new run, and
+    only the per-run input sets it, so it always wins. Otherwise the update
+    with the higher rank wins, and equal ranks fall back to the greater name —
+    making the result identical whichever order the runtime applies the two
+    updates in.
+
+    Note this is a *progress marker only*: nothing in the codebase reads it, so
+    the revision loop no longer walking it back from ``critique_complete`` to
+    ``write_complete`` changes no behaviour.
+    """
+    if update == "start":
+        return "start"
+    if update is None:
+        return current
+    if current is None:
+        return update
+    return max(
+        (_STEP_RANK.get(current, 0), current),
+        (_STEP_RANK.get(update, 0), update),
+    )[1]
+
+
+def merge_error(current: Optional[str], update: Optional[str]) -> Optional[str]:
+    """Preserve every failure, in an order-independent way.
+
+    ``None`` clears — that is the per-run reset coming from the input schema,
+    and it is never concurrent with a node's write because the input is applied
+    before any node runs. Nodes only ever write a non-``None`` error.
+
+    Two branches failing in the same superstep are joined in sorted order, so
+    neither the surviving message nor its ordering depends on which coroutine
+    happened to finish first. Downstream readers only test truthiness.
+    """
+    if update is None:
+        return None
+    if current is None or current == update:
+        return update
+    return " | ".join(sorted({current, update}))
 
 
 class LessonPlanType(Enum):
@@ -152,14 +221,116 @@ class AgentState(TypedDict, total=False):
     # ========================================
     revision_count: int  # Number of revision cycles
     max_revisions: int  # Maximum allowed revisions
-    current_step: str  # Current step in pipeline
-    error: Optional[str]  # Error message if any
+    # Reducers: every node writes both of these, so they are the two keys that
+    # break first when two nodes share a superstep. See the module header.
+    current_step: Annotated[str, merge_current_step]  # Furthest stage reached
+    error: Annotated[Optional[str], merge_error]  # Error message if any
 
     # ========================================
     # FINAL OUTPUT
     # ========================================
     final_lesson_plan: Optional[str]  # Approved final lesson plan
     final_metadata: Optional[dict[str, Any]]  # Final metadata
+
+
+# ---------------------------------------------------------------------------
+# Input schema — what a turn supplies, and therefore what a turn resets
+# ---------------------------------------------------------------------------
+#
+# The graph is compiled as ``StateGraph(AgentState, input_schema=AgentInput)``.
+# LangGraph merges only the keys declared here into the checkpointed state and
+# silently drops the rest, so the partition below decides, for every key, one
+# question: does it survive from one turn to the next on the same thread_id?
+#
+# Before this existed the answer was "nothing survives": ``create_initial_state``
+# spelled out all ~46 keys with the outputs set to ``None``, and that dict was
+# handed straight to ``ainvoke``. The checkpointer dutifully stored each turn's
+# state and the next turn overwrote it with nulls, which is why multi-turn
+# worked only through ``conversation_history`` — recomputed by the service layer
+# from the database on every turn.
+#
+# What survives is deliberately narrow: the retrieval corpus, and nothing else.
+# That is what lets a follow-up turn reuse the Knowledge Graph results instead
+# of paying for a second search. Everything else must reset, and two are load
+# bearing: ``revision_count`` would arrive at the next turn already at the
+# ceiling and disable the revision loop, and a stale ``error`` would short
+# circuit every node before it ran.
+
+PERSISTED_ACROSS_TURNS: frozenset[str] = frozenset(
+    {
+        "graphrag_results",
+        "retrieved_nodes",
+        "retrieved_relationships",
+        "recommendations",
+        "retrieval_confidence",
+        "curated_media",
+        "external_resources",
+    }
+)
+
+
+class AgentInput(TypedDict, total=False):
+    """The per-turn slice of :class:`AgentState`.
+
+    Every key is documented on ``AgentState``; this class only records which
+    side of the persist/reset line each one falls on. ``AgentInput`` and
+    ``PERSISTED_ACROSS_TURNS`` must together cover ``AgentState`` exactly —
+    ``test_state_partition.py`` fails if a new key is added to the state
+    without being classified here.
+    """
+
+    # Supplied by the caller
+    teacher_query: str
+    domain: str
+    language: str
+    session_id: Optional[str]
+    educational_profile: Optional[dict[str, Any]]
+    pedagogical_intent: Optional[str]
+    refinement_instruction: Optional[str]
+    teacher_provided_context: Optional[str]
+    conversation_history: Optional[list[dict[str, str]]]
+    conversation_summary: Optional[str]
+    raw_user_turn: Optional[str]
+
+    # Recomputed by the planner every turn — reset so a failed plan cannot
+    # leave the previous turn's concepts in place unnoticed.
+    plan: Optional[dict[str, Any]]
+    query_intent: Optional[str]
+    lesson_type: Optional[str]
+    target_grade: Optional[str]
+    key_concepts: Optional[list[str]]
+    search_queries: Optional[list[str]]
+    scope_status: Optional[str]
+    scope_confidence: Optional[float]
+    subject_concepts: Optional[list[str]]
+    pedagogy_concepts: Optional[list[str]]
+
+    # Corrective-RAG grading is per-turn: a retry budget must not carry over.
+    retrieval_grade: Optional[str]
+    retrieval_grade_reason: Optional[str]
+    retrieval_attempts: Optional[int]
+    retrieval_rewritten_query: Optional[str]
+    retrieval_warning: Optional[bool]
+
+    # Writer / critic output. The draft resets so a new turn starts from the
+    # writer rather than the reviser (write_node branches on
+    # ``revision_count > 0 and lesson_plan_draft``).
+    lesson_plan_draft: Optional[str]
+    lesson_plan_structured: Optional[dict[str, Any]]
+    sources_cited: Optional[list[str]]
+    critique: Optional[str]
+    critique_score: Optional[float]
+    approved: bool
+    revision_instructions: Optional[str]
+
+    # Run metadata. ``revision_count`` reset is load bearing: see above.
+    revision_count: int
+    max_revisions: int
+    current_step: str
+    error: Optional[str]
+
+    final_lesson_plan: Optional[str]
+    final_metadata: Optional[dict[str, Any]]
 
 
 def create_initial_state(
@@ -175,7 +346,7 @@ def create_initial_state(
     raw_user_turn: Optional[str] = None,
     pedagogical_intent: Optional[str] = None,
     refinement_instruction: Optional[str] = None,
-) -> AgentState:
+) -> AgentInput:
     """
     Create initial state for a new lesson planning request.
 
@@ -217,7 +388,7 @@ def create_initial_state(
     Returns:
         Initialized AgentState
     """
-    return AgentState(
+    return AgentInput(
         # Input
         teacher_query=query,
         domain=domain,
@@ -242,14 +413,11 @@ def create_initial_state(
         scope_confidence=None,
         subject_concepts=None,
         pedagogy_concepts=None,
-        # Retriever (empty)
-        graphrag_results=None,
-        retrieved_nodes=None,
-        retrieved_relationships=None,
-        recommendations=None,
-        retrieval_confidence=None,
-        curated_media=None,  # NEW Phase 1
-        external_resources=None,  # NEW Phase A
+        # The retriever block is deliberately absent: those keys are the only
+        # ones that persist across turns (PERSISTED_ACROSS_TURNS), so listing
+        # them here as None would be the very reset we are removing. They are
+        # not in AgentInput, so LangGraph would drop them anyway.
+        #
         # CORE 2 #9 — Corrective RAG (gated by AIX_CORRECTIVE_RAG_ENABLED).
         # Initialised to None so the Writer/Critic see the same shape they
         # always have when the feature is off.

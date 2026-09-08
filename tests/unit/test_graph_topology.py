@@ -440,6 +440,52 @@ async def test_end_to_end_revision_loop_runs_then_stops_at_the_ceiling(monkeypat
     assert final["lesson_plan_draft"] == "# Lezione\n\nBozza rivista."
 
 
+async def test_second_turn_reuses_the_first_turn_retrieval(monkeypatch):
+    """The real pipeline, two turns, one thread: the corpus survives.
+
+    ``test_state_partition.py`` proves the mechanism on a synthetic graph; this
+    proves it where it has to hold — through plan → retrieve → write → critique
+    with the actual nodes. It is the precondition for skipping the Knowledge
+    Graph search on a follow-up turn: without it there is nothing to reuse.
+    """
+    from langgraph.checkpoint.memory import InMemorySaver
+
+    monkeypatch.delenv("AIX_CORRECTIVE_RAG_ENABLED", raising=False)
+    monkeypatch.setattr(
+        "aix.agent.graph.checkpointer.get_checkpointer",
+        AsyncMock(return_value=InMemorySaver()),
+    )
+
+    planner = AsyncMock(plan=AsyncMock(return_value=_plan()))
+    retriever = AsyncMock(retrieve=AsyncMock(return_value=_retrieval_result()))
+    writer = AsyncMock(
+        write=AsyncMock(return_value="# Bozza"), revise=AsyncMock(return_value="# Rivista")
+    )
+    critic = AsyncMock(critique=AsyncMock(side_effect=[_critique(True), _critique(True)]))
+
+    graph = await get_compiled_graph()
+    config = {"configurable": {"thread_id": "lesson-under-test"}}
+
+    with (
+        patch.object(graph_nodes, "get_planner", return_value=planner),
+        patch.object(graph_nodes, "get_retriever", return_value=retriever),
+        patch.object(graph_nodes, "get_writer", return_value=writer),
+        patch.object(graph_nodes, "get_critic", return_value=critic),
+    ):
+        await graph.ainvoke(
+            create_initial_state(query="Crea una lezione", max_revisions=2), config=config
+        )
+        second = await graph.ainvoke(
+            create_initial_state(query="riscrivila più corta", max_revisions=2), config=config
+        )
+
+    assert second["retrieved_nodes"] == [{"name": "Memoria di lavoro", "labels": ["Concept"]}], (
+        "turn 1's retrieval must still be in state at the start of turn 2"
+    )
+    assert second["revision_count"] == 0, "per-run counters restart"
+    assert second["teacher_query"] == "riscrivila più corta"
+
+
 async def test_max_revisions_1_disables_the_revision_loop_entirely(monkeypatch):
     """``max_revisions=N`` permits N-1 actual revisions, not N.
 
