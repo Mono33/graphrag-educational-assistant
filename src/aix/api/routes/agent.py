@@ -49,8 +49,6 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Response, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from sse_starlette.sse import EventSourceResponse
 
-from aix.core.ai_marking import AI_GENERATED_HEADER, AI_GENERATED_HEADER_VALUE
-
 from aix.api.schemas import (
     AgentRunMeta,
     AgentRunRequest,
@@ -60,6 +58,7 @@ from aix.api.schemas import (
     PlannerInfo,
     RetrieverInfo,
 )
+from aix.core.ai_marking import AI_GENERATED_HEADER, AI_GENERATED_HEADER_VALUE
 from aix.core.concurrency import (
     AtCapacity,
     RateLimited,

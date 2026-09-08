@@ -163,7 +163,7 @@ class MediaCache:
         return getattr(self._backend, "backend_name", "unknown")
 
     @classmethod
-    def from_config(cls, cfg: Optional[MediaConfig] = None) -> "MediaCache":
+    def from_config(cls, cfg: Optional[MediaConfig] = None) -> MediaCache:
         cfg = cfg or MediaConfig.from_env()
         backend = _build_backend(cfg)
         cache = cls(backend, cfg.cache_namespace, cfg.cache_ttl)

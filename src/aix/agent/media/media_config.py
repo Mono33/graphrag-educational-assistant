@@ -92,7 +92,7 @@ class MediaConfig:
     youtube_api_key: Optional[str] = None
 
     @classmethod
-    def from_env(cls) -> "MediaConfig":
+    def from_env(cls) -> MediaConfig:
         """Build a :class:`MediaConfig` from the process environment."""
         redis_url = os.getenv("AIX_MEDIA_REDIS_URL") or os.getenv("REDIS_URL")
 
