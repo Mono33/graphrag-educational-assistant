@@ -193,7 +193,7 @@ async def test_a_single_rate_limit_no_longer_fails_the_run(monkeypatch):
     """The whole chain: node re-raises, policy retries, second attempt succeeds."""
     monkeypatch.delenv("AIX_CORRECTIVE_RAG_ENABLED", raising=False)
 
-    from tests.unit.test_graph_topology import _critique, _plan, _retrieval_result
+    from tests.unit.agent_doubles import _critique, _plan, _retrieval_result
 
     planner = AsyncMock(plan=AsyncMock(side_effect=[_rate_limit(), _plan()]))
     retriever = AsyncMock(retrieve=AsyncMock(return_value=_retrieval_result()))

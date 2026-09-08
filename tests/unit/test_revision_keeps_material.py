@@ -141,7 +141,7 @@ async def test_write_node_still_writes_from_scratch_on_the_first_pass():
 
 async def test_material_survives_a_full_run_with_one_revision():
     """The regression in situ: draft, Critic rejects, revision still has the file."""
-    from tests.unit.test_graph_topology import _critique, _plan, _retrieval_result
+    from tests.unit.agent_doubles import _critique, _plan, _retrieval_result
 
     planner = AsyncMock(plan=AsyncMock(return_value=_plan()))
     retriever = AsyncMock(retrieve=AsyncMock(return_value=_retrieval_result()))

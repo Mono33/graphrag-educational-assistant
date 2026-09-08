@@ -33,8 +33,8 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from tests.unit.agent_doubles import _critique, _plan, _retrieval_result
 
-from aix.agent.agents.planner_agent import RetrievalPlan
 from aix.agent.graph import nodes as graph_nodes
 from aix.agent.graph.lesson_planner_graph import (
     build_lesson_planner_graph,
@@ -319,51 +319,6 @@ def test_corrective_rag_attempt_ceiling_is_clamped(raw, effective, why, monkeypa
 # ---------------------------------------------------------------------------
 # 4. End-to-end through the compiled graph, every agent mocked
 # ---------------------------------------------------------------------------
-
-
-def _plan() -> RetrievalPlan:
-    return RetrievalPlan(
-        query_intent="lesson_creation",
-        key_concepts=["memoria di lavoro"],
-        search_queries=["memoria di lavoro"],
-        lesson_type="full_lesson",
-        target_grade=None,
-        special_needs=[],
-        time_constraints=None,
-        intent_confidence="HIGH",
-        reasoning="mock",
-        scope_status="in_scope",
-        scope_confidence=1.0,
-        subject_concepts=["memoria di lavoro"],
-        pedagogy_concepts=[],
-        response_language="it",
-        language_confidence="HIGH",
-    )
-
-
-def _retrieval_result():
-    node = {"name": "Memoria di lavoro", "labels": ["Concept"]}
-    return SimpleNamespace(
-        is_hybrid=False,
-        search_results=[SimpleNamespace(nodes=[node], relationships=[])],
-        nodes=[node],
-        relationships=[],
-        recommendations=[{"name": "Chunking"}],
-        confidence="HIGH",
-        curated_media=None,
-        external_resources=None,
-    )
-
-
-def _critique(approved: bool):
-    return SimpleNamespace(
-        summary="ok" if approved else "manca la valutazione",
-        average_score=0.9 if approved else 0.4,
-        approved=approved,
-        scores={"coerenza": 0.9},
-        strengths=["chiara"],
-        revision_instructions=None if approved else "aggiungi la valutazione",
-    )
 
 
 async def _run_graph(monkeypatch, *, critiques, max_revisions=2):

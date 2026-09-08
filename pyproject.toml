@@ -103,6 +103,10 @@ exclude = []
 # -----------------------------------------------------------------------------
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Without this, `from tests.unit...` resolves only under
+# `python -m pytest` (which puts the cwd on sys.path) and fails under a
+# bare `pytest` — which is what CI runs. Same behaviour either way.
+pythonpath = ["."]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]

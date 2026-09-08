@@ -20,7 +20,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from langgraph.checkpoint.memory import InMemorySaver
-from tests.unit.test_graph_topology import _critique, _plan, _retrieval_result
+from tests.unit.agent_doubles import _critique, _plan, _retrieval_result
 
 from aix.agent.graph import nodes as graph_nodes
 from aix.agent.graph.lesson_planner_graph import (
