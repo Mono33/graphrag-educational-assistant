@@ -79,6 +79,18 @@ services:
       # assets. Persist only the writable live-media cache so a volume can
       # never mask the versioned retrieval assets baked into the image.
       - app_media_cache:/graphrag-aixlearning/artifacts/media_cache
+      # Teacher chat attachments. Written by aix.webui.lessons.uploads, whose
+      # UPLOAD_ROOT resolves to <repo>/data/webui/uploads — inside the image
+      # that is the path below.
+      #
+      # Without this volume every attachment is lost when the container is
+      # replaced, which is what a deploy does: the lesson row keeps its
+      # uploaded_files_json manifest while the files it points at are gone.
+      #
+      # Mounted at the uploads directory and NOT at data/, deliberately: a
+      # volume over data/ would mask data/media/, the curated KG media pools
+      # that .dockerignore explicitly keeps in the image.
+      - app_uploads:/graphrag-aixlearning/data/webui/uploads
     healthcheck:
       # /api/v1/health verifies Neo4j connectivity + domain configs. This
       # mirrors the Dockerfile HEALTHCHECK but keeps compose status explicit.
@@ -113,6 +125,8 @@ volumes:
     name: aix-pg-data
   app_media_cache:
     name: aix-app-media-cache
+  app_uploads:
+    name: aix-app-uploads
   caddy_data:
     name: aix-caddy-data
   caddy_config:
