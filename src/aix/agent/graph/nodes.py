@@ -400,7 +400,7 @@ async def retrieve_node(state: AgentState) -> dict[str, Any]:
         # Reconstruct the plan
         from aix.agent.agents.planner_agent import RetrievalPlan
 
-        plan_data = state.get("plan", {})
+        plan_data = state.get("plan") or {}
         plan = RetrievalPlan(
             query_intent=plan_data.get("query_intent", "lesson_creation"),
             key_concepts=plan_data.get("key_concepts", []),
@@ -496,7 +496,7 @@ async def write_node(state: AgentState) -> dict[str, Any]:
     writer = get_writer()
 
     try:
-        plan_data = state.get("plan", {})
+        plan_data = state.get("plan") or {}
         query_intent = plan_data.get("query_intent", state.get("query_intent", "lesson_creation"))
 
         # Check if this is a revision
@@ -508,6 +508,10 @@ async def write_node(state: AgentState) -> dict[str, Any]:
                 revision_instructions=state.get("revision_instructions", ""),
                 language=state.get("language", "it"),
                 intent=query_intent,
+                # Same field the initial write() gets. Omitting it here meant a
+                # Critic-triggered revision silently dropped whatever the
+                # teacher had uploaded.
+                teacher_provided_context=state.get("teacher_provided_context"),
             )
         else:
             # Initial writing
@@ -531,9 +535,9 @@ async def write_node(state: AgentState) -> dict[str, Any]:
             )
 
             retrieval_result = RetrievalResult(
-                nodes=state.get("retrieved_nodes", []),
-                relationships=state.get("retrieved_relationships", []),
-                recommendations=state.get("recommendations", []),
+                nodes=(state.get("retrieved_nodes") or []),
+                relationships=(state.get("retrieved_relationships") or []),
+                recommendations=(state.get("recommendations") or []),
                 confidence=state.get("retrieval_confidence", "MEDIUM"),
             )
 
@@ -604,7 +608,7 @@ async def critique_node(state: AgentState) -> dict[str, Any]:
         return {"error": "No content generated", "current_step": "error", "approved": False}
 
     # Get query intent for appropriate evaluation
-    plan_data = state.get("plan", {})
+    plan_data = state.get("plan") or {}
     query_intent = plan_data.get("query_intent", state.get("query_intent", "lesson_creation"))
 
     logger.info(f"[Node: Critique] Reviewing content (intent: {query_intent})...")
@@ -615,9 +619,9 @@ async def critique_node(state: AgentState) -> dict[str, Any]:
         from aix.agent.agents.retriever_agent import RetrievalResult
 
         retrieval_result = RetrievalResult(
-            nodes=state.get("retrieved_nodes", []),
-            relationships=state.get("retrieved_relationships", []),
-            recommendations=state.get("recommendations", []),
+            nodes=(state.get("retrieved_nodes") or []),
+            relationships=(state.get("retrieved_relationships") or []),
+            recommendations=(state.get("recommendations") or []),
             confidence=state.get("retrieval_confidence", "MEDIUM"),
         )
 

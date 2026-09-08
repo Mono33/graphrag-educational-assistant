@@ -574,6 +574,7 @@ class WriterAgent:
         revision_instructions: str,
         language: str = "it",
         intent: str = "lesson_creation",
+        teacher_provided_context: Optional[str] = None,
     ) -> str:
         """
         Revise content based on critic feedback.
@@ -584,6 +585,13 @@ class WriterAgent:
             revision_instructions: Specific revision instructions
             language: Output language
             intent: Query intent for selecting the right system prompt
+            teacher_provided_context: The same uploaded-material appendix
+                ``write()`` receives. Without it a revision is produced from
+                the draft and the critique alone, so any constraint the
+                material carried — a syllabus, a class limitation, a passage
+                the lesson had to quote — silently stops applying the moment
+                the Critic asks for a change. Teachers experience that as the
+                assistant forgetting their file.
 
         Returns:
             Revised content
@@ -597,6 +605,14 @@ class WriterAgent:
             critique=critique,
             revision_instructions=revision_instructions,
         )
+
+        # Same appendix ``write()`` uses, so both paths tell the model the same
+        # thing about the teacher's material rather than describing it twice in
+        # two ways.
+        if teacher_provided_context and teacher_provided_context.strip():
+            user_prompt += WRITER_TEACHER_UPLOADS_APPENDIX.format(
+                teacher_provided_context=teacher_provided_context.strip()
+            )
 
         # Get intent-specific system prompt for consistent formatting
         system_prompt, _ = get_writer_prompts(intent)
