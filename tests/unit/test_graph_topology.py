@@ -36,11 +36,28 @@ import pytest
 
 from aix.agent.agents.planner_agent import RetrievalPlan
 from aix.agent.graph import nodes as graph_nodes
-from aix.agent.graph.lesson_planner_graph import build_lesson_planner_graph
+from aix.agent.graph.lesson_planner_graph import (
+    build_lesson_planner_graph,
+    get_compiled_graph,
+    reset_compiled_graph,
+)
 from aix.agent.graph.nodes import should_continue_to_revision, should_retry_retrieval
 from aix.agent.graph.state import create_initial_state
 
 pytestmark = pytest.mark.unit
+
+
+@pytest.fixture(autouse=True)
+def _clean_graph_singleton():
+    """Keep the process-wide compiled graph from leaking between tests.
+
+    The topology is read from the environment at build time, so a graph cached
+    under one value of ``AIX_CORRECTIVE_RAG_ENABLED`` must not survive into a
+    test that sets the other.
+    """
+    reset_compiled_graph()
+    yield
+    reset_compiled_graph()
 
 
 def _edges(compiled) -> set[tuple[str, str]]:
@@ -113,6 +130,84 @@ def test_corrective_rag_topology_still_compiles_and_wires_its_retry_edge(monkeyp
     assert ("grade_retrieval", "write") in edges
     # The direct retrieve → write edge is replaced by the grader hop.
     assert ("retrieve", "write") not in edges
+
+
+# ---------------------------------------------------------------------------
+# 2b. The process-wide compiled-graph singleton
+# ---------------------------------------------------------------------------
+
+
+async def test_compiled_graph_is_built_once_per_process(monkeypatch):
+    """Two runs must share one compiled graph.
+
+    Regression guard for the original defect: the Pipeline cached on
+    ``self._graph``, but callers built a fresh Orchestrator (and Pipeline) per
+    run, so the cache was always cold and ``compile()`` ran for every lesson.
+    """
+    monkeypatch.setattr(
+        "aix.agent.graph.checkpointer.get_checkpointer", AsyncMock(return_value=None)
+    )
+
+    first = await get_compiled_graph()
+    second = await get_compiled_graph()
+
+    assert first is second
+
+
+async def test_concurrent_first_callers_share_one_graph(monkeypatch):
+    """The init lock must make simultaneous cold starts converge on one graph."""
+    import asyncio
+
+    monkeypatch.setattr(
+        "aix.agent.graph.checkpointer.get_checkpointer", AsyncMock(return_value=None)
+    )
+
+    graphs = await asyncio.gather(*(get_compiled_graph() for _ in range(8)))
+
+    assert len({id(g) for g in graphs}) == 1
+
+
+async def test_graph_recompiles_when_the_checkpointer_is_replaced(monkeypatch):
+    """A cached graph must not outlive the saver it closed over.
+
+    ``close_checkpointer()`` tears the saver down and a later call builds a new
+    one. Since the compiled graph holds the old saver, reuse would write
+    checkpoints through a dead connection — so the cache is keyed on saver
+    identity rather than merely on "has a graph been built".
+    """
+    from langgraph.checkpoint.memory import InMemorySaver
+
+    saver_a, saver_b = InMemorySaver(), InMemorySaver()
+
+    monkeypatch.setattr(
+        "aix.agent.graph.checkpointer.get_checkpointer", AsyncMock(return_value=saver_a)
+    )
+    first = await get_compiled_graph()
+    assert await get_compiled_graph() is first, "same saver → same graph"
+
+    monkeypatch.setattr(
+        "aix.agent.graph.checkpointer.get_checkpointer", AsyncMock(return_value=saver_b)
+    )
+    second = await get_compiled_graph()
+
+    assert second is not first, "new saver → rebuilt graph"
+    assert await get_compiled_graph() is second, "and the new one is now cached"
+
+
+async def test_pipeline_and_orchestrator_expose_the_shared_graph(monkeypatch):
+    """The public accessors that replaced the two `noqa: SLF001` reach-throughs."""
+    from aix.agent.orchestrator import AgentOrchestrator
+
+    monkeypatch.setattr(
+        "aix.agent.graph.checkpointer.get_checkpointer", AsyncMock(return_value=None)
+    )
+
+    # Two independently-built orchestrators, as the service layer creates them.
+    first = await AgentOrchestrator(domain="neuro").get_pipeline().get_graph()
+    second = await AgentOrchestrator(domain="udl").get_pipeline().get_graph()
+
+    assert first is second, "domain travels in state, so it must not fork the graph"
+    assert first is await get_compiled_graph()
 
 
 # ---------------------------------------------------------------------------
@@ -353,10 +448,19 @@ async def test_max_revisions_1_disables_the_revision_loop_entirely(monkeypatch):
     ``max_revisions=1`` the first rejection already trips ``count >= max`` and
     the run finishes without the writer ever revising.
 
-    This matters beyond the arithmetic: ``LessonPlannerPipeline`` defaults to
-    ``AIX_MAX_REVISIONS=1``, so on a default deployment the Critic can reject a
-    draft but the Writer is never given the chance to act on it. The test
-    documents the behaviour as it stands — change the default or the
+    The off-by-one interacts with two different defaults, which is worth
+    recording because they disagree:
+
+      * ``LessonPlannerPipeline`` defaults to ``AIX_MAX_REVISIONS`` (1), which
+        by the arithmetic above allows no revision at all;
+      * ``AgentOrchestrator`` hard-codes ``max_revisions=2`` and passes it down
+        when it builds the Pipeline.
+
+    The WebUI and the public API both go through the Orchestrator, so they get
+    2 — one real revision — and ``AIX_MAX_REVISIONS`` never reaches them. It
+    only applies to code constructing a Pipeline directly.
+
+    The test documents the behaviour as it stands: change either default or the
     comparison, and it fails loudly rather than drifting.
     """
     final, agents = await _run_graph(monkeypatch, critiques=[False], max_revisions=1)

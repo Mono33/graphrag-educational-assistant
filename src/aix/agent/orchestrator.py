@@ -134,8 +134,14 @@ class AgentOrchestrator:
             f"language='{language}', max_revisions={max_revisions}"
         )
 
-    def _get_pipeline(self):
-        """Lazy initialization of the pipeline"""
+    def get_pipeline(self):
+        """Return the lazily-built pipeline.
+
+        Public because the WebUI and the public API need the pipeline's
+        compiled graph to drive ``astream`` themselves — ``create_lesson_plan``
+        is atomic and gives them no way to emit per-node events. They used to
+        reach through the private name for it.
+        """
         if self._pipeline is None:
             from aix.agent.graph.lesson_planner_graph import LessonPlannerPipeline
 
@@ -176,7 +182,7 @@ class AgentOrchestrator:
         """
         logger.info(f"[Orchestrator] Creating lesson plan: {query[:50]}...")
 
-        pipeline = self._get_pipeline()
+        pipeline = self.get_pipeline()
 
         try:
             result = await pipeline.run(query, session_id, educational_profile=educational_profile)

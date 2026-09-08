@@ -272,6 +272,21 @@ async def lifespan(app: FastAPI):
                     exc,
                 )
 
+        # Compile the agent graph once, here, instead of on the first lesson.
+        # It depends only on the topology and the checkpointer, so one instance
+        # serves every request; warming it at startup also puts the "Graph
+        # compiled successfully" line in the boot log once, rather than on
+        # every run — which is what made the per-request rebuild invisible.
+        # Best-effort like the checks above: a failure must not stop the API
+        # from booting, and get_compiled_graph() retries on first use.
+        try:
+            from aix.agent.graph.lesson_planner_graph import get_compiled_graph
+
+            await get_compiled_graph()
+            logger.info("✅ Agent graph compiled and cached for this process")
+        except Exception as e:  # noqa: BLE001
+            logger.warning("⚠️ Agent graph warm-up failed (compiles on first run): %s", e)
+
         logger.info("✅ API ready to serve requests")
 
         yield  # Server is running

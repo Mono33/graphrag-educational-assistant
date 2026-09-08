@@ -21,6 +21,7 @@ Both paths return the *same* runnable shape; the only difference is the
 presence of a checkpointer attached to the compiled graph.
 """
 
+import asyncio
 import logging
 import os
 from typing import Any, Optional
@@ -194,6 +195,87 @@ async def build_lesson_planner_graph_async() -> Any:
     return compiled
 
 
+# ---------------------------------------------------------------------------
+# Process-wide compiled-graph singleton
+# ---------------------------------------------------------------------------
+#
+# The graph depends only on the topology and the checkpointer — never on
+# ``domain`` / ``language`` / ``max_revisions``, which travel in AgentState.
+# So one compiled instance serves every request in the process.
+#
+# Before this existed, ``LessonPlannerPipeline`` cached on ``self._graph`` while
+# callers built a fresh ``AgentOrchestrator`` (and therefore a fresh Pipeline)
+# per run: the cache was always empty and ``compile()`` ran for every lesson.
+#
+# Invalidation is by saver identity rather than an explicit reset hook. The
+# compiled graph closes over the checkpointer it was built with, so if
+# ``close_checkpointer()`` tears that saver down and a later call initialises a
+# new one, a cached graph would be holding a dead saver. Comparing identity on
+# each call makes that self-healing without the checkpointer module needing to
+# know graphs exist.
+
+_COMPILED_GRAPH: Optional[Any] = None
+_COMPILED_WITH_SAVER: Optional[Any] = None
+_GRAPH_LOCK: asyncio.Lock = asyncio.Lock()
+
+
+async def get_compiled_graph() -> Any:
+    """Return the process-wide compiled graph, building it on first use.
+
+    Concurrent first-callers are serialised on ``_GRAPH_LOCK`` and the winner's
+    instance is shared, mirroring ``checkpointer.get_checkpointer()``.
+
+    Recompiles only when the live checkpointer is not the one the cached graph
+    was compiled against — normally never, and in tests whenever
+    ``close_checkpointer()`` has run in between.
+    """
+    global _COMPILED_GRAPH, _COMPILED_WITH_SAVER
+
+    from aix.agent.graph.checkpointer import get_checkpointer
+
+    saver = await get_checkpointer()
+
+    # Fast path: `is` rather than `==` — we care whether it is the same live
+    # object, not whether two savers look alike.
+    if _COMPILED_GRAPH is not None and _COMPILED_WITH_SAVER is saver:
+        return _COMPILED_GRAPH
+
+    async with _GRAPH_LOCK:
+        # Re-check inside the lock; another coroutine may have won the race.
+        if _COMPILED_GRAPH is not None and _COMPILED_WITH_SAVER is saver:
+            return _COMPILED_GRAPH
+
+        workflow = _build_workflow()
+        if saver is not None:
+            logger.info(
+                "[LessonPlannerGraph] Compiling process graph with %s checkpointer...",
+                type(saver).__name__,
+            )
+            compiled = workflow.compile(checkpointer=saver)
+        else:
+            logger.info(
+                "[LessonPlannerGraph] Compiling process graph without checkpointer (degraded)..."
+            )
+            compiled = workflow.compile()
+
+        _COMPILED_GRAPH = compiled
+        _COMPILED_WITH_SAVER = saver
+        logger.info("[LessonPlannerGraph] Graph compiled successfully (once per process)")
+        return compiled
+
+
+def reset_compiled_graph() -> None:
+    """Drop the cached graph so the next :func:`get_compiled_graph` rebuilds.
+
+    Needed by tests that change the topology through
+    ``AIX_CORRECTIVE_RAG_ENABLED``: the flag is read at build time, so a graph
+    cached under the old value would otherwise survive the change.
+    """
+    global _COMPILED_GRAPH, _COMPILED_WITH_SAVER
+    _COMPILED_GRAPH = None
+    _COMPILED_WITH_SAVER = None
+
+
 class LessonPlannerPipeline:
     """
     High-level interface for the lesson planner pipeline.
@@ -235,20 +317,23 @@ class LessonPlannerPipeline:
             self._graph = build_lesson_planner_graph()
         return self._graph
 
-    async def _get_graph_async(self) -> Any:
-        """
-        Lazy initialisation of the compiled graph WITH the LangGraph
-        checkpointer attached when available (CORE 2 #10.2).
+    async def get_graph(self) -> Any:
+        """Return the compiled graph with the checkpointer attached.
 
-        Caches on ``self._graph`` like the sync sibling — first caller
-        wins; subsequent callers receive the same compiled instance.
-        Calling this on a pipeline whose ``self._graph`` was already
-        populated by ``_get_graph()`` will re-use the no-checkpointer
-        graph; in practice this only happens in tests.
+        Public because streaming callers need the graph itself rather than
+        :meth:`run`, which is atomic: the WebUI and the public API both drive
+        ``astream`` so they can emit per-node events. They used to reach through
+        ``_get_graph_async`` for it.
+
+        Delegates to the process-wide singleton, so the per-instance cache this
+        used to keep is gone — it never helped anyway, because callers build a
+        fresh Pipeline per run.
         """
-        if self._graph is None:
-            self._graph = await build_lesson_planner_graph_async()
-        return self._graph
+        return await get_compiled_graph()
+
+    async def _get_graph_async(self) -> Any:
+        """Deprecated alias for :meth:`get_graph`, kept for existing callers."""
+        return await self.get_graph()
 
     async def run(
         self,
@@ -296,7 +381,7 @@ class LessonPlannerPipeline:
         # Get compiled graph (with checkpointer when available — CORE 2 #10.2).
         # The async path is the canonical one; the sync ``_get_graph()`` is
         # kept as a backward-compat seam for legacy callers only.
-        graph = await self._get_graph_async()
+        graph = await self.get_graph()
 
         # When a checkpointer is attached we MUST pass a thread_id config,
         # otherwise LangGraph raises. Generate a per-invocation UUID when

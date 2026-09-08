@@ -1324,14 +1324,14 @@ async def run_agent_stream(
             domain=lesson.domain or "neuro",
             language=_detect_language(raw_query),
         )
-        pipeline = orchestrator._get_pipeline()  # noqa: SLF001 — intentional seam
+        pipeline = orchestrator.get_pipeline()
 
         # CORE 2 #10.2 — compile the graph with the AsyncSqliteSaver
         # checkpointer when available. Falls back to the no-checkpointer
         # path on graceful degradation (langgraph-checkpoint-sqlite missing,
         # disk write error, etc.) so single-turn behaviour is preserved
         # in degraded environments.
-        graph = await pipeline._get_graph_async()  # noqa: SLF001
+        graph = await pipeline.get_graph()
 
         # Thread config — required by LangGraph whenever a checkpointer
         # is attached. ``str(lesson.id)`` is the canonical thread_id so
@@ -1636,13 +1636,13 @@ async def stream_agent_events(
         from aix.agent.orchestrator import AgentOrchestrator
 
         orchestrator = AgentOrchestrator(domain=domain, language=language)
-        pipeline = orchestrator._get_pipeline()  # noqa: SLF001 — same seam as webui
+        pipeline = orchestrator.get_pipeline()
 
         # CORE 2 #10.2 — checkpointed graph. Public-API callers that pass
         # a stable ``session_id`` get multi-turn memory across requests;
         # callers that don't get an ephemeral per-call thread (functionally
         # identical to the pre-#10 behaviour — single-turn, no shared state).
-        graph = await pipeline._get_graph_async()  # noqa: SLF001
+        graph = await pipeline.get_graph()
         effective_thread_id = session_id or f"ephemeral-{_uuid.uuid4()}"
         run_config = thread_config(effective_thread_id)
 
