@@ -27,8 +27,10 @@ import os
 from typing import Any, Optional
 
 from langgraph.graph import END, StateGraph
+from langgraph.types import RetryPolicy
 
 from aix.agent.graph.nodes import (
+    TRANSIENT_LLM_ERRORS,
     _corrective_rag_enabled,
     critique_node,
     # CORE 2 #9 — Corrective RAG (Retrieval Grading). Imported eagerly so
@@ -44,6 +46,30 @@ from aix.agent.graph.nodes import (
 from aix.agent.graph.state import AgentInput, AgentState, create_initial_state
 
 logger = logging.getLogger(__name__)
+
+
+# Outer half of the LLM retry budget; the inner half lives on the OpenAI client
+# (see ``OpenAIConfig``). Two attempts here on top of two there bounds a node at
+# four calls — where stacking the SDK's default three under a three-attempt
+# policy would have allowed nine, each able to run to the read timeout.
+#
+# It earns a place above the client's retry because it re-enters the node: the
+# prompt is rebuilt and the response re-parsed, rather than the same HTTP
+# request being replayed.
+#
+# ``retry_on`` is the same tuple the nodes re-raise, so the two cannot disagree
+# about what counts as transient. ``grade_retrieval`` is deliberately excluded:
+# it is an optional quality gate that already degrades to ``grade=relevant``
+# rather than failing a run, and retrying it would spend latency on a node
+# designed never to matter that much.
+LLM_RETRY_POLICY = RetryPolicy(
+    retry_on=TRANSIENT_LLM_ERRORS,
+    max_attempts=2,
+    initial_interval=1.0,
+    backoff_factor=2.0,
+    max_interval=10.0,
+    jitter=True,
+)
 
 
 def _build_workflow() -> StateGraph:
@@ -81,10 +107,10 @@ def _build_workflow() -> StateGraph:
     workflow = StateGraph(AgentState, input_schema=AgentInput)
 
     # Always-on agent nodes (pre-#9 topology)
-    workflow.add_node("plan", plan_node)
+    workflow.add_node("plan", plan_node, retry_policy=LLM_RETRY_POLICY)
     workflow.add_node("retrieve", retrieve_node)
-    workflow.add_node("write", write_node)
-    workflow.add_node("critique", critique_node)
+    workflow.add_node("write", write_node, retry_policy=LLM_RETRY_POLICY)
+    workflow.add_node("critique", critique_node, retry_policy=LLM_RETRY_POLICY)
 
     workflow.set_entry_point("plan")
     workflow.add_edge("plan", "retrieve")

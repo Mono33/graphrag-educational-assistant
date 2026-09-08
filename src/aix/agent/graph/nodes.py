@@ -10,6 +10,13 @@ import os
 import re
 from typing import Any
 
+from openai import (
+    APIConnectionError,
+    APITimeoutError,
+    InternalServerError,
+    RateLimitError,
+)
+
 from aix.agent.agents.critic_agent import CriticAgent
 from aix.agent.agents.planner_agent import PlannerAgent
 from aix.agent.agents.retriever_agent import RetrieverAgent
@@ -82,6 +89,30 @@ def _sanitize(obj: Any) -> Any:
 
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Transient LLM failures
+# ---------------------------------------------------------------------------
+#
+# The LLM nodes catch everything and turn it into an error state, which is the
+# right default — a bad prompt or a malformed response should end the run
+# cleanly rather than crash it. But it also means nothing ever propagates, so
+# LangGraph's RetryPolicy would never fire: it only sees exceptions that leave
+# the node.
+#
+# These four are the ones worth another attempt, and they are re-raised so the
+# node-level RetryPolicy in ``lesson_planner_graph`` can act on them. The same
+# tuple is the policy's ``retry_on``, so the two cannot drift apart.
+#
+# The outer retry rebuilds the prompt rather than replaying the same HTTP
+# request, which is why it earns its place on top of the client's own retry
+# (see ``OpenAIConfig`` for how the total budget is split).
+TRANSIENT_LLM_ERRORS: tuple[type[Exception], ...] = (
+    RateLimitError,  # 429 — provider throttling
+    APITimeoutError,  # the request outlived AIX_LLM_TIMEOUT_S
+    APIConnectionError,  # DNS / TLS / socket
+    InternalServerError,  # 5xx from the provider
+)
 
 # Initialize agents (lazy loading).
 #
@@ -336,6 +367,11 @@ async def plan_node(state: AgentState) -> dict[str, Any]:
             updates["language"] = effective_language
         return updates
 
+    except TRANSIENT_LLM_ERRORS:
+        # Re-raised so the node's RetryPolicy sees it. If the budget is
+        # spent it escapes to the caller, which reports a failed run —
+        # better than the empty 'done' an error state used to produce.
+        raise
     except Exception as e:
         logger.error(f"[Node: Plan] Error: {e}")
         return {"error": str(e), "current_step": "error"}
@@ -537,6 +573,11 @@ async def write_node(state: AgentState) -> dict[str, Any]:
 
         return {"lesson_plan_draft": lesson_plan, "current_step": "write_complete"}
 
+    except TRANSIENT_LLM_ERRORS:
+        # Re-raised so the node's RetryPolicy sees it. If the budget is
+        # spent it escapes to the caller, which reports a failed run —
+        # better than the empty 'done' an error state used to produce.
+        raise
     except Exception as e:
         logger.error(f"[Node: Write] Error: {e}")
         return {"error": str(e), "current_step": "error"}
@@ -611,6 +652,11 @@ async def critique_node(state: AgentState) -> dict[str, Any]:
 
         return updates
 
+    except TRANSIENT_LLM_ERRORS:
+        # Re-raised so the node's RetryPolicy sees it. If the budget is
+        # spent it escapes to the caller, which reports a failed run —
+        # better than the empty 'done' an error state used to produce.
+        raise
     except Exception as e:
         logger.error(f"[Node: Critique] Error: {e}")
         return {"error": str(e), "current_step": "error"}

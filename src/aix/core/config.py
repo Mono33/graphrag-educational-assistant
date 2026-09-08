@@ -34,17 +34,56 @@ class OpenAIConfig:
     temperature: float = 0.1
     max_tokens: int = 500
 
+    # ------------------------------------------------------------------
+    # Timeout and retry budget
+    # ------------------------------------------------------------------
+    #
+    # Both were left at the SDK defaults, which are wrong for an interactive
+    # request: a read timeout of 600s with max_retries=2 means one hung LLM
+    # call can hold a lesson for up to half an hour, while the run registry's
+    # heartbeat keeps reporting it healthy the whole time.
+    #
+    # These are set here so the whole budget is visible in one place. The agent
+    # graph adds a second, outer layer (RetryPolicy on the LLM nodes) which
+    # rebuilds the prompt rather than replaying the same request, so the client
+    # keeps only one retry: worst case per node is 2 client attempts x 2 node
+    # attempts = 4 calls, not the 9 that stacking three-and-three would give.
+
+    def _timeout_seconds(self) -> float:
+        raw = os.getenv("AIX_LLM_TIMEOUT_S", "120")
+        try:
+            return max(5.0, float(raw))
+        except ValueError:
+            return 120.0
+
+    def _max_retries(self) -> int:
+        raw = os.getenv("AIX_LLM_MAX_RETRIES", "1")
+        try:
+            return max(0, min(int(raw), 5))
+        except ValueError:
+            return 1
+
     def get_client(self):
         """Return a configured OpenAI-compatible client (sync)"""
         from openai import OpenAI
 
-        return OpenAI(api_key=self.api_key, base_url=self.base_url)
+        return OpenAI(
+            api_key=self.api_key,
+            base_url=self.base_url,
+            timeout=self._timeout_seconds(),
+            max_retries=self._max_retries(),
+        )
 
     def get_async_client(self):
         """Return a configured OpenAI-compatible client (async)"""
         from openai import AsyncOpenAI
 
-        return AsyncOpenAI(api_key=self.api_key, base_url=self.base_url)
+        return AsyncOpenAI(
+            api_key=self.api_key,
+            base_url=self.base_url,
+            timeout=self._timeout_seconds(),
+            max_retries=self._max_retries(),
+        )
 
     def is_reasoning_model(self) -> bool:
         """True for models that use internal chain-of-thought / thinking tokens.
