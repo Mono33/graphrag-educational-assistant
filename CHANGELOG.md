@@ -1,5 +1,53 @@
 # Changelog — GraphRAG AixLearning
 
+**Date:** 8 September 2026  
+**Session scope:** Foundations for advanced inputs and exports — Fase 0 of
+`docs/product/Advanced_Input_and_Export_Architecture.md`
+
+---
+
+## 12. Fase 0 foundations — 🟡 IN PROGRESS (PR 0 and PR 0-bis done)
+
+**Why:** The guide's Fase 0 has to land before any of the paperclip work, and
+three things it assumed were already true were not: `pip install -e ".[dev]"`
+failed on an unsatisfiable dependency set, the CI was red, and nothing tested
+the agent graph the later phases restructure.
+
+**What landed**
+
+- **Migrations (PR 0).** The schema evolved through `create_all` plus a
+  hand-written `ALTER TABLE` list guarded by `if not sqlite: return`, so on
+  Postgres none of it ever ran. Alembic now owns the schema and applies it at
+  startup — the deploy workflow builds an image and stops there, so a migration
+  needing a deploy step would never run. An existing database is adopted with
+  `stamp` only if it already matches the models; if it does not, nothing is
+  changed and the exact gap is logged.
+- **Teacher attachments survive a deploy (PR 0).** A volume for
+  `data/webui/uploads`, plus the image-side directory without which the volume
+  would come up root-owned and every upload would fail.
+- **Attachments survive a revision (PR 0-bis).** `WriterAgent.revise()` never
+  received `teacher_provided_context`, so a Critic-triggered revision silently
+  dropped whatever the teacher had uploaded.
+- **The graph got a safety net.** 243 tests where there were 88: topology,
+  both routing functions, and end-to-end runs. Plus §8.9 of the revised guide —
+  the reducers without which the parallel `PrivateMaterialRetriever` of Fase 2
+  fails deterministically on its first run.
+- **Hygiene that was blocking the gates.** Ruff pinned exactly (the format
+  check was drifting on its own), the dependency set made installable again,
+  the graph compiled once per process instead of once per lesson, and an
+  explicit LLM timeout in place of the SDK's 600-second default.
+
+**Also:** `/api/v1/health` now reports `code_version` and `db_revision`, so
+which build and which schema are live is answerable without VM access.
+
+**Open:** PR 1 (CSRF), PR 2 (storage + models), PR 3 (job queue). The six
+interaction decisions in §6.4 have an owner but no answers; U1–U3 block Fase 2.
+
+**Decisions:** `docs/product/Decisioni_Gate_Fase_0.md` — all eight closed with
+Louis on 8 September, C.1 complete.
+
+---
+
 **Date:** 26–27 April 2026  
 **Session scope:** Mirror Stack webui (#6.6 P0–P3), Public Agent API (#7), MCP Tool Servers (#20)
 
