@@ -129,6 +129,19 @@
     the per-lesson EventSource when it finds one.
   #}
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+  {# ── Fase 0 · PR 1 — the writer stream is untrusted too ─────────────────
+     The stream pane assigns marked's output to innerHTML, and marked has had
+     no sanitiser of its own since v5. The tokens come from the LLM, which is
+     writing from a corpus and from files the teacher uploaded, so raw HTML can
+     reach the page here just as it can in the finished lesson — which the
+     server now filters in ``aix.webui.sanitize``.
+
+     Pinned, unlike marked above: this one is a security control, and a
+     security control that silently becomes a different version overnight is
+     not one. (marked's floating URL is worth pinning too, separately.)
+  #}
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.4/dist/purify.min.js"></script>
   <script>
   (function () {
     var _activeStreams = {};
@@ -150,8 +163,11 @@
       function scheduleRender() {
         if (renderTimer) return;
         renderTimer = setTimeout(function () {
-          if (window.marked) {
-            streamEl.innerHTML = marked.parse(mdBuffer);
+          // Both, or neither. Rendering markdown without the sanitiser would
+          // put unfiltered LLM output into innerHTML, so a CDN that failed to
+          // answer degrades to plain text rather than to an open door.
+          if (window.marked && window.DOMPurify) {
+            streamEl.innerHTML = DOMPurify.sanitize(marked.parse(mdBuffer));
           } else {
             streamEl.textContent = mdBuffer;
           }

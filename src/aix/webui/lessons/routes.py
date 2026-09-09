@@ -110,6 +110,7 @@ from aix.webui.lessons.display import lesson_to_row
 from aix.webui.lessons.models import Lesson, LessonMessage, SavedProfile
 from aix.webui.lessons.schemas import form_to_profile_dict, profile_to_form_values
 from aix.webui.lessons.uploads import delete_upload, save_upload
+from aix.webui.sanitize import sanitize_html
 
 logger = logging.getLogger(__name__)
 
@@ -2414,8 +2415,17 @@ _MARKDOWN_EXTENSIONS = ["fenced_code", "tables", "sane_lists"]
 
 
 def _markdown_to_html(text: str) -> str:
-    """Render ``text`` as HTML using our pinned extension set."""
-    return md.markdown(text or "", extensions=_MARKDOWN_EXTENSIONS, output_format="html5")
+    """Render ``text`` as HTML using our pinned extension set, then sanitise it.
+
+    The sanitiser is here and not at the four call sites because this is the
+    only function that produces the HTML those sites mark ``| safe``. The
+    Markdown it renders is written by an LLM, from a corpus, from the teacher's
+    typing and from text extracted out of files they upload — none of which is
+    ours — and python-markdown passes raw HTML straight through.
+    """
+    return sanitize_html(
+        md.markdown(text or "", extensions=_MARKDOWN_EXTENSIONS, output_format="html5")
+    )
 
 
 def _render_partial(request: Request, template_name: str, ctx: dict) -> str:

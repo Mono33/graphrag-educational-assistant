@@ -70,6 +70,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aix.core.ai_marking import ensure_marking
+from aix.webui.errors import report as _report_failure
 
 logger = logging.getLogger(__name__)
 
@@ -1405,8 +1406,11 @@ async def run_agent_stream(
             "[webui.agent] setup FAILED lesson_id=%s",
             lesson.id,
         )
-        msg = str(exc) or exc.__class__.__name__
-        short_msg = msg[:480] + ("…" if len(msg) > 480 else "")
+        # str(exc) is written for whoever reads the logs — it carries the
+        # failing SQL, the database host, the container path, the URL that was
+        # called — and this string is rendered in the chat. ``report`` logs the
+        # exception with a code and returns a sentence that says what to do.
+        short_msg = str(_report_failure(exc))
         try:
             lesson.status = "error"
             lesson.error_message = short_msg
@@ -1594,8 +1598,11 @@ async def run_agent_stream(
             lesson.id,
             time.monotonic() - started_at,
         )
-        msg = str(exc) or exc.__class__.__name__
-        short_msg = msg[:480] + ("…" if len(msg) > 480 else "")
+        # str(exc) is written for whoever reads the logs — it carries the
+        # failing SQL, the database host, the container path, the URL that was
+        # called — and this string is rendered in the chat. ``report`` logs the
+        # exception with a code and returns a sentence that says what to do.
+        short_msg = str(_report_failure(exc))
         try:
             lesson.status = "error"
             lesson.error_message = short_msg
@@ -1729,8 +1736,11 @@ async def stream_agent_events(
         )
     except Exception as exc:  # noqa: BLE001
         logger.exception("[api.agent] setup FAILED session_id=%s", session_id)
-        msg = str(exc) or exc.__class__.__name__
-        short_msg = msg[:480] + ("…" if len(msg) > 480 else "")
+        # str(exc) is written for whoever reads the logs — it carries the
+        # failing SQL, the database host, the container path, the URL that was
+        # called — and this string is rendered in the chat. ``report`` logs the
+        # exception with a code and returns a sentence that says what to do.
+        short_msg = str(_report_failure(exc))
         yield StreamEvent(kind="error", error=short_msg)
         return
 
@@ -1891,6 +1901,9 @@ async def stream_agent_events(
             session_id,
             time.monotonic() - started_at,
         )
-        msg = str(exc) or exc.__class__.__name__
-        short_msg = msg[:480] + ("…" if len(msg) > 480 else "")
+        # str(exc) is written for whoever reads the logs — it carries the
+        # failing SQL, the database host, the container path, the URL that was
+        # called — and this string is rendered in the chat. ``report`` logs the
+        # exception with a code and returns a sentence that says what to do.
+        short_msg = str(_report_failure(exc))
         yield StreamEvent(kind="error", error=short_msg)

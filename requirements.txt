@@ -44,6 +44,13 @@ alembic>=1.13,<2.0
 # into the stream pane without a JS markdown parser. `extras` enables
 # fenced code, tables, GFM-style footnotes — useful for richer lesson plans.
 markdown>=3.5.0
+# HTML sanitiser for that rendered markdown (Fase 0 · PR 1). python-markdown
+# passes raw HTML through by design — it dropped safe_mode in 3.0 and its own
+# docs say to sanitise the output — and the lesson body is written by an LLM
+# from a corpus and from files the teacher uploads, so it is not trusted input.
+# nh3 rather than bleach: bleach is in maintenance mode and pulls html5lib,
+# nh3 is the maintained binding to ammonia and needs nothing else.
+nh3>=0.2.18
 # WebUI P3 — PDF text extraction for teacher uploads (explicit pin; also common transitive dep).
 pypdf>=5.0.0
 
