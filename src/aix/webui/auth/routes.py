@@ -42,6 +42,7 @@ from aix.webui.auth.backend import (
     cookie_transport,
     get_jwt_strategy,
 )
+from aix.webui.auth.csrf import token_for as _csrf_token_for
 from aix.webui.auth.dependencies import optional_current_user
 from aix.webui.auth.manager import UserManager, get_user_manager
 from aix.webui.auth.models import User
@@ -54,6 +55,13 @@ logger = logging.getLogger(__name__)
 _PACKAGE_DIR = Path(__file__).resolve().parents[1]  # …/src/aix/webui
 _TEMPLATES_DIR = _PACKAGE_DIR / "templates"
 templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
+
+# The webui keeps three Jinja environments over the same templates directory
+# (``aix.webui.routes``, ``aix.webui.lessons.routes``, ``aix.webui.auth.routes``),
+# so the CSRF global has to be registered on each of them. A global rather than
+# a per-route context entry: a page added without the token would fail its first
+# POST with a 403, and the author would find out in production.
+templates.env.globals["csrf_token"] = _csrf_token_for
 
 
 router = APIRouter(prefix="/auth", tags=["webui-auth"])

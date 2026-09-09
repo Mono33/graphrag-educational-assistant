@@ -379,6 +379,19 @@ app.add_middleware(
 )
 logger.info("✅ CORS configured: origins=%s", _cors_origins)
 
+# Fase 0 · PR 1 — CSRF on the WebUI's mutating requests. Guards /webui and
+# /auth; /api/v1 is deliberately left out, because it is called by the DEV team
+# with its own credentials rather than with a browser cookie, so there is no
+# ambient authority there for a third-party page to borrow. Soft-loaded like
+# the routers below: a failure to import must not take the application down.
+try:
+    from aix.webui.auth.csrf import CSRFMiddleware
+
+    app.add_middleware(CSRFMiddleware)
+    logger.info("✅ CSRF protection active on /webui and /auth")
+except Exception as exc:  # noqa: BLE001
+    logger.warning("⚠️ CSRF middleware not loaded: %s", exc)
+
 # Include routers
 app.include_router(context_router, prefix="/api/v1")
 

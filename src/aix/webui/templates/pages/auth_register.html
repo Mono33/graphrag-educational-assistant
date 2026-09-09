@@ -24,6 +24,8 @@
 
   <wa-card>
     <form method="post" action="/auth/register" class="flex flex-col gap-4">
+      {# A plain form cannot set a header, so the token travels as a field. #}
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
       <input type="hidden" name="next" value="{{ next }}">
 
       <wa-input

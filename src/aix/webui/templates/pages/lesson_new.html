@@ -139,6 +139,9 @@
     #}
     <form method="post" action="/webui/lesson" class="space-y-6" id="lesson-new-form">
 
+      {# A plain form cannot set a header, so the token travels as a field. #}
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+
       {# ─── Section 1: Lezione ─────────────────────────────────────────── #}
       <section id="section-lezione" class="aix-form-section aix-scroll-section">
         <header class="aix-form-section-header">

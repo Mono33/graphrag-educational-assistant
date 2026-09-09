@@ -44,6 +44,27 @@
     and uses the v2 ``api.swap`` signature.
   #}
   <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+
+  {# ── Fase 0 · PR 1 — CSRF token on every htmx request ──────────────────
+     One listener instead of an attribute on each of the ~27 hx-post and
+     hx-delete call sites: an attribute has to be remembered, and the first
+     one forgotten is a 403 the author discovers in production. htmx fires
+     configRequest before every request it makes, including the ones inside
+     SSE-swapped fragments, so a card that arrives mid-stream is covered too.
+
+     The token is read from the cookie rather than printed into the page: the
+     server refreshes that cookie when a session begins or ends, and a value
+     baked into the HTML would go stale on a page left open across a login.
+  #}
+  <script>
+    // On ``document``, not ``document.body``: this script runs in <head>,
+    // where there is no body yet. htmx events bubble, so it arrives all the same.
+    document.addEventListener("htmx:configRequest", function (event) {
+      if (["GET", "HEAD", "OPTIONS"].indexOf(event.detail.verb.toUpperCase()) !== -1) return;
+      var match = document.cookie.match(/(?:^|;\s*)aix_csrf=([^;]*)/);
+      if (match) event.detail.headers["X-CSRF-Token"] = decodeURIComponent(match[1]);
+    });
+  </script>
   <script src="https://cdn.jsdelivr.net/npm/htmx-ext-sse@2.2.4"></script>
 
   <script defer

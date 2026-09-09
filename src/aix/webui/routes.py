@@ -38,6 +38,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aix.webui.auth import router as auth_router
+from aix.webui.auth.csrf import token_for as _csrf_token_for
 from aix.webui.auth.dependencies import optional_current_user
 from aix.webui.auth.models import User
 from aix.webui.db import get_async_session
@@ -133,6 +134,13 @@ _PACKAGE_DIR = Path(__file__).resolve().parent
 _TEMPLATES_DIR = _PACKAGE_DIR / "templates"
 
 templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
+
+# The webui keeps three Jinja environments over the same templates directory
+# (``aix.webui.routes``, ``aix.webui.lessons.routes``, ``aix.webui.auth.routes``),
+# so the CSRF global has to be registered on each of them. A global rather than
+# a per-route context entry: a page added without the token would fail its first
+# POST with a 403, and the author would find out in production.
+templates.env.globals["csrf_token"] = _csrf_token_for
 
 # Top-level webui router. Sub-routers carry their own prefixes (/auth, /webui)
 # so we can mount everything via a single ``app.include_router(router)`` call
