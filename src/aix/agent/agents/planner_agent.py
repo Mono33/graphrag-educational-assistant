@@ -9,11 +9,15 @@ import json
 import logging
 import re
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 
 from openai import AsyncOpenAI
 
-from aix.agent.prompts.planner_prompt import PLANNER_SYSTEM_PROMPT, PLANNER_USER_TEMPLATE
+from aix.agent.prompts.planner_prompt import (
+    PLANNER_FOLLOWUP_TEMPLATE,
+    PLANNER_SYSTEM_PROMPT,
+    PLANNER_USER_TEMPLATE,
+)
 from aix.core.concurrency import guarded_chat_completion
 from aix.core.config import config as app_config
 from aix.core.config import extract_response_content
@@ -51,6 +55,67 @@ def _extract_json(content: str) -> dict:
     raise json.JSONDecodeError("No valid JSON found in LLM response", content, 0)
 
 
+# ---------------------------------------------------------------------------
+# T6 — formatting the thread context the planner is given on a follow-up turn
+# ---------------------------------------------------------------------------
+
+_HISTORY_TURNS = 6
+_HISTORY_CHARS = 400
+_CORPUS_NAMES = 40
+
+
+def _format_history(history: Optional[list[dict[str, str]]]) -> str:
+    """The last few turns, one per line, each cut to a readable length.
+
+    Only the tail matters for this decision — whether *this* turn needs new
+    evidence — and the whole thread would crowd out the query itself in a
+    prompt the planner reads top to bottom.
+    """
+    turns = [t for t in (history or []) if isinstance(t, dict) and t.get("content")]
+    if not turns:
+        return "(none)"
+
+    lines = []
+    for turn in turns[-_HISTORY_TURNS:]:
+        content = str(turn["content"]).strip().replace("\n", " ")
+        if len(content) > _HISTORY_CHARS:
+            content = content[:_HISTORY_CHARS] + "..."
+        lines.append(f"- {turn.get('role', 'user')}: {content}")
+    return "\n".join(lines)
+
+
+def _format_corpus(names: Optional[list[str]]) -> str:
+    """The names already retrieved, comma separated and capped.
+
+    Capped because a wide first turn can bring back dozens of nodes, and past
+    a point the list stops informing the verdict and starts diluting it.
+    """
+    clean = [str(n).strip() for n in (names or []) if n and str(n).strip()]
+    if not clean:
+        return "(nothing retrieved yet)"
+
+    shown = clean[:_CORPUS_NAMES]
+    suffix = f", and {len(clean) - len(shown)} more" if len(clean) > len(shown) else ""
+    return ", ".join(shown) + suffix
+
+
+def _as_bool(value: Any) -> Optional[bool]:
+    """Read the planner's verdict without trusting its JSON typing.
+
+    Returns None for anything unrecognised, which is the same signal as an
+    absent key: fall back to comparing concepts rather than guess.
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in ("true", "yes", "1"):
+            return True
+        if lowered in ("false", "no", "0"):
+            return False
+    return None
+
+
 @dataclass
 class RetrievalPlan:
     """Structured plan for what to retrieve"""
@@ -83,6 +148,13 @@ class RetrievalPlan:
         None  # ISO 2-letter ("it", "en", "es", "fr"); None = let caller fall back
     )
     language_confidence: str = "LOW"  # "HIGH" | "MEDIUM" | "LOW"
+
+    # T6 — conditional retrieval. Set only when the caller put the thread's
+    # context in front of the planner (see ``PLANNER_FOLLOWUP_TEMPLATE``); a
+    # first turn, or a planner that ignored the two keys, leaves this None and
+    # the router falls back to comparing concepts.
+    requires_new_retrieval: Optional[bool] = None
+    retrieval_reason: Optional[str] = None
 
     @property
     def is_lesson_intent(self) -> bool:
@@ -146,6 +218,8 @@ class PlannerAgent:
         domain: str = "neuro",
         language: str = "it",
         pedagogical_intent: Optional[str] = None,
+        conversation_history: Optional[list[dict[str, str]]] = None,
+        existing_corpus: Optional[list[str]] = None,
     ) -> RetrievalPlan:
         """
         Analyze a teacher query and create a retrieval plan.
@@ -154,6 +228,12 @@ class PlannerAgent:
             query: Teacher's natural language query
             domain: Knowledge domain ("neuro" or "udl")
             language: Response language ("it" or "en")
+            conversation_history: Earlier turns of the thread. Passing it marks
+                this as a follow-up and asks the planner for a
+                ``requires_new_retrieval`` verdict; omitting it keeps the
+                prompt byte-identical to a first turn.
+            existing_corpus: Names of what the thread already retrieved, which
+                is what the verdict is judged against.
 
         Returns:
             RetrievalPlan with structured search parameters
@@ -183,6 +263,19 @@ class PlannerAgent:
                 f"Generate lesson objectives that fulfill this intent before mapping "
                 f"concepts to the knowledge graph.\n\n"
             ) + user_prompt
+
+        # T6: give the planner the thread it is answering inside. Prepended
+        # last so it reads first — whether this is a follow-up changes how
+        # everything below it should be read.
+        is_followup = bool(conversation_history)
+        if is_followup:
+            user_prompt = (
+                PLANNER_FOLLOWUP_TEMPLATE.format(
+                    history=_format_history(conversation_history),
+                    corpus=_format_corpus(existing_corpus),
+                )
+                + user_prompt
+            )
 
         try:
             # CORE 2 #11a — JSON parse hardening (2026-05-09):
@@ -266,6 +359,12 @@ class PlannerAgent:
                 # Point (a): Response language detection
                 response_language=response_language,
                 language_confidence=language_confidence,
+                # Only trusted when the question was actually asked. Reading it
+                # off a first-turn response would be reading a hallucination.
+                requires_new_retrieval=(
+                    _as_bool(plan_data.get("requires_new_retrieval")) if is_followup else None
+                ),
+                retrieval_reason=plan_data.get("retrieval_reason") if is_followup else None,
             )
 
             # Enhanced logging with scope status
@@ -283,6 +382,13 @@ class PlannerAgent:
                 f"{len(plan.search_queries)} queries, "
                 f"concepts: {plan.key_concepts[:3]}..."
             )
+
+            if plan.requires_new_retrieval is not None:
+                logger.info(
+                    "[PlannerAgent] follow-up turn: requires_new_retrieval=%s (%s)",
+                    plan.requires_new_retrieval,
+                    plan.retrieval_reason or "no reason given",
+                )
 
             if plan.needs_external_apis:
                 logger.info(f"[PlannerAgent] 🌐 External APIs needed for: {subject_concepts}")

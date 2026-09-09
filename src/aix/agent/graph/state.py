@@ -172,6 +172,11 @@ class AgentState(TypedDict, total=False):
     target_grade: Optional[str]  # Target grade level (if detected)
     key_concepts: Optional[list[str]]  # Key concepts to search for
     search_queries: Optional[list[str]]  # Queries to run on GraphRAG
+    # T6 — the planner's own answer to "does this turn need a new search?".
+    # ``None`` on a first turn, and whenever the follow-up context was not put
+    # in front of the planner at all (flag off, or no history): that is the
+    # signal that tells the router to fall back to comparing concepts.
+    requires_new_retrieval: Optional[bool]
 
     # NEW: Scope Detection (Phase A - Out-of-domain handling)
     scope_status: Optional[str]  # "in_scope", "partial_scope", "out_of_scope"
@@ -316,6 +321,7 @@ class AgentInput(TypedDict, total=False):
     target_grade: Optional[str]
     key_concepts: Optional[list[str]]
     search_queries: Optional[list[str]]
+    requires_new_retrieval: Optional[bool]
     scope_status: Optional[str]
     scope_confidence: Optional[float]
     subject_concepts: Optional[list[str]]
@@ -430,6 +436,7 @@ def create_initial_state(
         target_grade=None,
         key_concepts=None,
         search_queries=None,
+        requires_new_retrieval=None,
         # NEW Phase A: Scope detection
         scope_status=None,
         scope_confidence=None,

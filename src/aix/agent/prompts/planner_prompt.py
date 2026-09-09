@@ -333,6 +333,56 @@ Query: "Crea una lezione sulla metacognizione per studenti con ADHD"
 Always respond in valid JSON format. Be specific with search queries to get relevant results from the knowledge graph.
 """
 
+# ---------------------------------------------------------------------------
+# T6 — follow-up turns
+# ---------------------------------------------------------------------------
+#
+# Prepended to the user prompt from the second turn of a thread onwards, and
+# only when AIX_CONDITIONAL_RETRIEVAL_ENABLED is on. Without it the planner
+# sees a bare query string with no thread context at all: asked to "traduci la
+# lezione in inglese" it has no way to know a lesson exists, so it classifies
+# the turn as lesson_creation and writes search queries for a lesson nobody
+# asked for.
+#
+# The two extra keys are purely additive. A response that omits them leaves
+# ``requires_new_retrieval`` at None, which is what puts the router back on its
+# concept-comparison fallback rather than on a guess.
+#
+# Note for anyone editing this: no literal braces, the template is .format()ed.
+
+PLANNER_FOLLOWUP_TEMPLATE = """CONVERSATION CONTEXT - this is a FOLLOW-UP turn, not a new request.
+
+A lesson has already been produced in this thread and the teacher is now working on it.
+Recent turns:
+{history}
+
+Evidence already retrieved from the knowledge graph for this thread:
+{corpus}
+
+Decide whether this turn needs a NEW knowledge-graph search, and add these two keys
+to your JSON response:
+
+    "requires_new_retrieval": true or false,
+    "retrieval_reason": "one short sentence"
+
+Write retrieval_reason in the language you report as response_language: the teacher
+is shown that sentence, it is not an internal note.
+
+Set it to FALSE when the turn works on the lesson that already exists - translating
+it, rewriting it, shortening or lengthening it, changing tone or format, reorganising
+it, correcting it, or expanding a part using evidence already listed above. Most
+follow-ups are of this kind.
+
+Set it to TRUE only when the turn brings in subject matter or a teaching strategy
+that the evidence above does not cover, so that answering it well needs facts this
+thread does not hold yet.
+
+Judge the teacher's actual words, not the shape of the request. Do not set it to TRUE
+merely because the turn concerns a lesson: "query_intent" says what kind of request
+this is, "requires_new_retrieval" says whether new facts are needed to serve it.
+
+"""
+
 PLANNER_USER_TEMPLATE = """Analyze this teacher request and create a retrieval plan:
 
 Teacher Query: {query}

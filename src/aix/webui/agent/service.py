@@ -97,6 +97,13 @@ PHASE_LABELS: dict[str, str] = {
     # closing meta event). When the flag is OFF, the node is absent from
     # the topology and this label is unused — pre-#9 behaviour preserved.
     "grade_retrieval": "Valutazione qualità del recupero (Corrective RAG)",
+    # T6 — Conditional retrieval. ``reuse`` replaces ``retrieve`` on a
+    # follow-up turn that needs no new search. It has to be whitelisted for
+    # the same reason ``grade_retrieval`` is: the SSE loop drops any node it
+    # does not know, and a dropped node means the retriever card stays on its
+    # pending placeholder for the rest of the run — the spinner never resolves
+    # and the media panel keeps saying the retriever has not run yet.
+    "reuse": "Riuso del contesto già recuperato",
     "write": "Scrittura della lezione",
     "critique": "Revisione e valutazione qualità",
 }
@@ -1144,6 +1151,12 @@ def _build_retriever_payload(state: dict[str, Any]) -> dict[str, Any]:
         "domain_label_short": domain_labels["short"],
         "domain_label_long": domain_labels["long"],
         "coverage_tier": coverage_tier,
+        # T6 — the same card serves both paths. The counts and concepts are
+        # true either way (they are what the lesson was written from); these
+        # two only change how the card describes where they came from, so the
+        # teacher is never told a search ran when none did.
+        "reused": bool(state.get("retrieval_reused")),
+        "reuse_reason": ((state.get("plan") or {}).get("retrieval_reason") or "").strip(),
     }
 
 
@@ -1462,6 +1475,23 @@ async def run_agent_stream(
                             },
                         )
 
+                elif node_name == "reuse":
+                    # No search ran, so there is nothing to grade: this node
+                    # emits the card itself on both flag settings.
+                    yield StreamEvent(
+                        kind="retriever",
+                        payload=_build_retriever_payload(final_state),
+                    )
+                    write_revision_idx += 1
+                    yield StreamEvent(
+                        kind="writer_pending",
+                        payload={
+                            "revision": write_revision_idx,
+                            "is_revision": False,
+                            "feedback": "",
+                        },
+                    )
+
                 elif node_name == "grade_retrieval":
                     # CORE 2 #9.UX-2 — emit once on final attempt.
                     if not _grader_will_retry(final_state):
@@ -1756,6 +1786,23 @@ async def stream_agent_events(
                                 "feedback": "",
                             },
                         )
+
+                elif node_name == "reuse":
+                    # No search ran, so there is nothing to grade: this node
+                    # emits the card itself on both flag settings.
+                    yield StreamEvent(
+                        kind="retriever",
+                        payload=_build_retriever_payload(final_state),
+                    )
+                    write_revision_idx += 1
+                    yield StreamEvent(
+                        kind="writer_pending",
+                        payload={
+                            "revision": write_revision_idx,
+                            "is_revision": False,
+                            "feedback": "",
+                        },
+                    )
 
                 elif node_name == "grade_retrieval":
                     # CORE 2 #9.UX-2 — see the symmetric branch in

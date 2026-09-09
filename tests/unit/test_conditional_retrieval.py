@@ -5,10 +5,18 @@ corta" and "adatta per ADHD" work from the evidence already gathered. Only a
 turn that introduces a concept the corpus does not cover has to go back to
 Neo4j.
 
-The decision is the planner's rather than a manual toggle, because the planner
-already extracts the turn's ``key_concepts``; comparing those against what the
-thread holds costs nothing. A toggle would ask the teacher to predict whether
-their own question introduces a new concept.
+The decision is the planner's rather than a manual toggle: a toggle would ask
+the teacher to predict whether their own question introduces a new concept.
+
+It was first written as a comparison between the turn's ``key_concepts`` and
+the corpus the thread holds, which cost nothing because the planner already
+extracts them. On real threads that never once chose reuse. The planner was
+called with the bare query and no thread context, so asked to "traduci la
+lezione in inglese" it read the turn as a fresh request and returned the
+concepts of a lesson nobody had asked for — generic pedagogy, in English,
+against subject nodes in Italian. So the planner is now given the thread and
+the corpus, and asked the question directly; the concept comparison stays as
+the fallback for a turn it did not answer.
 
 Gated by ``AIX_CONDITIONAL_RETRIEVAL_ENABLED``. With the flag off the
 ``plan → retrieve`` edge stays unconditional, which the first test pins.
@@ -22,6 +30,7 @@ import pytest
 from langgraph.checkpoint.memory import InMemorySaver
 from tests.unit.agent_doubles import _critique, _plan, _retrieval_result
 
+from aix.agent.agents.planner_agent import _as_bool, _format_corpus, _format_history
 from aix.agent.graph import nodes as graph_nodes
 from aix.agent.graph.lesson_planner_graph import (
     build_lesson_planner_graph,
@@ -30,6 +39,7 @@ from aix.agent.graph.lesson_planner_graph import (
 )
 from aix.agent.graph.nodes import (
     _corpus_covers_this_turn,
+    plan_node,
     reuse_retrieval_node,
     should_retrieve,
 )
@@ -242,3 +252,132 @@ async def test_flag_off_searches_on_every_turn(monkeypatch, _off):
     _second, retriever = await _two_turns(monkeypatch, second_turn_concepts=["memoria di lavoro"])
 
     assert retriever.retrieve.await_count == 2, "unchanged behaviour when the flag is off"
+
+
+# ---------------------------------------------------------------------------
+# The planner's verdict — the criterion that actually decides
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "verdict, expected",
+    [(True, "retrieve"), (False, "reuse")],
+    ids=["needs new facts", "works on what is there"],
+)
+def test_planner_verdict_decides(verdict, expected, _on):
+    assert should_retrieve(_followup(requires_new_retrieval=verdict)) == expected
+
+
+def test_verdict_beats_the_concept_fallback(_on):
+    """The concepts say reuse; the planner, which saw the thread, says search."""
+    state = _followup(requires_new_retrieval=True)
+    assert _corpus_covers_this_turn(state), "the fallback would have said reuse"
+    assert should_retrieve(state) == "retrieve"
+
+
+def test_the_teacher_still_outranks_the_planner(_on):
+    state = _followup(requires_new_retrieval=True, force_retrieval=False)
+    assert should_retrieve(state) == "reuse"
+
+
+def test_no_verdict_falls_back_to_comparing_concepts(_on):
+    """A first turn, an old checkpoint, or a planner that ignored the keys."""
+    assert should_retrieve(_followup(requires_new_retrieval=None)) == "reuse"
+    assert (
+        should_retrieve(_followup(requires_new_retrieval=None, key_concepts=["carico cognitivo"]))
+        == "retrieve"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Asking the question: plan_node only does it when there is a thread to ask about
+# ---------------------------------------------------------------------------
+
+
+async def _plan_node_kwargs(state):
+    plan = _plan()
+    plan.requires_new_retrieval = False
+    plan.retrieval_reason = "translation of the existing lesson"
+    planner = AsyncMock(plan=AsyncMock(return_value=plan))
+    with patch.object(graph_nodes, "get_planner", return_value=planner):
+        updates = await plan_node(state)
+    return planner.plan.await_args.kwargs, updates
+
+
+async def test_plan_node_hands_the_planner_the_thread(_on):
+    state = _followup(retrieved_nodes=[{"name": "Memoria di Lavoro"}])
+    kwargs, updates = await _plan_node_kwargs(state)
+
+    assert kwargs["conversation_history"] == state["conversation_history"]
+    assert kwargs["existing_corpus"] == ["memoria di lavoro"]
+    assert updates["requires_new_retrieval"] is False
+    assert updates["plan"]["retrieval_reason"] == "translation of the existing lesson"
+
+
+async def test_first_turn_prompt_is_unchanged(_on):
+    kwargs, _ = await _plan_node_kwargs(_followup(conversation_history=[]))
+    assert "conversation_history" not in kwargs
+    assert "existing_corpus" not in kwargs
+
+
+async def test_flag_off_never_asks(_off):
+    kwargs, _ = await _plan_node_kwargs(_followup())
+    assert "conversation_history" not in kwargs, "flag off must send the prompt it always sent"
+
+
+# ---------------------------------------------------------------------------
+# What the planner is shown, and how its answer is read back
+# ---------------------------------------------------------------------------
+
+
+def test_history_is_trimmed_to_the_recent_tail():
+    history = [{"role": "user", "content": f"turno {i}"} for i in range(20)]
+    formatted = _format_history(history)
+
+    assert formatted.count("\n") == 5, "six turns, five separators"
+    assert "turno 19" in formatted
+    assert "turno 13" not in formatted
+
+
+def test_long_turns_are_cut_and_flattened():
+    formatted = _format_history([{"role": "user", "content": "a\nb" + "x" * 1000}])
+    assert "\n" not in formatted.replace("- user: ", "")
+    assert formatted.endswith("...")
+
+
+def test_empty_history_says_so():
+    assert _format_history([]) == "(none)"
+    assert _format_history(None) == "(none)"
+    assert _format_history([{"role": "user"}]) == "(none)", "a turn with no content is not a turn"
+
+
+def test_corpus_is_capped_with_a_count():
+    formatted = _format_corpus([f"concetto {i}" for i in range(50)])
+    assert "concetto 39" in formatted
+    assert "concetto 40" not in formatted
+    assert formatted.endswith(", and 10 more")
+
+
+def test_empty_corpus_says_so():
+    assert _format_corpus([]) == "(nothing retrieved yet)"
+    assert _format_corpus(["  ", None]) == "(nothing retrieved yet)"
+
+
+@pytest.mark.parametrize(
+    "raw, expected",
+    [
+        (True, True),
+        (False, False),
+        ("true", True),
+        ("FALSE", False),
+        ("yes", True),
+        ("1", True),
+        ("0", False),
+        (None, None),
+        ("maybe", None),
+        (1, None),
+    ],
+)
+def test_verdict_is_read_without_trusting_the_json_typing(raw, expected):
+    """Anything unrecognised reads as None, which is the fallback signal."""
+    assert _as_bool(raw) is expected

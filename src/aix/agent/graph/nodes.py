@@ -222,11 +222,25 @@ async def plan_node(state: AgentState) -> dict[str, Any]:
     seed_language = state.get("language", "it")
 
     try:
+        # T6: on a follow-up, the planner is also asked whether this turn needs
+        # a new search. It cannot answer that from the query alone — "traduci
+        # la lezione in inglese" only means something next to the lesson it
+        # refers to — so it gets the thread and the corpus with it. Only when
+        # the feature is on, so a run with the flag off sends the same prompt
+        # it always sent.
+        thread_context: dict[str, Any] = {}
+        if _conditional_retrieval_enabled() and (state.get("conversation_history") or []):
+            thread_context = {
+                "conversation_history": state.get("conversation_history"),
+                "existing_corpus": sorted(_corpus_names(state)),
+            }
+
         plan = await planner.plan(
             query=state["teacher_query"],
             domain=state.get("domain", "neuro"),
             language=seed_language,
             pedagogical_intent=state.get("pedagogical_intent"),
+            **thread_context,
         )
 
         # Point (a): the Planner LLM is the canonical L1 language detector.
@@ -347,6 +361,7 @@ async def plan_node(state: AgentState) -> dict[str, Any]:
                 "response_language": plan.response_language,
                 "language_confidence": plan.language_confidence,
                 "language_overridden": language_overridden,
+                "retrieval_reason": plan.retrieval_reason,
             },
             "query_intent": plan.query_intent,
             "lesson_type": plan.lesson_type,
@@ -358,6 +373,9 @@ async def plan_node(state: AgentState) -> dict[str, Any]:
             "scope_confidence": plan.scope_confidence,
             "subject_concepts": plan.subject_concepts,
             "pedagogy_concepts": plan.pedagogy_concepts,
+            # None on a first turn and whenever the planner was not asked —
+            # which is exactly when should_retrieve falls back to concepts.
+            "requires_new_retrieval": plan.requires_new_retrieval,
             "current_step": "plan_complete",
         }
         # Only emit a language update when we're actually changing it —
@@ -766,7 +784,18 @@ def should_retrieve(state: AgentState) -> str:
     3. the teacher's explicit override, which wins in both directions;
     4. the first turn of a thread, which always searches;
     5. an empty corpus, which leaves nothing to reuse;
-    6. whether the planner's concepts are already covered.
+    6. the planner's own verdict, given the thread and the corpus it holds;
+    7. failing that, whether the planner's concepts are already covered.
+
+    Six is new; seven used to be the whole of it. Comparing concepts never
+    once chose reuse on a real thread: the planner was called with the
+    bare query and no thread, so asked to translate an existing lesson it read
+    the turn as a fresh request and emitted the concepts of a lesson nobody had
+    asked for — generic pedagogy in English, against a corpus of subject nodes
+    in Italian, which cannot match. The design always said the decision was the
+    planner's; it just was not being given anything to decide with. Now it is,
+    and the concept comparison stays only as the fallback for a turn where the
+    planner did not answer.
     """
     if state.get("error"):
         return "retrieve"
@@ -788,6 +817,17 @@ def should_retrieve(state: AgentState) -> str:
     if not state.get("retrieved_nodes"):
         logger.info("[Router] no corpus on this thread yet → retrieve")
         return "retrieve"
+
+    verdict = state.get("requires_new_retrieval")
+    if verdict is not None:
+        reason = (state.get("plan") or {}).get("retrieval_reason") or "no reason given"
+        logger.info(
+            "[Router] planner says requires_new_retrieval=%s (%s) → %s",
+            verdict,
+            reason,
+            "retrieve" if verdict else "reuse",
+        )
+        return "retrieve" if verdict else "reuse"
 
     if _corpus_covers_this_turn(state):
         logger.info(
