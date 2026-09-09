@@ -304,3 +304,115 @@ class LessonMaterialBinding(Base):
         CheckConstraint(_in("mode", MATERIAL_PURPOSES), name="ck_binding_mode"),
         Index("ix_binding_owner_lesson_enabled", "owner_id", "lesson_id", "enabled"),
     )
+
+
+#: Where a job can be, from accepted to finished. ``quarantined`` and
+#: ``scanning`` exist even though the pilot does not scan: the 2026-09-08
+#: decision was that ClamAV is not required *yet*, and a status set that cannot
+#: express scanning would have to be migrated the day it is.
+JOB_STATUSES = (
+    "pending",
+    "quarantined",
+    "scanning",
+    "parsing",
+    "embedding",
+    "ready",
+    "ready_with_warnings",
+    "failed",
+    "cancelled",
+)
+
+#: Statuses from which nothing more will happen on its own.
+JOB_TERMINAL_STATUSES = ("ready", "ready_with_warnings", "failed", "cancelled")
+
+
+class IngestionJob(Base):
+    """One unit of processing for one version of one material.
+
+    A table rather than a queue product. The runs of the agent are already
+    coordinated this way — ``agent_run`` does atomic claim, heartbeat and TTL
+    against the same database — and that pattern has tests pinning its
+    semantics on both SQLite and PostgreSQL. Reusing it means the pilot gains
+    durable background work without gaining Redis, Celery, and a second thing
+    that can be down at three in the morning.
+
+    Durability is the whole point. A job is a committed row before any worker
+    touches it, so a restart mid-parse loses the attempt and not the work: the
+    lease expires and the next worker picks the row up where it was.
+
+    The lease is what makes that safe. A worker writes its own id and an expiry
+    into the row; another worker may take it only once that expiry has passed.
+    Two workers therefore cannot hold the same job, and a worker that dies
+    holding one blocks it for at most one lease.
+    """
+
+    __tablename__ = "ingestion_job"
+
+    id: Mapped[uuid.UUID] = mapped_column(GUID, primary_key=True, default=uuid.uuid4)
+
+    owner_id: Mapped[uuid.UUID] = mapped_column(
+        GUID, ForeignKey("user.id", ondelete="CASCADE"), nullable=False
+    )
+    material_version_id: Mapped[uuid.UUID] = mapped_column(
+        GUID, ForeignKey("material_version.id", ondelete="CASCADE"), nullable=False
+    )
+
+    #: Which parser configuration produced, or is producing, this result. Part
+    #: of the unique key so re-parsing the same file under a *new* profile is a
+    #: new job rather than a conflict — that is how a parser upgrade re-runs
+    #: over the corpus without anyone deleting rows by hand.
+    parser_profile_version: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="pending", server_default="pending"
+    )
+    #: Where inside the pipeline the work got to. Separate from ``status`` so a
+    #: retry can resume rather than restart: the status says whether the job is
+    #: runnable, the step says what still has to happen.
+    current_step: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="pending", server_default="pending"
+    )
+
+    attempt_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    #: Not before this. A failure pushes it into the future by a growing
+    #: interval, so a job that fails for a reason that will not fix itself in a
+    #: second — a service down, a rate limit — does not spin.
+    next_attempt_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    lease_owner: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    lease_expires_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    #: A code, never a message. What went wrong belongs in the log with the
+    #: incident id (see ``aix.webui.errors``); this column exists so the UI can
+    #: say something specific without a failure describing the deployment.
+    safe_error_code: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "material_version_id",
+            "parser_profile_version",
+            name="uq_ingestion_version_profile",
+        ),
+        CheckConstraint("attempt_count >= 0", name="ck_ingestion_job_attempts_non_negative"),
+        CheckConstraint(_in("status", JOB_STATUSES), name="ck_ingestion_job_status"),
+        # The claim query orders by these three. Unlike the guide's DDL this is
+        # not a partial index: PostgreSQL supports ``WHERE status = 'pending'``
+        # and SQLite does too, but Alembic's batch mode on SQLite does not
+        # render one, and an index that exists on one dialect only is a
+        # performance difference nobody would notice until production.
+        Index("ix_ingestion_job_claim", "status", "next_attempt_at", "created_at"),
+    )

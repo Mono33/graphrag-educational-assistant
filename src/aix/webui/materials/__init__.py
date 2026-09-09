@@ -6,6 +6,7 @@ tested, and is inert: with ``AIX_MATERIALS_ENABLED`` off the legacy filesystem
 path is the only one that runs.
 """
 
+from aix.webui.materials.jobs import JobDispatcher
 from aix.webui.materials.storage import (
     ChecksumMismatch,
     LocalDurableStorage,
@@ -19,9 +20,16 @@ from aix.webui.materials.storage import (
     object_key_for,
     sha256_of,
 )
+from aix.webui.materials.worker import (
+    IngestionWorker,
+    start_ingestion_worker,
+    stop_ingestion_worker,
+)
 
 __all__ = [
     "ChecksumMismatch",
+    "IngestionWorker",
+    "JobDispatcher",
     "LocalDurableStorage",
     "ObjectNotFound",
     "S3CompatibleStorage",
@@ -32,4 +40,6 @@ __all__ = [
     "materials_enabled",
     "object_key_for",
     "sha256_of",
+    "start_ingestion_worker",
+    "stop_ingestion_worker",
 ]
