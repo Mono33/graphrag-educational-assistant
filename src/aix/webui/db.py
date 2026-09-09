@@ -303,6 +303,7 @@ async def init_db() -> None:
     # Importing the model modules registers their tables against ``Base``.
     from aix.webui.auth import models as _auth_models  # noqa: F401
     from aix.webui.lessons import models as _lesson_models  # noqa: F401
+    from aix.webui.materials import models as _material_models  # noqa: F401
 
     if _DB_URL.startswith("sqlite"):
         _DEFAULT_DB_PATH.parent.mkdir(parents=True, exist_ok=True)

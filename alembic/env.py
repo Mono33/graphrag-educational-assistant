@@ -30,6 +30,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from aix.webui.auth import models as _auth_models  # noqa: F401
 from aix.webui.db import Base, resolve_db_url
 from aix.webui.lessons import models as _lesson_models  # noqa: F401
+from aix.webui.materials import models as _material_models  # noqa: F401
 
 config = context.config
 config.set_main_option("sqlalchemy.url", resolve_db_url())
