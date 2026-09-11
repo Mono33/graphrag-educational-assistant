@@ -287,12 +287,44 @@ async def lifespan(app: FastAPI):
         except Exception as e:  # noqa: BLE001
             logger.warning("⚠️ Agent graph warm-up failed (compiles on first run): %s", e)
 
+        # Fase 1 · PR 4 — the ingestion worker. Best-effort like everything
+        # above: a queue that will not start must not stop the API from
+        # serving, because with the flag off nothing depends on it and with the
+        # flag on the jobs are durable rows that the next boot will pick up.
+        #
+        # It gets the session *maker*, not a session: the worker outlives every
+        # request, and it renews a lease on its own schedule.
+        app.state.ingestion_worker = None
+        try:
+            from aix.webui.db import async_session_maker
+            from aix.webui.materials.handlers import ExtractionHandler
+            from aix.webui.materials.jobs import JobDispatcher
+            from aix.webui.materials.storage import get_storage_backend
+            from aix.webui.materials.worker import start_ingestion_worker
+
+            _dispatcher = JobDispatcher(async_session_maker)
+            app.state.ingestion_worker = start_ingestion_worker(
+                _dispatcher, ExtractionHandler(_dispatcher, get_storage_backend())
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("⚠️ Ingestion worker not started: %s", e)
+
         logger.info("✅ API ready to serve requests")
 
         yield  # Server is running
 
     # Shutdown
     logger.info("👋 Shutting down GraphRAG Educational API...")
+
+    # Ask the ingestion worker to finish the job in hand and stop. A no-op when
+    # it never started. Whatever it was holding stays a row with a lease that
+    # expires, so the next boot picks it up rather than losing it.
+    try:
+        from aix.webui.materials.worker import stop_ingestion_worker
+
+        await stop_ingestion_worker(getattr(app.state, "ingestion_worker", None))
+    except Exception as e:  # noqa: BLE001
+        logger.warning("⚠️ Ingestion worker shutdown failed: %s", e)
 
     # Phase B readiness — release the LangGraph checkpointer cleanly so the
     # Postgres connection pool (prod) / SQLite connection (dev) is torn down on

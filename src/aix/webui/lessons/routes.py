@@ -75,6 +75,12 @@ from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+# A JSON column mutated in place is invisible to the unit of work: the list
+# object is the same one it already knows about, so nothing looks dirty. The
+# shadow annotation edits an entry inside ``uploaded_files_json`` and has to say
+# so explicitly.
+from sqlalchemy.orm.attributes import flag_modified
 from sse_starlette.sse import EventSourceResponse
 
 from aix.api.schemas.educational_profile import (
@@ -106,10 +112,12 @@ from aix.webui.auth.csrf import token_for as _csrf_token_for
 from aix.webui.auth.dependencies import optional_current_user
 from aix.webui.auth.models import User
 from aix.webui.db import get_async_session
+from aix.webui.errors import report
 from aix.webui.lessons.display import lesson_to_row
 from aix.webui.lessons.models import Lesson, LessonMessage, SavedProfile
 from aix.webui.lessons.schemas import form_to_profile_dict, profile_to_form_values
 from aix.webui.lessons.uploads import delete_upload, save_upload
+from aix.webui.materials.shadow import record_upload, retire_material
 from aix.webui.sanitize import sanitize_html
 
 logger = logging.getLogger(__name__)
@@ -1418,7 +1426,7 @@ async def lesson_upload(
     filename = getattr(up, "filename", None) or "upload"
 
     try:
-        manifest, _entry = save_upload(lesson_id, filename, content, lesson.uploaded_files_json)
+        manifest, entry = save_upload(lesson_id, filename, content, lesson.uploaded_files_json)
         lesson.uploaded_files_json = manifest
         await session.commit()
         await session.refresh(lesson)
@@ -1427,6 +1435,45 @@ async def lesson_upload(
             content=f'<p class="text-sm text-rose-700 px-2 py-1">{exc}</p>',
             status_code=422,
         )
+
+    # Fase 1 · PR 4 — shadow mode. Everything above is untouched and already
+    # committed; this runs after, on its own session, and never raises. With
+    # AIX_MATERIALS_ENABLED off it is a single boolean check and returns None.
+    #
+    # The order is deliberate: the teacher's file is safely stored and the
+    # response is already decided before the new pipeline is asked to do
+    # anything, so a broken pipeline cannot become a failed upload.
+    shadow = await record_upload(owner_id=user.id, filename=filename, content=content)
+    if shadow:
+        # Written straight onto the JSON column rather than through
+        # ``save_upload``: the legacy manifest format gains three optional keys
+        # and loses nothing, which is what lets the flag be turned back off.
+        #
+        # Guarded like the rest: ``record_upload`` cannot raise, but this commit
+        # is on the request's own session and could. Losing the annotation costs
+        # a little observability; failing the upload over it would cost the
+        # teacher their file.
+        try:
+            # Found by id rather than mutated through ``entry``: the refresh
+            # above reloaded the column from the database, so the list the
+            # route is holding is no longer the one attached to the lesson and
+            # writing into it would update nothing.
+            current = next(
+                (
+                    f
+                    for f in (lesson.uploaded_files_json or [])
+                    if isinstance(f, dict) and f.get("id") == entry["id"]
+                ),
+                None,
+            )
+            if current is not None:
+                current.update(shadow)
+                flag_modified(lesson, "uploaded_files_json")
+                await session.commit()
+                await session.refresh(lesson)
+        except Exception as exc:  # noqa: BLE001
+            await session.rollback()
+            report(exc, context=f"shadow manifest annotation lesson={lesson_id}")
 
     return templates.TemplateResponse(
         request,
@@ -1468,6 +1515,17 @@ async def lesson_upload_delete(
             status_code=409,
         )
 
+    # Read before removing: ``delete_upload`` returns what is left, so the
+    # entry's shadow ids are gone by the time it comes back.
+    doomed = next(
+        (
+            f
+            for f in (lesson.uploaded_files_json or [])
+            if isinstance(f, dict) and f.get("id") == file_id
+        ),
+        None,
+    )
+
     try:
         manifest = delete_upload(lesson_id, file_id, lesson.uploaded_files_json)
         lesson.uploaded_files_json = manifest
@@ -1478,6 +1536,12 @@ async def lesson_upload_delete(
             content=f'<p class="text-sm text-rose-700 px-2 py-1">{exc}</p>',
             status_code=404,
         )
+
+    # Fase 1 · PR 4 — the shadow material goes with its attachment. Best effort
+    # like the rest: an attachment the teacher removed must disappear from the
+    # tray whether or not the shadow pipeline is reachable.
+    if doomed and doomed.get("material_id"):
+        await retire_material(material_id=doomed["material_id"], owner_id=user.id)
 
     return templates.TemplateResponse(
         request,

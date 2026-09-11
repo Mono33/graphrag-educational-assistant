@@ -106,6 +106,17 @@ class JobDispatcher:
     def __init__(self, session_maker: Any) -> None:
         self._session_maker = session_maker
 
+    @property
+    def session_maker(self) -> Any:
+        """The same maker, for code that works alongside the queue.
+
+        A job handler needs its own sessions — to read the material it was
+        given and to record what it found — and it already holds the dispatcher.
+        Exposing this is smaller than threading a second maker through every
+        caller, and it is honestly part of what a dispatcher is.
+        """
+        return self._session_maker
+
     # -- producing -------------------------------------------------------
 
     async def enqueue(
