@@ -107,6 +107,12 @@ async def _app(tmp_path, monkeypatch):
     monkeypatch.setenv("AIX_STORAGE_PROVIDER", "local")
     monkeypatch.setenv("AIX_STORAGE_LOCAL_ROOT", str(tmp_path / "objects"))
 
+    # The legacy path writes through a module-level constant, not a setting, so
+    # without this the suite drops its fixtures into the repository's real
+    # ``data/webui/uploads`` — which it did, until someone went looking for
+    # sample documents and found thirty-three copies of a test string.
+    monkeypatch.setattr("aix.webui.lessons.uploads.UPLOAD_ROOT", tmp_path / "legacy-uploads")
+
     from aix.api.main import app
 
     engine = create_async_engine(
