@@ -43,7 +43,9 @@ from aix.agent.graph.nodes import (
     reuse_retrieval_node,
     should_continue_to_revision,
     should_retrieve,
+    should_retry_after_validation,
     should_retry_retrieval,
+    validate_node,
     write_node,
 )
 from aix.agent.graph.state import AgentInput, AgentState, create_initial_state
@@ -113,6 +115,12 @@ def _build_workflow() -> StateGraph:
     workflow.add_node("plan", plan_node, retry_policy=LLM_RETRY_POLICY)
     workflow.add_node("retrieve", retrieve_node)
     workflow.add_node("write", write_node, retry_policy=LLM_RETRY_POLICY)
+    # Q1 · 1.3 — deterministic feasibility, between the Writer and the Critic.
+    # Always in the topology, unlike the flagged nodes above: the node itself
+    # no-ops when AIX_VALIDATOR_ENABLED is off, so the graph has one shape
+    # instead of two and the environment cannot change what is wired to what.
+    # No retry policy: it makes no network call, so there is nothing to retry.
+    workflow.add_node("validate", validate_node)
     workflow.add_node("critique", critique_node, retry_policy=LLM_RETRY_POLICY)
 
     workflow.set_entry_point("plan")
@@ -168,7 +176,22 @@ def _build_workflow() -> StateGraph:
             "using direct retrieve → write edge."
         )
 
-    workflow.add_edge("write", "critique")
+    # write → validate → critique, with a targeted rewrite when the lesson is
+    # not feasible:
+    #
+    #     write ──→ validate ─┬─[feasible | budget spent]→ critique
+    #       ↑                 │
+    #       └──[blocking]─────┘
+    #
+    # The rewrite carries only the remediation, through the existing
+    # ``refinement_instruction`` channel, and spends the validator's own budget
+    # rather than the Critic's.
+    workflow.add_edge("write", "validate")
+    workflow.add_conditional_edges(
+        "validate",
+        should_retry_after_validation,
+        {"rewrite": "write", "critique": "critique"},
+    )
 
     # Add conditional edge for revision loop
     workflow.add_conditional_edges(

@@ -687,6 +687,80 @@ async def critique_node(state: AgentState) -> dict[str, Any]:
         return {"error": str(e), "current_step": "error"}
 
 
+async def validate_node(state: AgentState) -> dict[str, Any]:
+    """Check the draft against the classroom. Pure Python, no model call.
+
+    Runs between the Writer and the Critic so that an infeasible lesson is
+    caught before anything scores it. The Critic used to be the only judge, and
+    it rated pedagogical quality and practical feasibility with the same 1–5
+    rubric — which is how a lesson that four fifths of a class could not do came
+    back at 91%.
+    """
+    from aix.agent.validation import validate_lesson, validator_enabled
+
+    draft = state.get("lesson_plan_draft") or ""
+    if not validator_enabled() or not draft:
+        return {"validation_passed": True, "current_step": "write_complete"}
+
+    report = validate_lesson(draft, state.get("educational_profile"))
+    updates: dict[str, Any] = {
+        "validation_violations": report.as_dicts(),
+        "validation_passed": report.passed,
+        "current_step": "write_complete",
+    }
+
+    if report.blocking:
+        # The remediation goes through ``refinement_instruction``, which
+        # ``write_node`` already forwards to the Writer. A retry therefore needs
+        # no new mechanism — and it carries only what is blocking, so the one
+        # thing that must change is not buried under the fifteen that must not.
+        updates["refinement_instruction"] = report.remediation_prompt()
+        updates["validation_attempts"] = (state.get("validation_attempts") or 0) + 1
+        logger.info(
+            "[Node: Validate] %d blocking violation(s): %s",
+            len(report.blocking),
+            ", ".join(sorted({v.rule for v in report.blocking})),
+        )
+    else:
+        logger.info(
+            "[Node: Validate] feasible (%d warning(s))",
+            len(report.warnings),
+        )
+    return updates
+
+
+def should_retry_after_validation(state: AgentState) -> str:
+    """Conditional edge after the validator: rewrite, or hand over to the Critic.
+
+    Returns ``"rewrite"`` or ``"critique"``. The budget is the validator's own,
+    not the Critic's: spending a revision on an infeasible draft would leave the
+    teacher with fewer chances at a *better* lesson, which is a different thing.
+    """
+    from aix.agent.validation import max_retries
+
+    if state.get("error"):
+        return "critique"
+    if state.get("validation_passed", True):
+        return "critique"
+
+    # ``validation_attempts`` counts *failed validations*, and the node has
+    # already incremented it for this one. So after the first failure it reads 1
+    # while zero rewrites have happened yet: the rewrites done so far are
+    # ``attempts - 1``, and a budget of N rewrites is spent when attempts > N.
+    # Comparing with ``>=`` would quietly grant one fewer rewrite than the
+    # setting promises.
+    attempts = state.get("validation_attempts") or 0
+    if attempts > max_retries():
+        # Out of retries. The lesson goes on to the Critic with its violations
+        # recorded: the teacher is better served seeing them than waiting for a
+        # rewrite that the last two did not achieve.
+        logger.info("[Router] validator budget spent (%d) — continuing to critique", attempts)
+        return "critique"
+
+    logger.info("[Router] lesson not feasible — targeted rewrite %d", attempts)
+    return "rewrite"
+
+
 def should_continue_to_revision(state: AgentState) -> str:
     """
     Conditional edge: Decide whether to revise or finish.

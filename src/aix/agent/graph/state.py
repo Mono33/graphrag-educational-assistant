@@ -233,6 +233,17 @@ class AgentState(TypedDict, total=False):
     revision_instructions: Optional[str]  # What to fix if not approved
 
     # ========================================
+    # Q1 · 1.3 — VALIDATOR OUTPUT (deterministic, no LLM)
+    # ========================================
+    # Written by ``validate_node`` between the Writer and the Critic. The Critic
+    # judges whether a lesson is good; these say whether it is possible, which is
+    # a different question and must not depend on a model's mood.
+    validation_violations: Optional[list[dict[str, Any]]]  # Serialised Violations
+    validation_passed: Optional[bool]  # False iff something blocking is open
+    validation_attempts: Optional[int]  # Targeted rewrites spent, separate from
+    # ``revision_count`` so a validator retry never eats the Critic's budget
+
+    # ========================================
     # METADATA
     # ========================================
     revision_count: int  # Number of revision cycles
@@ -333,6 +344,12 @@ class AgentInput(TypedDict, total=False):
     retrieval_attempts: Optional[int]
     retrieval_rewritten_query: Optional[str]
     retrieval_warning: Optional[bool]
+
+    # Validator output is per-turn: a violation belongs to the draft that
+    # caused it, and turn 3 must not inherit turn 2's verdict.
+    validation_violations: Optional[list[dict[str, Any]]]
+    validation_passed: Optional[bool]
+    validation_attempts: Optional[int]
 
     # Writer / critic output. The draft resets so a new turn starts from the
     # writer rather than the reviser (write_node branches on
@@ -459,6 +476,10 @@ def create_initial_state(
         lesson_plan_draft=None,
         lesson_plan_structured=None,
         sources_cited=None,
+        # Validator (empty) — a verdict belongs to the draft that earned it
+        validation_violations=None,
+        validation_passed=None,
+        validation_attempts=None,
         # Critic (empty)
         critique=None,
         critique_score=None,

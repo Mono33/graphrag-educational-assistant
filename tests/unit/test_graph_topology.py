@@ -74,7 +74,7 @@ def _conditional_edges(compiled) -> set[tuple[str, str]]:
 # ---------------------------------------------------------------------------
 
 
-def test_default_topology_has_exactly_the_four_agent_nodes(monkeypatch):
+def test_default_topology_has_exactly_the_five_agent_nodes(monkeypatch):
     monkeypatch.delenv("AIX_CORRECTIVE_RAG_ENABLED", raising=False)
     compiled = build_lesson_planner_graph()
 
@@ -83,12 +83,15 @@ def test_default_topology_has_exactly_the_four_agent_nodes(monkeypatch):
         "plan",
         "retrieve",
         "write",
+        # Q1 · 1.3 — always present, unlike the flagged nodes: the node no-ops
+        # when the validator is off, so the graph has one shape, not two.
+        "validate",
         "critique",
         "__end__",
     }
 
 
-def test_default_topology_wires_the_linear_path_and_revision_loop(monkeypatch):
+def test_default_topology_wires_the_linear_path_and_both_loops(monkeypatch):
     monkeypatch.delenv("AIX_CORRECTIVE_RAG_ENABLED", raising=False)
     compiled = build_lesson_planner_graph()
 
@@ -96,12 +99,16 @@ def test_default_topology_wires_the_linear_path_and_revision_loop(monkeypatch):
         ("__start__", "plan"),
         ("plan", "retrieve"),
         ("retrieve", "write"),  # direct edge — the grader is not in this topology
-        ("write", "critique"),
+        ("write", "validate"),
+        ("validate", "write"),  # the feasibility rewrite
+        ("validate", "critique"),
         ("critique", "write"),  # the revision loop
         ("critique", "__end__"),
     }
-    # Only the critique fan-out is a decision; everything else is unconditional.
+    # Two decisions: is the lesson feasible, and is it good enough.
     assert _conditional_edges(compiled) == {
+        ("validate", "write"),
+        ("validate", "critique"),
         ("critique", "write"),
         ("critique", "__end__"),
     }
