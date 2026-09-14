@@ -240,6 +240,9 @@ async def plan_node(state: AgentState) -> dict[str, Any]:
             domain=state.get("domain", "neuro"),
             language=seed_language,
             pedagogical_intent=state.get("pedagogical_intent"),
+            # Q1 · 1.1: the classroom constraints reach the Planner as well as the
+            # Writer, so retrieval is not spent on activities the room cannot run.
+            educational_profile=state.get("educational_profile"),
             **thread_context,
         )
 

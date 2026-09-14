@@ -16,6 +16,7 @@ from openai import AsyncOpenAI
 
 from aix.agent.agents.planner_agent import RetrievalPlan
 from aix.agent.agents.retriever_agent import RetrievalResult
+from aix.agent.prompts.profile_renderer import render_profile_section
 from aix.agent.prompts.writer_prompt import (
     WRITER_REVISION_TEMPLATE,
     WRITER_TEACHER_UPLOADS_APPENDIX,
@@ -241,33 +242,12 @@ class WriterAgent:
         # NEW Phase 2: Format curated media if available
         media_text = self._format_media(curated_media) if has_media else ""
 
-        # Build educational profile section for lesson template.
-        # NOTE: Field paths must match the canonical EducationalProfile schema
-        # (see src/aix/api/schemas/educational_profile.py): the duration lives
-        # at top-level ``time_available_minutes`` and disabilities live under
-        # ``group.disabilities``. We keep ``ep.get("lesson_duration")`` and
-        # ``ep.get("disabilities")`` as legacy fallbacks for any older payloads.
-        edu_profile_section = ""
-        if educational_profile:
-            ep = educational_profile
-            group = ep.get("group") or {}
-            lines = ["\n## Teacher's Educational Profile"]
-            if ep.get("specific_topic"):
-                lines.append(f"- Topic: {ep['specific_topic']}")
-            if ep.get("subject_area"):
-                lines.append(f"- Subject: {ep['subject_area']}")
-            if group.get("grade"):
-                lines.append(f"- Grade level: {group['grade']}")
-            disabilities = group.get("disabilities") or ep.get("disabilities")
-            if disabilities:
-                if isinstance(disabilities, list):
-                    disabilities = ", ".join(disabilities)
-                lines.append(f"- Learner needs: {disabilities}")
-            duration = ep.get("time_available_minutes") or ep.get("lesson_duration")
-            if duration:
-                lines.append(f"- Duration: {duration} minutes")
-            if len(lines) > 1:
-                edu_profile_section = "\n".join(lines) + "\n"
+        # The whole profile, with codes resolved to the teacher's labels and the
+        # classroom restated as constraints. This used to be built here from five
+        # fields, so the model never saw the device policy, the LIM, the WiFi, the
+        # furniture or the class size — and read the BES codes as acronyms it
+        # expanded from memory. See ``profile_renderer`` for what changed and why.
+        edu_profile_section = render_profile_section(educational_profile)
 
         # Resolve pedagogical_intent code → human label + prompt instruction.
         # Stored as "{code}" or "{code}: {detail}". If the code matches a

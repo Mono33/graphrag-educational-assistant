@@ -18,6 +18,7 @@ from aix.agent.prompts.planner_prompt import (
     PLANNER_SYSTEM_PROMPT,
     PLANNER_USER_TEMPLATE,
 )
+from aix.agent.prompts.profile_renderer import render_classroom_constraints
 from aix.core.concurrency import guarded_chat_completion
 from aix.core.config import config as app_config
 from aix.core.config import extract_response_content
@@ -220,6 +221,7 @@ class PlannerAgent:
         pedagogical_intent: Optional[str] = None,
         conversation_history: Optional[list[dict[str, str]]] = None,
         existing_corpus: Optional[list[str]] = None,
+        educational_profile: Optional[dict[str, Any]] = None,
     ) -> RetrievalPlan:
         """
         Analyze a teacher query and create a retrieval plan.
@@ -228,6 +230,10 @@ class PlannerAgent:
             query: Teacher's natural language query
             domain: Knowledge domain ("neuro" or "udl")
             language: Response language ("it" or "en")
+            educational_profile: The class and classroom. Only its constraints
+                are used here — devices, LIM, WiFi, furniture, class size — so
+                the concepts and queries chosen are ones the room can act on.
+                Without a profile the prompt is unchanged.
             conversation_history: Earlier turns of the thread. Passing it marks
                 this as a follow-up and asks the planner for a
                 ``requires_new_retrieval`` verdict; omitting it keeps the
@@ -263,6 +269,19 @@ class PlannerAgent:
                 f"Generate lesson objectives that fulfill this intent before mapping "
                 f"concepts to the knowledge graph.\n\n"
             ) + user_prompt
+
+        # Q1 · 1.1: the classroom, as constraints. A Planner that does not know
+        # the students have no devices retrieves evidence for device-based
+        # activities, and the Writer then has nothing better to write from.
+        constraints = render_classroom_constraints(educational_profile)
+        if constraints:
+            user_prompt = (
+                "Classroom constraints (choose concepts and search queries the "
+                "classroom can actually act on):\n"
+                + "\n".join(f"- {line}" for line in constraints)
+                + "\n\n"
+                + user_prompt
+            )
 
         # T6: give the planner the thread it is answering inside. Prepended
         # last so it reads first — whether this is a follow-up changes how
