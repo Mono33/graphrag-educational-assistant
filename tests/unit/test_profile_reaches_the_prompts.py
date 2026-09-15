@@ -68,6 +68,53 @@ async def test_without_a_profile_the_planner_prompt_is_unchanged():
     assert "Classroom constraints" not in await _planner_prompt()
 
 
+# ---------------------------------------------------------------------------
+# The attachments reach the Planner too
+# ---------------------------------------------------------------------------
+#
+# Found in the first real upload test, 2026-09-15: the Planner never saw the
+# attached handout, reported "contenuto del documento allegato (non disponibile
+# per l'analisi)" and sent that phrase to Wikipedia, YouTube and OpenAlex.
+
+HANDOUT = (
+    "### guerra-fredda-def.pdf\n"
+    "Due mondi ideologicamente contrapposti. Dalla Seconda guerra mondiale emersero "
+    "due sole grandi potenze, USA e URSS."
+)
+
+
+async def test_the_planner_sees_the_attached_material():
+    prompt = await _planner_prompt(teacher_materials=HANDOUT)
+
+    assert "Teacher-attached material" in prompt
+    assert "- guerra-fredda-def.pdf: Due mondi ideologicamente contrapposti." in prompt
+    assert "never treat it as missing" in prompt
+
+
+async def test_without_attachments_the_planner_prompt_is_unchanged():
+    assert await _planner_prompt() == await _planner_prompt(teacher_materials=None)
+    assert await _planner_prompt() == await _planner_prompt(teacher_materials="  \n ")
+
+
+def test_the_digest_is_short_per_file_and_names_every_file():
+    from aix.agent.agents.planner_agent import MATERIAL_DIGEST_PER_FILE, material_digest
+
+    digest = material_digest(
+        "### lungo.pdf\n" + "parola " * 2000 + "\n\n### breve.docx\nSolo una riga."
+    )
+
+    first, second = digest.split("\n")
+    assert first.startswith("- lungo.pdf: parola")
+    assert len(first) <= len("- lungo.pdf: ") + MATERIAL_DIGEST_PER_FILE + 1
+    assert second == "- breve.docx: Solo una riga."
+
+
+def test_plain_text_from_an_api_caller_becomes_one_section():
+    from aix.agent.agents.planner_agent import material_digest
+
+    assert material_digest("Appunti senza titolo") == "- Materiale: Appunti senza titolo"
+
+
 async def _writer_prompt(profile) -> str:
     from tests.unit.agent_doubles import _plan, _retrieval_result
 

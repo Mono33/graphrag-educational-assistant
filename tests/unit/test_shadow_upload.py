@@ -250,6 +250,16 @@ async def test_a_scan_without_text_is_accepted_and_says_so_on_the_chip(client, m
     assert entry["parse"]["unread_pages"] == 1
 
 
+def test_a_three_page_handout_reaches_the_writer_whole():
+    """The first real test lost the last fifth of a 9985-character handout at 8000."""
+    from aix.webui.lessons.uploads import truncate_excerpt
+
+    handout = "Due mondi contrapposti. " * 434  # ~10k characters, like guerra-fredda-def.pdf
+    handout += "Nel 1989 fu abbattuto il muro di Berlino."
+
+    assert truncate_excerpt(handout).endswith("muro di Berlino.")
+
+
 async def test_ocr_text_is_flagged_to_the_writer():
     from aix.webui.agent.service import _teacher_upload_context
 

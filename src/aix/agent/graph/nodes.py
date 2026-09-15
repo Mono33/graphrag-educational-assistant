@@ -243,6 +243,9 @@ async def plan_node(state: AgentState) -> dict[str, Any]:
             # Q1 · 1.1: the classroom constraints reach the Planner as well as the
             # Writer, so retrieval is not spent on activities the room cannot run.
             educational_profile=state.get("educational_profile"),
+            # The attachments, so concepts and queries come from the document
+            # rather than from the words "documento allegato".
+            teacher_materials=state.get("teacher_provided_context"),
             **thread_context,
         )
 

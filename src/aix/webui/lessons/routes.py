@@ -1714,11 +1714,18 @@ async def lesson_stream(
                 _updated_profile.pop("__planner_only__", None)
                 lesson.educational_profile_json = _updated_profile
 
+                from aix.webui.agent.service import _teacher_upload_context
+
                 _planner = PlannerAgent()
                 _plan = await _planner.plan(
                     query=lesson.teacher_query or "",
                     domain=lesson.domain or "neuro",
                     language="it",
+                    # The same attachments and classroom the full run will see:
+                    # the intent card is built from this plan, and a Planner
+                    # blind to the document proposes intents for no document.
+                    educational_profile=_updated_profile,
+                    teacher_materials=_teacher_upload_context(lesson),
                 )
 
                 _planner_payload = {

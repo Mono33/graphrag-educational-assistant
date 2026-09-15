@@ -325,6 +325,16 @@ async def test_flag_off_never_asks(_off):
     assert "conversation_history" not in kwargs, "flag off must send the prompt it always sent"
 
 
+async def test_plan_node_hands_the_planner_the_attachments(_off):
+    """Whatever the retrieval flag: the Planner plans on the teacher's document."""
+    state = _followup(conversation_history=[])
+    state["teacher_provided_context"] = "### guerra-fredda.pdf\nDue mondi contrapposti."
+
+    kwargs, _ = await _plan_node_kwargs(state)
+
+    assert kwargs["teacher_materials"] == "### guerra-fredda.pdf\nDue mondi contrapposti."
+
+
 # ---------------------------------------------------------------------------
 # What the planner is shown, and how its answer is read back
 # ---------------------------------------------------------------------------

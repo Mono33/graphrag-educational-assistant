@@ -27,7 +27,10 @@ logger = logging.getLogger(__name__)
 
 MAX_FILE_BYTES = 10 * 1024 * 1024
 MAX_FILES_PER_LESSON = 12
-MAX_EXCERPT_PER_FILE = 8000
+#: Was 8000: a three-page history handout (9985 characters) lost its last fifth
+#: — distensione, Gorbaciov, 1989 — and the lesson never mentioned them. The
+#: total across files stays at 48k, which is what bounds the Writer's prompt.
+MAX_EXCERPT_PER_FILE = 24_000
 MAX_TOTAL_EXCERPT = 48_000
 
 ALLOWED_EXT = frozenset(ALLOWED)

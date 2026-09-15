@@ -186,6 +186,43 @@ class RetrievalPlan:
         return self.response_language is not None and self.language_confidence in ("HIGH", "MEDIUM")
 
 
+#: How much of each attachment the Planner sees. It chooses concepts and search
+#: queries, so the opening of a document is enough; the Writer gets the rest.
+MATERIAL_DIGEST_PER_FILE = 1500
+MATERIAL_DIGEST_TOTAL = 4500
+
+
+def material_digest(teacher_materials: Optional[str]) -> Optional[str]:
+    """One line per attachment: its name and the start of its text.
+
+    Reads the ``### filename`` sections that ``_teacher_upload_context`` builds;
+    plain text from an API caller becomes a single section called "Materiale".
+    """
+    import re
+
+    if not teacher_materials or not teacher_materials.strip():
+        return None
+
+    text = teacher_materials.strip()
+    if not text.startswith("### "):
+        text = "### Materiale\n" + text
+
+    lines = []
+    for section in re.split(r"(?m)^### ", text):
+        if not section.strip():
+            continue
+        title, _, body = section.partition("\n")
+        body = " ".join(body.split())
+        if not body:
+            continue
+        if len(body) > MATERIAL_DIGEST_PER_FILE:
+            body = body[:MATERIAL_DIGEST_PER_FILE].rstrip() + "…"
+        lines.append(f"- {title.strip()}: {body}")
+
+    digest = "\n".join(lines)
+    return digest[:MATERIAL_DIGEST_TOTAL] if digest else None
+
+
 class PlannerAgent:
     """
     Planner Agent - First step in the lesson planning pipeline.
@@ -222,6 +259,7 @@ class PlannerAgent:
         conversation_history: Optional[list[dict[str, str]]] = None,
         existing_corpus: Optional[list[str]] = None,
         educational_profile: Optional[dict[str, Any]] = None,
+        teacher_materials: Optional[str] = None,
     ) -> RetrievalPlan:
         """
         Analyze a teacher query and create a retrieval plan.
@@ -240,6 +278,11 @@ class PlannerAgent:
                 prompt byte-identical to a first turn.
             existing_corpus: Names of what the thread already retrieved, which
                 is what the verdict is judged against.
+            teacher_materials: The teacher's attachments, as the Writer receives
+                them (``### filename`` sections). The Planner gets a short digest
+                of each, so it plans on the document instead of declaring it
+                unavailable and searching the web for "documento allegato".
+                Without it the prompt is unchanged.
 
         Returns:
             RetrievalPlan with structured search parameters
@@ -279,6 +322,22 @@ class PlannerAgent:
                 "Classroom constraints (choose concepts and search queries the "
                 "classroom can actually act on):\n"
                 + "\n".join(f"- {line}" for line in constraints)
+                + "\n\n"
+                + user_prompt
+            )
+
+        # The teacher's attachments. Before this the Planner never saw them —
+        # only the Writer did — and on "prepara una lezione a partire dal
+        # documento allegato" it reported the document as unavailable and sent
+        # that phrase to Wikipedia, YouTube and OpenAlex as a search query.
+        digest = material_digest(teacher_materials)
+        if digest:
+            user_prompt = (
+                "Teacher-attached material. The lesson must be built on this content: "
+                "take the key concepts and search queries from it. The material IS "
+                "available - never treat it as missing, and never use the attachment "
+                "itself (e.g. 'documento allegato') as a concept or a search query.\n"
+                + digest
                 + "\n\n"
                 + user_prompt
             )
