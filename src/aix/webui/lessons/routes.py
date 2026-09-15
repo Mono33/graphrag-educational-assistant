@@ -2128,8 +2128,49 @@ async def lesson_export(
             },
         )
 
+    if format in ("pdf", "outline"):
+        # Fase 3 · PR 7 — both go through the document model: Markdown is read
+        # into LessonDocumentV1, grouped into ExportIRV1, then rendered. MD and
+        # TXT above deliberately do not, because §10.4 requires them unchanged.
+        import asyncio
+
+        from aix.export import adapt_lesson_markdown, build_export_ir, render_outline
+
+        ir = build_export_ir(
+            adapt_lesson_markdown(
+                lesson.lesson_plan_md,
+                lesson_id=str(lesson.id),
+                fallback_title=lesson.title or "Lezione",
+            )
+        )
+
+        if format == "outline":
+            return Response(
+                content=render_outline(ir),
+                media_type="text/plain; charset=utf-8",
+                headers={
+                    "Content-Disposition": f'attachment; filename="{slug}-scaletta.txt"',
+                    AI_GENERATED_HEADER: AI_GENERATED_HEADER_VALUE,
+                },
+            )
+
+        from aix.export.pdf import render_pdf
+
+        # Off the event loop: rendering is CPU work, and a request thread
+        # blocked on it would stall every SSE stream in the process.
+        result = await asyncio.to_thread(render_pdf, ir)
+        return Response(
+            content=result.content,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f'attachment; filename="{slug}.pdf"',
+                AI_GENERATED_HEADER: AI_GENERATED_HEADER_VALUE,
+            },
+        )
+
     raise HTTPException(
-        status_code=400, detail="Formato non supportato. Usa ?format=md o ?format=txt"
+        status_code=400,
+        detail="Formato non supportato. Usa ?format=md, txt, pdf oppure outline",
     )
 
 
