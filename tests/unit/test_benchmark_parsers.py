@@ -1,9 +1,9 @@
 """The corpus benchmark (B7).
 
-It runs the worker's own measurement over a folder, so these tests check the two
-things it adds on top: that formats the profile cannot read are reported as
-unsupported instead of producing a meaningless character count, and that the
-per-type summary counts what it claims to.
+It runs the upload's own intake and the worker's own parsing over a folder, so
+these tests check the two things it adds on top: that a file the intake refuses
+is reported with its refusal code instead of being measured, and that the
+per-type summary counts pages where they went — text layer, OCR, unread.
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ def corpus(tmp_path):
     (tmp_path / "programma.txt").write_text("Programma: memoria di lavoro.", encoding="utf-8")
     (tmp_path / "scansioni").mkdir()
     (tmp_path / "scansioni" / "scheda.pdf").write_bytes(_blank_pdf())
-    (tmp_path / "verifica.docx").write_bytes(b"PK\x03\x04 non misurabile da pypdf")
+    (tmp_path / "verifica.docx").write_bytes(b"PK\x03\x04 non un vero documento Word")
     return tmp_path
 
 
@@ -43,47 +43,54 @@ def test_every_file_is_listed_including_nested_ones(corpus):
 def test_a_readable_text_is_measured(corpus):
     row = next(r for r in benchmark(corpus) if r.file == "programma.txt")
 
-    assert row.supported is True
-    assert row.empty is False
+    assert row.rejected is None
     assert row.chars == len("Programma: memoria di lavoro.")
+    assert row.unreadable is False
 
 
-def test_a_scanned_pdf_is_counted_as_empty(corpus):
+def test_a_scanned_pdf_counts_its_unread_page(corpus):
+    """Not «empty yes/no»: the page exists, has no text layer, and was not read."""
     row = next(r for r in benchmark(corpus) if r.extension == ".pdf")
 
-    assert row.empty is True
     assert row.pages == 1
-    assert row.pages_with_text == 0
+    assert row.pages_with_text_layer == 0
+    assert row.unread_pages == 1
 
 
-def test_an_unsupported_format_is_reported_not_measured(corpus):
-    """A DOCX decoded as text would look like success and mean nothing."""
+def test_a_file_the_intake_refuses_is_reported_not_measured(corpus):
+    """What the teacher would be told on upload, not a meaningless character count."""
     row = next(r for r in benchmark(corpus) if r.extension == ".docx")
 
-    assert row.supported is False
+    assert row.rejected == "not_ooxml"
     assert row.chars is None
-    assert row.empty is None
 
 
-def test_the_summary_counts_empties_per_type(corpus):
+def test_the_summary_counts_pages_per_type(corpus):
     summary = summarize(benchmark(corpus))
 
-    assert summary[".pdf"] == {"files": 1, "measured": 1, "empty": 1, "unreadable": 0}
-    assert summary[".docx"]["measured"] == 0
+    assert summary[".pdf"] == {
+        "files": 1,
+        "rejected": 0,
+        "pages": 1,
+        "text": 0,
+        "ocr": 0,
+        "unread": 1,
+    }
+    assert summary[".docx"]["rejected"] == 1
 
 
-def test_the_report_marks_unsupported_rows(corpus):
+def test_the_report_marks_rejected_rows(corpus):
     report = render_markdown(benchmark(corpus))
 
-    assert "*non supportato*" in report
-    assert "| .pdf | 1 | 1 | 1 | 100% | 0 |" in report
+    assert "*rifiutato: not_ooxml*" in report
+    assert "| .pdf | 1 | 0 | 1 | 0 | 0 | 1 |" in report
 
 
 def test_the_cli_writes_a_report(corpus, tmp_path_factory):
     out = tmp_path_factory.mktemp("out") / "report.md"
 
     assert main([str(corpus), "--out", str(out)]) == 0
-    assert "Benchmark estrazione" in out.read_text(encoding="utf-8")
+    assert "Benchmark parsing — profilo ir@1" in out.read_text(encoding="utf-8")
 
 
 def test_the_cli_refuses_a_path_that_is_not_a_folder(tmp_path):

@@ -429,6 +429,11 @@ def _teacher_upload_context(lesson: Any) -> Optional[str]:
         if not ex:
             continue
         title = (item.get("filename") or "file").strip()
+        parse = item.get("parse") if isinstance(item.get("parse"), dict) else {}
+        if parse.get("ocr_pages"):
+            # §7.8: OCR text is a machine's reading of an image. The Writer is
+            # told so, and must not quote names or figures from it as certain.
+            title += " (testo letto con OCR: può contenere errori di lettura)"
         parts.append(f"### {title}\n{ex}")
     if not parts:
         return None

@@ -1,8 +1,13 @@
 # Install and run the backend server
 FROM python:3.12-bookworm AS base
 
-# Install additional locales
-RUN apt-get update && apt-get install -y locales gettext  && rm -rf /var/lib/apt/lists/*
+# Install additional locales, and Tesseract for OCR of scanned uploads (Fase 2 ·
+# PR 5). Only the Italian and English language packs: ~17 MB, measured. No
+# OCRmyPDF or Ghostscript — pages are rasterised in-process by pypdfium2.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends locales gettext \
+        tesseract-ocr tesseract-ocr-ita tesseract-ocr-eng \
+    && rm -rf /var/lib/apt/lists/*
 # Set locale to it_IT
 RUN localedef -i it_IT -c -f UTF-8 -A /usr/share/locale/locale.alias it_IT.UTF-8
 ENV LANG it_IT.utf8

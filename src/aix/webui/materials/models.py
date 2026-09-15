@@ -416,3 +416,45 @@ class IngestionJob(Base):
         # performance difference nobody would notice until production.
         Index("ix_ingestion_job_claim", "status", "next_attempt_at", "created_at"),
     )
+
+
+class DocumentIR(Base):
+    """What a parser made of one version, under one parser profile (§7.7).
+
+    The structured result — blocks with their page or slide, their confidence,
+    the pages OCR read and the ones nobody could — as ``DocumentIRV1.to_json``.
+    It is what the private retriever of PR 6 will chunk and what a citation will
+    point into; ``material_version.parse_quality`` stays the summary.
+
+    Keyed like the job that produced it: one row per version and profile, so a
+    new parser profile adds a second reading of the same document rather than
+    overwriting the first, and the two can be compared.
+    """
+
+    __tablename__ = "document_ir"
+
+    id: Mapped[uuid.UUID] = mapped_column(GUID, primary_key=True, default=uuid.uuid4)
+
+    owner_id: Mapped[uuid.UUID] = mapped_column(
+        GUID, ForeignKey("user.id", ondelete="CASCADE"), nullable=False
+    )
+    material_version_id: Mapped[uuid.UUID] = mapped_column(
+        GUID, ForeignKey("material_version.id", ondelete="CASCADE"), nullable=False
+    )
+
+    parser_profile_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    schema_version: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    #: Blocks and text only. §7.7: no base64 assets in here — assets are blobs.
+    ir_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "material_version_id", "parser_profile_version", name="uq_document_ir_version_profile"
+        ),
+        Index("ix_document_ir_owner", "owner_id"),
+    )

@@ -24,11 +24,35 @@
     <div class="flex flex-wrap gap-1.5">
       {% for f in files %}
         {% set fid = f.id if f.id else loop.index0|string %}
-        <span class="aix-attach-chip">
-          <wa-icon name="file-lines" class="aix-fs-08 aix-color-secondary"></wa-icon>
+        {#
+          ``parse`` is on entries uploaded since Fase 2 · PR 5; older entries
+          have none and render as before. What the parser could not do is said
+          on the chip, not discovered later in a lesson written from less.
+        #}
+        {% set p = f.parse if f.parse is mapping else {} %}
+        {% set unread = p.unread_pages or 0 %}
+        {% set ocr = p.ocr_pages or 0 %}
+        {% set low = "ocr_low_confidence" in ((p.warnings or []) | join(" ")) %}
+        {% set warn = p.empty or unread or low %}
+        <span class="aix-attach-chip{% if warn %} aix-attach-chip--warn{% endif %}">
+          <wa-icon name="{{ 'triangle-exclamation' if warn else 'file-lines' }}" class="aix-fs-08 aix-color-secondary"></wa-icon>
           <span class="aix-attach-filename" title="{{ f.filename }}">{{ f.filename }}</span>
           <span class="aix-attach-chip-sep">·</span>
           <span class="aix-attach-chip-size">{{ ((f.size or 0) / 1024) | round(0, "floor") | int }} KB</span>
+          {% if p.empty %}
+            <span class="aix-attach-chip-sep">·</span>
+            <span class="aix-attach-chip-status" title="Il documento non contiene testo leggibile: non verrà usato per la lezione.">nessun testo leggibile</span>
+          {% elif ocr %}
+            <span class="aix-attach-chip-sep">·</span>
+            <span class="aix-attach-chip-status"
+                  title="Testo letto automaticamente da immagini (OCR){% if p.ocr_mean_confidence %}, affidabilità media {{ (p.ocr_mean_confidence * 100) | round | int }}%{% endif %}. Può contenere errori.">
+              OCR {{ ocr }} pag.{% if low %} · bassa qualità{% endif %}
+            </span>
+          {% endif %}
+          {% if unread and not p.empty %}
+            <span class="aix-attach-chip-sep">·</span>
+            <span class="aix-attach-chip-status" title="Pagine senza testo che non è stato possibile leggere.">{{ unread }} pag. non lette</span>
+          {% endif %}
           {% if lesson.status != "running" %}
             <button type="button"
                     class="aix-attach-chip-remove"

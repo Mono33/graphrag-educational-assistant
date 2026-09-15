@@ -78,7 +78,7 @@
          name="file"
          class="hidden"
          aria-hidden="true"
-         accept=".pdf,.txt,.md,.markdown,application/pdf,text/plain,text/markdown"
+         accept=".pdf,.docx,.pptx,.txt,.md,.markdown,.png,.jpg,.jpeg,.webp,.tif,.tiff"
          hx-post="/webui/lesson/{{ lesson.id }}/upload"
          hx-encoding="multipart/form-data"
          hx-trigger="change"
@@ -103,7 +103,7 @@
         <button type="button"
                 class="aix-chat-input-icon-btn"
                 aria-label="Allega documento"
-                title="Allega PDF, TXT o Markdown come contesto per la lezione (max 10 MB)"
+                title="Allega PDF, Word, PowerPoint, testo o immagini (anche scansioni) come contesto per la lezione (max 10 MB)"
                 onclick="document.getElementById('chat-upload-input').click()">
           <wa-icon name="paperclip" class="aix-fs-095"></wa-icon>
         </button>
@@ -184,7 +184,7 @@
          name="file"
          class="hidden"
          aria-hidden="true"
-         accept=".pdf,.txt,.md,.markdown,application/pdf,text/plain,text/markdown"
+         accept=".pdf,.docx,.pptx,.txt,.md,.markdown,.png,.jpg,.jpeg,.webp,.tif,.tiff"
          hx-post="/webui/lesson/{{ lesson.id }}/upload"
          hx-encoding="multipart/form-data"
          hx-trigger="change"
@@ -207,7 +207,7 @@
         <button type="button"
                 class="aix-chat-input-icon-btn"
                 aria-label="Allega documento"
-                title="Allega PDF, TXT o Markdown come contesto per la lezione (max 10 MB)"
+                title="Allega PDF, Word, PowerPoint, testo o immagini (anche scansioni) come contesto per la lezione (max 10 MB)"
                 onclick="document.getElementById('chat-upload-input').click()">
           <wa-icon name="paperclip" class="aix-fs-095"></wa-icon>
         </button>

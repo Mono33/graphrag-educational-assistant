@@ -62,6 +62,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import html
 import logging
 import re
 import uuid
@@ -1426,13 +1427,17 @@ async def lesson_upload(
     filename = getattr(up, "filename", None) or "upload"
 
     try:
-        manifest, entry = save_upload(lesson_id, filename, content, lesson.uploaded_files_json)
+        # In a thread: parsing a scan runs OCR, and that must not stall the
+        # event loop every other teacher's chat is streaming on.
+        manifest, entry = await asyncio.to_thread(
+            save_upload, lesson_id, filename, content, lesson.uploaded_files_json
+        )
         lesson.uploaded_files_json = manifest
         await session.commit()
         await session.refresh(lesson)
     except ValueError as exc:
         return HTMLResponse(
-            content=f'<p class="text-sm text-rose-700 px-2 py-1">{exc}</p>',
+            content=f'<p class="text-sm text-rose-700 px-2 py-1">{html.escape(str(exc))}</p>',
             status_code=422,
         )
 

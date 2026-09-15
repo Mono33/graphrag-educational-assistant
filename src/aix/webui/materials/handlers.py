@@ -1,113 +1,67 @@
-"""What the ingestion worker actually does to a job (Fase 1 · PR 4).
+"""What the ingestion worker actually does to a job (Fase 2 · PR 5).
 
-The real parser is PR 5. This handler runs the extraction that already runs
-today — ``aix.webui.lessons.uploads.extract_text``, which is pypdf for a PDF and
-a decode for anything else — and records **how well it went** rather than what
-it produced.
+PR 4 ran pypdf and recorded only how well it went, to learn how often teacher
+uploads come back empty. That question is answered — scans are real, and
+``empty`` was the wrong measure of them — and this handler now runs the parser
+that replaced pypdf: ``aix.webui.materials.parsing``, profile ``ir@1``.
 
-Not storing the text is the point, not a shortcut. In shadow mode the content
-that reaches the Writer is still the legacy manifest excerpt; this pipeline is
-being proved, not yet used. The place for structured content is ``document_ir``,
-which arrives with the parser that can produce it. Writing the extract into
-``parse_quality`` instead would be putting content in a metadata column because
-it was the column that happened to be there.
+It records two things:
 
-What it does produce is the one measurement nobody has: **how often pypdf comes
-back empty on real teacher uploads.** An empty extract from a PDF almost always
-means a scanned document, and that number — not an opinion about parsers — is
-what should decide whether Docling is worth its weight.
+* ``document_ir`` — the structured result, blocks with page or slide locators
+  and confidences. It is what the private retriever of PR 6 will read;
+* ``material_version.parse_quality`` — the summary: pages with a text layer,
+  pages read by OCR, pages nobody could read.
 
-``pypdf@1`` is a ``parser_profile_version``, and that string is half of
-``ingestion_job``'s unique key. Adding ``docling@1`` later is therefore a second
-job over the same material rather than a migration: the corpus gets re-parsed,
-and the two results can be compared instead of one overwriting the other.
+``ir@1`` is a ``parser_profile_version``, and that string is half of
+``ingestion_job``'s unique key. Versions queued under ``pypdf@1`` keep their
+results; a new profile is a second job over the same material, not a migration.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any, Optional
 
-from sqlalchemy import update
+from sqlalchemy import select, update
 
 from aix.webui.materials.jobs import JobDispatcher
-from aix.webui.materials.models import IngestionJob, MaterialVersion
+from aix.webui.materials.models import DocumentIR, IngestionJob, MaterialVersion
+from aix.webui.materials.parsing import PARSER_PROFILE, DocumentIRV1, parse_document
 from aix.webui.materials.repository import AssetBlobRepository
 from aix.webui.materials.storage import StorageBackend
 
 logger = logging.getLogger(__name__)
 
-#: The extractor this handler is. Recorded on every row it touches, so a later
-#: profile's results are distinguishable from these rather than mixed in.
-PARSER_PROFILE = "pypdf@1"
+__all__ = ["PARSER_PROFILE", "ExtractionHandler", "measure_extraction", "status_for"]
 
 
-def measure_extraction(content: bytes, filename: str) -> dict[str, Any]:
-    """Extract exactly as the legacy path does, and report what came out.
+def measure_extraction(
+    content: bytes, media_type: str
+) -> tuple[Optional[DocumentIRV1], dict[str, Any]]:
+    """Parse, and report what came out: ``(ir or None, quality)``.
 
-    The text comes from ``extract_text`` rather than from a second
-    implementation, so the measurement describes what the teacher's lesson is
-    actually being written from and not something close to it.
-
-    The page counts are a separate pypdf pass, because ``extract_text`` joins
-    pages into one string and the seam is gone by the time it returns. They are
-    worth the second read: a PDF where pypdf finds text on 3 pages out of 40 is
-    a partly scanned document, and that is a different problem from one where
-    it finds nothing at all — a distinction a character count hides.
+    A document the parser cannot read is a result, not an exception: the bytes
+    will not become readable on the third attempt, and retrying five times
+    before failing would spend a worker slot on a conclusion already known.
     """
-    from aix.webui.lessons.uploads import extract_text
-
     try:
-        text = extract_text(content, filename) or ""
+        ir = parse_document(content, media_type)
     except Exception:  # noqa: BLE001 — a document that cannot be read is a result
-        # pypdf raises on a truncated or malformed file. That is an outcome
-        # worth recording once, not a reason to retry the job five times and
-        # then fail it: the bytes will not become readable on the third attempt.
-        logger.info("[ingestion] %s could not be read at all", filename, exc_info=True)
-        return {"extractor": PARSER_PROFILE, "chars": 0, "empty": True, "unreadable": True}
-
-    stripped = text.strip()
-
-    quality: dict[str, Any] = {
-        "extractor": PARSER_PROFILE,
-        "chars": len(stripped),
-        # The measurement this handler exists for. True on a scanned PDF, which
-        # pypdf reports as success with nothing in it.
-        "empty": not stripped,
-    }
-    quality.update(_page_counts(content, filename))
-    return quality
+        logger.info("[ingestion] a %s could not be read at all", media_type, exc_info=True)
+        return None, {"parser": PARSER_PROFILE, "chars": 0, "empty": True, "unreadable": True}
+    return ir, ir.quality()
 
 
-def _page_counts(content: bytes, filename: str) -> dict[str, Any]:
-    """Pages, and pages pypdf got text out of. Empty dict for non-PDFs.
-
-    Best effort by design: this is a diagnostic, and a document whose page
-    structure cannot be read is still a document that extracted some text.
-    Failing the job over a count nobody is waiting for would be the wrong
-    trade.
-    """
-    if not filename.lower().endswith(".pdf"):
-        return {}
-
-    try:
-        import io
-
-        from pypdf import PdfReader
-
-        reader = PdfReader(io.BytesIO(content))
-        pages = reader.pages[:50]  # the same ceiling extract_text applies
-        return {
-            "pages": len(pages),
-            "pages_with_text": sum(1 for page in pages if (page.extract_text() or "").strip()),
-        }
-    except Exception:  # noqa: BLE001 — a diagnostic must not fail the job
-        logger.debug("[ingestion] could not count pages for a PDF", exc_info=True)
-        return {}
+def status_for(quality: dict[str, Any]) -> str:
+    """``ready_with_warnings`` whenever part of the document did not make it."""
+    if quality.get("empty") or quality.get("unread_pages") or quality.get("warnings"):
+        return "ready_with_warnings"
+    return "ready"
 
 
 class ExtractionHandler:
-    """Reads a job's bytes back out of storage, measures, records, finishes.
+    """Reads a job's bytes back out of storage, parses, records, finishes.
 
     Reads rather than receives: the worker claims a row, and the bytes live
     behind a ``StorageBackend`` that verifies them against their digest on the
@@ -123,22 +77,27 @@ class ExtractionHandler:
         """Process one job. Returns ``None`` — there is only one step here.
 
         Raising is how a failure is reported: the worker catches it, records a
-        failed attempt with a code, and moves to the next job. Nothing in here
-        should swallow anything.
+        failed attempt with a code, and moves to the next job.
         """
-        quality = await self._measure(job)
+        content, media_type = await self._load(job)
 
-        status = "ready_with_warnings" if quality["empty"] else "ready"
-        await self._record(job, quality=quality, status=status)
+        # In a thread: OCR is CPU-bound and seconds long, and the worker shares
+        # its event loop with every request the app is serving.
+        ir, quality = await asyncio.to_thread(measure_extraction, content, media_type)
 
-        if quality["empty"]:
+        status = status_for(quality)
+        await self._record(job, ir=ir, quality=quality, status=status)
+
+        if status != "ready":
             logger.info(
-                "[ingestion] job=%s extracted nothing — likely a scanned document",
+                "[ingestion] job=%s finished with warnings: unread=%s ocr=%s",
                 job.id,
+                quality.get("unread_pages"),
+                quality.get("ocr_pages"),
             )
         return None
 
-    async def _measure(self, job: IngestionJob) -> dict[str, Any]:
+    async def _load(self, job: IngestionJob) -> tuple[bytes, str]:
         async with self._dispatcher.session_maker() as session:
             version = await session.get(MaterialVersion, job.material_version_id)
             if version is None:
@@ -149,20 +108,47 @@ class ExtractionHandler:
                 raise LookupError(f"asset_blob {version.blob_id} is gone")
 
             content = await self._storage.get(blob.object_key)
+            return content, version.media_type
 
-        # ``extract_text`` dispatches on the extension, and the object key
-        # carries none — it is a digest by design. The recorded media type is
-        # what the version knows about itself.
-        return measure_extraction(content, _filename_for(version.media_type))
+    async def _record(
+        self,
+        job: IngestionJob,
+        *,
+        ir: Optional[DocumentIRV1],
+        quality: dict[str, Any],
+        status: str,
+    ) -> None:
+        """Write the IR and the summary, then finish the job.
 
-    async def _record(self, job: IngestionJob, *, quality: dict[str, Any], status: str) -> None:
-        """Write the measurement onto the version, then finish the job.
-
-        The version is updated before the job is completed so that a crash in
-        between leaves a job that will be retried, rather than a job marked
-        ready with nothing recorded.
+        Both rows are written before the job is completed, so a crash in
+        between leaves a job that will be retried rather than a job marked
+        ready with nothing recorded. The IR is upserted by hand because that
+        retry may find the row its previous attempt already wrote.
         """
         async with self._dispatcher.session_maker() as session:
+            if ir is not None:
+                existing = (
+                    await session.execute(
+                        select(DocumentIR).where(
+                            DocumentIR.material_version_id == job.material_version_id,
+                            DocumentIR.parser_profile_version == PARSER_PROFILE,
+                        )
+                    )
+                ).scalar_one_or_none()
+                if existing is None:
+                    session.add(
+                        DocumentIR(
+                            owner_id=job.owner_id,
+                            material_version_id=job.material_version_id,
+                            parser_profile_version=PARSER_PROFILE,
+                            schema_version=ir.schema_version,
+                            ir_json=ir.to_json(),
+                        )
+                    )
+                else:
+                    existing.schema_version = ir.schema_version
+                    existing.ir_json = ir.to_json()
+
             await session.execute(
                 update(MaterialVersion)
                 .where(MaterialVersion.id == job.material_version_id)
@@ -171,11 +157,3 @@ class ExtractionHandler:
             await session.commit()
 
         await self._dispatcher.complete(job.id, lease_owner=job.lease_owner, status=status)
-
-
-def _filename_for(media_type: str) -> str:
-    """A name whose only job is to carry an extension into ``extract_text``."""
-    return {
-        "application/pdf": "material.pdf",
-        "text/markdown": "material.md",
-    }.get(media_type, "material.txt")
