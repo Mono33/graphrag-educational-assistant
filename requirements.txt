@@ -53,6 +53,20 @@ markdown>=3.5.0
 nh3>=0.2.18
 # WebUI P3 — PDF text extraction for teacher uploads (explicit pin; also common transitive dep).
 pypdf>=5.0.0
+# Fase 2 · PR 5 — parsing and OCR, chosen to fit the pilot VM (2 vCPU, 4 GB,
+# shared with Postgres). Docling was measured out: 3–4 GB peaks on one PDF.
+# All five are permissively licensed, which matters because this project is
+# declared Proprietary — PyMuPDF (AGPL) was ruled out for exactly that reason.
+python-docx>=1.1.0       # DOCX structure: headings, lists, tables (MIT)
+python-pptx>=1.0.0       # PPTX slides and shapes (MIT)
+pypdfium2>=4.30.0        # renders PDF pages to images for OCR; wheel, no system deps (Apache-2.0/BSD-3)
+pytesseract>=0.3.10      # thin wrapper over the tesseract binary, installed by apt in the image (Apache-2.0)
+filetype>=1.2.0          # magic-byte sniffing, pure Python — no libmagic to install (MIT)
+# Fase 3 · PR 7 — the lesson Markdown as a token stream (headings, lists, tables,
+# links, in order), which is what the export adapter has to recognise. Already in
+# the lock as a transitive dependency; declared because the export now relies on
+# it directly, and a dependency nobody declared can disappear on an upgrade (MIT).
+markdown-it-py>=3.0.0
 
 # Core dependencies
 langchain>=1.0.0,<2.0.0
