@@ -18,6 +18,7 @@ from aix.agent.agents.planner_agent import RetrievalPlan
 from aix.agent.agents.retriever_agent import RetrievalResult
 from aix.agent.prompts.profile_renderer import render_profile_section
 from aix.agent.prompts.writer_prompt import (
+    WRITER_MATERIAL_PASSAGES_APPENDIX,
     WRITER_REVISION_TEMPLATE,
     WRITER_TEACHER_UPLOADS_APPENDIX,
     WRITER_USER_TEMPLATE_HYBRID,
@@ -55,6 +56,47 @@ _WRITER_MAX_TOKENS = int(os.getenv("AIX_WRITER_MAX_TOKENS", "8000"))
 # on 2026-09-16 with AIX_WRITER_MAX_TOKENS=2000 — asks the model to do again
 # exactly what it just could not do: two runs, four minutes, zero characters.
 _WRITER_MIN_CONTENT_TOKENS = int(os.getenv("AIX_WRITER_MIN_CONTENT_TOKENS", "4000"))
+
+#: §8.7 — the private material gets its own slice of the prompt, so a long
+#: document cannot push out the system instructions, the classroom profile or
+#: the Knowledge Graph evidence. ~12k characters is a few pages of quotations:
+#: enough to ground a lesson, far from the budget that produced zero output on
+#: 2026-09-16 when two whole attachments were pasted in.
+_MATERIAL_BUDGET_CHARS = int(os.getenv("AIX_PRIVATE_RAG_BUDGET_CHARS", "12000"))
+
+
+def render_material_passages(
+    items: Optional[list[dict[str, Any]]], *, budget_chars: int = _MATERIAL_BUDGET_CHARS
+) -> str:
+    """The retrieved passages as the Writer sees them: marker, then quotation.
+
+    Best first — they arrive sorted by score — and cut at the budget rather than
+    truncated mid-passage, because half a quotation is something the model will
+    complete from memory.
+
+    The marker is the one the model must copy back (§8.6). OCR text says so, so
+    a date read from a scan is not quoted as if it had been typed (§7.8).
+    """
+    if not items:
+        return ""
+
+    blocks: list[str] = []
+    used = 0
+    for item in items:
+        text = str(item.get("text") or "").strip()
+        marker = str(item.get("citation") or "").strip()
+        if not text or not marker:
+            continue
+
+        header = f"{marker}{' · testo letto con OCR' if item.get('ocr') else ''}"
+        block = f"{header}\n«{text}»"
+        if used + len(block) > budget_chars:
+            break
+        blocks.append(block)
+        used += len(block)
+
+    return "\n\n".join(blocks)
+
 
 # Max number of automatic continuation calls when the writer output is cut
 # by finish_reason="length". 1 = at most 2 total LLM calls per write/revise.
@@ -183,6 +225,7 @@ class WriterAgent:
         external_resources: Optional[dict[str, Any]] = None,  # Phase A: External resources
         domain: str = "neuro",  # Phase B: Domain for extensions
         teacher_provided_context: Optional[str] = None,  # WebUI #6.6 P3: chat uploads
+        material_context_items: Optional[list[dict[str, Any]]] = None,  # PR 6: §8.2
         educational_profile: Optional[dict[str, Any]] = None,  # Teacher's lesson profile
         pedagogical_intent: Optional[str] = None,  # "{code}" or "{code}: {detail}"
         refinement_instruction: Optional[str] = None,  # SAM refinement instruction
@@ -348,7 +391,15 @@ class WriterAgent:
                 f"Produce a complete revised lesson (not just the changed parts).\n\n"
             ) + user_prompt
 
-        if teacher_provided_context and teacher_provided_context.strip():
+        # Fase 2 · PR 6 — the retrieved passages replace the pasted document.
+        # Both would be the same text twice: once chosen for this request, once
+        # entire. The fallback is deliberate (§5.4 hybrid): when retrieval finds
+        # nothing — still being indexed, or the flag is off — the teacher's
+        # upload still reaches the Writer exactly as it did before.
+        passages = render_material_passages(material_context_items)
+        if passages:
+            user_prompt += WRITER_MATERIAL_PASSAGES_APPENDIX.format(material_passages=passages)
+        elif teacher_provided_context and teacher_provided_context.strip():
             user_prompt += WRITER_TEACHER_UPLOADS_APPENDIX.format(
                 teacher_provided_context=teacher_provided_context.strip()
             )
@@ -564,6 +615,7 @@ class WriterAgent:
         language: str = "it",
         intent: str = "lesson_creation",
         teacher_provided_context: Optional[str] = None,
+        material_context_items: Optional[list[dict[str, Any]]] = None,
     ) -> str:
         """
         Revise content based on critic feedback.
@@ -597,8 +649,13 @@ class WriterAgent:
 
         # Same appendix ``write()`` uses, so both paths tell the model the same
         # thing about the teacher's material rather than describing it twice in
-        # two ways.
-        if teacher_provided_context and teacher_provided_context.strip():
+        # two ways. A revision that lost the material would quietly rewrite the
+        # lesson away from the document it was grounded in — the defect fixed in
+        # `3ca2e0b`, and the passages must not reintroduce it.
+        passages = render_material_passages(material_context_items)
+        if passages:
+            user_prompt += WRITER_MATERIAL_PASSAGES_APPENDIX.format(material_passages=passages)
+        elif teacher_provided_context and teacher_provided_context.strip():
             user_prompt += WRITER_TEACHER_UPLOADS_APPENDIX.format(
                 teacher_provided_context=teacher_provided_context.strip()
             )

@@ -574,6 +574,7 @@ async def write_node(state: AgentState) -> dict[str, Any]:
                 # Critic-triggered revision silently dropped whatever the
                 # teacher had uploaded.
                 teacher_provided_context=state.get("teacher_provided_context"),
+                material_context_items=state.get("material_context_items"),
             )
         else:
             # Initial writing
@@ -622,6 +623,10 @@ async def write_node(state: AgentState) -> dict[str, Any]:
                     # NEW Phase B: Pass domain for extensions
                     domain=state.get("domain", "neuro"),
                     teacher_provided_context=state.get("teacher_provided_context"),
+                    # Fase 2 · PR 6 — the retrieved passages. When there are
+                    # any, the Writer uses them *instead* of the pasted
+                    # document: that is the whole point of chunking it.
+                    material_context_items=state.get("material_context_items"),
                     educational_profile=state.get("educational_profile"),
                     pedagogical_intent=state.get("pedagogical_intent"),
                     refinement_instruction=state.get("refinement_instruction"),

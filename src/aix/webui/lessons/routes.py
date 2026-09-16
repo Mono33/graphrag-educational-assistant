@@ -125,6 +125,7 @@ from aix.webui.lessons.display import lesson_to_row
 from aix.webui.lessons.models import Lesson, LessonMessage, SavedProfile
 from aix.webui.lessons.schemas import form_to_profile_dict, profile_to_form_values
 from aix.webui.lessons.uploads import delete_upload, save_upload
+from aix.webui.materials.citations import render_citations, resolve_for_lesson
 from aix.webui.materials.shadow import record_upload, retire_material
 from aix.webui.sanitize import sanitize_html
 
@@ -2127,11 +2128,16 @@ async def lesson_export(
     slug = (lesson.title or f"lezione-{lesson.id}").lower()
     slug = "".join(c if c.isalnum() or c in "-_" else "-" for c in slug).strip("-")[:60]
 
+    # §8.6 — resolve the citation markers once, here, with the names of the
+    # documents this lesson is bound to. Every format below exports the same
+    # readable reference, and an internal address reaches none of them.
+    plan_md = await resolve_for_lesson(lesson.lesson_plan_md, session, lesson)
+
     if format == "md":
         # Keep the machine-readable Art. 50 comment that the agent stamped at
         # the top of the markdown; add the header too (#21).
         return Response(
-            content=lesson.lesson_plan_md,
+            content=plan_md,
             media_type="text/markdown; charset=utf-8",
             headers={
                 "Content-Disposition": f'attachment; filename="{slug}.md"',
@@ -2144,7 +2150,7 @@ async def lesson_export(
 
         # The HTML comment is meaningless in plain text — strip it and replace
         # it with a human-readable Art. 50 notice at the top (#21).
-        text = strip_marking(lesson.lesson_plan_md)
+        text = strip_marking(plan_md)
         text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)  # links
         text = re.sub(r"!\[[^\]]*\]\([^)]+\)", "", text)  # images
         text = re.sub(r"#{1,6}\s*", "", text)  # headings
@@ -2179,7 +2185,7 @@ async def lesson_export(
 
         ir = build_export_ir(
             adapt_lesson_markdown(
-                lesson.lesson_plan_md,
+                plan_md,
                 lesson_id=str(lesson.id),
                 fallback_title=lesson.title or "Lezione",
             )
@@ -2569,8 +2575,14 @@ def _markdown_to_html(text: str) -> str:
     typing and from text extracted out of files they upload — none of which is
     ours — and python-markdown passes raw HTML straight through.
     """
+    # §8.6 — the citation markers are an internal address. Resolved here with the
+    # neutral label, so a raw ``[[material:…]]`` can never reach a teacher from
+    # any of the call sites; where the document's name is worth the lookup (the
+    # export route) the text is resolved with labels before it gets here.
     return sanitize_html(
-        md.markdown(text or "", extensions=_MARKDOWN_EXTENSIONS, output_format="html5")
+        md.markdown(
+            render_citations(text or ""), extensions=_MARKDOWN_EXTENSIONS, output_format="html5"
+        )
     )
 
 
