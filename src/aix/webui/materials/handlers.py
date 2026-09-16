@@ -54,7 +54,15 @@ def measure_extraction(
 
 
 def status_for(quality: dict[str, Any]) -> str:
-    """``ready_with_warnings`` whenever part of the document did not make it."""
+    """What the version's status becomes once the parser has spoken.
+
+    A document nobody could open is ``failed``, not ``ready_with_warnings``:
+    "ready" says a lesson may be written from it, and there is nothing to write
+    from. It stays a terminal state — the bytes will not become readable on a
+    retry — but an honest one (Louis, 2026-09-15).
+    """
+    if quality.get("unreadable"):
+        return "failed"
     if quality.get("empty") or quality.get("unread_pages") or quality.get("warnings"):
         return "ready_with_warnings"
     return "ready"
@@ -209,4 +217,9 @@ class ExtractionHandler:
             )
             await session.commit()
 
-        await self._dispatcher.complete(job.id, lease_owner=job.lease_owner, status=status)
+        # ``complete`` only writes while the lease is still ours, and says so.
+        # False means another worker took the job while this one was parsing —
+        # worth a line in the log, because it is the visible trace of work done
+        # twice (Louis, 2026-09-15).
+        if not await self._dispatcher.complete(job.id, lease_owner=job.lease_owner, status=status):
+            logger.warning("[ingestion] job=%s finished but the lease was no longer ours", job.id)

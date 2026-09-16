@@ -8,7 +8,7 @@ pages, with the JWT delivered to the browser as an HttpOnly cookie:
     POST /auth/register   — create user, auto-login, redirect to ?next or /webui/
     GET  /auth/login      — render login form
     POST /auth/login      — authenticate, set cookie, redirect to ?next or /webui/
-    GET  /auth/logout     — clear cookie, redirect to /webui/
+    POST /auth/logout     — clear cookie, redirect to /webui/
 
 We deliberately do NOT mount the JSON ``/auth/jwt/login`` etc. routes from
 fastapi-users in P1 — see ``aix.webui.auth.__init__`` for rationale. The
@@ -298,11 +298,17 @@ async def login_post(
     return response
 
 
-@router.get("/logout", name="auth_logout_get")
+@router.post("/logout", name="auth_logout")
 async def logout(
     user: Optional[User] = Depends(optional_current_user),
 ) -> Response:
-    """Clear the auth cookie and bounce to the home page."""
+    """Clear the auth cookie and bounce to the home page.
+
+    POST, not GET (Louis, 2026-09-15). Logging out changes state, and a GET that
+    changes state can be fired by any page that gets an ``<img>`` in front of a
+    teacher — mid-lesson. As a POST under ``/auth`` it carries the CSRF token
+    like every other form here.
+    """
     response = RedirectResponse(url="/webui/", status_code=303)
     _clear_auth_cookie(response)
     if user is not None:

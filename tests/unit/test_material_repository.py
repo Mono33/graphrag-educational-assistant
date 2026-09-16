@@ -395,3 +395,42 @@ async def test_bruno_sees_no_bindings_on_annas_lesson(service):
     )
 
     assert await service.bindings.list_for_lesson(LESSON, owner_id=BRUNO) == []
+
+
+async def test_a_binding_refuses_a_lesson_that_belongs_to_someone_else(service, session):
+    """Checking only the material let a teacher attach a document to another
+    teacher's lesson: the binding's own ``owner_id`` records what the caller
+    claimed, so every owner-filtered read afterwards looks correct
+    (Louis, 2026-09-15)."""
+    material, version = await service.store_new_material(
+        b"Programma di classe",
+        owner_id=ANNA,
+        display_name="Programma",
+        media_type="text/plain",
+    )
+    await session.flush()
+
+    if await session.get(User, BRUNO) is None:
+        session.add(
+            User(
+                id=BRUNO,
+                email="bruno@scuola.it",
+                hashed_password="x",
+                is_active=True,
+                is_superuser=False,
+                is_verified=True,
+            )
+        )
+    bruno_lesson = uuid.uuid4()
+    session.add(Lesson(id=bruno_lesson, owner_id=BRUNO, domain="neuro", status="draft"))
+    await session.flush()
+
+    binding = await BindingRepository(session).bind(
+        lesson_id=bruno_lesson,
+        material_id=material.id,
+        owner_id=ANNA,
+        selected_version_id=version.id,
+        created_by=ANNA,
+    )
+
+    assert binding is None

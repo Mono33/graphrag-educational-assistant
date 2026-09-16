@@ -103,6 +103,7 @@ def test_an_unreadable_pdf_is_recorded_rather_than_raised():
     assert ir is None
     assert quality["unreadable"] is True
     assert quality["empty"] is True
+    assert status_for(quality) == "failed", "«ready» would invite a lesson written from nothing"
 
 
 # ---------------------------------------------------------------------------

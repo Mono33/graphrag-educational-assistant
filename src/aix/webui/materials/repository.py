@@ -279,6 +279,19 @@ class BindingRepository:
         if version is None or version.material_id != material_id:
             return None
 
+        # And the lesson must be this owner's too. Checking only the material
+        # would let a caller attach their own document to *someone else's*
+        # lesson: every read afterwards filters by owner and would find nothing
+        # wrong, because the binding's own ``owner_id`` says what the caller
+        # claimed rather than what the lesson is (Louis, 2026-09-15).
+        from aix.webui.lessons.models import Lesson
+
+        lesson_owner = await self._session.scalar(
+            select(Lesson.owner_id).where(Lesson.id == lesson_id)
+        )
+        if lesson_owner is None or lesson_owner != owner_id:
+            return None
+
         binding = LessonMaterialBinding(
             lesson_id=lesson_id,
             material_id=material_id,

@@ -14,8 +14,9 @@ useless alone:
     application can read the cookie to echo it;
   * the signature is over the *session*, so a token minted while logged out
     cannot be replayed once a session exists (login CSRF);
-  * ``/api/v1`` is deliberately untouched, because it authenticates per
-    request rather than from ambient cookie authority.
+  * ``/api/v1`` is untouched for a caller with its own credentials, and guarded
+    when the request rides the WebUI cookie instead — the agent routes accept
+    that cookie, and a browser attaches it to whatever any page asks for.
 """
 
 from __future__ import annotations
@@ -145,9 +146,28 @@ def test_reading_is_never_blocked(client):
     assert client.get("/webui/page").status_code == 200
 
 
-def test_the_json_api_is_left_alone(client):
-    """It authenticates per request, so there is no ambient authority to borrow."""
+def test_the_json_api_is_left_alone_for_a_client_with_its_own_credentials(client):
+    """A Bearer or Basic caller borrows nothing, so nothing here applies to it."""
     assert client.post("/api/v1/agent/run").status_code == 200
+    assert (
+        client.post("/api/v1/agent/run", headers={"Authorization": "Bearer t"}).status_code == 200
+    )
+
+
+def test_the_json_api_is_protected_when_it_rides_the_browser_cookie(client):
+    """The agent routes accept the WebUI cookie, and a browser attaches it anywhere.
+
+    That is ambient authority — the thing CSRF exists for — and the exemption
+    was written when ``/api/v1`` still authenticated per request (Louis,
+    2026-09-15).
+    """
+    _visit(client)
+    client.cookies.set(AUTH_COOKIE, "a-session-token")
+
+    assert client.post("/api/v1/agent/run").status_code == 403
+
+    token = _visit(client)
+    assert client.post("/api/v1/agent/run", headers={HEADER_NAME: token}).status_code == 200
 
 
 def test_the_flag_turns_enforcement_off_but_still_issues(client):

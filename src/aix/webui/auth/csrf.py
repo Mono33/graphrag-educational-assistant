@@ -71,10 +71,27 @@ FORM_FIELD = "csrf_token"
 #: Methods that must not change state, so they carry no token.
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "TRACE"})
 
-#: Everything the middleware guards. ``/api/v1`` is deliberately absent: it
-#: authenticates each request on its own credentials rather than on a browser
-#: cookie, so there is no ambient authority for a third-party page to borrow.
+#: Everything the middleware guards by path.
 PROTECTED_PREFIXES: tuple[str, ...] = ("/webui", "/auth")
+
+
+def borrows_the_browser_cookie(headers: dict) -> bool:
+    """A request authenticating on the WebUI cookie alone, outside ``/webui``.
+
+    ``/api/v1`` used to be exempt on the grounds that it "authenticates each
+    request on its own credentials". That stopped being true when the agent
+    routes gained dual auth: they accept the WebUI cookie, which a browser
+    attaches to any request a third-party page makes — exactly the ambient
+    authority CSRF exists for (Louis, 2026-09-15).
+
+    A client presenting ``Authorization`` — Bearer token or Basic, which is how
+    services and the MCP server call it — is not borrowing anything, so it stays
+    exempt and nothing about those integrations changes.
+    """
+    if headers.get("authorization"):
+        return False
+    return _AUTH_COOKIE_NAME in (headers.get("cookie") or "")
+
 
 #: A token older than this is refused even if it verifies. Longer than a
 #: working session so a teacher does not lose a lesson mid-composition,
@@ -210,7 +227,9 @@ class CSRFMiddleware:
             return
 
         request = Request(scope, receive)
-        protected = request.url.path.startswith(PROTECTED_PREFIXES)
+        protected = request.url.path.startswith(PROTECTED_PREFIXES) or borrows_the_browser_cookie(
+            request.headers
+        )
         unsafe = request.method.upper() not in SAFE_METHODS
 
         if protected and unsafe and _enabled():

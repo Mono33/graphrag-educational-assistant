@@ -89,6 +89,11 @@ class IngestionWorker:
         if job is None:
             return False
 
+        # Hold the lease for as long as the work takes. A 40-page scan is
+        # minutes of OCR and the lease is two, so without this the lease expires
+        # mid-parse, another worker claims the same job, and both write the same
+        # rows (Louis, 2026-09-15).
+        heartbeat = asyncio.create_task(self._keep_the_lease(job))
         try:
             step = await self._handler(job)
         except Exception as exc:  # noqa: BLE001 — every failure is one job's failure
@@ -97,6 +102,8 @@ class IngestionWorker:
                 job.id, lease_owner=self.name, error_code=f"handler_error:{reported.incident}"
             )
             return True
+        finally:
+            heartbeat.cancel()
 
         if step is None:
             await self._dispatcher.complete(job.id, lease_owner=self.name)
@@ -107,6 +114,28 @@ class IngestionWorker:
         await self._dispatcher.set_step(job.id, lease_owner=self.name, step=step)
         await self._dispatcher.renew(job.id, lease_owner=self.name, lease_s=self._lease_s)
         return True
+
+    async def _keep_the_lease(self, job: IngestionJob) -> None:
+        """Renew this job's lease while the handler works on it.
+
+        Renews at a third of the lease, so two renewals can be missed before it
+        lapses. If a renewal comes back False the lease is already someone
+        else's: there is nothing to do about it from here — the handler's own
+        writes are refused for the same reason — so it stops renewing and says
+        so in the log, where it is the trace of a job processed twice.
+        """
+        interval = max(0.5, self._lease_s / 3)
+        while True:
+            await asyncio.sleep(interval)
+            if not await self._dispatcher.renew(
+                job.id, lease_owner=self.name, lease_s=self._lease_s
+            ):
+                logger.warning(
+                    "[jobs] worker %s lost the lease on job=%s while working on it",
+                    self.name,
+                    job.id,
+                )
+                return
 
     async def run_forever(self) -> None:
         """Drain the queue until :meth:`stop` is called.

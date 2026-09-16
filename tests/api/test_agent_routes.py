@@ -411,7 +411,16 @@ def test_openapi_inventory_strictly_additive(client):
             if len(parts) >= 2 and parts[0] in {"GET", "POST", "PUT", "PATCH", "DELETE"}:
                 expected.append(f"{parts[0]} {parts[1]}")
 
-    missing = sorted(set(expected) - live_routes)
+    # Deliberately withdrawn since the baseline, with the reason. The baseline
+    # file stays a factual record of the old surface; a considered removal is
+    # declared here, where it shows up in a diff.
+    withdrawn = {
+        "GET /auth/logout": (
+            "state-changing GET; now POST /auth/logout under CSRF (review of 2026-09-15)"
+        ),
+    }
+
+    missing = sorted(set(expected) - live_routes - withdrawn.keys())
     assert not missing, (
         "Backward-compat regression: routes present before #7 are now missing: "
         + ", ".join(missing)

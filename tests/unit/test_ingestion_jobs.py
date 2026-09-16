@@ -464,3 +464,27 @@ async def test_the_legacy_upload_helpers_do_not_touch_any_of_this():
     source = inspect.getsource(uploads)
     assert "ingestion_job" not in source
     assert "JobDispatcher" not in source
+
+
+async def test_the_lease_is_renewed_while_the_handler_works(dispatcher, version):
+    """A long parse outlives one lease, and the job must stay this worker's.
+
+    Before the renewal (Louis, 2026-09-15) a 40-page scan — minutes of OCR
+    against a two-minute lease — was claimable by a second worker halfway
+    through, and both would parse it and write the same rows.
+    """
+    await dispatcher.enqueue(
+        owner_id=ANNA, material_version_id=version.id, parser_profile_version="ir@1"
+    )
+
+    async def _slow_handler(_job):
+        await asyncio.sleep(1.2)
+        return None
+
+    worker = IngestionWorker(dispatcher, _slow_handler, lease_s=0.9)
+    running = asyncio.create_task(worker.run_once())
+
+    await asyncio.sleep(1.0)  # past the original lease, while the handler still works
+    assert await dispatcher.claim(owner="rival-worker") is None, "the lease was renewed"
+
+    assert await running is True

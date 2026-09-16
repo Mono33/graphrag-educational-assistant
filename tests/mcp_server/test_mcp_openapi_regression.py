@@ -55,6 +55,19 @@ def _baseline_routes() -> list[str]:
     return expected
 
 
+#: Routes deliberately withdrawn since the baseline, each with the reason.
+#: The baseline file stays a factual record of what the surface was; this is
+#: where a considered removal is declared, so it is a decision in a diff rather
+#: than a line quietly edited out of the record.
+WITHDRAWN: dict[str, str] = {
+    "GET /auth/logout": (
+        "Logging out changes state; as a GET any third-party page could fire it "
+        "at a teacher mid-lesson. Now POST /auth/logout, under CSRF "
+        "(review of 2026-09-15)."
+    ),
+}
+
+
 def test_p20_strictly_additive(http_client):
     """Every route present before #20 must still be present today."""
     expected = _baseline_routes()
@@ -64,7 +77,7 @@ def test_p20_strictly_additive(http_client):
     )
 
     live = _live_routes(http_client)
-    missing = sorted(set(expected) - live)
+    missing = sorted(set(expected) - live - WITHDRAWN.keys())
     assert not missing, (
         "Strictly-additive regression: routes present before CORE 5 #20 are "
         "now MISSING from the live spec. This is a backward-compat break.\n"
