@@ -66,7 +66,11 @@ def embedding_dimension() -> int:
 
 
 def _client():
-    from aix.config.settings import app_config
+    # ``aix.core.config`` — the first version imported ``aix.config.settings``,
+    # which does not exist. Every unit test injected a fake client, so the line
+    # never ran until the first real upload, where it failed both ingestion jobs
+    # and the search (2026-09-16). ``test_the_real_client_is_reachable`` pins it.
+    from aix.core.config import config as app_config
 
     return app_config.openai.get_async_client()
 

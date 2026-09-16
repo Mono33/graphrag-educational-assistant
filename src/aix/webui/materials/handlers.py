@@ -96,11 +96,18 @@ class ExtractionHandler:
         status = status_for(quality)
         await self._record(job, ir=ir, quality=quality, status=status)
 
-        # Fase 2 · PR 6 — the private index. After the IR is safely recorded, so
-        # a failure here (the embedding provider is down, a rate limit) retries
-        # the embedding rather than the parse.
+        # Fase 2 · PR 6 — the private index, and only THEN the job's completion.
+        #
+        # The first version completed the job inside ``_record``, before this
+        # line. When embedding failed on the first real upload (2026-09-16) the
+        # job was already "ready": the worker's failure could not be recorded,
+        # nothing was retried, and the material sat unsearchable behind a status
+        # that said all was well. Completing last means a raise here leaves the
+        # job leased and failing, so the worker retries it with backoff.
         if ir is not None:
             await self._index_privately(job, ir)
+
+        await self._complete(job, status)
 
         if status != "ready":
             logger.info(
@@ -179,12 +186,10 @@ class ExtractionHandler:
         quality: dict[str, Any],
         status: str,
     ) -> None:
-        """Write the IR and the summary, then finish the job.
+        """Write the IR and the summary. The job is completed later, by the caller.
 
-        Both rows are written before the job is completed, so a crash in
-        between leaves a job that will be retried rather than a job marked
-        ready with nothing recorded. The IR is upserted by hand because that
-        retry may find the row its previous attempt already wrote.
+        The IR is upserted by hand because a retry may find the row its previous
+        attempt already wrote.
         """
         async with self._dispatcher.session_maker() as session:
             if ir is not None:
@@ -217,9 +222,13 @@ class ExtractionHandler:
             )
             await session.commit()
 
-        # ``complete`` only writes while the lease is still ours, and says so.
-        # False means another worker took the job while this one was parsing —
-        # worth a line in the log, because it is the visible trace of work done
-        # twice (Louis, 2026-09-15).
+    async def _complete(self, job: IngestionJob, status: str) -> None:
+        """Mark the job done — the last thing the handler does, never earlier.
+
+        ``complete`` only writes while the lease is still ours, and says so.
+        False means another worker took the job while this one was working —
+        worth a line in the log, because it is the visible trace of work done
+        twice (Louis, 2026-09-15).
+        """
         if not await self._dispatcher.complete(job.id, lease_owner=job.lease_owner, status=status):
             logger.warning("[ingestion] job=%s finished but the lease was no longer ours", job.id)

@@ -232,3 +232,16 @@ def test_the_private_rag_is_off_unless_asked(monkeypatch):
     assert private_rag_enabled() is False
     monkeypatch.setenv("AIX_PRIVATE_RAG_ENABLED", "true")
     assert private_rag_enabled() is True
+
+
+def test_the_real_client_is_reachable():
+    """The path every other test here skips by injecting a fake client.
+
+    The first version imported ``aix.config.settings``, which does not exist.
+    Nothing caught it, because nothing called ``_client()`` without a fake — the
+    first real upload did, and both ingestion jobs and the search failed on it.
+    No network here: building the client makes no request.
+    """
+    from aix.webui.materials.embedding import _client
+
+    assert hasattr(_client(), "embeddings")

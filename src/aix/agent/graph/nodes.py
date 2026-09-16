@@ -525,8 +525,16 @@ async def retrieve_private_node(state: AgentState) -> dict[str, Any]:
 
     try:
         items = await search(query)
-    except Exception:  # noqa: BLE001 — the Knowledge Graph alone still writes a lesson
-        logger.warning("[Node: PrivateMaterial] search failed, continuing without it")
+    except Exception as exc:  # noqa: BLE001 — the Knowledge Graph alone still writes a lesson
+        # The reason goes in the warning itself. The first real test logged only
+        # "search failed", with the cause at DEBUG, and a broken import looked
+        # exactly like a provider outage until someone read the ingestion job's
+        # traceback instead.
+        logger.warning(
+            "[Node: PrivateMaterial] search failed (%s: %s), continuing without it",
+            type(exc).__name__,
+            exc,
+        )
         logger.debug("[Node: PrivateMaterial] failure detail", exc_info=True)
         return {"current_step": "retrieve_complete"}
 

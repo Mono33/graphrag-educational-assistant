@@ -625,3 +625,42 @@ async def test_with_the_private_rag_off_no_binding_is_claimed(client, maker, _on
     _upload(client)
 
     assert await _rows(maker, LessonMaterialBinding) == []
+
+
+async def test_an_embedding_failure_leaves_the_job_retryable_not_ready(
+    client, maker, tmp_path, _on, monkeypatch
+):
+    """The first real upload's failure, pinned.
+
+    The job used to be completed *before* indexing. When embedding failed the job
+    was already "ready": no retry, zero chunks, and a status saying all was well.
+    Now it is completed last, so the failure is recorded and retried — and once
+    the provider answers, the material becomes searchable.
+    """
+    monkeypatch.setenv("AIX_PRIVATE_RAG_ENABLED", "true")
+
+    async def _provider_down(texts, **_kwargs):
+        raise RuntimeError("OpenRouter non risponde")
+
+    monkeypatch.setattr("aix.webui.materials.embedding.embed_texts", _provider_down)
+    _upload(client, "programma.docx", _docx(), DOCX_MIME)
+    await _drain_one(maker, tmp_path)
+
+    job = (await _rows(maker, IngestionJob))[0]
+    assert job.status != "ready", "a job whose material is not searchable is not ready"
+    assert job.safe_error_code, "and the failure is recorded"
+    assert await _rows(maker, MaterialChunk) == []
+
+    async def _provider_back(texts, **_kwargs):
+        return [[0.5] * 1024 for _ in texts]
+
+    monkeypatch.setattr("aix.webui.materials.embedding.embed_texts", _provider_back)
+    async with maker() as session:
+        from sqlalchemy import update
+
+        await session.execute(update(IngestionJob).values(next_attempt_at=IngestionJob.created_at))
+        await session.commit()
+    await _drain_one(maker, tmp_path)
+
+    assert (await _rows(maker, IngestionJob))[0].status == "ready"
+    assert await _rows(maker, MaterialChunk), "the retry made it searchable"
