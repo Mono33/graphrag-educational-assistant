@@ -88,6 +88,12 @@ class ExtractionHandler:
         status = status_for(quality)
         await self._record(job, ir=ir, quality=quality, status=status)
 
+        # Fase 2 · PR 6 — the private index. After the IR is safely recorded, so
+        # a failure here (the embedding provider is down, a rate limit) retries
+        # the embedding rather than the parse.
+        if ir is not None:
+            await self._index_privately(job, ir)
+
         if status != "ready":
             logger.info(
                 "[ingestion] job=%s finished with warnings: unread=%s ocr=%s",
@@ -96,6 +102,53 @@ class ExtractionHandler:
                 quality.get("ocr_pages"),
             )
         return None
+
+    async def _index_privately(self, job: IngestionJob, ir: DocumentIRV1) -> None:
+        """Chunk the IR and embed it, so the material can be retrieved (§8.3–8.4).
+
+        Off unless ``AIX_PRIVATE_RAG_ENABLED`` is on: with the flag down nothing
+        is chunked, nothing is embedded, and no text leaves the machine.
+
+        Failures are raised, not swallowed. A half-embedded document answers
+        half the questions it should while looking perfectly healthy, which is
+        the kind of quality problem nobody traces back to an ingestion job. The
+        job retries with its own backoff instead.
+        """
+        from aix.webui.materials.chunking import CHUNKER_VERSION, chunk_document
+        from aix.webui.materials.embedding import (
+            embed_texts,
+            embedding_model,
+            private_rag_enabled,
+        )
+        from aix.webui.materials.repository import ChunkRepository
+
+        if not private_rag_enabled():
+            return
+
+        chunks = chunk_document(ir)
+        if not chunks:
+            logger.info("[private-rag] job=%s produced no chunks", job.id)
+            return
+
+        vectors = await embed_texts([chunk.text for chunk in chunks])
+
+        async with self._dispatcher.session_maker() as session:
+            written = await ChunkRepository(session).replace_for_version(
+                owner_id=job.owner_id,
+                material_version_id=job.material_version_id,
+                chunker_version=CHUNKER_VERSION,
+                embedding_model=embedding_model(),
+                chunks=list(zip(chunks, vectors, strict=True)),
+            )
+            await session.commit()
+
+        logger.info(
+            "[private-rag] job=%s indexed %d chunks (%s, %s)",
+            job.id,
+            written,
+            CHUNKER_VERSION,
+            embedding_model(),
+        )
 
     async def _load(self, job: IngestionJob) -> tuple[bytes, str]:
         async with self._dispatcher.session_maker() as session:

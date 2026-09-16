@@ -35,6 +35,7 @@ from aix.webui.materials.models import (
     DocumentIR,
     IngestionJob,
     Material,
+    MaterialChunk,
     MaterialVersion,
 )
 
@@ -472,6 +473,68 @@ async def test_a_scanned_upload_finishes_with_a_warning(client, maker, tmp_path,
     assert version.status == "ready_with_warnings"
     assert version.parse_quality["empty"] is True
     assert version.parse_quality["unread_pages"] == 1
+
+
+# ---------------------------------------------------------------------------
+# The private index (Fase 2 · PR 6): only when asked, and never duplicated
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def _rag_on(monkeypatch):
+    """The private RAG flag, with a fake embedder in place of the provider."""
+    monkeypatch.setenv("AIX_PRIVATE_RAG_ENABLED", "true")
+
+    async def _fake_embed(texts, **_kwargs):
+        return [[0.5] * 1024 for _ in texts]
+
+    monkeypatch.setattr("aix.webui.materials.embedding.embed_texts", _fake_embed)
+
+
+async def test_with_the_flag_off_nothing_is_chunked_or_embedded(client, maker, tmp_path, _on):
+    """No flag, no chunks — and no text leaves the machine."""
+    _upload(client)
+    await _drain_one(maker, tmp_path)
+
+    assert await _rows(maker, MaterialChunk) == []
+
+
+async def test_the_worker_indexes_the_material_for_retrieval(client, maker, tmp_path, _on, _rag_on):
+    _upload(client, "programma.docx", _docx(), DOCX_MIME)
+
+    await _drain_one(maker, tmp_path)
+
+    chunks = await _rows(maker, MaterialChunk)
+    assert chunks, "the material is retrievable"
+    assert all(c.owner_id == ANNA for c in chunks)
+    assert all(len(c.embedding) == 1024 for c in chunks)
+    assert all(c.chunker_version == "chunk@1" for c in chunks)
+    assert all(c.embedding_model for c in chunks), "which model produced it is on the row"
+    assert "fotosintesi clorofilliana" in " ".join(c.text for c in chunks)
+    assert all("block_ids" in c.locator_json for c in chunks), "a citation can be resolved"
+
+
+async def test_re_running_the_job_replaces_the_chunks_rather_than_duplicating_them(
+    client, maker, tmp_path, _on, _rag_on
+):
+    """A second parse of the same version must leave the index as if it ran once."""
+    _upload(client, "programma.docx", _docx(), DOCX_MIME)
+    await _drain_one(maker, tmp_path)
+    first = [c.text_hash for c in await _rows(maker, MaterialChunk)]
+
+    from aix.webui.materials.handlers import ExtractionHandler
+    from aix.webui.materials.jobs import JobDispatcher
+    from aix.webui.materials.storage import LocalDurableStorage
+
+    job = (await _rows(maker, IngestionJob))[0]
+    dispatcher = JobDispatcher(maker)
+    handler = ExtractionHandler(dispatcher, LocalDurableStorage(tmp_path / "objects"))
+    content, media_type = await handler._load(job)
+    from aix.webui.materials.parsing import parse_document
+
+    await handler._index_privately(job, parse_document(content, media_type))
+
+    assert [c.text_hash for c in await _rows(maker, MaterialChunk)] == first
 
 
 async def test_the_queue_is_empty_afterwards(client, maker, tmp_path, _on):

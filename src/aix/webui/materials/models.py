@@ -59,6 +59,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from aix.webui.db import Base
+from aix.webui.materials.vectors import EmbeddingVector
 
 # ---------------------------------------------------------------------------
 # Enumerations, kept as CHECK constraints rather than native enum types
@@ -415,6 +416,83 @@ class IngestionJob(Base):
         # render one, and an index that exists on one dialect only is a
         # performance difference nobody would notice until production.
         Index("ix_ingestion_job_claim", "status", "next_attempt_at", "created_at"),
+    )
+
+
+#: The dimension of ``baai/bge-m3``, measured against OpenRouter on 2026-09-16.
+#: It is in the DDL, so changing it is a migration plus a re-embedding of every
+#: chunk — not a setting. ``AIX_PRIVATE_EMBEDDING_DIMENSION`` exists to *verify*
+#: this number at runtime, not to change it behind the schema's back.
+EMBEDDING_DIMENSION = 1024
+
+CHUNK_STATUSES = ("active", "deleted")
+
+
+class MaterialChunk(Base):
+    """One retrievable piece of one version of a material (§8.3, A.2).
+
+    The unit the private retriever searches. Each row keeps the text, its
+    vector, and the locator that lets a citation open the right page — without
+    which a quotation is a claim the teacher cannot check (§8.6).
+
+    ``owner_id`` is here, not reached through a join, because the authorization
+    belongs *inside* the retrieval query (§8.5). A missing owner filter must be
+    a missing WHERE clause, visible in review, rather than a missing join.
+
+    ``embedding_model`` and ``chunker_version`` are on every row so that two
+    different chunkings, or two different embedding models, can never be mixed
+    in one search without anyone noticing: they are part of what a row is.
+    """
+
+    __tablename__ = "material_chunk"
+
+    id: Mapped[uuid.UUID] = mapped_column(GUID, primary_key=True, default=uuid.uuid4)
+
+    owner_id: Mapped[uuid.UUID] = mapped_column(
+        GUID, ForeignKey("user.id", ondelete="CASCADE"), nullable=False
+    )
+    material_version_id: Mapped[uuid.UUID] = mapped_column(
+        GUID, ForeignKey("material_version.id", ondelete="CASCADE"), nullable=False
+    )
+    #: §8.3 allows a parent/child hierarchy; the first chunker is flat and
+    #: leaves this null rather than inventing a parent that means nothing.
+    parent_chunk_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        GUID, ForeignKey("material_chunk.id", ondelete="SET NULL"), nullable=True
+    )
+
+    ordinal: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    text_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    #: Page or slide, block ids, heading. What a citation resolves against.
+    locator_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+
+    embedding: Mapped[list[float]] = mapped_column(
+        EmbeddingVector(EMBEDDING_DIMENSION), nullable=False
+    )
+    embedding_model: Mapped[str] = mapped_column(String(128), nullable=False)
+    chunker_version: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="active", server_default="active"
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "material_version_id",
+            "chunker_version",
+            "ordinal",
+            name="uq_material_chunk_ordinal",
+        ),
+        CheckConstraint("ordinal >= 0", name="ck_material_chunk_ordinal_non_negative"),
+        CheckConstraint(_in("status", CHUNK_STATUSES), name="ck_material_chunk_status"),
+        # The retrieval filter, which runs before the similarity ordering.
+        Index("ix_material_chunk_owner_version", "owner_id", "material_version_id"),
     )
 
 

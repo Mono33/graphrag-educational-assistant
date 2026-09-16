@@ -22,15 +22,16 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import Optional
+from typing import Any, Optional
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aix.webui.materials.models import (
     AssetBlob,
     LessonMaterialBinding,
     Material,
+    MaterialChunk,
     MaterialVersion,
 )
 from aix.webui.materials.storage import StorageBackend, StoredObject
@@ -324,6 +325,90 @@ class BindingRepository:
         binding.enabled = enabled
         await self._session.flush()
         return True
+
+
+class ChunkRepository:
+    """The private index of one version of one material (§8.3, §8.5).
+
+    Owner-scoped like everything else here, and for the sharper reason: these
+    rows are what the retriever searches, so an owner filter missing *here*
+    would put one teacher's paragraphs into another teacher's lesson.
+    """
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def replace_for_version(
+        self,
+        *,
+        owner_id: uuid.UUID,
+        material_version_id: uuid.UUID,
+        chunker_version: str,
+        embedding_model: str,
+        chunks: list[tuple[Any, list[float]]],
+    ) -> int:
+        """Replace this version's chunks for this chunker version.
+
+        Replace, not append: a re-parse of the same version under the same
+        chunker must leave the index as if it had run once. Appending would
+        duplicate every chunk and double its weight in retrieval — a ranking
+        bug that looks like a quality problem, not like a bug.
+        """
+        await self._session.execute(
+            delete(MaterialChunk).where(
+                MaterialChunk.material_version_id == material_version_id,
+                MaterialChunk.owner_id == owner_id,
+                MaterialChunk.chunker_version == chunker_version,
+            )
+        )
+
+        for chunk, vector in chunks:
+            self._session.add(
+                MaterialChunk(
+                    owner_id=owner_id,
+                    material_version_id=material_version_id,
+                    ordinal=chunk.ordinal,
+                    text=chunk.text,
+                    text_hash=chunk.text_hash,
+                    locator_json=chunk.locator,
+                    embedding=vector,
+                    embedding_model=embedding_model,
+                    chunker_version=chunk.chunker_version,
+                )
+            )
+        return len(chunks)
+
+    async def delete_for_version(
+        self, material_version_id: uuid.UUID, *, owner_id: uuid.UUID
+    ) -> int:
+        """Remove a version from the index — §12.3, deletion means retrievable no more."""
+        result = await self._session.execute(
+            delete(MaterialChunk).where(
+                MaterialChunk.material_version_id == material_version_id,
+                MaterialChunk.owner_id == owner_id,
+            )
+        )
+        return int(result.rowcount or 0)
+
+    async def list_for_versions(
+        self,
+        version_ids: list[uuid.UUID],
+        *,
+        owner_id: uuid.UUID,
+        chunker_version: Optional[str] = None,
+    ) -> list[MaterialChunk]:
+        """Active chunks of the given versions. The authorization is the query."""
+        if not version_ids:
+            return []
+
+        stmt = select(MaterialChunk).where(
+            MaterialChunk.owner_id == owner_id,
+            MaterialChunk.material_version_id.in_(version_ids),
+            MaterialChunk.status == "active",
+        )
+        if chunker_version:
+            stmt = stmt.where(MaterialChunk.chunker_version == chunker_version)
+        return list((await self._session.execute(stmt)).scalars())
 
 
 class MaterialService:
