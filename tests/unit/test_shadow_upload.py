@@ -29,6 +29,7 @@ from aix.webui.auth.dependencies import optional_current_user
 from aix.webui.auth.models import User
 from aix.webui.db import Base, get_async_session
 from aix.webui.lessons.models import Lesson
+from aix.webui.materials.chunking import CHUNKER_VERSION
 from aix.webui.materials.handlers import PARSER_PROFILE, measure_extraction, status_for
 from aix.webui.materials.models import (
     AssetBlob,
@@ -561,7 +562,7 @@ async def test_the_worker_indexes_the_material_for_retrieval(client, maker, tmp_
     assert chunks, "the material is retrievable"
     assert all(c.owner_id == ANNA for c in chunks)
     assert all(len(c.embedding) == 1024 for c in chunks)
-    assert all(c.chunker_version == "chunk@1" for c in chunks)
+    assert all(c.chunker_version == CHUNKER_VERSION for c in chunks)
     assert all(c.embedding_model for c in chunks), "which model produced it is on the row"
     assert "fotosintesi clorofilliana" in " ".join(c.text for c in chunks)
     assert all("block_ids" in c.locator_json for c in chunks), "a citation can be resolved"

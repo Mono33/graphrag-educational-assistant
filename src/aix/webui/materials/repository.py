@@ -367,11 +367,15 @@ class ChunkRepository:
         duplicate every chunk and double its weight in retrieval — a ranking
         bug that looks like a quality problem, not like a bug.
         """
+        # Every chunk of this version goes, whatever chunker wrote it. A version
+        # has one current chunking; keeping ``chunk@1`` rows beside ``chunk@2``
+        # would leave stale text — including the overlap-only fragments chunk@2
+        # exists to remove — waiting to be found by any query that forgot to
+        # filter on the version.
         await self._session.execute(
             delete(MaterialChunk).where(
                 MaterialChunk.material_version_id == material_version_id,
                 MaterialChunk.owner_id == owner_id,
-                MaterialChunk.chunker_version == chunker_version,
             )
         )
 

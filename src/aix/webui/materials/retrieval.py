@@ -44,11 +44,54 @@ from typing import Any, Optional
 from sqlalchemy import text as sql_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from aix.webui.materials.chunking import CHUNKER_VERSION
 from aix.webui.materials.embedding import embed_query
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_TOP_K = 8
+
+#: How many candidates to rank before sharing them out between documents.
+CANDIDATE_FACTOR = 3
+
+#: No single document takes more than this share of the passages while another
+#: bound document has relevant ones. Not an equal split: a lesson built mostly on
+#: one document should still quote mostly that one.
+MAX_SHARE_PER_DOCUMENT = 0.6
+
+
+def share_between_documents(
+    items: list[MaterialContextItem], limit: int
+) -> list[MaterialContextItem]:
+    """Best first, but no document may crowd out the others.
+
+    Pure score ranking favours the longest document: more chunks, more near
+    misses. Here each document is capped at ``MAX_SHARE_PER_DOCUMENT`` of the
+    result while others have candidates; the cap is lifted for whatever slots
+    remain, so a single-document lesson still gets its full ``limit``.
+    """
+    if not items:
+        return []
+    if len({item.source_id for item in items}) <= 1:
+        return items[:limit]
+
+    cap = max(2, math.ceil(limit * MAX_SHARE_PER_DOCUMENT))
+    chosen: list[MaterialContextItem] = []
+    overflow: list[MaterialContextItem] = []
+    per_document: dict[str, int] = {}
+
+    for item in items:  # already best-first
+        taken = per_document.get(item.source_id, 0)
+        if taken < cap:
+            chosen.append(item)
+            per_document[item.source_id] = taken + 1
+        else:
+            overflow.append(item)
+        if len(chosen) == limit:
+            break
+
+    chosen.extend(overflow[: max(0, limit - len(chosen))])
+    return sorted(chosen, key=lambda item: item.score, reverse=True)
 
 
 def top_k() -> int:
@@ -148,9 +191,16 @@ class PrivateMaterialRetriever:
             return []
 
         wanted = limit or top_k()
+        # A wider pool first, then a fair share per document. Ranked purely by
+        # score, the first real test gave 7 of 8 passages to the 45-chunk English
+        # PDF — its bibliography and standards lists among them — and 1 to the
+        # 10-chunk Italian handout the lesson was about (2026-09-16).
+        pool = wanted * CANDIDATE_FACTOR
         if self._session.bind.dialect.name == "postgresql":
-            return await self._search_in_the_database(vector, owner_id, version_ids, wanted)
-        return await self._search_in_python(vector, owner_id, version_ids, wanted)
+            candidates = await self._search_in_the_database(vector, owner_id, version_ids, pool)
+        else:
+            candidates = await self._search_in_python(vector, owner_id, version_ids, pool)
+        return share_between_documents(candidates, wanted)
 
     async def _search_in_the_database(
         self,
@@ -168,6 +218,7 @@ class PrivateMaterialRetriever:
             WHERE owner_id = :owner_id
               AND material_version_id = ANY(:version_ids)
               AND status = 'active'
+              AND chunker_version = :chunker_version
             ORDER BY embedding <=> CAST(:query AS vector)
             LIMIT :wanted
             """
@@ -178,6 +229,7 @@ class PrivateMaterialRetriever:
                 "query": "[" + ",".join(repr(float(v)) for v in vector) + "]",
                 "owner_id": owner_id,
                 "version_ids": [str(v) for v in version_ids],
+                "chunker_version": CHUNKER_VERSION,
                 "wanted": wanted,
             },
         )
@@ -196,8 +248,11 @@ class PrivateMaterialRetriever:
         """SQLite: the same authorized set, ranked here instead of in the engine."""
         from aix.webui.materials.repository import ChunkRepository
 
+        # Only the current chunking. A document indexed by an older chunker is not
+        # searched until it is re-indexed — invisible rather than half-wrong, and
+        # the lesson falls back to the uploaded text in the meantime.
         chunks = await ChunkRepository(self._session).list_for_versions(
-            version_ids, owner_id=owner_id
+            version_ids, owner_id=owner_id, chunker_version=CHUNKER_VERSION
         )
         scored = [
             _item(chunk.material_version_id, chunk.text, chunk.locator_json, score)

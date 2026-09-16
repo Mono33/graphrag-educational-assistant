@@ -37,7 +37,10 @@ from typing import Any, Optional
 
 from aix.webui.materials.parsing.ir import DocumentIRV1, IRBlock
 
-CHUNKER_VERSION = "chunk@1"
+#: ``chunk@2`` (2026-09-16), after the first real documents: no chunk made only of
+#: overlap, overlaps cut at a word, PDF line breaks and hyphenation undone. A new
+#: version because the index must never mix two chunkings of the same document.
+CHUNKER_VERSION = "chunk@2"
 
 #: §8.3 child size. The target is what a chunk aims for, the max what it may
 #: never exceed, and the min the size below which a chunk is merged forward
@@ -105,10 +108,23 @@ class _Draft:
             self.pages.append(block.page)
 
 
+def _normalise(text: str) -> str:
+    """Undo what PDF text extraction does to prose.
+
+    pypdf returns the layout's line breaks, including the ones a justified column
+    hyphenates: «pol-\nicy», «conse-\nquences». Embedded as they are, those are two
+    unknown tokens instead of one word, and a passage retrieves worse for the very
+    term it is about. Paragraph breaks — a blank line — are kept.
+    """
+    text = re.sub(r"(\w)-\n(\w)", r"\1\2", text)  # hyphenation across a line break
+    text = re.sub(r"(?<!\n)\n(?!\n)", " ", text)  # a single break inside prose
+    return re.sub(r"[ \t]{2,}", " ", text).strip()
+
+
 def _block_text(block: IRBlock) -> str:
     if block.kind == "table" and block.rows:
         return "\n".join(" | ".join(cell for cell in row) for row in block.rows)
-    return block.text
+    return _normalise(block.text)
 
 
 def _tail_for_overlap(text: str) -> str:
@@ -118,7 +134,13 @@ def _tail_for_overlap(text: str) -> str:
         return ""
     tail = text[-wanted:]
     match = re.search(r"(?<=[.!?…])\s+", tail)
-    return tail[match.end() :].strip() if match else tail.strip()
+    if match:
+        return tail[match.end() :].strip()
+    # No sentence boundary in the tail: cut at the first space instead. The first
+    # real document started a chunk with «icoltura erano in mano…» — half a word,
+    # which embeds as noise and reads as a mistake (2026-09-16).
+    space = tail.find(" ")
+    return tail[space + 1 :].strip() if space != -1 else ""
 
 
 def _split_long(text: str) -> list[str]:
@@ -155,7 +177,11 @@ class _Chunker:
 
     def emit(self) -> None:
         text = self.draft.text
-        if not text:
+        # A draft holding only the overlap carried from the previous chunk is not
+        # a chunk: it has no block of its own, so no page, so nothing a citation
+        # can open — and it repeats text already indexed. On the first real
+        # documents 17 of 55 chunks were exactly that (2026-09-16).
+        if not text or not self.draft.block_ids:
             self.draft = _Draft(heading=self.draft.heading)
             return
 

@@ -245,3 +245,52 @@ def test_the_real_client_is_reachable():
     from aix.webui.materials.embedding import _client
 
     assert hasattr(_client(), "embeddings")
+
+
+# ---------------------------------------------------------------------------
+# What the first real documents taught (2026-09-16) — chunk@2
+# ---------------------------------------------------------------------------
+
+
+def test_no_chunk_is_made_only_of_overlap():
+    """17 of 55 chunks were the carried overlap alone: no block, no page, no citation."""
+    blocks = [
+        _block("paragraph", PARAGRAPH * 6, page=1),
+        _block("paragraph", PARAGRAPH * 9, page=2),
+        _block("paragraph", PARAGRAPH * 7, page=3),
+    ]
+
+    chunks = chunk_document(_ir(blocks))
+
+    assert chunks
+    assert all(chunk.locator["block_ids"] for chunk in chunks)
+    assert all("page" in chunk.locator for chunk in chunks), "every chunk can be cited"
+
+
+def test_an_overlap_never_starts_in_the_middle_of_a_word():
+    """«icoltura erano in mano…» — the tail was cut at a character count."""
+    unpunctuated = " ".join(f"parola{i}" for i in range(900))
+
+    chunks = chunk_document(_ir([_block("paragraph", unpunctuated, page=1)]))
+
+    for chunk in chunks[1:]:
+        assert chunk.text.split()[0].startswith("parola"), chunk.text[:30]
+
+
+def test_pdf_line_breaks_and_hyphenation_are_undone():
+    """«pol-/icy» across a line break embeds as two unknown tokens, not one word."""
+    raw = "He abandoned his pol-\nicy of favoring coalition\ngovernments in Europe."
+
+    text = chunk_document(_ir([_block("paragraph", raw, page=1)]))[0].text
+
+    assert "policy" in text
+    assert "coalition governments" in text
+    assert "\n" not in text
+
+
+def test_paragraph_breaks_survive_the_normalisation():
+    raw = "Primo paragrafo sulla guerra.\n\nSecondo paragrafo su Yalta."
+
+    text = chunk_document(_ir([_block("paragraph", raw, page=1)]))[0].text
+
+    assert "Primo paragrafo sulla guerra.\n\nSecondo paragrafo" in text

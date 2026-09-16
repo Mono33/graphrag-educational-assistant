@@ -21,8 +21,14 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from aix.webui.auth.models import User
 from aix.webui.db import Base
+from aix.webui.materials.chunking import CHUNKER_VERSION
 from aix.webui.materials.models import AssetBlob, Material, MaterialChunk, MaterialVersion
-from aix.webui.materials.retrieval import MaterialContextItem, PrivateMaterialRetriever, cosine
+from aix.webui.materials.retrieval import (
+    MaterialContextItem,
+    PrivateMaterialRetriever,
+    cosine,
+    share_between_documents,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -113,7 +119,18 @@ async def _version(session, owner_id: uuid.UUID) -> MaterialVersion:
     return version
 
 
-async def _chunk(session, version, owner_id, text, vector, *, page=1, ocr=False, ordinal=0):
+async def _chunk(
+    session,
+    version,
+    owner_id,
+    text,
+    vector,
+    *,
+    page=1,
+    ocr=False,
+    ordinal=0,
+    chunker_version=CHUNKER_VERSION,
+):
     locator = {"page": page, "block_ids": [f"b{ordinal}"]}
     if ocr:
         locator["ocr"] = True
@@ -127,7 +144,7 @@ async def _chunk(session, version, owner_id, text, vector, *, page=1, ocr=False,
             locator_json=locator,
             embedding=vector,
             embedding_model="fake",
-            chunker_version="chunk@1",
+            chunker_version=chunker_version,
         )
     )
     await session.flush()
@@ -251,3 +268,62 @@ def test_a_citation_without_a_page_still_names_its_version():
     item = MaterialContextItem(source_id="v1", text="x", score=1.0, locator={})
 
     assert item.citation == "[[material:v1]]"
+
+
+# ---------------------------------------------------------------------------
+# What the first real documents taught (2026-09-16)
+# ---------------------------------------------------------------------------
+
+
+async def test_a_long_document_does_not_crowd_out_a_short_one(session):
+    """The 45-chunk English PDF took 7 of 8 passages from the 10-chunk handout."""
+    long_doc = await _version(session, ANNA)
+    short_doc = await _version(session, ANNA)
+    for i in range(12):
+        await _chunk(session, long_doc, ANNA, f"Long {i}", [1.0, 0.02 * i, 0.0], ordinal=i)
+    for i in range(3):
+        await _chunk(session, short_doc, ANNA, f"Short {i}", [1.0, 0.3 + 0.1 * i, 0.0], ordinal=i)
+
+    items = await _search(session, ANNA, [long_doc.id, short_doc.id], limit=8)
+
+    from_short = [i for i in items if i.source_id == str(short_doc.id)]
+    assert len(items) == 8
+    assert len(from_short) == 3, "every relevant passage of the short document is kept"
+
+
+async def test_chunks_from_an_older_chunker_are_not_searched(session):
+    """chunk@1 held overlap-only fragments; they must not answer a question."""
+    version = await _version(session, ANNA)
+    await _chunk(
+        session,
+        version,
+        ANNA,
+        "Frammento vecchio",
+        GUERRA_FREDDA,
+        ordinal=0,
+        chunker_version="chunk@1",
+    )
+    await _chunk(session, version, ANNA, "Passaggio attuale", GUERRA_FREDDA, ordinal=1)
+
+    assert [i.text for i in await _search(session, ANNA, [version.id])] == ["Passaggio attuale"]
+
+
+def _item(source, score):
+    return MaterialContextItem(source_id=source, text=f"{source}-{score}", score=score)
+
+
+def test_the_share_cap_lifts_when_the_other_documents_run_out():
+    """A lesson built on one document still gets its full limit from it."""
+    items = [_item("a", 0.9 - 0.01 * i) for i in range(10)] + [_item("b", 0.5)]
+
+    chosen = share_between_documents(items, 8)
+
+    assert len(chosen) == 8
+    assert sum(1 for i in chosen if i.source_id == "b") == 1
+    assert chosen == sorted(chosen, key=lambda i: i.score, reverse=True)
+
+
+def test_a_single_document_is_ranked_as_before():
+    items = [_item("a", 0.9 - 0.1 * i) for i in range(5)]
+
+    assert share_between_documents(items, 3) == items[:3]
