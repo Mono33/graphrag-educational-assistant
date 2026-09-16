@@ -154,3 +154,32 @@ async def test_with_the_flag_off_the_topology_is_the_one_it_always_was(monkeypat
 
     assert "retrieve_private" not in nodes
     assert not any(target == "retrieve_private" for _source, target in edges)
+
+
+# ---------------------------------------------------------------------------
+# What to search for (measured on the first real lesson, 2026-09-16)
+# ---------------------------------------------------------------------------
+
+
+def test_the_search_is_for_the_subject_not_the_request():
+    """The request's words describe the task and matched the English PDF's boilerplate."""
+    from aix.agent.graph.nodes import _private_search_query
+
+    query = _private_search_query(
+        {
+            "teacher_query": "crea una lezione basandoti sui documenti allegati",
+            "educational_profile": {"specific_topic": "guerra fredda"},
+            "subject_concepts": ["Conferenza di Yalta", "cortina di ferro", "guerra fredda"],
+        }
+    )
+
+    assert query == "guerra fredda · Conferenza di Yalta · cortina di ferro"
+    assert "documenti allegati" not in query
+
+
+def test_without_a_subject_the_request_is_the_query():
+    from aix.agent.graph.nodes import _private_search_query
+
+    assert _private_search_query({"teacher_query": "riassumi il documento"}) == (
+        "riassumi il documento"
+    )

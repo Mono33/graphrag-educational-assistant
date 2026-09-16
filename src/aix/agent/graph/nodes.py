@@ -496,6 +496,29 @@ async def retrieve_node(state: AgentState) -> dict[str, Any]:
         return {"error": str(e), "current_step": "error"}
 
 
+def _private_search_query(state: AgentState) -> str:
+    """What to search the teacher's documents for: the subject, not the request.
+
+    The teacher's words are an instruction — «crea una lezione sulla guerra
+    fredda basandoti sui documenti allegati» — and most of them describe the task,
+    not the content. Embedded as they are, they matched the English PDF's own
+    teaching boilerplate («quote particular passages…») better than its history.
+    Measured on the first real lesson (2026-09-16): with the lesson topic and the
+    Planner's subject concepts instead, the top three passages were all content
+    from the Italian handout, and the best score rose from 0.61 to 0.67.
+
+    The request is the fallback, for a turn where the Planner found no subject.
+    """
+    profile = state.get("educational_profile") or {}
+    topic = str(profile.get("specific_topic") or "").strip() if isinstance(profile, dict) else ""
+    concepts = [str(c).strip() for c in (state.get("subject_concepts") or []) if str(c).strip()]
+
+    terms = list(dict.fromkeys(([topic] if topic else []) + concepts[:8]))
+    if terms:
+        return " · ".join(terms)
+    return str(state.get("teacher_query") or "").strip()
+
+
 async def retrieve_private_node(state: AgentState) -> dict[str, Any]:
     """PRIVATE MATERIAL NODE — the teacher's own documents (§8.1, §8.5).
 
@@ -517,11 +540,7 @@ async def retrieve_private_node(state: AgentState) -> dict[str, Any]:
     if search is None:
         return {"current_step": "retrieve_complete"}
 
-    # The subject concepts sharpen the query: "amplia la lezione" retrieves
-    # little on its own, "amplia la lezione · guerra fredda · Yalta" retrieves
-    # the pages the teacher means.
-    concepts = " · ".join((state.get("subject_concepts") or [])[:5])
-    query = f"{state.get('teacher_query') or ''} {concepts}".strip()
+    query = _private_search_query(state)
 
     try:
         items = await search(query)
