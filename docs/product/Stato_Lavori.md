@@ -401,6 +401,65 @@ nessun buco aperto). Ora un ambiente che si dichiara `production`, `prod`,
 sulla macchina di chi sviluppa insegna solo a mettere un valore qualsiasi.
 
 **Verificato:** 701 test passati (i 2 noti su Windows), 13 nuovi.
+
+### 2026-09-16 — Primo test end-to-end del RAG privato: non girava (`c28418f`, `6ebcdad`, `d4bb54c`)
+
+Angelo ha acceso `AIX_MATERIALS_ENABLED` e `AIX_PRIVATE_RAG_ENABLED`, allegato
+`guerra-fredda-def.pdf` e `Cold-War.pdf`, generato una lezione. **Impressione
+giusta: non era cambiato niente.** Il log lo dice in una riga:
+`no retrieved passages — using the uploaded excerpt (34030 chars)`. Il RAG privato
+non aveva mai girato.
+
+**Tre difetti invisibili alla suite, trovati solo dall'uso reale:**
+
+1. **Il client di embedding importava `aix.config.settings`, che non esiste.**
+   Tutti i test iniettavano un client finto, quindi quella riga non era mai stata
+   eseguita. Ha fatto fallire entrambi i job di ingestione e la ricerca.
+2. **Il job veniva completato *prima* dell'indicizzazione.** Quando l'embedding è
+   fallito il job era già `ready`: nessun retry, zero chunk, e uno stato che diceva
+   che andava tutto bene. Questo è il peggiore dei tre, perché nasconde. Ora il job
+   si chiude per ultimo, e un fallimento lo lascia in coda con backoff.
+3. **Il warning diceva solo «search failed»**, con la causa a livello DEBUG: un
+   import rotto era indistinguibile da un provider giù. Ora la causa è nel warning.
+
+**Test isolati dal `.env`.** `aix.core.config` carica il `.env` all'import, quindi
+accendere una flag in locale la accendeva anche per la suite: 4 test rotti. Un
+fixture in `tests/conftest.py` riporta ogni flag al default; è probabilmente la
+stessa perdita che faceva fallire un test di topologia sulla macchina di Louis e
+non sulla mia.
+
+**Poi l'indice vero ha mostrato i difetti del chunker (`chunk@2`):**
+
+| Misura sui due PDF reali | `chunk@1` | `chunk@2` |
+| --- | --- | --- |
+| Chunk totali | 55 | 38 |
+| Chunk fatti solo di overlap (nessun blocco, nessuna pagina, non citabili) | **17** | 0 |
+| Chunk senza pagina | 17 | 0 |
+| A-capo con sillabazione («pol-\nicy») | presenti | 0 |
+| Passaggi del PDF italiano nei primi 8 | 1 | 3 |
+
+Più: un documento non prende più del 60% dei passaggi se un altro ne ha di
+pertinenti (il PDF inglese da 45 chunk schiacciava la dispensa da 10), e la
+ricerca legge solo i chunk della versione corrente del chunker.
+
+**E la query.** La richiesta della docente è un'istruzione («crea una lezione…
+basandoti sui documenti allegati»), e le sue parole trovavano il boilerplate
+didattico del PDF inglese («quote particular passages»). Cercando con argomento e
+concetti disciplinari del Planner: **i primi tre passaggi sono tutti contenuto
+della dispensa italiana**, e il punteggio migliore sale da 0,61 a 0,67.
+Autorizzazione verificata dal vivo: la stessa lezione cercata da un altro utente
+restituisce 0 passaggi.
+
+**Ancora aperto, da misurare su una lezione vera:** due chunk di bibliografia e
+copyright dell'ultima pagina del PDF inglese restano fra i primi 8. Non li filtro
+a occhio: prima si vede se danno fastidio alla lezione.
+
+**Requisito nuovo (Angelo):** la chip dell'allegato deve mostrare lo stato
+dell'indicizzazione — in lavorazione, pronto con N pezzi, fallito — per ogni
+documento. Oggi l'unico segnale è aspettare, e il primo test è stato generato
+prima che l'indice esistesse senza che niente lo dicesse.
+
+**Verificato:** 713 test passati (i 2 noti su Windows).
 4. **B4 · PR 7 — fatto** (`f8150e1`): PDF vero e scaletta con i minuti.
 5. **Corpus — avviato il 2026-09-15.** Cinque PDF pubblici del Ministero e una
    scansione reale da Internet Archive sono in `data/eval/corpus/originali/`
