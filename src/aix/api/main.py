@@ -166,6 +166,13 @@ async def lifespan(app: FastAPI):
     logger.info("🚀 Starting GraphRAG Educational API...")
     logger.info(f"📦 Version: {__version__}")
 
+    # Before anything else: a deployed environment may not sign its tokens with
+    # the development constant. Raising here stops the container instead of
+    # serving sessions anyone could forge — on a laptop it stays a warning.
+    from aix.webui.auth.manager import assert_secret_is_real
+
+    assert_secret_is_real()
+
     # Test Neo4j connection
     try:
         from neo4j import GraphDatabase

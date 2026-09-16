@@ -48,6 +48,45 @@ if _AUTH_SECRET == _DEV_FALLBACK_SECRET:
     )
 
 
+#: Deployments that must never run on the fallback. Named explicitly rather
+#: than "anything that is not development": a machine with no ``ENVIRONMENT``
+#: at all is a laptop or a test run, and refusing to start there would teach
+#: people to set the variable to whatever makes the error go away.
+_DEPLOYED_ENVIRONMENTS = frozenset({"production", "prod", "staging", "pilot"})
+
+
+def using_dev_fallback_secret() -> bool:
+    """True when tokens are being signed with the constant in this file."""
+    return _AUTH_SECRET == _DEV_FALLBACK_SECRET
+
+
+def assert_secret_is_real() -> None:
+    """Refuse to serve a deployed environment with the fallback secret.
+
+    The secret signs session cookies, password-reset links, verification links
+    and the CSRF tokens. On the fallback, that signature is made with a string
+    published in this repository: anyone holding it can mint a token for any
+    account, including an administrator's, without a password.
+
+    Until now this was a warning, and a warning is something a deploy scrolls
+    past. It stays a warning where ``ENVIRONMENT`` is unset or development —
+    that is a laptop — and becomes a refusal where the environment declares
+    itself deployed.
+
+    Checked at startup rather than at import, so that importing this module in
+    a test or a CLI never depends on the environment.
+    """
+    environment = (os.getenv("ENVIRONMENT") or "").strip().lower()
+    if using_dev_fallback_secret() and environment in _DEPLOYED_ENVIRONMENTS:
+        raise RuntimeError(
+            f"WEBUI_AUTH_SECRET is not set and ENVIRONMENT={environment}. "
+            "Session cookies, reset links and CSRF tokens would be signed with "
+            "the development constant published in the repository. Generate one "
+            'with: python -c "import secrets; print(secrets.token_urlsafe(48))" '
+            "— note that setting it logs every teacher out once."
+        )
+
+
 class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
     """Manage user lifecycle: registration, login hooks, token signing."""
 
