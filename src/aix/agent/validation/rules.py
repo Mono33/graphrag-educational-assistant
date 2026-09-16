@@ -330,6 +330,13 @@ def rule_bes_label_drift(lesson: str, profile: dict[str, Any]) -> list[Violation
         for code in ((profile.get("group") or {}).get("disabilities") or [])
     }
 
+    # Nothing declared means there is nothing to drift *from*. The rule exists to
+    # catch raw codes leaking back into the prompt for a class whose needs the
+    # teacher described; with no profile it blocked ordinary Italian — a lesson
+    # about inclusive teaching cannot mention DSA at all (found 2026-09-15).
+    if not declared:
+        return []
+
     violations = []
     for code in _BES_CODES:
         if code in declared:

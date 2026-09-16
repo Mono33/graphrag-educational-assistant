@@ -33,9 +33,30 @@ MAX_FILES_PER_LESSON = 12
 MAX_EXCERPT_PER_FILE = 24_000
 MAX_TOTAL_EXCERPT = 48_000
 
+#: What the attachment accepted before this work, and accepts again whenever
+#: ``AIX_UPLOAD_PARSER_ENABLED`` is off (§5.2: flags off means the previous
+#: product). The new parser's allowlist is ``parsing.intake.ALLOWED``.
+LEGACY_EXT = {
+    ".pdf": "application/pdf",
+    ".txt": "text/plain",
+    ".md": "text/markdown",
+    ".markdown": "text/markdown",
+}
+
+#: Kept as module-level names because other modules and tests import them.
+#: They describe the *parser* allowlist; what is accepted right now is
+#: ``allowed_extensions()``, which depends on the flag.
 ALLOWED_EXT = frozenset(ALLOWED)
 
 MIME_FOR_EXT = dict(ALLOWED)
+
+
+def allowed_extensions() -> dict[str, str]:
+    """Extension → media type, for whichever intake is switched on."""
+    from aix.webui.features import upload_parser_enabled
+
+    return dict(ALLOWED) if upload_parser_enabled() else dict(LEGACY_EXT)
+
 
 _PACKAGE_DIR = Path(__file__).resolve().parents[1]
 _REPO_ROOT = _PACKAGE_DIR.parents[2]
@@ -64,13 +85,54 @@ def total_excerpt_len(files: list[dict[str, Any]]) -> int:
     return sum(len(f.get("text_excerpt") or "") for f in files)
 
 
-def read_upload(content: bytes, filename: str) -> tuple[str, str, dict[str, Any]]:
+def _legacy_read(content: bytes, filename: str) -> tuple[str, str, None]:
+    """The extraction this project had before the parser: pypdf, or a decode.
+
+    Restored, not kept for nostalgia: §5.2 requires that with the new flags off
+    the teacher gets the previous product, and the review of 2026-09-15 found
+    the new parser running on the chat attachment regardless of any flag.
+
+    One deliberate difference: a corrupt PDF raises ``ValueError`` and becomes a
+    422 with an Italian message. The old path let pypdf's exception escape as a
+    500, and restoring a server error is not backward compatibility.
+    """
+    import io
+
+    ext = Path(filename).suffix.lower()
+    if ext not in LEGACY_EXT:
+        raise ValueError("Tipo file non supportato (solo PDF, TXT, Markdown).")
+
+    if ext == ".pdf":
+        from pypdf import PdfReader
+
+        try:
+            reader = PdfReader(io.BytesIO(content))
+            pages = [page.extract_text() or "" for page in reader.pages[:50]]
+        except Exception as exc:  # noqa: BLE001 — an unreadable file is an answer
+            logger.info("[uploads] legacy path could not read %s", ext, exc_info=True)
+            raise ValueError(
+                "Il documento non può essere letto: è danneggiato o incompleto."
+            ) from exc
+        text = "\n".join(page for page in pages if page.strip())
+    else:
+        text = content.decode("utf-8", errors="replace")
+
+    return LEGACY_EXT[ext], text, None
+
+
+def read_upload(content: bytes, filename: str) -> tuple[str, str, Optional[dict[str, Any]]]:
     """Check and parse one upload: ``(media_type, text, parse summary)``.
 
-    Raises ``ValueError`` with a message the teacher can read. A file that
-    breaks the parser is a refusal, not a 500 — the legacy path answered a
-    corrupt PDF with a server error.
+    The summary is ``None`` on the legacy path, which has nothing to report and
+    whose manifest entries must stay exactly the shape they were.
+
+    Raises ``ValueError`` with a message the teacher can read.
     """
+    from aix.webui.features import upload_parser_enabled
+
+    if not upload_parser_enabled():
+        return _legacy_read(content, filename)
+
     accepted = check_upload(filename, content)  # IntakeRejected is a ValueError
     try:
         ir = parse_document(content, accepted.media_type)
@@ -149,8 +211,11 @@ def save_upload(
         "size": len(content),
         "text_excerpt": excerpt,
         "stored_name": stored_name,
-        "parse": summary,
     }
+    # Only the parser has something to say about how the reading went. On the
+    # legacy path the entry keeps exactly the keys it always had.
+    if summary is not None:
+        entry["parse"] = summary
     manifest.append(entry)
     return manifest, entry
 

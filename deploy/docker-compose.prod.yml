@@ -91,6 +91,10 @@ services:
       # volume over data/ would mask data/media/, the curated KG media pools
       # that .dockerignore explicitly keeps in the image.
       - app_uploads:/graphrag-aixlearning/data/webui/uploads
+      # The durable material store (Fase 0 · PR 2). Without this volume the
+      # blobs live in the container's writable layer and a redeploy destroys
+      # them — while the database keeps rows pointing at content that is gone.
+      - app_materials:/graphrag-aixlearning/data/webui/materials
     healthcheck:
       # /api/v1/health verifies Neo4j connectivity + domain configs. This
       # mirrors the Dockerfile HEALTHCHECK but keeps compose status explicit.
@@ -126,6 +130,7 @@ volumes:
   app_media_cache:
     name: aix-app-media-cache
   app_uploads:
+  app_materials:
     name: aix-app-uploads
   caddy_data:
     name: aix-caddy-data

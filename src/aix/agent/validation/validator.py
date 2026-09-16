@@ -23,7 +23,11 @@ def validator_enabled() -> bool:
     The flag exists so a run can be compared against the previous behaviour, and
     so it can be switched off if a rule turns out to block good lessons.
     """
-    return (os.getenv("AIX_VALIDATOR_ENABLED") or "true").strip().lower() not in (
+    # Default off (2026-09-16). It shipped on, and that changed the product for
+    # everyone: a lesson is blocked by rules nobody asked for, and the review of
+    # 2026-09-15 reproduced the worst case — a lesson that merely *mentions* DSA
+    # with no profile set was refused. On by choice, not by inheritance.
+    return (os.getenv("AIX_VALIDATOR_ENABLED") or "false").strip().lower() not in (
         "0",
         "false",
         "no",

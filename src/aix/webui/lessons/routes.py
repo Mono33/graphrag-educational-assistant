@@ -114,6 +114,13 @@ from aix.webui.auth.dependencies import optional_current_user
 from aix.webui.auth.models import User
 from aix.webui.db import get_async_session
 from aix.webui.errors import report
+from aix.webui.features import (
+    export_outline_enabled,
+    export_pdf_enabled,
+)
+from aix.webui.features import (
+    register as _register_feature_flags,
+)
 from aix.webui.lessons.display import lesson_to_row
 from aix.webui.lessons.models import Lesson, LessonMessage, SavedProfile
 from aix.webui.lessons.schemas import form_to_profile_dict, profile_to_form_values
@@ -134,6 +141,11 @@ templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
 # a per-route context entry: a page added without the token would fail its first
 # POST with a 403, and the author would find out in production.
 templates.env.globals["csrf_token"] = _csrf_token_for
+
+# §5.2: what the templates offer must be what the server accepts, and both must
+# follow the flags. A hard-coded accept list in the HTML is how the paperclip
+# came to advertise formats the previous product never took.
+_register_feature_flags(templates)
 
 
 router = APIRouter(prefix="/webui", tags=["webui-lessons"])
@@ -2149,6 +2161,13 @@ async def lesson_export(
         )
 
     if format in ("pdf", "outline"):
+        # A hidden button is not a closed door: the route checks the flag too,
+        # or a bookmarked URL would still render what the pilot switched off.
+        if (format == "pdf" and not export_pdf_enabled()) or (
+            format == "outline" and not export_outline_enabled()
+        ):
+            raise HTTPException(status_code=404, detail="Questo formato di export non è attivo.")
+
         # Fase 3 · PR 7 — both go through the document model: Markdown is read
         # into LessonDocumentV1, grouped into ExportIRV1, then rendered. MD and
         # TXT above deliberately do not, because §10.4 requires them unchanged.

@@ -142,6 +142,12 @@ templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
 # POST with a 403, and the author would find out in production.
 templates.env.globals["csrf_token"] = _csrf_token_for
 
+# Same globals as the lesson routes: any template rendered from here that
+# includes the chat input must ask the flags, not carry its own list.
+from aix.webui.features import register as _register_feature_flags  # noqa: E402
+
+_register_feature_flags(templates)
+
 # Top-level webui router. Sub-routers carry their own prefixes (/auth, /webui)
 # so we can mount everything via a single ``app.include_router(router)`` call
 # in aix.api.main.

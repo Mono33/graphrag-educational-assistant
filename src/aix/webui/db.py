@@ -194,11 +194,49 @@ def _alembic_config(connection):
     return cfg
 
 
-def _schema_gaps(sync_conn) -> dict[str, list[str]]:
-    """Model columns and tables absent from the live schema.
+#: The first migration: the WebUI schema as it was before any of this work.
+#: A database that predates migrations is compared against *this*, never
+#: against the current models — see ``_baseline_schema``.
+_BASELINE_REVISION = "c8d88f37e59c"
 
-    Empty means the database already matches what the baseline migration would
-    have produced, so it can be adopted. Anything listed means it cannot.
+
+def _baseline_schema() -> dict[str, set[str]]:
+    """Tables and columns the baseline migration creates.
+
+    Built by running that migration against a throwaway in-memory SQLite, so it
+    cannot drift from the migration it describes — a hand-written list would be
+    correct exactly until someone edited the baseline.
+
+    Comparing against the *models* instead was the bug this replaces: the models
+    have grown ``material``, ``document_ir`` and ``material_chunk``, so every
+    real production database looked "incomplete", was refused adoption, and
+    stayed outside migration control with ``alembic_version`` empty — while the
+    tests passed, because they seeded their legacy database from those same
+    models.
+    """
+    from alembic import command
+    from sqlalchemy import create_engine, inspect
+
+    engine = create_engine("sqlite://")
+    try:
+        with engine.begin() as connection:
+            command.upgrade(_alembic_config(connection), _BASELINE_REVISION)
+            inspector = inspect(connection)
+            return {
+                name: {c["name"] for c in inspector.get_columns(name)}
+                for name in inspector.get_table_names()
+                if name != "alembic_version"
+            }
+    finally:
+        engine.dispose()
+
+
+def _schema_gaps(sync_conn) -> dict[str, list[str]]:
+    """What the baseline has and the live schema does not.
+
+    Empty means the database is the one the baseline describes, so it can be
+    adopted at that revision and then migrated forward normally. Anything listed
+    means it is some *other* schema, and nothing is touched.
     """
     from sqlalchemy import inspect
 
@@ -206,14 +244,14 @@ def _schema_gaps(sync_conn) -> dict[str, list[str]]:
     live_tables = set(inspector.get_table_names())
     gaps: dict[str, list[str]] = {}
 
-    for table in Base.metadata.sorted_tables:
-        if table.name not in live_tables:
-            gaps[table.name] = ["<table absent>"]
+    for table_name, expected_columns in _baseline_schema().items():
+        if table_name not in live_tables:
+            gaps[table_name] = ["<table absent>"]
             continue
-        live_cols = {c["name"] for c in inspector.get_columns(table.name)}
-        absent = [c.name for c in table.columns if c.name not in live_cols]
+        live_cols = {c["name"] for c in inspector.get_columns(table_name)}
+        absent = sorted(expected_columns - live_cols)
         if absent:
-            gaps[table.name] = absent
+            gaps[table_name] = absent
 
     return gaps
 
@@ -257,14 +295,23 @@ def _migrate_or_adopt(sync_conn) -> None:
         logger.error(
             "[db] existing schema does NOT match the migration baseline and was "
             "left untouched. Missing: %s. Resolve it before migrations can run: "
-            "add what is missing, then `alembic stamp head` once. This is the "
+            "add what is missing, then `alembic stamp %s` once. This is the "
             "case the SQLite-only hot-patch list used to leave behind.",
             {t: cols for t, cols in gaps.items()},
+            _BASELINE_REVISION,
         )
         return
 
-    logger.info("[db] existing schema matches the baseline — adopting it (stamp head)")
-    command.stamp(cfg, "head")
+    # Stamp at the baseline, then migrate forward. Stamping *head* here would
+    # record a database as up to date while every table added after the
+    # baseline — material, document_ir, material_chunk — was still missing, and
+    # no later migration would ever create them.
+    logger.info(
+        "[db] existing schema is the baseline — adopting it (stamp %s) and migrating forward",
+        _BASELINE_REVISION,
+    )
+    command.stamp(cfg, _BASELINE_REVISION)
+    command.upgrade(cfg, "head")
 
 
 def _read_revision(sync_conn) -> Optional[str]:

@@ -9,8 +9,9 @@ anything.
 Three cases, and the third is why this file exists:
 
 1. **Fresh database** — the baseline creates the schema.
-2. **Existing schema that matches the models** — adopted with ``stamp``, no DDL.
-3. **Existing schema that does *not* match** — left strictly alone.
+2. **Existing schema that is the baseline** — stamped at the baseline revision
+   and then migrated forward, so everything added since actually gets created.
+3. **Existing schema that is something else** — left strictly alone.
 
 Case 3 is production's shape. Its schema was built by ``create_all`` plus a
 hot-patch list guarded by ``if not sqlite: return``, so on Postgres some columns
@@ -54,11 +55,29 @@ async def _run(db_url, fn):
 
 
 async def _seed_legacy_schema(db_url, *, drop: list[str] | None = None):
-    """Build the schema the way ``create_all`` used to, optionally incomplete."""
+    """Build a database exactly as it was *before* this branch, optionally incomplete.
+
+    The baseline migration, then ``alembic_version`` removed: a database that
+    predates migration control, which is what production is.
+
+    It used to be ``Base.metadata.create_all``, and that was the flaw Louis's
+    review found on 2026-09-15. The models had grown the material tables, so the
+    "legacy" database in the test already contained them — the one shape that
+    could never occur in production, and the only one the adoption code handled.
+    Every test passed while a real database was refused adoption and left
+    outside migration control.
+    """
+    from alembic import command
+
+    from aix.webui.db import _alembic_config
+
     engine = create_async_engine(db_url)
     try:
         async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
+            await conn.run_sync(
+                lambda sync_conn: command.upgrade(_alembic_config(sync_conn), "c8d88f37e59c")
+            )
+            await conn.execute(text("DROP TABLE alembic_version"))
             for column in drop or []:
                 await conn.execute(text(f"ALTER TABLE lesson DROP COLUMN {column}"))
     finally:
@@ -110,7 +129,60 @@ async def test_running_twice_is_a_no_op(db_url):
 # ---------------------------------------------------------------------------
 
 
-async def test_matching_legacy_schema_is_adopted_without_ddl(db_url):
+async def test_a_real_pre_feature_database_reaches_head_with_its_new_tables(db_url):
+    """The production case, and the one the old test could not express.
+
+    A database from before this branch has ``lesson`` and ``user`` and nothing
+    else. Adoption must put it under migration control *at the baseline* and
+    then migrate it forward, so the tables added since — material, the parsed
+    IR, the private chunks — actually get created. Stamping head instead would
+    declare it up to date with none of them, permanently.
+    """
+    from alembic.script import ScriptDirectory
+
+    from aix.webui.db import _alembic_config
+
+    await _seed_legacy_schema(db_url)
+    assert "material" not in await _run(db_url, _tables), "the legacy shape has none"
+
+    await _run(db_url, _migrate_or_adopt)
+
+    tables = await _run(db_url, _tables)
+    assert {"material", "material_version", "ingestion_job", "document_ir"} <= tables
+    assert "material_chunk" in tables
+
+    head = await _run(
+        db_url,
+        lambda conn: ScriptDirectory.from_config(_alembic_config(conn)).get_current_head(),
+    )
+    assert await _run(db_url, _read_revision) == head, "and it is fully up to date"
+
+
+async def test_the_teacher_s_data_survives_adoption(db_url):
+    """Adoption migrates a schema; it must not touch a single row."""
+    await _seed_legacy_schema(db_url)
+
+    engine = create_async_engine(db_url)
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(
+                text(
+                    'INSERT INTO "user" (id, email, hashed_password, is_active, '
+                    "is_superuser, is_verified) VALUES ('u1', 'anna@scuola.it', 'x', 1, 0, 1)"
+                )
+            )
+    finally:
+        await engine.dispose()
+
+    await _run(db_url, _migrate_or_adopt)
+
+    rows = await _run(
+        db_url, lambda conn: conn.execute(text('SELECT email FROM "user"')).fetchall()
+    )
+    assert [r[0] for r in rows] == ["anna@scuola.it"]
+
+
+async def test_adoption_leaves_the_existing_tables_exactly_as_they_were(db_url):
     await _seed_legacy_schema(db_url)
     before = await _run(db_url, _lesson_columns)
 

@@ -201,7 +201,59 @@ async def _manifest(maker):
 
 
 # ---------------------------------------------------------------------------
-# Parsing through the upload (PR 5)
+# Flags off — the paperclip the project had before this work (§5.2)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _parser_on(monkeypatch):
+    """This module tests the parser, so it is on here — never in production.
+
+    The default is off (§5.2). The three tests below switch it back off to pin
+    what a deployment that has not opted in actually gets.
+    """
+    monkeypatch.setenv("AIX_UPLOAD_PARSER_ENABLED", "true")
+
+
+@pytest.fixture
+def _parser_off(monkeypatch):
+    monkeypatch.delenv("AIX_UPLOAD_PARSER_ENABLED", raising=False)
+
+
+async def test_with_the_parser_off_only_the_old_formats_are_accepted(client, maker, _parser_off):
+    """A Word file was not accepted before this branch, and is not now."""
+    response = _upload(client, "programma.docx", _docx(), DOCX_MIME)
+
+    assert response.status_code == 422
+    assert "solo PDF, TXT, Markdown" in response.text
+    assert await _manifest(maker) == []
+
+
+async def test_with_the_parser_off_a_pdf_is_read_the_way_it_always_was(client, maker, _parser_off):
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfgen import canvas
+
+    buffer = io.BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=A4)
+    pdf.drawString(72, 780, "Programma di storia")
+    pdf.save()
+
+    assert _upload(client, "programma.pdf", buffer.getvalue(), "application/pdf").status_code == 200
+
+    entry = (await _manifest(maker))[0]
+    assert "Programma di storia" in entry["text_excerpt"]
+    assert "parse" not in entry, "the legacy manifest entry keeps exactly its old keys"
+
+
+async def test_with_the_parser_off_a_corrupt_pdf_is_still_not_a_500(client, _parser_off):
+    """The one deliberate difference from the old path: an answer, not a crash."""
+    response = _upload(client, "rotto.pdf", b"%PDF-1.4\n non un pdf", "application/pdf")
+
+    assert response.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# Parsing through the upload (PR 5), with the flag on
 # ---------------------------------------------------------------------------
 
 

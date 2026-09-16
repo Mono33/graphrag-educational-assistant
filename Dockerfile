@@ -74,6 +74,7 @@ ENV CODE_VERSION=${GIT_SHA}
 RUN useradd --create-home --uid 10001 aix \
     && mkdir -p /graphrag-aixlearning/artifacts/media_cache \
         /graphrag-aixlearning/data/webui/uploads \
+        /graphrag-aixlearning/data/webui/materials \
     && chown -R aix:aix /graphrag-aixlearning \
     && chmod -R a-w \
         /graphrag-aixlearning/data/media \
