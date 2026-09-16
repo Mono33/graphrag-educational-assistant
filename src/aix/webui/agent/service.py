@@ -864,6 +864,10 @@ def _build_planner_payload(state: dict[str, Any]) -> dict[str, Any]:
         "scope_variant": scope_variant,
         "scope_confidence": state.get("scope_confidence"),
         "key_concepts": list(state.get("key_concepts") or [])[:8],
+        # The subject the lesson is about. Without it the card showed only the
+        # pedagogy concepts that go to the Knowledge Graph, and a teacher who
+        # had attached a Cold War handout saw no trace of the Cold War.
+        "subject_concepts": list(state.get("subject_concepts") or [])[:8],
         "search_queries": list(state.get("search_queries") or [])[:8],
         "lesson_type": state.get("lesson_type"),
         "target_grade": state.get("target_grade"),

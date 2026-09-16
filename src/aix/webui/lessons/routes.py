@@ -1160,7 +1160,14 @@ async def lesson_run(
     # Refinement runs and follow-up turns bypass phase 1 entirely.
     # ─────────────────────────────────────────────────────────────────────
     intent_confirmed = form.get("intent_confirmed") == "1"
-    is_phase1 = (mode == "new") and (not intent_confirmed)
+
+    # A teacher who already chose the intent in the profile has answered the
+    # question the card asks. Asking again stopped the generation halfway and
+    # spent a whole Planner call before the real run (measured: 78 s).
+    already_chosen = str(
+        (lesson.educational_profile_json or {}).get("pedagogical_intent") or ""
+    ).strip()
+    is_phase1 = (mode == "new") and (not intent_confirmed) and not already_chosen
 
     if is_phase1:
         _prof = dict(lesson.educational_profile_json or {})
@@ -1732,6 +1739,7 @@ async def lesson_stream(
                     "query_intent": _plan.query_intent,
                     "intent_label": _plan.query_intent,
                     "key_concepts": _plan.key_concepts,
+                    "subject_concepts": _plan.subject_concepts or [],
                     "search_queries": _plan.search_queries,
                     "lesson_type": _plan.lesson_type,
                     "target_grade": _plan.target_grade,

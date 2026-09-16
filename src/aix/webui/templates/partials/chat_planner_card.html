@@ -61,11 +61,29 @@
           {% endif %}
         </div>
 
+        {# What the lesson is about. Separate from the pedagogy concepts below:
+           the Knowledge Graph holds teaching strategies, not school subjects,
+           so the subject is looked up in the attachment and in external
+           sources. Showing only the pedagogy row read as if the planner had
+           ignored the topic the teacher asked for. #}
+        {% if p.get('subject_concepts') %}
+          <div>
+            <div class="aix-section-label mb-1.5">
+              Argomento della lezione · dal documento e da fonti esterne
+            </div>
+            <div class="aix-chip-row">
+              {% for concept in p.subject_concepts %}
+                <span class="aix-pill aix-pill-info">{{ concept }}</span>
+              {% endfor %}
+            </div>
+          </div>
+        {% endif %}
+
         {# Key concepts the planner will look up #}
         {% if p.get('key_concepts') %}
           <div>
             <div class="aix-section-label mb-1.5">
-              Concetti chiave individuati
+              Strategie didattiche cercate nel Knowledge Graph
             </div>
             <div class="aix-chip-row">
               {% for concept in p.key_concepts %}
