@@ -98,6 +98,43 @@ def render_material_passages(
     return "\n\n".join(blocks)
 
 
+def teacher_material_appendix(
+    material_context_items: Optional[list[dict[str, Any]]],
+    teacher_provided_context: Optional[str],
+    *,
+    phase: str,
+) -> str:
+    """The teacher's material for the prompt: retrieved passages, or the upload.
+
+    One place for the choice ``write()`` and ``revise()`` both make, and one log
+    line saying which way it went. Without that line a run with the private RAG
+    on looks identical in the log to a run that silently fell back to pasting the
+    whole document — and telling those apart is the first thing to check when a
+    lesson ignores its sources.
+    """
+    passages = render_material_passages(material_context_items)
+    if passages:
+        logger.info(
+            "[WriterAgent] %s: %d retrieved passage(s), %d chars — the document is not pasted",
+            phase,
+            passages.count("[[material:"),
+            len(passages),
+        )
+        return WRITER_MATERIAL_PASSAGES_APPENDIX.format(material_passages=passages)
+
+    if teacher_provided_context and teacher_provided_context.strip():
+        logger.info(
+            "[WriterAgent] %s: no retrieved passages — using the uploaded excerpt (%d chars)",
+            phase,
+            len(teacher_provided_context),
+        )
+        return WRITER_TEACHER_UPLOADS_APPENDIX.format(
+            teacher_provided_context=teacher_provided_context.strip()
+        )
+
+    return ""
+
+
 # Max number of automatic continuation calls when the writer output is cut
 # by finish_reason="length". 1 = at most 2 total LLM calls per write/revise.
 _WRITER_MAX_CONTINUATIONS = int(os.getenv("AIX_WRITER_MAX_CONTINUATIONS", "1"))
@@ -396,13 +433,9 @@ class WriterAgent:
         # entire. The fallback is deliberate (§5.4 hybrid): when retrieval finds
         # nothing — still being indexed, or the flag is off — the teacher's
         # upload still reaches the Writer exactly as it did before.
-        passages = render_material_passages(material_context_items)
-        if passages:
-            user_prompt += WRITER_MATERIAL_PASSAGES_APPENDIX.format(material_passages=passages)
-        elif teacher_provided_context and teacher_provided_context.strip():
-            user_prompt += WRITER_TEACHER_UPLOADS_APPENDIX.format(
-                teacher_provided_context=teacher_provided_context.strip()
-            )
+        user_prompt += teacher_material_appendix(
+            material_context_items, teacher_provided_context, phase="write"
+        )
 
         # NEW Phase 2: Append media context if available
         if media_text:
@@ -652,13 +685,9 @@ class WriterAgent:
         # two ways. A revision that lost the material would quietly rewrite the
         # lesson away from the document it was grounded in — the defect fixed in
         # `3ca2e0b`, and the passages must not reintroduce it.
-        passages = render_material_passages(material_context_items)
-        if passages:
-            user_prompt += WRITER_MATERIAL_PASSAGES_APPENDIX.format(material_passages=passages)
-        elif teacher_provided_context and teacher_provided_context.strip():
-            user_prompt += WRITER_TEACHER_UPLOADS_APPENDIX.format(
-                teacher_provided_context=teacher_provided_context.strip()
-            )
+        user_prompt += teacher_material_appendix(
+            material_context_items, teacher_provided_context, phase="revise"
+        )
 
         # Get intent-specific system prompt for consistent formatting
         system_prompt, _ = get_writer_prompts(intent)
