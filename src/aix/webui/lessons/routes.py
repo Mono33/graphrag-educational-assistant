@@ -1467,7 +1467,9 @@ async def lesson_upload(
     # The order is deliberate: the teacher's file is safely stored and the
     # response is already decided before the new pipeline is asked to do
     # anything, so a broken pipeline cannot become a failed upload.
-    shadow = await record_upload(owner_id=user.id, filename=filename, content=content)
+    shadow = await record_upload(
+        owner_id=user.id, filename=filename, content=content, lesson_id=lesson_id
+    )
     if shadow:
         # Written straight onto the JSON column rather than through
         # ``save_upload``: the legacy manifest format gains three optional keys

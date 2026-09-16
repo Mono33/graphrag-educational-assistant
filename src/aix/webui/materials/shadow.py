@@ -18,11 +18,12 @@ poisons the session it happens in, and the request's session is still needed
 after this returns; borrowing it would turn a shadow failure into a broken page,
 which is the exact thing this module exists to prevent.
 
-**No binding is created.** ``lesson_material_binding`` says a lesson *uses* a
-material, and in shadow mode it does not — the Writer is still fed the legacy
-manifest excerpt. Recording a relationship the agent does not honour would make
-the table lie for as long as shadow mode lasts. It belongs with the retriever
-that resolves it, in PR 6.
+**The binding is created only once something honours it.** ``lesson_material_binding``
+says a lesson *uses* a material. Through shadow mode it was not written at all,
+because the Writer was still being fed the manifest excerpt and a table that
+claims a relationship nobody acts on is a table that lies. With
+``AIX_PRIVATE_RAG_ENABLED`` on it becomes true and load-bearing: it is exactly
+the set of versions the private retrieval is authorized against (§8.5).
 """
 
 from __future__ import annotations
@@ -33,9 +34,14 @@ from pathlib import Path
 from typing import Any, Optional
 
 from aix.webui.errors import report
+from aix.webui.materials.embedding import private_rag_enabled
 from aix.webui.materials.handlers import PARSER_PROFILE
 from aix.webui.materials.jobs import JobDispatcher
-from aix.webui.materials.repository import MaterialRepository, MaterialService
+from aix.webui.materials.repository import (
+    BindingRepository,
+    MaterialRepository,
+    MaterialService,
+)
 from aix.webui.materials.storage import get_storage_backend, materials_enabled
 
 logger = logging.getLogger(__name__)
@@ -53,6 +59,7 @@ async def record_upload(
     owner_id: uuid.UUID,
     filename: str,
     content: bytes,
+    lesson_id: Optional[uuid.UUID] = None,
 ) -> Optional[dict[str, Any]]:
     """Store the bytes and queue them, returning the fields for the manifest.
 
@@ -77,6 +84,27 @@ async def record_upload(
                 media_type=_media_type_for(filename),
             )
             await session.commit()
+
+        # Fase 2 · PR 6 — now the binding is honest. In shadow mode it would
+        # have said a lesson *uses* a material while the Writer was still being
+        # fed the manifest excerpt; with the private retriever on, the binding is
+        # exactly what the retrieval is authorized against (§8.5).
+        if lesson_id is not None and private_rag_enabled():
+            async with async_session_maker() as session:
+                bound = await BindingRepository(session).bind(
+                    lesson_id=lesson_id,
+                    material_id=material.id,
+                    owner_id=owner_id,
+                    selected_version_id=version.id,
+                    created_by=owner_id,
+                )
+                await session.commit()
+            if bound is None:
+                logger.warning(
+                    "[private-rag] lesson=%s refused the binding for material=%s",
+                    lesson_id,
+                    material.id,
+                )
 
         job = await JobDispatcher(async_session_maker).enqueue(
             owner_id=owner_id,

@@ -496,6 +496,44 @@ async def retrieve_node(state: AgentState) -> dict[str, Any]:
         return {"error": str(e), "current_step": "error"}
 
 
+async def retrieve_private_node(state: AgentState) -> dict[str, Any]:
+    """PRIVATE MATERIAL NODE — the teacher's own documents (§8.1, §8.5).
+
+    Runs beside ``retrieve`` in the same superstep, which is why
+    ``current_step`` and ``error`` carry reducers (§8.9).
+
+    It searches nothing on its own: the WebUI registers a search function for
+    this session (see ``material_source``), because the rows belong to the WebUI
+    and the authorization is the teacher's. An API or CLI run registers none, so
+    this node finds nothing and the lesson is written exactly as before.
+
+    A failure here is never the lesson's failure. If the private index is down
+    or the embedding provider refuses, the run continues on the Knowledge Graph
+    alone — a lesson without the handout is worth more than no lesson.
+    """
+    from aix.agent.graph import material_source
+
+    search = material_source.get(state.get("session_id"))
+    if search is None:
+        return {"current_step": "retrieve_complete"}
+
+    # The subject concepts sharpen the query: "amplia la lezione" retrieves
+    # little on its own, "amplia la lezione · guerra fredda · Yalta" retrieves
+    # the pages the teacher means.
+    concepts = " · ".join((state.get("subject_concepts") or [])[:5])
+    query = f"{state.get('teacher_query') or ''} {concepts}".strip()
+
+    try:
+        items = await search(query)
+    except Exception:  # noqa: BLE001 — the Knowledge Graph alone still writes a lesson
+        logger.warning("[Node: PrivateMaterial] search failed, continuing without it")
+        logger.debug("[Node: PrivateMaterial] failure detail", exc_info=True)
+        return {"current_step": "retrieve_complete"}
+
+    logger.info("[Node: PrivateMaterial] %d passage(s) from the teacher's material", len(items))
+    return {"material_context_items": items, "current_step": "retrieve_complete"}
+
+
 async def write_node(state: AgentState) -> dict[str, Any]:
     """
     WRITER NODE
@@ -829,6 +867,16 @@ def should_continue_to_revision(state: AgentState) -> str:
 
 def _conditional_retrieval_enabled() -> bool:
     return (os.getenv("AIX_CONDITIONAL_RETRIEVAL_ENABLED") or "false").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
+def _private_rag_enabled() -> bool:
+    """The same flag the WebUI reads, read here without importing that layer."""
+    return (os.getenv("AIX_PRIVATE_RAG_ENABLED") or "false").strip().lower() in (
         "1",
         "true",
         "yes",

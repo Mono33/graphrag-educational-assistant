@@ -595,3 +595,33 @@ async def test_the_queue_is_empty_afterwards(client, maker, tmp_path, _on):
     await _drain_one(maker, tmp_path)
 
     assert await _drain_one(maker, tmp_path) is False
+
+
+async def test_the_lesson_binds_the_material_when_the_private_rag_is_on(
+    client, maker, _on, _rag_on
+):
+    """The binding is what retrieval is authorized against (§8.5).
+
+    Through shadow mode it was deliberately not written: it would have claimed
+    the lesson used a material while the Writer was still reading the manifest
+    excerpt.
+    """
+    from aix.webui.materials.models import LessonMaterialBinding
+
+    _upload(client, "programma.docx", _docx(), DOCX_MIME)
+
+    bindings = await _rows(maker, LessonMaterialBinding)
+    assert len(bindings) == 1
+    assert bindings[0].lesson_id == LESSON
+    assert bindings[0].owner_id == ANNA
+
+    versions = await _rows(maker, MaterialVersion)
+    assert bindings[0].selected_version_id == versions[0].id
+
+
+async def test_with_the_private_rag_off_no_binding_is_claimed(client, maker, _on):
+    from aix.webui.materials.models import LessonMaterialBinding
+
+    _upload(client)
+
+    assert await _rows(maker, LessonMaterialBinding) == []

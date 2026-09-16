@@ -79,6 +79,36 @@ def merge_error(current: Optional[str], update: Optional[str]) -> Optional[str]:
     return " | ".join(sorted({current, update}))
 
 
+def merge_material_items(
+    current: Optional[list[dict[str, Any]]], update: Optional[list[dict[str, Any]]]
+) -> list[dict[str, Any]]:
+    """Join the private retriever's passages, in an order-independent way (§8.9).
+
+    Concatenation rather than last-write-wins: the private retriever and the
+    Knowledge Graph one run in the same superstep, and a reducer that kept only
+    one write would drop a whole branch without raising anything.
+
+    The order comes from the payload — the score — and not from which coroutine
+    finished first, so the prompt is the same whichever branch lands first.
+    Duplicates are dropped by citation: the same passage retrieved twice is one
+    passage, and it should not get two shares of the context budget.
+    """
+    if update is None:
+        return list(current or [])
+
+    merged = list(current or []) + list(update)
+    seen: set[str] = set()
+    unique: list[dict[str, Any]] = []
+    for item in merged:
+        key = str(item.get("citation") or item.get("text", ""))
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(item)
+
+    return sorted(unique, key=lambda i: float(i.get("score") or 0.0), reverse=True)
+
+
 class LessonPlanType(Enum):
     """Types of lesson plans that can be generated"""
 
@@ -197,6 +227,12 @@ class AgentState(TypedDict, total=False):
 
     # NEW Phase A: External resources for out-of-scope queries
     external_resources: Optional[dict[str, Any]]  # Wikipedia, OER, Semantic Scholar results
+
+    # Fase 2 · PR 6 — passages of the teacher's own documents (§8.2). Kept apart
+    # from the Knowledge Graph results all the way to the prompt: one is shared
+    # pedagogy, the other is one school's handout, and the Writer has to be able
+    # to tell them apart. Every item is ``instruction_trust="data_only"``.
+    material_context_items: Annotated[list[dict[str, Any]], merge_material_items]
     # T6 — True when this turn skipped the retriever and reused the corpus a
     # previous turn fetched. Per-run, so it resets. Downstream readers use it to
     # say so in the UI; the Critic will need it too, to know it is grounding
@@ -367,6 +403,11 @@ class AgentInput(TypedDict, total=False):
     max_revisions: int
     current_step: str
     error: Optional[str]
+    # Fase 2 · PR 6 — reset each turn rather than persisted: which passages of a
+    # document a lesson needs depends on what this turn asks for, and carrying
+    # the previous turn's passages would answer the new question with the old
+    # evidence.
+    material_context_items: list[dict[str, Any]]
 
     final_lesson_plan: Optional[str]
     final_metadata: Optional[dict[str, Any]]
@@ -472,6 +513,10 @@ def create_initial_state(
         retrieval_attempts=None,
         retrieval_rewritten_query=None,
         retrieval_warning=None,
+        # Fase 2 · PR 6 — retrieved fresh each turn, so it starts empty rather
+        # than persisting like the Knowledge Graph corpus above: what the lesson
+        # needs from a document depends on what this turn asks.
+        material_context_items=[],
         # Writer (empty)
         lesson_plan_draft=None,
         lesson_plan_structured=None,

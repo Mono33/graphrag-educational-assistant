@@ -82,6 +82,11 @@ class _Draft:
     block_ids: list[str] = field(default_factory=list)
     pages: list[int] = field(default_factory=list)
     carried_tokens: int = 0
+    #: True once any block in this chunk came from OCR rather than a text layer.
+    #: It travels to the retriever and on to the Writer, because §7.8 requires a
+    #: machine's reading of an image to be quotable *as such* — a name or a date
+    #: read by OCR must not be presented as certain.
+    ocr: bool = False
 
     @property
     def text(self) -> str:
@@ -94,6 +99,8 @@ class _Draft:
     def add(self, block: IRBlock, text: str) -> None:
         self.parts.append(text)
         self.block_ids.append(block.block_id)
+        if block.confidence < 1.0:
+            self.ocr = True
         if block.page is not None and block.page not in self.pages:
             self.pages.append(block.page)
 
@@ -155,6 +162,8 @@ class _Chunker:
         locator: dict[str, Any] = {"block_ids": list(self.draft.block_ids)}
         if self.draft.heading:
             locator["heading"] = self.draft.heading
+        if self.draft.ocr:
+            locator["ocr"] = True
         if self.draft.pages:
             locator["page"] = self.draft.pages[0]
             if len(self.draft.pages) > 1:

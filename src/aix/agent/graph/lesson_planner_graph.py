@@ -33,6 +33,7 @@ from aix.agent.graph.nodes import (
     TRANSIENT_LLM_ERRORS,
     _conditional_retrieval_enabled,
     _corrective_rag_enabled,
+    _private_rag_enabled,
     critique_node,
     # CORE 2 #9 — Corrective RAG (Retrieval Grading). Imported eagerly so
     # an import error fails fast even when the feature flag is off; the
@@ -40,6 +41,7 @@ from aix.agent.graph.nodes import (
     grade_retrieval_node,
     plan_node,
     retrieve_node,
+    retrieve_private_node,
     reuse_retrieval_node,
     should_continue_to_revision,
     should_retrieve,
@@ -150,6 +152,23 @@ def _build_workflow() -> StateGraph:
     else:
         # Default: unconditional, byte-identical to the pre-T6 topology.
         workflow.add_edge("plan", "retrieve")
+
+    if _private_rag_enabled():
+        # Fase 2 · PR 6 — the second retriever, beside the first:
+        #
+        #     plan ─┬─→ retrieve ─────────→ write
+        #           └─→ retrieve_private ──┘
+        #
+        # Both branches write ``current_step``, which is what the reducers in
+        # ``state.py`` were added for (§8.9). ``write`` waits for both: it is a
+        # join, so a lesson is never written from half its evidence.
+        workflow.add_node("retrieve_private", retrieve_private_node)
+        workflow.add_edge("plan", "retrieve_private")
+        workflow.add_edge("retrieve_private", "write")
+        logger.info(
+            "[LessonPlannerGraph] Private material RAG ENABLED — "
+            "the teacher's own documents are retrieved beside the Knowledge Graph."
+        )
 
     if _corrective_rag_enabled():
         # CORE 2 #9 — Corrective RAG topology

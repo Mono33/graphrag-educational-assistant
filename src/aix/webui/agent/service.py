@@ -1381,6 +1381,19 @@ async def run_agent_stream(
 
         teacher_ctx = _teacher_upload_context(lesson)
 
+        # Fase 2 · PR 6 — hand the graph a way to search this teacher's own
+        # documents. Registered per session and removed in the same cleanup as
+        # the writer's token bus, because it closes over an owner id: a
+        # registration that outlived its run would be a search someone else's
+        # turn could reach.
+        from aix.webui.materials.embedding import private_rag_enabled
+
+        if private_rag_enabled():
+            from aix.agent.graph import material_source
+            from aix.webui.materials.retrieval import search_for_lesson
+
+            material_source.register(str(lesson.id), search_for_lesson(lesson.id, lesson.owner_id))
+
         initial_state = create_initial_state(
             query=query,
             domain=pipeline.domain,
@@ -1639,6 +1652,12 @@ async def run_agent_stream(
         yield StreamEvent(kind="error", error=short_msg)
     finally:
         _write_stream.deregister(str(lesson.id))
+
+        # The private search closes over an owner id, so it is removed on every
+        # path out of the run — success, failure, or a teacher closing the tab.
+        from aix.agent.graph import material_source
+
+        material_source.deregister(str(lesson.id))
 
 
 # ---------------------------------------------------------------------------
