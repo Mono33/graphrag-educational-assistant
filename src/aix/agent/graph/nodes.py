@@ -599,6 +599,23 @@ async def write_node(state: AgentState) -> dict[str, Any]:
                 if _token_bus is not None:
                     _token_bus.put_nowait(None)
 
+        # An empty draft is a failed turn, and it has to say so. In a thread the
+        # checkpointer still holds the previous turn's ``final_lesson_plan``, so
+        # a silent empty write ends the run "complete" and saves the OLD lesson
+        # as the answer to the NEW request — which is what happened on
+        # 2026-09-16: the teacher asked to extend the lesson with a second
+        # document and got the same lesson back, with no error.
+        if not (lesson_plan or "").strip():
+            logger.error("[Node: Write] the model returned no text (token budget exhausted?)")
+            return {
+                "error": (
+                    "Il modello non ha prodotto testo: il budget di token per la scrittura "
+                    "è stato consumato dal ragionamento. Aumenta AIX_WRITER_MAX_TOKENS "
+                    "(consigliato 8000) e riprova."
+                ),
+                "current_step": "error",
+            }
+
         return {"lesson_plan_draft": lesson_plan, "current_step": "write_complete"}
 
     except TRANSIENT_LLM_ERRORS:

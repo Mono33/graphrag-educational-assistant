@@ -365,6 +365,20 @@ def _query_from_lesson(lesson: Any) -> str:
     return " ".join(parts)
 
 
+def _fail_if_the_turn_produced_nothing(final_state: dict[str, Any]) -> None:
+    """Raise when a node reported a failure, before reading the lesson out.
+
+    Order matters. ``final_lesson_plan`` survives in the thread's checkpoint
+    from the previous turn, so a turn whose writer produced nothing would
+    otherwise finish "complete" and persist the *previous* lesson as the answer
+    to the new request. Observed on 2026-09-16, and invisible to the teacher:
+    the chat simply showed the same lesson again.
+    """
+    error = (final_state.get("error") or "").strip() if final_state else ""
+    if error:
+        raise RuntimeError(error)
+
+
 def _extract_lesson_plan_md(final_state: dict[str, Any]) -> str:
     """
     The lesson plan ends up under ``final_lesson_plan`` after a successful
@@ -1558,6 +1572,7 @@ async def run_agent_stream(
 
         # ── Run finished cleanly ─────────────────────────────────────────────
         elapsed = time.monotonic() - started_at
+        _fail_if_the_turn_produced_nothing(final_state)
         lesson_plan_md = _extract_lesson_plan_md(final_state)
         meta = _extract_meta(final_state)
         meta["duration_seconds"] = round(elapsed, 1)
@@ -1874,6 +1889,7 @@ async def stream_agent_events(
 
         # ── Done ────────────────────────────────────────────────────────
         elapsed = time.monotonic() - started_at
+        _fail_if_the_turn_produced_nothing(final_state)
         lesson_plan_md = _extract_lesson_plan_md(final_state)
         meta = _extract_meta(final_state)
         meta["duration_seconds"] = round(elapsed, 1)

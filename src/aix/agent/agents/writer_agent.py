@@ -50,6 +50,12 @@ logger = logging.getLogger(__name__)
 # mid-sentence cut. Override with AIX_WRITER_MAX_TOKENS env var.
 _WRITER_MAX_TOKENS = int(os.getenv("AIX_WRITER_MAX_TOKENS", "8000"))
 
+# Floor for the retry after a reasoning model spends its whole budget thinking
+# and returns nothing. Retrying under the same ceiling — which is what happened
+# on 2026-09-16 with AIX_WRITER_MAX_TOKENS=2000 — asks the model to do again
+# exactly what it just could not do: two runs, four minutes, zero characters.
+_WRITER_MIN_CONTENT_TOKENS = int(os.getenv("AIX_WRITER_MIN_CONTENT_TOKENS", "4000"))
+
 # Max number of automatic continuation calls when the writer output is cut
 # by finish_reason="length". 1 = at most 2 total LLM calls per write/revise.
 _WRITER_MAX_CONTINUATIONS = int(os.getenv("AIX_WRITER_MAX_CONTINUATIONS", "1"))
@@ -444,14 +450,17 @@ class WriterAgent:
                 # thinking and produced zero content. Retry once with thinking
                 # disabled so the model generates the lesson without CoT overhead.
                 if not content:
+                    retry_max_tokens = max(_WRITER_MAX_TOKENS, _WRITER_MIN_CONTENT_TOKENS)
                     logger.warning(
                         "[WriterAgent] Zero-content response after streaming "
-                        "(reasoning model likely exhausted token budget). "
-                        "Retrying with include_reasoning=False."
+                        "(reasoning model exhausted the %d-token budget). Retrying "
+                        "with include_reasoning=False and max_tokens=%d.",
+                        _WRITER_MAX_TOKENS,
+                        retry_max_tokens,
                     )
                     fallback_kwargs = app_config.openai.build_completion_kwargs(
                         temperature=0.7,
-                        max_tokens=_WRITER_MAX_TOKENS,
+                        max_tokens=retry_max_tokens,
                         include_reasoning=False,
                     )
                     content, last_finish_reason = await self._stream_completion(
