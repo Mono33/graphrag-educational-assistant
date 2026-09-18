@@ -31,9 +31,13 @@ from aix.webui.auth.models import User
 from aix.webui.db import Base
 from aix.webui.materials.citations import (
     GENERIC_LABEL,
+    SOURCES_HEADING,
+    TOMBSTONE_LABEL,
     has_citations,
     labels_for_lesson,
     render_citations,
+    sources_block,
+    with_sources,
 )
 
 pytestmark = pytest.mark.unit
@@ -218,6 +222,64 @@ def test_text_without_citations_is_untouched():
 
     assert has_citations(plain) is False
     assert render_citations(plain) == plain
+    assert sources_block(plain) == ""
+    assert with_sources(plain) == plain
+
+
+# ---------------------------------------------------------------------------
+# The list of sources below the lesson (U3)
+# ---------------------------------------------------------------------------
+
+
+def test_the_lesson_ends_with_the_documents_it_used():
+    text = with_sources(LESSON_MD, {V1: "guerra-fredda.pdf", V2: "appunti.docx"})
+
+    assert SOURCES_HEADING in text
+    assert "- guerra-fredda.pdf — p. 7" in text
+    assert "- appunti.docx — p. 2" in text
+    # The list is below the lesson, not inside it.
+    assert text.index("Piano Marshall") < text.index(SOURCES_HEADING)
+
+
+def test_one_document_cited_twice_is_listed_once_with_both_pages():
+    text = (
+        f"Prima [[material:{V1}#page=3]]. Poi [[material:{V1}#page=11]]. "
+        f"Ancora [[material:{V1}#page=3]]."
+    )
+
+    assert "- dispensa.pdf — pp. 3, 11" in with_sources(text, {V1: "dispensa.pdf"})
+
+
+def test_the_sources_never_name_material_the_lesson_cannot_use():
+    """The same authorization as the inline citation: an invented id is not a source."""
+    block = sources_block(LESSON_MD, {V1: "guerra-fredda.pdf"})
+
+    assert "guerra-fredda.pdf" in block
+    assert V2 not in block and "appunti" not in block
+
+
+def test_a_removed_document_is_listed_as_removed_without_a_page():
+    """§12.3 — the lesson says a source was removed rather than quietly losing it."""
+    block = sources_block(LESSON_MD, {V1: TOMBSTONE_LABEL, V2: "appunti.docx"})
+
+    assert f"- {TOMBSTONE_LABEL}" in block
+    assert f"{TOMBSTONE_LABEL} — p." not in block, "nobody can open it, so no page"
+
+
+def test_the_block_is_not_appended_twice():
+    """The export resolves, then the renderer runs over the same text."""
+    once = with_sources(LESSON_MD, {V1: "guerra-fredda.pdf", V2: "appunti.docx"})
+    twice = with_sources(once, {V1: "guerra-fredda.pdf", V2: "appunti.docx"})
+
+    assert once == twice
+    assert twice.count(SOURCES_HEADING) == 1
+
+
+def test_without_labels_the_block_still_says_nothing_it_should_not():
+    block = sources_block(LESSON_MD)
+
+    assert f"- {GENERIC_LABEL} — pp. 2, 7" in block
+    assert V1 not in block and V2 not in block
 
 
 async def test_the_labels_come_from_what_the_lesson_is_bound_to(tmp_path):
@@ -283,3 +345,33 @@ async def test_the_labels_come_from_what_the_lesson_is_bound_to(tmp_path):
 
     assert labels == {str(version.id).lower(): "guerra-fredda.pdf"}
     assert json.dumps(labels), "plain data, so it can cross a template boundary"
+
+
+# ---------------------------------------------------------------------------
+# What the Critic is told about it (§8.8)
+# ---------------------------------------------------------------------------
+
+
+def test_the_critic_is_told_the_material_is_the_teachers_own():
+    from aix.agent.agents.critic_agent import teacher_material_note
+
+    note = teacher_material_note(
+        [
+            {"source_id": V1, "text": "…"},
+            {"source_id": V1, "text": "…"},
+            {"source_id": V2, "text": "…"},
+        ]
+    )
+
+    assert "teacher_asserted" in note
+    assert "3 passaggi" in note and "2 documento" in note
+    assert "non supportati dalle fonti" in note, "the weakness it must stop reporting"
+    # The passages are not repeated: the Critic already reads them in the lesson.
+    assert "…" not in note
+
+
+def test_a_lesson_without_material_tells_the_critic_nothing():
+    from aix.agent.agents.critic_agent import teacher_material_note
+
+    assert teacher_material_note([]) == ""
+    assert teacher_material_note(None) == ""

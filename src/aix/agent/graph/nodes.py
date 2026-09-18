@@ -745,6 +745,9 @@ async def critique_node(state: AgentState) -> dict[str, Any]:
             domain=state.get("domain", "neuro"),
             language=state.get("language", "it"),
             query_intent=query_intent,
+            # §8.8 — the Critic is told the teacher's own documents exist and are
+            # `teacher_asserted`, or it marks a lesson built on them as ungrounded.
+            material_items=state.get("material_context_items") or [],
         )
 
         updates = {

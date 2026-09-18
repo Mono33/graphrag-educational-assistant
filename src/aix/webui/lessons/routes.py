@@ -125,7 +125,11 @@ from aix.webui.lessons.display import lesson_to_row
 from aix.webui.lessons.models import Lesson, LessonMessage, SavedProfile
 from aix.webui.lessons.schemas import form_to_profile_dict, profile_to_form_values
 from aix.webui.lessons.uploads import delete_upload, save_upload
-from aix.webui.materials.citations import render_citations, resolve_for_lesson
+from aix.webui.materials.citations import (
+    labels_for_lesson_safe,
+    resolve_for_lesson,
+    with_sources,
+)
 from aix.webui.materials.readiness import states_for_lesson_safe, still_preparing
 from aix.webui.materials.shadow import record_upload, retire_material
 from aix.webui.sanitize import sanitize_html
@@ -187,6 +191,7 @@ def _label_dicts() -> dict[str, Any]:
 async def _load_chat_messages(
     session: AsyncSession,
     lesson_id: uuid.UUID,
+    labels: Optional[dict[str, str]] = None,
 ) -> list[dict[str, Any]]:
     """
     Load all ``LessonMessage`` rows for a lesson and shape them into the
@@ -220,7 +225,9 @@ async def _load_chat_messages(
                 # markdown — teacher's typed query, escape-safe via Jinja's
                 # default autoescape).
                 "content_html": (
-                    _markdown_to_html(msg.content_md or "") if msg.role == "assistant" else None
+                    _markdown_to_html(msg.content_md or "", labels)
+                    if msg.role == "assistant"
+                    else None
                 ),
                 "turn_index": msg.turn_index,
                 "agent_kind": msg.agent_kind,
@@ -556,7 +563,10 @@ async def lesson_card_fragment(
         "partials/chat_lesson_card.html",
         {
             "lesson": lesson,
-            "lesson_plan_html": _markdown_to_html(lesson.lesson_plan_md or ""),
+            "lesson_plan_html": _markdown_to_html(
+                lesson.lesson_plan_md or "",
+                await labels_for_lesson_safe(session, lesson),
+            ),
             "meta": {"approved": lesson.status == "complete", "revision_count": 0},
         },
     )
@@ -993,12 +1003,16 @@ async def lesson_show(
     if lesson is None:
         raise HTTPException(status_code=404, detail="Lezione non trovata")
 
+    # §8.6 / U3 — the names of the documents this lesson may cite, looked up once
+    # for the whole page: the plan below and every assistant turn of the history.
+    material_labels = await labels_for_lesson_safe(session, lesson)
+
     # Pre-render the persisted lesson plan to HTML so the lesson card
     # template doesn't have to know which markdown extensions we use.
     # Only the terminal "complete" state needs this — running/error/draft
     # never paint it.
     lesson_plan_html = (
-        _markdown_to_html(lesson.lesson_plan_md)
+        _markdown_to_html(lesson.lesson_plan_md, material_labels)
         if lesson.status == "complete" and lesson.lesson_plan_md
         else None
     )
@@ -1012,7 +1026,7 @@ async def lesson_show(
     # Multi-turn history for the chat transcript (#10.3d). Returns []
     # for legacy / fresh lessons → templates fall back to the legacy
     # single-bubble layout (chat_user_message.html + state-driven block).
-    messages = await _load_chat_messages(session, lesson.id)
+    messages = await _load_chat_messages(session, lesson.id, material_labels)
 
     # F6: "What's Next?" — adjacent KG concepts for completed lessons.
     # Runs in a sync threadpool to keep the async route non-blocking.
@@ -1430,7 +1444,9 @@ async def lesson_run(
     # history. The chat_pane below (running state) will append per-agent
     # cards live as the SSE stream fires; the final assistant message is
     # written by the service on success.
-    messages = await _load_chat_messages(session, lesson.id)
+    messages = await _load_chat_messages(
+        session, lesson.id, await labels_for_lesson_safe(session, lesson)
+    )
 
     return templates.TemplateResponse(
         request,
@@ -2325,7 +2341,12 @@ async def lesson_print(
         "pages/lesson_print.html",
         {
             "lesson": lesson,
-            "lesson_plan_html": _markdown_to_html(lesson.lesson_plan_md or ""),
+            # A printed lesson is the copy that leaves the screen: it names the
+            # documents it used, not «materiale allegato».
+            "lesson_plan_html": _markdown_to_html(
+                lesson.lesson_plan_md or "",
+                await labels_for_lesson_safe(session, lesson),
+            ),
             # EU AI Act Art. 50 (#21) — visible notice on the print/PDF artifact.
             "ai_disclosure_short": DISCLOSURE_SHORT,
             "ai_disclosure_long": DISCLOSURE_LONG,
@@ -2643,7 +2664,7 @@ async def saved_profiles_delete(
 _MARKDOWN_EXTENSIONS = ["fenced_code", "tables", "sane_lists"]
 
 
-def _markdown_to_html(text: str) -> str:
+def _markdown_to_html(text: str, labels: Optional[dict[str, str]] = None) -> str:
     """Render ``text`` as HTML using our pinned extension set, then sanitise it.
 
     The sanitiser is here and not at the four call sites because this is the
@@ -2652,13 +2673,16 @@ def _markdown_to_html(text: str) -> str:
     typing and from text extracted out of files they upload — none of which is
     ours — and python-markdown passes raw HTML straight through.
     """
-    # §8.6 — the citation markers are an internal address. Resolved here with the
-    # neutral label, so a raw ``[[material:…]]`` can never reach a teacher from
-    # any of the call sites; where the document's name is worth the lookup (the
-    # export route) the text is resolved with labels before it gets here.
+    # §8.6 — the citation markers are an internal address, resolved here so a raw
+    # ``[[material:…]]`` can never reach a teacher from any of the call sites.
+    # ``labels`` names the documents where the caller had a session to look them
+    # up in; without it the neutral label is used, as before. U3: the same pass
+    # appends the list of sources, built from the markers rather than asked of
+    # the model. Text already resolved (the export route) has no markers left and
+    # so gains nothing here — the block is not appended twice.
     return sanitize_html(
         md.markdown(
-            render_citations(text or ""), extensions=_MARKDOWN_EXTENSIONS, output_format="html5"
+            with_sources(text or "", labels), extensions=_MARKDOWN_EXTENSIONS, output_format="html5"
         )
     )
 

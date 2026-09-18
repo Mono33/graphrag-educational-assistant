@@ -362,9 +362,13 @@ async def test_a_citation_reaches_the_teacher_readable(client, maker, tmp_path, 
     assert "storia.pdf" in resolved, "the document is named"
     assert re.search(r"p\.\s*\d+", resolved), "and the page with it"
     assert "[[material:" not in resolved
+    # U3 — inline reference *and* the list of sources under the lesson.
+    assert "Fonti dai tuoi materiali" in resolved
+    assert "- storia.pdf — p." in resolved
 
     html = _markdown_to_html(lesson_md)
     assert "[[material:" not in html, "no internal address survives to the page"
+    assert "Fonti dai tuoi materiali" in html
 
 
 async def test_removing_an_attachment_removes_it_from_retrieval(client, maker, tmp_path, provider):

@@ -79,6 +79,69 @@ def has_citations(text: str) -> bool:
     return bool(CITATION_RE.search(text or ""))
 
 
+#: The heading of the block appended below a lesson that quoted the teacher's
+#: own documents. Decision U3 (2026-09-18): the inline reference says *where* a
+#: sentence comes from, this says *what was used* for the lesson as a whole.
+SOURCES_HEADING = "**Fonti dai tuoi materiali**"
+
+
+def sources_block(text: str, labels: Optional[dict[str, str]] = None) -> str:
+    """The list of documents this text cites, or ``""`` if it cites none.
+
+    Built by reading the markers, never by asking the model for a bibliography:
+    a list the Writer composed would eventually name a document the lesson did
+    not use, and nobody could tell by looking. Everything here comes from
+    markers that survived :func:`render_citations`'s authorization check, so the
+    block cannot name material this lesson is not bound to.
+
+    Documents appear in the order they are first cited, pages in numeric order.
+    """
+    if not text:
+        return ""
+
+    pages: dict[str, list[str]] = {}
+    for match in CITATION_RE.finditer(text):
+        version_id, anchor = match.group(1).lower(), match.group(2)
+        if labels is not None:
+            label = labels.get(version_id)
+            if label is None:
+                continue  # not this lesson's material — it is not a source
+        else:
+            label = GENERIC_LABEL
+
+        seen = pages.setdefault(label, [])
+        page = _page_of(anchor)
+        # A tombstone has no page worth printing: nobody can open it.
+        if page and page not in seen and label != TOMBSTONE_LABEL:
+            seen.append(page)
+
+    if not pages:
+        return ""
+
+    lines = [SOURCES_HEADING, ""]
+    for label, found in pages.items():
+        numbers = sorted(found, key=lambda p: (not p.isdigit(), int(p) if p.isdigit() else 0, p))
+        if not numbers:
+            lines.append(f"- {label}")
+        elif len(numbers) == 1:
+            lines.append(f"- {label} — p. {numbers[0]}")
+        else:
+            lines.append(f"- {label} — pp. {', '.join(numbers)}")
+    return "\n".join(lines)
+
+
+def with_sources(text: str, labels: Optional[dict[str, str]] = None) -> str:
+    """``text`` with its citations made readable and its sources listed below.
+
+    Idempotent where it matters: the block is built from the markers, and
+    rendering removes them, so text that has already been through this function
+    gains nothing a second time.
+    """
+    block = sources_block(text, labels)
+    rendered = render_citations(text, labels)
+    return f"{rendered.rstrip()}\n\n{block}\n" if block else rendered
+
+
 async def labels_for_lesson(
     session: AsyncSession, *, lesson_id: uuid.UUID, owner_id: uuid.UUID
 ) -> dict[str, str]:
@@ -116,7 +179,7 @@ async def labels_for_lesson(
 
 
 async def resolve_for_lesson(text: str, session: AsyncSession, lesson: Any) -> str:
-    """Render the citations of one lesson's text, best effort.
+    """Render the citations of one lesson's text and list its sources, best effort.
 
     Never raises: a lesson that cannot be shown because its citations could not
     be looked up would be a poor trade, so on failure the neutral label is used.
@@ -127,5 +190,18 @@ async def resolve_for_lesson(text: str, session: AsyncSession, lesson: Any) -> s
     try:
         labels = await labels_for_lesson(session, lesson_id=lesson.id, owner_id=lesson.owner_id)
     except Exception:  # noqa: BLE001 — the lesson matters more than the filename
-        return render_citations(text)
-    return render_citations(text, labels)
+        return with_sources(text)
+    return with_sources(text, labels)
+
+
+async def labels_for_lesson_safe(session: AsyncSession, lesson: Any) -> Optional[dict[str, str]]:
+    """``labels_for_lesson`` for the render path: ``None`` rather than an error.
+
+    ``None`` means "print the neutral label", which is what the chat page did
+    before there was anything to look up — a page that fails to paint because a
+    filename could not be read would be a bad trade.
+    """
+    try:
+        return await labels_for_lesson(session, lesson_id=lesson.id, owner_id=lesson.owner_id)
+    except Exception:  # noqa: BLE001 — see the docstring
+        return None

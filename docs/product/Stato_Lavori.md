@@ -531,9 +531,29 @@ su `pgvector/pgvector:pg16` — 5 passati, compreso un test nuovo che esegue
 davvero la ricerca ibrida sul motore vero, che è l'unico posto dove la metà FTS
 gira.
 
-**Restano il passo 5** (citazioni: blocco «Fonti dai tuoi materiali» e Critic
-informato che il materiale è `teacher_asserted`) **e il passo 6** (script di
-reindicizzazione, contatori §11.5, rollout con immagine pgvector e REINDEX).
+**Passo 5 — le citazioni (U3).** Sotto la lezione compare «Fonti dai tuoi
+materiali»: un elenco dei documenti citati con le pagine, **costruito dai
+marcatori presenti nel testo**, non chiesto al modello — una bibliografia
+scritta dal Writer prima o poi nomina un documento che non è stato usato, e
+nessuno se ne accorgerebbe. Passa per la stessa autorizzazione della citazione
+in linea: un id inventato non diventa una fonte, e un documento cancellato è
+elencato come «materiale rimosso», senza pagina, perché nessuno può aprirlo.
+È idempotente: l'export risolve, poi il renderer ripassa sullo stesso testo e
+non aggiunge niente due volte.
+
+Dove c'è una sessione per leggerli, adesso si vedono i nomi veri dei file: la
+pagina della lezione, la card, la cronologia dei turni e la stampa. Nello stream
+durante la generazione resta l'etichetta neutra, e il frammento che arriva subito
+dopo la sostituisce.
+
+E il **Critic sa** che il materiale privato è `teacher_asserted` (§8.8): prima
+leggeva una lezione costruita su una dispensa, non ne ritrovava le affermazioni
+nel Knowledge Graph e segnalava come difetto proprio il funzionamento della
+funzione. Gli arriva il numero di passaggi e documenti, non il loro testo — che
+ha già davanti dentro la lezione.
+
+**Resta il passo 6:** script di reindicizzazione, contatori §11.5, rollout con
+immagine pgvector e REINDEX.
 
 4. **B4 · PR 7 — fatto** (`f8150e1`): PDF vero e scaletta con i minuti.
 5. **Corpus — avviato il 2026-09-15.** Cinque PDF pubblici del Ministero e una
