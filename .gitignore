@@ -231,3 +231,7 @@ data/media/kg_*_resources.json
 
 artifacts/media_cache/
 _phase2_smoke.py
+
+# Eval corpus for the private RAG: real teacher documents, never in git.
+data/eval/corpus/rag/
+data/eval/rag/.cache/

@@ -1,0 +1,102 @@
+# Golden cases for the private material retrieval.
+#
+# Each case is one request a teacher could make, written the way the system
+# actually searches: the lesson topic and the Planner's subject concepts, joined
+# by "·" (see ``_private_search_query`` in aix/agent/graph/nodes.py). The
+# expectations are pages of the real documents, read page by page on 2026-09-18,
+# not guesses.
+#
+# ``expect``  — pages that answer the request. Recall is measured against these.
+# ``forbid``  — pages that must not reach the top of the ranking. The English
+#               PDF's Common Core standards (p6) and its bibliography (p7)
+#               mention every Cold War keyword and contain no history; they took
+#               two of the first eight places in the first real run.
+#
+# Corpus: data/eval/corpus/rag/ (git-ignored, populated from the documents used
+# in the 2026-09-16 test). Regenerate with:
+#   python scripts/eval/run_private_rag.py --report
+
+corpus: data/eval/corpus/rag
+
+forbid_always:
+  - document: Cold-War.pdf
+    pages: [6, 7]   # Common Core standards list, and the sources bibliography
+
+cases:
+  - id: yalta
+    query: "guerra fredda · Conferenza di Yalta · cortina di ferro · sfere di influenza"
+    expect:
+      - document: guerra-fredda-def.pdf
+        pages: [1]
+
+  - id: due-blocchi
+    query: "guerra fredda · capitalismo vs comunismo · USA e URSS · due blocchi contrapposti"
+    expect:
+      - document: guerra-fredda-def.pdf
+        pages: [1]
+      - document: Cold-War.pdf
+        pages: [1]
+
+  - id: piano-marshall
+    query: "guerra fredda · Piano Marshall · ricostruzione dell'Europa · Piano Molotov"
+    expect:
+      - document: guerra-fredda-def.pdf
+        pages: [1]
+
+  - id: dottrina-truman
+    query: "guerra fredda · dottrina Truman · containment · aiuti ai popoli liberi"
+    expect:
+      - document: Cold-War.pdf
+        pages: [2]
+
+  - id: muro-di-berlino
+    query: "guerra fredda · divisione della Germania · muro di Berlino · Berlino Est"
+    expect:
+      - document: guerra-fredda-def.pdf
+        pages: [2]
+
+  - id: nato-patto-varsavia
+    query: "guerra fredda · NATO · Patto di Varsavia · alleanze militari contrapposte"
+    expect:
+      - document: guerra-fredda-def.pdf
+        pages: [2]
+
+  - id: equilibrio-del-terrore
+    query: "guerra fredda · equilibrio del terrore · arsenale nucleare · deterrenza"
+    expect:
+      - document: guerra-fredda-def.pdf
+        pages: [2]
+
+  - id: bandung-terzo-mondo
+    query: "guerra fredda · conferenza di Bandung · paesi non allineati · terzo mondo"
+    expect:
+      - document: guerra-fredda-def.pdf
+        pages: [2]
+
+  - id: guerra-di-corea
+    query: "guerra fredda · guerra di Corea · 38° parallelo · armistizio"
+    expect:
+      - document: guerra-fredda-def.pdf
+        pages: [3]
+
+  - id: crisi-di-cuba
+    query: "guerra fredda · crisi di Cuba · missili sovietici · Kennedy e Krusciov"
+    expect:
+      - document: guerra-fredda-def.pdf
+        pages: [3]
+      - document: Cold-War.pdf
+        pages: [3]
+
+  - id: fine-della-guerra-fredda
+    query: "guerra fredda · Gorbaciov · perestrojka e glasnost · dissoluzione dell'URSS"
+    expect:
+      - document: guerra-fredda-def.pdf
+        pages: [3]
+      - document: Cold-War.pdf
+        pages: [4]
+
+  - id: discorso-cortina-di-ferro
+    query: "guerra fredda · discorso di Churchill · iron curtain speech · fonte primaria"
+    expect:
+      - document: Cold-War.pdf
+        pages: [5]
