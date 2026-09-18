@@ -119,6 +119,10 @@ markers = [
     "integration: tests that hit external services (Neo4j, OpenRouter, LLM APIs)",
     "slow: tests taking more than ~1 second",
     "unit: pure unit tests with no external dependencies",
+    # One path, end to end, with only the provider boundary faked. Runs in CI —
+    # it needs no network — and exists because the unit suite cannot catch a
+    # defect in the very seam each unit test replaces with a double.
+    "e2e: the whole private-material path, real code, fake provider",
 ]
 asyncio_mode = "auto"
 
