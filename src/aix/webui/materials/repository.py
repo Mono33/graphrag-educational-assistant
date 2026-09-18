@@ -481,6 +481,10 @@ class ChunkRepository:
         )
         if chunker_version:
             stmt = stmt.where(MaterialChunk.chunker_version == chunker_version)
+        # Without this the engine is free to return the rows in whatever order
+        # the plan produced, which changed between runs and quietly reshuffled
+        # passages of equal score in the search above it (2026-09-18).
+        stmt = stmt.order_by(MaterialChunk.material_version_id, MaterialChunk.ordinal)
         return list((await self._session.execute(stmt)).scalars())
 
 

@@ -46,6 +46,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from aix.webui.materials.chunking import CHUNKER_VERSION
 from aix.webui.materials.embedding import embed_query
+from aix.webui.materials.lexical import bm25_scores, fuse, tokenize
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +81,7 @@ def share_between_documents(
     overflow: list[MaterialContextItem] = []
     per_document: dict[str, int] = {}
 
+    position = {id(item): index for index, item in enumerate(items)}
     for item in items:  # already best-first
         taken = per_document.get(item.source_id, 0)
         if taken < cap:
@@ -91,7 +93,10 @@ def share_between_documents(
             break
 
     chosen.extend(overflow[: max(0, limit - len(chosen))])
-    return sorted(chosen, key=lambda item: item.score, reverse=True)
+    # Back into the ranking's own order — which since the search became hybrid
+    # is no longer the order of ``score``: the score is one passage's similarity,
+    # the rank is what the fusion of the two searches decided.
+    return sorted(chosen, key=lambda item: position[id(item)])
 
 
 def top_k() -> int:
@@ -100,6 +105,21 @@ def top_k() -> int:
         return max(1, int(raw)) if raw else DEFAULT_TOP_K
     except ValueError:
         return DEFAULT_TOP_K
+
+
+def hybrid_enabled() -> bool:
+    """Whether the keyword ranking is fused with the vector one (§8.5).
+
+    On by default: it is measurably better on the golden cases. The switch is
+    here so a regression can be bisected against the vector-only ranking without
+    a deployment, and so the evaluation can measure both.
+    """
+    return (os.getenv("AIX_PRIVATE_RAG_HYBRID") or "1").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }
 
 
 @dataclass(frozen=True)
@@ -197,22 +217,52 @@ class PrivateMaterialRetriever:
         # 10-chunk Italian handout the lesson was about (2026-09-16).
         pool = wanted * CANDIDATE_FACTOR
         if self._session.bind.dialect.name == "postgresql":
-            candidates = await self._search_in_the_database(vector, owner_id, version_ids, pool)
+            candidates = await self._search_in_the_database(
+                query, vector, owner_id, version_ids, pool
+            )
         else:
-            candidates = await self._search_in_python(vector, owner_id, version_ids, pool)
+            candidates = await self._search_in_python(query, vector, owner_id, version_ids, pool)
         return share_between_documents(candidates, wanted)
 
     async def _search_in_the_database(
         self,
+        query: str,
         vector: list[float],
         owner_id: uuid.UUID,
         version_ids: list[uuid.UUID],
         wanted: int,
     ) -> list[MaterialContextItem]:
-        """pgvector, with the ownership in the same statement as the ordering."""
+        """pgvector, with the ownership in the same statement as the ordering.
+
+        Two rankings when the search is hybrid — the vector one and the engine's
+        own ``italian`` full text search over the generated ``fts`` column — each
+        taken to the same depth and fused by rank. Two statements rather than one
+        clever join: each is a plain index scan the planner understands, and
+        either half returning nothing is then simply a shorter list.
+        """
+        rows = await self._rank_by_vector(vector, owner_id, version_ids, wanted)
+        if not hybrid_enabled():
+            return [_row_item(row) for row in rows]
+
+        by_id = {row.id: row for row in rows}
+        lexical = await self._rank_by_words(query, vector, owner_id, version_ids, wanted)
+        by_id.update({row.id: by_id.get(row.id, row) for row in lexical})
+        order = fuse(
+            [[row.id for row in rows], [row.id for row in lexical]],
+            tiebreak={chunk_id: float(row.score) for chunk_id, row in by_id.items()},
+        )
+        return [_row_item(by_id[chunk_id]) for chunk_id in order[:wanted]]
+
+    async def _rank_by_vector(
+        self,
+        vector: list[float],
+        owner_id: uuid.UUID,
+        version_ids: list[uuid.UUID],
+        wanted: int,
+    ) -> list[Any]:
         statement = sql_text(
             """
-            SELECT material_version_id, text, locator_json,
+            SELECT id, material_version_id, text, locator_json,
                    1 - (embedding <=> CAST(:query AS vector)) AS score
             FROM material_chunk
             WHERE owner_id = :owner_id
@@ -234,20 +284,71 @@ class PrivateMaterialRetriever:
         rows = await self._session.execute(
             statement,
             {
-                "query": "[" + ",".join(repr(float(v)) for v in vector) + "]",
+                "query": _as_vector(vector),
                 "owner_id": owner_id,
                 "version_ids": [str(v) for v in version_ids],
                 "chunker_version": CHUNKER_VERSION,
                 "wanted": wanted,
             },
         )
-        return [
-            _item(row.material_version_id, row.text, row.locator_json, float(row.score))
-            for row in rows
-        ]
+        return list(rows)
+
+    async def _rank_by_words(
+        self,
+        query: str,
+        vector: list[float],
+        owner_id: uuid.UUID,
+        version_ids: list[uuid.UUID],
+        wanted: int,
+    ) -> list[Any]:
+        """The same authorized set, ranked by PostgreSQL's Italian text search.
+
+        The query is turned into an OR of its words: a teacher's request names
+        four or five concepts and a passage that answers one of them well is a
+        good passage. An AND — what ``websearch_to_tsquery`` would build — would
+        return nothing for nearly every real request.
+        """
+        words = _tsquery_terms(query)
+        if not words:
+            return []
+        statement = sql_text(
+            """
+            SELECT id, material_version_id, text, locator_json,
+                   -- ``score`` is the similarity everywhere, whichever ranking
+                   -- brought the row here, so one number means one thing.
+                   1 - (embedding <=> CAST(:query AS vector)) AS score,
+                   ts_rank_cd(fts, to_tsquery('italian', :words)) AS lexical
+            FROM material_chunk
+            WHERE owner_id = :owner_id
+              AND material_version_id = ANY(:version_ids)
+              AND status = 'active'
+              AND chunker_version = :chunker_version
+              AND fts @@ to_tsquery('italian', :words)
+              AND EXISTS (
+                  SELECT 1 FROM material_version v
+                  WHERE v.id = material_chunk.material_version_id
+                    AND v.status IN ('ready', 'ready_with_warnings')
+              )
+            ORDER BY lexical DESC
+            LIMIT :wanted
+            """
+        )
+        rows = await self._session.execute(
+            statement,
+            {
+                "words": words,
+                "query": _as_vector(vector),
+                "owner_id": owner_id,
+                "version_ids": [str(v) for v in version_ids],
+                "chunker_version": CHUNKER_VERSION,
+                "wanted": wanted,
+            },
+        )
+        return list(rows)
 
     async def _search_in_python(
         self,
+        query: str,
         vector: list[float],
         owner_id: uuid.UUID,
         version_ids: list[uuid.UUID],
@@ -263,12 +364,34 @@ class PrivateMaterialRetriever:
             version_ids, owner_id=owner_id, chunker_version=CHUNKER_VERSION
         )
         scored = [
-            _item(chunk.material_version_id, chunk.text, chunk.locator_json, score)
-            for chunk in chunks
-            if (score := cosine(vector, list(chunk.embedding or []))) > 0.0
+            (index, cosine(vector, list(chunk.embedding or [])))
+            for index, chunk in enumerate(chunks)
         ]
-        scored.sort(key=lambda item: item.score, reverse=True)
-        return scored[:wanted]
+        similarity = dict(scored)
+        by_vector = [
+            index for index, score in sorted(scored, key=_second, reverse=True) if score > 0
+        ]
+
+        if hybrid_enabled():
+            words = bm25_scores(query, [chunk.text or "" for chunk in chunks])
+            by_words = [
+                index
+                for index, score in sorted(enumerate(words), key=_second, reverse=True)
+                if score > 0.0
+            ][:wanted]
+            order = fuse([by_vector[:wanted], by_words], tiebreak=similarity)
+        else:
+            order = by_vector
+
+        return [
+            _item(
+                chunks[index].material_version_id,
+                chunks[index].text,
+                chunks[index].locator_json,
+                similarity[index],
+            )
+            for index in order[:wanted]
+        ]
 
 
 def search_for_lesson(lesson_id: uuid.UUID, owner_id: uuid.UUID):
@@ -309,6 +432,32 @@ def search_for_lesson(lesson_id: uuid.UUID, owner_id: uuid.UUID):
         return [item.to_dict() for item in items]
 
     return _search
+
+
+def _second(pair: tuple[Any, float]) -> float:
+    return pair[1]
+
+
+def _as_vector(vector: list[float]) -> str:
+    """pgvector's literal form. ``repr`` keeps the full precision of the float."""
+    return "[" + ",".join(repr(float(v)) for v in vector) + "]"
+
+
+def _tsquery_terms(query: str) -> str:
+    """The teacher's words as an OR tsquery, each matched as a prefix.
+
+    Prefix matching is how the crude stemming of ``lexical.tokenize`` and
+    PostgreSQL's own stemmer are reconciled: the Python side already truncated
+    "missili" to "missil", and ``missil:*`` finds the page that says "missile".
+    Only the tokenizer's output reaches the query, which is letters and digits
+    by construction — no tsquery operator can come from a document or a request.
+    """
+    terms = sorted({term for term in tokenize(query) if term.isalnum()})
+    return " | ".join(f"{term}:*" for term in terms)
+
+
+def _row_item(row: Any) -> MaterialContextItem:
+    return _item(row.material_version_id, row.text, row.locator_json, float(row.score))
 
 
 def _item(version_id: Any, text: str, locator: Any, score: float) -> MaterialContextItem:

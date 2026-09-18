@@ -1,6 +1,6 @@
 # Stato dei lavori — Advanced Input & Export
 
-Branch: `feature/advanced-input-and-export` · Aggiornato: 2026-09-16 (`bfd172a`, **non ancora pushati**: `e3de068`, `6f0664c`, `8fffca8`, `bfd172a`; `b6f7192` è su origin)
+Branch: `feature/advanced-input-and-export` · Aggiornato: 2026-09-18 (**non ancora pushati**: `b305413`, `46d5ec8`, `f041d5e`, `3f79ab6` e il commit della ricerca ibrida)
 
 Questo file ha un solo scopo: in qualunque momento si deve poter leggere **cosa
 è fatto**, **cosa manca** e **cosa aspetta qualcun altro**, senza ricostruirlo
@@ -460,6 +460,81 @@ documento. Oggi l'unico segnale è aspettare, e il primo test è stato generato
 prima che l'indice esistesse senza che niente lo dicesse.
 
 **Verificato:** 713 test passati (i 2 noti su Windows).
+
+### 2026-09-18 — Il piano del RAG privato, passi 0–4 (`46d5ec8`, `f041d5e`, `3f79ab6`, + questo commit)
+
+Dopo il test fallito del 16 il lavoro si è fermato per scrivere un piano
+(`swirling-imagining-tiger.md`, approvato da Angelo). Quattro passi su sei sono
+chiusi.
+
+**Passo 0 — un test che percorre tutta la strada** (`46d5ec8`). `tests/e2e/`
+finge **solo** il provider di embedding; parser, chunker, database, retriever e
+prompt sono quelli veri. Verificato che serve davvero: rimettendo l'import
+sbagliato del 16, 3 test su 3 diventano rossi. La suite di unità, che fingeva il
+pezzo rotto, non se ne accorgeva.
+
+**Passo 1 — i due criteri che non rispettavamo** (`f041d5e`). Cancellare un
+allegato ora disattiva i legami, elimina i chunk e mette la lapide sulla versione
+(§12.3): il documento smette di rispondere, e le citazioni già scritte diventano
+«materiale rimosso» invece di sparire. E la lezione non parte finché un documento
+è in lavorazione (U1), con un 409 che dice quali.
+
+**Passo 2 — la chip dice cosa sta succedendo** (`f041d5e`). Stato per documento,
+tray che si aggiorna da sola ogni 2 s finché serve e poi smette, pulsante «Invia»
+che si sblocca da solo. Era il requisito chiesto da Angelo il 16.
+
+**Passo 3 — misurare prima di toccare** (`3f79ab6`). `scripts/eval/run_private_rag.py`
+costruisce un indice usa-e-getta dal corpus vero, esegue 12 casi d'oro derivati
+leggendo i due PDF pagina per pagina, e stampa recall@3, recall@8, MRR,
+boilerplate@5 e latenza. Embedding in cache su disco: ogni rerun è gratis e
+offline. Baseline in `data/eval/rag/baseline.md`.
+
+**Passo 4 — la qualità, una modifica misurata alla volta** (questo commit).
+
+| Modifica | recall@3 | MRR | boilerplate@5 | tenuta |
+| --- | ---: | ---: | ---: | --- |
+| solo vettoriale (baseline) | 0,88 | 0,78 | 0,22 · 8 casi | — |
+| massimo 2 passaggi per pagina | 0,88 | 0,78 | 0,23 · 9 casi | **no** |
+| **ibrida: BM25 fusa con il vettoriale (RRF)** | **0,92** | **0,86** | **0,07 · 4 casi** | **sì** |
+| quota per documento 0,5/0,6/0,75 × pool ×3/×5/×8 | 0,92 | 0,86 | 0,07 · 4 casi | indifferente |
+
+La prima era la mia intuizione — la bibliografia vince perché una pagina fornisce
+più passaggi — ed è stata **smentita dalla misura**: limitando la pagina entra
+semplicemente un'altra pagina di boilerplate. Revocata.
+
+L'ibrida è il §8.5: su PostgreSQL il `tsvector` italiano già generato dalla
+migrazione, su SQLite un BM25 in Python, e le due classifiche fuse per *rango*
+(RRF) invece che per punteggio, così non serve rendere confrontabili un coseno e
+un BM25. Migliora tutti i numeri insieme, a latenza invariata. Sta dietro
+`AIX_PRIVATE_RAG_HYBRID` (accesa) per poter bisezionare una regressione.
+
+**Un difetto trovato dalla misura stessa: il ranking non era riproducibile.**
+Due processi, stessa configurazione, risultati diversi. `list_for_versions` non
+aveva `ORDER BY`, e nella fusione i pareggi — frequentissimi: un passaggio visto
+solo dal vettoriale al rango 3 vale esattamente quanto uno visto solo dalle
+parole al rango 3 — venivano sciolti dall'ordine in cui le righe arrivavano.
+Ora l'ordine è esplicito e il pareggio si scioglie sulla similarità, cioè sul
+contenuto. Tre esecuzioni consecutive danno lo stesso identico risultato: senza
+questo, qualunque confronto prima/dopo era aria fritta.
+
+**Due regole scartate sulle prove, non per gusto.** Restano quattro casi con una
+pagina di boilerplate nei primi cinque: gli standard Common Core (p6) e la
+bibliografia (p7) del PDF inglese. Una regola di *forma* non li separa — la
+pagina degli standard è scritta in frasi intere e segna 0,93 di «prosa», sopra a
+11 passaggi di contenuto vero. Una regola su parole come «standard» sarebbe
+peggio: nel corpus ministeriale italiano le indicazioni nazionali **sono** il
+contenuto che la docente vuole citare. Quel che resta è semantico, cioè lavoro da
+reranker (§8.5 passo 4), da valutare quando il corpus sarà più di due documenti.
+
+**Verificato:** 732 test passati (i 2 noti su Windows), più la suite PostgreSQL
+su `pgvector/pgvector:pg16` — 5 passati, compreso un test nuovo che esegue
+davvero la ricerca ibrida sul motore vero, che è l'unico posto dove la metà FTS
+gira.
+
+**Restano il passo 5** (citazioni: blocco «Fonti dai tuoi materiali» e Critic
+informato che il materiale è `teacher_asserted`) **e il passo 6** (script di
+reindicizzazione, contatori §11.5, rollout con immagine pgvector e REINDEX).
+
 4. **B4 · PR 7 — fatto** (`f8150e1`): PDF vero e scaletta con i minuti.
 5. **Corpus — avviato il 2026-09-15.** Cinque PDF pubblici del Ministero e una
    scansione reale da Internet Archive sono in `data/eval/corpus/originali/`

@@ -175,6 +175,105 @@ async def test_a_vector_can_be_written_and_read_back(engine):
         assert chunk.embedding[0] == pytest.approx(0.25)
 
 
+async def test_the_hybrid_search_runs_on_postgres_and_prefers_the_right_page(engine):
+    """The FTS half of §8.5 exists only here: SQLite scores BM25 in Python.
+
+    Two passages with the *same* embedding, so the vector ranking cannot choose
+    between them and the keyword ranking decides — which is the whole point of
+    fusing them. It also executes the statement, which is what a dialect split
+    otherwise leaves untested until a teacher runs it.
+    """
+    from aix.webui.auth.models import User
+    from aix.webui.materials.chunking import CHUNKER_VERSION
+    from aix.webui.materials.models import AssetBlob, Material, MaterialChunk, MaterialVersion
+    from aix.webui.materials.retrieval import PrivateMaterialRetriever
+
+    await _migrate(engine)
+    maker = async_sessionmaker(engine, expire_on_commit=False)
+
+    class _Embedder:
+        """Every text is the same point in space: only the words can rank these."""
+
+        def __init__(self):
+            self.embeddings = self
+
+        async def create(self, *, model, input):  # noqa: A002 — the provider's name
+            from types import SimpleNamespace
+
+            return SimpleNamespace(
+                data=[SimpleNamespace(index=i, embedding=[0.1] * 1024) for i in range(len(input))]
+            )
+
+    async with maker() as session:
+        session.add(
+            User(
+                id=ANNA,
+                email="anna@scuola.it",
+                hashed_password="x",
+                is_active=True,
+                is_superuser=False,
+                is_verified=True,
+            )
+        )
+        blob = AssetBlob(
+            owner_id=ANNA,
+            storage_provider="local",
+            object_key="k",
+            sha256="0" * 64,
+            size_bytes=1,
+            verified_media_type="text/plain",
+        )
+        material = Material(owner_id=ANNA, display_name="Storia")
+        session.add_all([blob, material])
+        await session.flush()
+
+        version = MaterialVersion(
+            material_id=material.id,
+            version_number=1,
+            blob_id=blob.id,
+            source_sha256="0" * 64,
+            media_type="text/plain",
+            created_by=ANNA,
+            status="ready",
+        )
+        session.add(version)
+        await session.flush()
+
+        passages = [
+            "Alla conferenza di Yalta del 1945 i tre alleati divisero l'Europa "
+            "in sfere di influenza e decisero il destino della Germania.",
+            "Bibliografia e fonti consultate: enciclopedia della storia "
+            "contemporanea, volume terzo, Milano 1998, con indice dei nomi.",
+        ]
+        for ordinal, passage in enumerate(passages):
+            session.add(
+                MaterialChunk(
+                    owner_id=ANNA,
+                    material_version_id=version.id,
+                    ordinal=ordinal,
+                    text=passage,
+                    text_hash=str(ordinal) * 64,
+                    locator_json={"page": ordinal + 1, "block_ids": [f"b{ordinal}"]},
+                    embedding=[0.1] * 1024,
+                    embedding_model="baai/bge-m3",
+                    chunker_version=CHUNKER_VERSION,
+                )
+            )
+        await session.commit()
+        version_id = version.id
+
+    async with maker() as session:
+        items = await PrivateMaterialRetriever(session).search(
+            "conferenza di Yalta e le sfere di influenza",
+            owner_id=ANNA,
+            version_ids=[version_id],
+            client=_Embedder(),
+        )
+
+    assert [item.locator["page"] for item in items] == [1, 2]
+    assert items[0].citation.endswith("#page=1&block=b0]]")
+
+
 # ---------------------------------------------------------------------------
 # The job claim, on the path production actually takes
 # ---------------------------------------------------------------------------

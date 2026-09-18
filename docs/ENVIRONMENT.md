@@ -81,6 +81,7 @@ Tutte spente: §5.2 dice che a flag spente il prodotto è quello di prima.
 | `AIX_PRIVATE_EMBEDDING_DIMENSION` | `1024` | **Deve combaciare con la migrazione**: la colonna è `vector(1024)`. Cambiarlo è una migrazione più un re-embedding di tutto |
 | `AIX_PRIVATE_RAG_TOP_K` | `8` | Passaggi recuperati per richiesta |
 | `AIX_PRIVATE_RAG_BUDGET_CHARS` | `12000` | Quanto prompt spetta al materiale privato (§8.7) |
+| `AIX_PRIVATE_RAG_HYBRID` | `true` | Fonde la ricerca per parole con quella vettoriale (§8.5). Spegnerla torna al solo vettoriale: serve a bisezionare una regressione, non è una configurazione da tenere — sui casi d'oro l'ibrida è migliore su tutte le misure |
 | `AIX_VALIDATOR_MAX_RETRIES` | `2` | Riscritture che il validatore può chiedere |
 
 ## 4. WebUI, database, sicurezza
