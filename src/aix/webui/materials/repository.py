@@ -24,7 +24,7 @@ import logging
 import uuid
 from typing import Any, Optional
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aix.webui.materials.models import (
@@ -37,6 +37,11 @@ from aix.webui.materials.models import (
 from aix.webui.materials.storage import StorageBackend, StoredObject
 
 logger = logging.getLogger(__name__)
+
+#: The statuses a lesson may be generated from (§6.1.4). ``ready_with_warnings``
+#: is included: a document read with OCR, or with pages nobody could read, is
+#: still material the teacher chose — the warning travels with the passage.
+READY_STATUSES = ("ready", "ready_with_warnings")
 
 
 class AssetBlobRepository:
@@ -228,6 +233,28 @@ class MaterialVersionRepository:
         )
         return result.scalar_one_or_none()
 
+    async def mark_deleted(self, version_ids: list[uuid.UUID], *, owner_id: uuid.UUID) -> int:
+        """Tombstone these versions: nothing may be retrieved from them again.
+
+        The row survives (§12.3: the lesson keeps a citation tombstone, not the
+        content), but ``deleted`` is outside the statuses the retriever accepts.
+        """
+        if not version_ids:
+            return 0
+
+        result = await self._session.execute(
+            update(MaterialVersion)
+            .where(
+                MaterialVersion.id.in_(version_ids),
+                MaterialVersion.material_id.in_(
+                    select(Material.id).where(Material.owner_id == owner_id)
+                ),
+            )
+            .values(status="deleted")
+        )
+        await self._session.flush()
+        return int(result.rowcount or 0)
+
     async def list_for_material(
         self, material_id: uuid.UUID, *, owner_id: uuid.UUID
     ) -> list[MaterialVersion]:
@@ -303,6 +330,27 @@ class BindingRepository:
         self._session.add(binding)
         await self._session.flush()
         return binding
+
+    async def disable_for_material(
+        self, material_id: uuid.UUID, *, owner_id: uuid.UUID
+    ) -> list[uuid.UUID]:
+        """Switch a material off for every lesson using it. Returns those lessons.
+
+        §12.3 step 2: deletion disables the binding before anything is removed,
+        so a run that starts mid-deletion cannot retrieve what is on its way out.
+        The rows stay — a lesson written from the material is still explainable.
+        """
+        result = await self._session.execute(
+            select(LessonMaterialBinding).where(
+                LessonMaterialBinding.material_id == material_id,
+                LessonMaterialBinding.owner_id == owner_id,
+            )
+        )
+        bindings = list(result.scalars())
+        for binding in bindings:
+            binding.enabled = False
+        await self._session.flush()
+        return [binding.lesson_id for binding in bindings]
 
     async def list_for_lesson(
         self, lesson_id: uuid.UUID, *, owner_id: uuid.UUID, enabled_only: bool = True
@@ -418,10 +466,18 @@ class ChunkRepository:
         if not version_ids:
             return []
 
-        stmt = select(MaterialChunk).where(
-            MaterialChunk.owner_id == owner_id,
-            MaterialChunk.material_version_id.in_(version_ids),
-            MaterialChunk.status == "active",
+        stmt = (
+            select(MaterialChunk)
+            .join(MaterialVersion, MaterialVersion.id == MaterialChunk.material_version_id)
+            .where(
+                MaterialChunk.owner_id == owner_id,
+                MaterialChunk.material_version_id.in_(version_ids),
+                MaterialChunk.status == "active",
+                # §6.1: a lesson is generated from material that is ready, and
+                # from nothing else — not from a document still being indexed,
+                # not from one whose parse failed, and not from a tombstone.
+                MaterialVersion.status.in_(READY_STATUSES),
+            )
         )
         if chunker_version:
             stmt = stmt.where(MaterialChunk.chunker_version == chunker_version)

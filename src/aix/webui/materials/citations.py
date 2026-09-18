@@ -38,6 +38,11 @@ CITATION_RE = re.compile(
 
 GENERIC_LABEL = "materiale allegato"
 
+#: §12.3 — a lesson keeps a citation tombstone, never the deleted content. The
+#: teacher removed the document; the sentence that leaned on it stays, and says
+#: so. Silently dropping the reference would leave a claim with no source at all.
+TOMBSTONE_LABEL = "materiale rimosso"
+
 
 def _page_of(anchor: Optional[str]) -> Optional[str]:
     for part in (anchor or "").split("&"):
@@ -62,6 +67,8 @@ def render_citations(text: str, labels: Optional[dict[str, str]] = None) -> str:
             label = GENERIC_LABEL
 
         page = _page_of(anchor)
+        if label == TOMBSTONE_LABEL:
+            return f"({label})"  # the page of a document nobody can open means nothing
         return f"({label}, p. {page})" if page else f"({label})"
 
     # Tidy the space a removed citation leaves behind mid-sentence.
@@ -75,18 +82,23 @@ def has_citations(text: str) -> bool:
 async def labels_for_lesson(
     session: AsyncSession, *, lesson_id: uuid.UUID, owner_id: uuid.UUID
 ) -> dict[str, str]:
-    """``version id -> document name``, for the material this lesson may cite.
+    """``version id -> what to print``, for the material this lesson ever cited.
 
     Built from the bindings, so the authorization that governs retrieval governs
-    the citations too: a version this lesson is not bound to has no label, and a
-    marker naming it is therefore removed.
+    the citations too: a version this lesson was never bound to has no label, and
+    a marker naming it is removed rather than shown.
+
+    Bindings that have been switched off, and versions tombstoned by a deletion,
+    are included with :data:`TOMBSTONE_LABEL`. That is the difference between «the
+    teacher removed this document» — which the lesson should say — and «the model
+    invented an identifier», which it should not repeat.
     """
     from sqlalchemy import select
 
     from aix.webui.materials.models import LessonMaterialBinding, Material, MaterialVersion
 
     rows = await session.execute(
-        select(MaterialVersion.id, Material.display_name)
+        select(MaterialVersion.id, Material.display_name, MaterialVersion.status)
         .join(Material, Material.id == MaterialVersion.material_id)
         .join(
             LessonMaterialBinding,
@@ -97,7 +109,10 @@ async def labels_for_lesson(
             LessonMaterialBinding.owner_id == owner_id,
         )
     )
-    return {str(version_id).lower(): name for version_id, name in rows}
+    return {
+        str(version_id).lower(): (TOMBSTONE_LABEL if status == "deleted" else name)
+        for version_id, name, status in rows
+    }
 
 
 async def resolve_for_lesson(text: str, session: AsyncSession, lesson: Any) -> str:

@@ -53,15 +53,18 @@ LESSON = uuid.UUID("55555555-5555-5555-5555-555555555555")
 
 DIMENSION = 1024
 
-STORIA = """Le origini della guerra fredda
+#: Each blank line starts a page. Every page carries real prose on purpose: a
+#: page holding only a heading falls under the parser's 25-character threshold,
+#: counts as having no text layer, and the chip would warn about OCR — true
+#: behaviour, but not what these tests are about.
+STORIA = """Le origini della guerra fredda. Dalla Seconda guerra mondiale
+emersero due sole grandi potenze, USA e URSS, subito avversarie.
 
-Dalla Seconda guerra mondiale emersero due sole grandi potenze, USA e URSS.
-A Yalta l'Europa fu divisa in due sfere d'influenza separate dalla cortina di ferro.
+A Yalta l'Europa fu divisa in due sfere d'influenza, separate dalla linea che
+Churchill chiamò cortina di ferro.
 
-Il Piano Marshall
-
-Fra il 1947 e il 1952 il governo americano finanziò la ricostruzione dell'Europa
-occidentale con denaro, macchinari e merci.
+Il Piano Marshall. Fra il 1947 e il 1952 il governo americano finanziò la
+ricostruzione dell'Europa occidentale con denaro, macchinari e merci.
 """
 
 SCIENZE = """La fotosintesi clorofilliana
@@ -362,3 +365,96 @@ async def test_a_citation_reaches_the_teacher_readable(client, maker, tmp_path, 
 
     html = _markdown_to_html(lesson_md)
     assert "[[material:" not in html, "no internal address survives to the page"
+
+
+async def test_removing_an_attachment_removes_it_from_retrieval(client, maker, tmp_path, provider):
+    """§12.3, and the reason it matters.
+
+    Until 2026-09-18 «togli questo documento» soft-deleted one row and left the
+    chunks active: the document went on answering questions and being quoted
+    after the teacher had removed it.
+    """
+    from aix.agent.graph import material_source
+    from aix.agent.graph.nodes import retrieve_private_node
+    from aix.webui.materials.citations import TOMBSTONE_LABEL, resolve_for_lesson
+    from aix.webui.materials.retrieval import search_for_lesson
+
+    _upload(client, "storia.pdf", _pdf(STORIA))
+    await _drain(maker, tmp_path)
+
+    search = search_for_lesson(LESSON, ANNA)
+    before = await search("guerra fredda Yalta")
+    assert before, "the document answers while it is attached"
+    citation = before[0]["citation"]
+
+    async with maker() as session:
+        lesson = await session.get(Lesson, LESSON)
+        entry_id = lesson.uploaded_files_json[0]["id"]
+
+    assert client.delete(f"/webui/lesson/{LESSON}/upload/{entry_id}").status_code == 200
+
+    assert await _rows(maker, MaterialChunk) == [], "the searchable copy is gone"
+    assert await search("guerra fredda Yalta") == [], "and nothing is retrievable"
+
+    session_id = str(LESSON)
+    material_source.register(session_id, search)
+    try:
+        updates = await retrieve_private_node(
+            {"session_id": session_id, "teacher_query": "guerra fredda"}
+        )
+    finally:
+        material_source.deregister(session_id)
+    assert not updates.get("material_context_items")
+
+    async with maker() as session:
+        lesson = await session.get(Lesson, LESSON)
+        resolved = await resolve_for_lesson(f"A Yalta {citation}.", session, lesson)
+
+    assert TOMBSTONE_LABEL in resolved, "the lesson says the source was removed"
+    assert "storia.pdf" not in resolved
+
+
+# ---------------------------------------------------------------------------
+# What the teacher sees and can do while a document is being prepared (U1)
+# ---------------------------------------------------------------------------
+
+
+async def test_the_run_waits_for_a_document_that_is_still_being_prepared(
+    client, maker, tmp_path, provider
+):
+    """The 2026-09-16 failure mode, as a test.
+
+    The request was sent seconds after the upload and the lesson was written
+    from the pasted text while the teacher believed the document had been read.
+    """
+    _upload(client, "storia.pdf", _pdf(STORIA))  # queued, deliberately not drained
+
+    refused = client.post(
+        f"/webui/lesson/{LESSON}/run", data={"query": "crea una lezione sulla guerra fredda"}
+    )
+
+    assert refused.status_code == 409
+    assert "storia.pdf" in refused.text
+    assert "pronto" in refused.text, "and it says the wait ends by itself"
+
+    async with maker() as session:
+        lesson = await session.get(Lesson, LESSON)
+        assert lesson.status == "draft", "nothing was started"
+
+
+async def test_once_ready_the_chip_says_so_and_the_send_button_returns(
+    client, maker, tmp_path, provider
+):
+    _upload(client, "storia.pdf", _pdf(STORIA))
+
+    preparing = client.get(f"/webui/lesson/{LESSON}/attachments-fragment")
+    assert "in preparazione" in preparing.text
+    assert "disabled" in preparing.text, "the send button waits with it"
+    assert "attachments-fragment" in preparing.text, "and the tray asks again"
+
+    await _drain(maker, tmp_path)
+
+    ready = client.get(f"/webui/lesson/{LESSON}/attachments-fragment")
+    assert "passaggi" in ready.text, "the teacher is told what is searchable"
+    assert "in preparazione" not in ready.text
+    assert "attachments-fragment" not in ready.text, "and the tray stops asking"

@@ -127,11 +127,17 @@
         onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault(); if(this.value.trim().length>=3){this.form.requestSubmit();}}"
       ></textarea>
 
+      {# Decision U1: while a document is being indexed the lesson cannot be
+         generated from it, so the button says so instead of producing a lesson
+         written from the pasted text. The tray re-renders this input out of
+         band when the last document turns ready. #}
       <button type="submit"
               class="aix-chat-input-send"
+              {% if materials_preparing %}disabled{% endif %}
+              title="{% if materials_preparing %}Attendo che i documenti allegati siano pronti{% else %}Invia la richiesta{% endif %}"
               aria-label="Invia messaggio e genera lezione">
         <wa-icon name="paper-plane" class="aix-fs-085"></wa-icon>
-        <span>Invia</span>
+        <span>{% if materials_preparing %}Preparazione…{% else %}Invia{% endif %}</span>
       </button>
 
     </div>
@@ -232,9 +238,11 @@
 
       <button type="submit"
               class="aix-chat-input-send"
+              {% if materials_preparing %}disabled{% endif %}
+              title="{% if materials_preparing %}Attendo che i documenti allegati siano pronti{% else %}Invia il messaggio{% endif %}"
               aria-label="Invia messaggio di follow-up">
         <wa-icon name="paper-plane" class="aix-fs-085"></wa-icon>
-        <span>Invia</span>
+        <span>{% if materials_preparing %}Preparazione…{% else %}Invia{% endif %}</span>
       </button>
 
     </div>

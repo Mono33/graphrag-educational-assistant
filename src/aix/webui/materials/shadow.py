@@ -39,8 +39,10 @@ from aix.webui.materials.handlers import PARSER_PROFILE
 from aix.webui.materials.jobs import JobDispatcher
 from aix.webui.materials.repository import (
     BindingRepository,
+    ChunkRepository,
     MaterialRepository,
     MaterialService,
+    MaterialVersionRepository,
 )
 from aix.webui.materials.storage import get_storage_backend, materials_enabled
 
@@ -130,11 +132,20 @@ async def record_upload(
 
 
 async def retire_material(*, material_id: str, owner_id: uuid.UUID) -> None:
-    """Soft-delete the shadow material behind a removed attachment.
+    """Remove a material from retrieval when its attachment is removed (§12.3).
 
-    Soft, so a lesson already written from it stays explainable, and so the
-    blob it points at is never orphaned — ``material_version.blob_id`` is
-    ``ON DELETE RESTRICT`` precisely to make that impossible.
+    The teacher's action is «togli questo documento dalla lezione», and until
+    2026-09-18 it only soft-deleted the ``material`` row: the bindings stayed
+    enabled and the chunks stayed ``active``, so the document went on answering
+    questions and being quoted. §12.3's order is followed here instead:
+
+    1. disable the bindings, so a run starting mid-deletion cannot use it;
+    2. delete the chunks — the copy that retrieval actually reads;
+    3. tombstone the versions and the material.
+
+    Soft at the end, deliberately: a lesson already written from the material
+    stays explainable, and the blob it points at is never orphaned
+    (``material_version.blob_id`` is ``ON DELETE RESTRICT``).
     """
     if not materials_enabled():
         return
@@ -143,12 +154,37 @@ async def retire_material(*, material_id: str, owner_id: uuid.UUID) -> None:
         from aix.webui.db import async_session_maker
 
         async with async_session_maker() as session:
+            material_uuid = uuid.UUID(str(material_id))
+
+            # Before the soft delete: ``list_for_material`` filters deleted
+            # materials out, so afterwards there would be no versions to clean.
+            versions = await MaterialVersionRepository(session).list_for_material(
+                material_uuid, owner_id=owner_id
+            )
+            lessons = await BindingRepository(session).disable_for_material(
+                material_uuid, owner_id=owner_id
+            )
+
+            chunks_removed = 0
+            for version in versions:
+                chunks_removed += await ChunkRepository(session).delete_for_version(
+                    version.id, owner_id=owner_id
+                )
+            await MaterialVersionRepository(session).mark_deleted(
+                [version.id for version in versions], owner_id=owner_id
+            )
+
             removed = await MaterialRepository(session).soft_delete(
-                uuid.UUID(str(material_id)), owner_id=owner_id
+                material_uuid, owner_id=owner_id
             )
             await session.commit()
 
         if removed:
-            logger.info("[shadow] material=%s retired with its attachment", material_id)
+            logger.info(
+                "[shadow] material=%s retired: %d chunk(s) removed, %d binding(s) disabled",
+                material_id,
+                chunks_removed,
+                len(lessons),
+            )
     except Exception as exc:  # noqa: BLE001 — the legacy delete must still succeed
         report(exc, context=f"shadow retire material={material_id}")

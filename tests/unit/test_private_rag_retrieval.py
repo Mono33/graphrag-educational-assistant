@@ -113,6 +113,9 @@ async def _version(session, owner_id: uuid.UUID) -> MaterialVersion:
         source_sha256=blob.sha256,
         media_type="application/pdf",
         created_by=owner_id,
+        # Ready, because that is the only state a lesson may be generated from
+        # (§6.1.4); the tests that care about the other states set them.
+        status="ready",
     )
     session.add(version)
     await session.flush()
@@ -327,3 +330,25 @@ def test_a_single_document_is_ranked_as_before():
     items = [_item("a", 0.9 - 0.1 * i) for i in range(5)]
 
     assert share_between_documents(items, 3) == items[:3]
+
+
+@pytest.mark.parametrize("status", ["processing", "failed", "deleted", "quarantined"])
+async def test_material_that_is_not_ready_is_not_searched(session, status):
+    """§6.1.4: a lesson is generated from ready material and from nothing else."""
+    version = await _version(session, ANNA)
+    await _chunk(session, version, ANNA, "Yalta divise l'Europa.", GUERRA_FREDDA)
+    version.status = status
+    await session.flush()
+
+    assert await _search(session, ANNA, [version.id]) == []
+
+
+@pytest.mark.parametrize("status", ["ready", "ready_with_warnings"])
+async def test_ready_material_is_searched_warnings_included(session, status):
+    """A scan read by OCR is still the teacher's material; the warning travels with it."""
+    version = await _version(session, ANNA)
+    await _chunk(session, version, ANNA, "Yalta divise l'Europa.", GUERRA_FREDDA)
+    version.status = status
+    await session.flush()
+
+    assert len(await _search(session, ANNA, [version.id])) == 1

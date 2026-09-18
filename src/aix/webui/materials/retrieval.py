@@ -219,6 +219,14 @@ class PrivateMaterialRetriever:
               AND material_version_id = ANY(:version_ids)
               AND status = 'active'
               AND chunker_version = :chunker_version
+              -- §6.1.4: only material that is ready. A version still being
+              -- indexed, one whose parse failed, or one tombstoned by a
+              -- deletion, answers nothing.
+              AND EXISTS (
+                  SELECT 1 FROM material_version v
+                  WHERE v.id = material_chunk.material_version_id
+                    AND v.status IN ('ready', 'ready_with_warnings')
+              )
             ORDER BY embedding <=> CAST(:query AS vector)
             LIMIT :wanted
             """

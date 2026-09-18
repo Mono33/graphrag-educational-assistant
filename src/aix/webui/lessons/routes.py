@@ -126,6 +126,7 @@ from aix.webui.lessons.models import Lesson, LessonMessage, SavedProfile
 from aix.webui.lessons.schemas import form_to_profile_dict, profile_to_form_values
 from aix.webui.lessons.uploads import delete_upload, save_upload
 from aix.webui.materials.citations import render_citations, resolve_for_lesson
+from aix.webui.materials.readiness import states_for_lesson_safe, still_preparing
 from aix.webui.materials.shadow import record_upload, retire_material
 from aix.webui.sanitize import sanitize_html
 
@@ -649,6 +650,64 @@ async def lesson_media_live(
 
 
 # ----------------------------------------------------------------------------
+# GET /webui/lesson/{id}/attachments-fragment — the tray, with pipeline state
+# ----------------------------------------------------------------------------
+
+
+@router.get(
+    "/lesson/{lesson_id}/attachments-fragment",
+    response_class=HTMLResponse,
+    name="webui_lesson_attachments_fragment",
+)
+async def lesson_attachments_fragment(
+    request: Request,
+    lesson_id: uuid.UUID,
+    session: AsyncSession = Depends(get_async_session),
+    user: Optional[User] = Depends(optional_current_user),
+) -> Response:
+    """The attachment tray, told what the pipeline is doing with each document.
+
+    The tray asks for this itself while anything is still being prepared (§6.1),
+    which is why the state is computed here and not at the five places that
+    render the tray: one of them would have been forgotten, and a chip that
+    lies about readiness is worse than a chip that says nothing.
+
+    The response also carries the chat input out of band, so the send button
+    unlocks by itself when the last document turns ready — the teacher never has
+    to guess whether it is safe to press Invia (decision U1).
+    """
+    if user is None:
+        raise HTTPException(status_code=401)
+
+    result = await session.execute(
+        select(Lesson).where(Lesson.id == lesson_id, Lesson.owner_id == user.id)
+    )
+    lesson = result.scalar_one_or_none()
+    if lesson is None:
+        raise HTTPException(status_code=404, detail="Lezione non trovata")
+
+    states = await states_for_lesson_safe(session, lesson_id=lesson.id, owner_id=user.id)
+    preparing = [state for state in states.values() if state.preparing]
+
+    tray = _render_partial(
+        request,
+        "partials/chat_attachments.html",
+        {"lesson": lesson, "material_states": states},
+    )
+    chat_input = _render_partial(
+        request,
+        "partials/chat_input.html",
+        {
+            "lesson": lesson,
+            "material_states": states,
+            "materials_preparing": bool(preparing),
+            "_oob": True,
+        },
+    )
+    return HTMLResponse(content=tray + chat_input)
+
+
+# ----------------------------------------------------------------------------
 # GET /webui/lesson/{id}/chat-input-fragment — chat input partial (state-driven)
 # ----------------------------------------------------------------------------
 
@@ -1130,6 +1189,24 @@ async def lesson_run(
                 '<div class="rounded-lg border border-amber-200 bg-amber-50 '
                 'text-amber-900 px-3 py-2 text-sm">'
                 "Una generazione è già in corso. Attendi il termine."
+                "</div>"
+            ),
+            status_code=409,
+        )
+
+    # §6.1.4 / decision U1 — a lesson is generated from material that is ready.
+    # Without this, a request sent seconds after the upload is written from the
+    # pasted text while the teacher believes the document was read: exactly what
+    # happened on 2026-09-16. The tray polls and re-enables the send button by
+    # itself, so waiting costs the teacher nothing but a few seconds.
+    preparing = await still_preparing(session, lesson_id=lesson.id, owner_id=user.id)
+    if preparing:
+        names = ", ".join(html.escape(name) for name in preparing)
+        return HTMLResponse(
+            content=(
+                '<div class="rounded-lg border border-amber-200 bg-amber-50 '
+                'text-amber-900 px-3 py-2 text-sm">'
+                f"Sto ancora preparando {names}. Parte da solo appena è pronto."
                 "</div>"
             ),
             status_code=409,
