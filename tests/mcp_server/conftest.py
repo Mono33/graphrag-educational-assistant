@@ -26,7 +26,9 @@ Fixtures provided:
 from __future__ import annotations
 
 import os
+import pathlib
 import sys
+import tempfile
 import uuid
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -40,9 +42,14 @@ import pytest
 os.environ.setdefault("WEBUI_AUTH_SECRET", "test-secret-for-pytest-mcp-phase6")
 os.environ.setdefault("WEBUI_CORS_ALLOW_ORIGINS", "*")
 os.environ.setdefault("AIX_MCP_REQUIRE_AUTH", "1")
+# ``WEBUI_DB_PATH`` is read nowhere in ``src/``: ``aix.webui.db`` reads
+# ``WEBUI_DATABASE_URL``. This suite therefore registered its users in the
+# developer's own database for as long as it has existed — 58 ``mcp-pytest+…``
+# accounts were sitting in it on 2026-09-21.
 os.environ.setdefault(
-    "WEBUI_DB_PATH",
-    str(Path(__file__).resolve().parents[2] / "data" / "webui" / "test_p20_mcp.db"),
+    "WEBUI_DATABASE_URL",
+    "sqlite+aiosqlite:///"
+    + (pathlib.Path(tempfile.gettempdir()) / "aix_test_mcp.db").as_posix(),
 )
 
 # Ensure ``src/`` is on sys.path even if pip-install -e wasn't run (CI safety).

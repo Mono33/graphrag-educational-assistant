@@ -62,7 +62,9 @@ from aix.core.ai_marking import AI_GENERATED_HEADER, AI_GENERATED_HEADER_VALUE
 from aix.core.concurrency import (
     AtCapacity,
     RateLimited,
+    acquire_run_slot,
     check_user_rate_limit,
+    release_run_slot,
     run_slot,
 )
 from aix.webui.agent.service import StreamEvent, stream_agent_events
@@ -205,6 +207,10 @@ def _serialise_event(event: StreamEvent) -> dict:
         "data": event.payload or {},
         "lesson_plan_md": event.lesson_plan_md,
         "error": event.error,
+        # The run summary — duration, scores, node counts — rides the terminal
+        # ``done`` event. It used to be dropped here, which left an SSE client
+        # with no way to learn what ``/run`` returns without also calling it.
+        "meta": event.meta or {},
     }
 
 
@@ -460,44 +466,49 @@ async def stream_agent(
         payload.domain,
     )
 
+    # CORE 6 #31/#34 — the generation slot is taken *before* the response
+    # exists, so an overloaded server answers 503 exactly as ``/run`` does.
+    # It used to be acquired inside the generator and shed as an ``error``
+    # frame on an otherwise successful 200: a client with retry logic keyed
+    # on the HTTP status read an overload as a run that had started and
+    # failed, and did not retry (2026-09-21).
+    try:
+        await acquire_run_slot(label=f"api-stream:{session_id}")
+    except AtCapacity as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Il sistema è momentaneamente occupato: troppe generazioni in corso. "
+                "Riprova tra qualche istante."
+            ),
+        ) from exc
+
     async def _publisher() -> AsyncIterator[dict]:
         # ``EventSourceResponse`` accepts a generator yielding either a
         # ``dict`` (with ``event`` / ``data`` / ``id`` keys) or a string.
         # We always yield a dict so the consumer sees per-event ``event:``
         # lines, useful for clients that filter on event type.
-        #
-        # CORE 6 #31/#34 — acquire a global generation slot or shed load with
-        # an ``error`` event so SSE clients can surface "sistema occupato".
         try:
-            async with run_slot(label=f"api-stream:{session_id}"):
-                async for event in stream_agent_events(
-                    query=payload.query,
-                    domain=payload.domain,
-                    language=payload.language,
-                    session_id=session_id,
-                    educational_profile=profile_dict,
-                    teacher_provided_context=payload.teacher_provided_context,
-                    max_revisions=payload.max_revisions,
-                ):
-                    body = _serialise_event(event)
-                    yield {
-                        "event": event.kind,
-                        "data": json.dumps(body, ensure_ascii=False, default=str),
-                    }
-        except AtCapacity:
-            yield {
-                "event": "error",
-                "data": json.dumps(
-                    {
-                        "kind": "error",
-                        "error": (
-                            "Il sistema è momentaneamente occupato: troppe generazioni "
-                            "in corso. Riprova tra qualche istante."
-                        ),
-                    },
-                    ensure_ascii=False,
-                ),
-            }
+            async for event in stream_agent_events(
+                query=payload.query,
+                domain=payload.domain,
+                language=payload.language,
+                session_id=session_id,
+                educational_profile=profile_dict,
+                teacher_provided_context=payload.teacher_provided_context,
+                max_revisions=payload.max_revisions,
+            ):
+                body = _serialise_event(event)
+                yield {
+                    "event": event.kind,
+                    "data": json.dumps(body, ensure_ascii=False, default=str),
+                }
+        finally:
+            # Runs when the stream ends, and also when the client disconnects —
+            # Starlette closes the generator, which raises GeneratorExit here.
+            # Without this the slot acquired above would be held until the
+            # process restarted.
+            release_run_slot()
 
     # ``ping=15`` keeps proxies / load balancers from killing idle
     # connections during the slow Writer call (60-90s LLM round-trip).

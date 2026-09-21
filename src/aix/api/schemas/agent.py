@@ -79,9 +79,14 @@ class AgentRunRequest(BaseModel):
         default=None,
         max_length=128,
         description=(
-            "Optional client-side correlation id, surfaced into the agent "
-            "state. Useful for tracing a single request across logs / "
-            "Langfuse (CORE 2 #11). When omitted, a UUID4 is generated."
+            "The conversation's identity, not a log tag. It becomes LangGraph's "
+            "``thread_id``: send the same value again and the run continues that "
+            "conversation, with its checkpointed history and possibly its reused "
+            "retrieval corpus. **Two callers that send the same value share a "
+            "conversation**, so an integrator must scope it per end user — a "
+            "counter, or a key that is not guessable from outside. When omitted, "
+            "a UUID4 is generated and the run is a fresh conversation. It is also "
+            "the correlation id in the logs (CORE 2 #11)."
         ),
     )
     educational_profile: Optional[EducationalProfile] = Field(
@@ -323,6 +328,17 @@ class _SSEEventBase(BaseModel):
     data: dict[str, Any] = Field(default_factory=dict)
     lesson_plan_md: Optional[str] = None
     error: Optional[str] = None
+    meta: dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "Run summary, populated on the terminal ``done`` event: "
+            "``duration_seconds``, ``approved``, ``revision_count``, ``scores``, "
+            "``nodes_count``, ``media_counts``. Empty on every other event. "
+            "Until 2026-09-21 this was dropped on the SSE path, so a client that "
+            "wanted both the summary and incremental phases had to call ``/run`` "
+            "as well."
+        ),
+    )
 
 
 class PlannerEvent(_SSEEventBase):

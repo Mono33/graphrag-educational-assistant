@@ -146,7 +146,8 @@ paper, là del contenuto delle lezioni della docente. Regole diverse, dichiarate
 
 | Variabile | Default | A cosa serve |
 | --- | --- | --- |
-| `LANGGRAPH_CHECKPOINTER_URL` | SQLite locale | Dove vivono i checkpoint del thread |
+| `LANGGRAPH_DATABASE_URL` | SQLite locale | Dove vivono i checkpoint del thread. **È il nome preferito** — stessa convenzione del database WebUI |
+| `LANGGRAPH_CHECKPOINTER_URL` | — | Il nome storico della variabile sopra. Funziona ancora; se ci sono entrambe vince `LANGGRAPH_DATABASE_URL` |
 | `LANGGRAPH_PG_POOL_MAX` | `20` | Pool su PostgreSQL |
 | `AIX_RUN_REGISTRY` | `auto` | `memory` o `redis` per il registro dei run |
 | `AIX_CONVERSATION_WINDOW_TURNS` | `4` | Turni di storia passati al modello |

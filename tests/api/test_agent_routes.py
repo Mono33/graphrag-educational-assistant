@@ -41,7 +41,9 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import pathlib
 import sys
+import tempfile
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -53,11 +55,15 @@ import pytest
 # fully-populated .env. We set these BEFORE importing the app.
 os.environ.setdefault("WEBUI_AUTH_SECRET", "test-secret-for-pytest")
 os.environ.setdefault("WEBUI_CORS_ALLOW_ORIGINS", "*")
-# Make sure the DB lives in a tmp location so the test never collides with
-# the dev SQLite. The webui module reads WEBUI_DB_PATH at import.
+# Keep the tests off the developer's database. This used to set
+# ``WEBUI_DB_PATH``, which nothing in ``src/`` has ever read — ``aix.webui.db``
+# reads ``WEBUI_DATABASE_URL``. So the isolation was believed, never real, and
+# every run of this file registered a user in ``data/webui/webui.db``: on
+# 2026-09-21 it held 339 accounts, 338 of them created by test suites and one
+# belonging to an actual person.
 os.environ.setdefault(
-    "WEBUI_DB_PATH",
-    os.path.join(os.path.dirname(__file__), "..", "..", "data", "webui", "test_p7.db"),
+    "WEBUI_DATABASE_URL",
+    "sqlite+aiosqlite:///" + (pathlib.Path(tempfile.gettempdir()) / "aix_test_api.db").as_posix(),
 )
 
 

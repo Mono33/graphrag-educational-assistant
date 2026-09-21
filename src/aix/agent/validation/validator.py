@@ -18,10 +18,17 @@ DEFAULT_MAX_RETRIES = 2
 
 
 def validator_enabled() -> bool:
-    """On by default: this is a correction, not a feature.
+    """Off by default — read the literal below, not the shape of the expression.
 
-    The flag exists so a run can be compared against the previous behaviour, and
-    so it can be switched off if a rule turns out to block good lessons.
+    It shipped on, and that changed the product for everyone (see the comment
+    below). The flag exists so a run can be compared against the previous
+    behaviour, and so it can be switched on deliberately rather than inherited.
+
+    This docstring used to open with «On by default», contradicting both the code
+    under it and ``docs/ENVIRONMENT.md``. These flag helpers are all written as
+    ``(os.getenv(...) or "<default>") not in (...)``: the default is the string
+    literal, and reading the ``not in`` as if it meant "on" is exactly the
+    mistake that line invited.
     """
     # Default off (2026-09-16). It shipped on, and that changed the product for
     # everyone: a lesson is blocked by rules nobody asked for, and the review of
