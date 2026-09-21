@@ -56,22 +56,37 @@
         {# The pipeline's own state, when we have it: preparing, ready, failed. #}
         {% set st = states.get(f.material_version_id) %}
         {% set failed = st and st.status in ("failed", "deleted") %}
-        <span class="aix-attach-chip{% if warn or failed %} aix-attach-chip--warn{% endif %}">
+        {#
+          A file that went into the pipeline but whose state has not arrived yet
+          is being prepared — that is what "just uploaded" means. Saying so
+          keeps the chip from sitting silent for the one poll it takes to know,
+          which is the moment a teacher wonders whether the upload worked.
+        #}
+        {% set preparing = (st and st.preparing) or (f.material_version_id and not st) %}
+        {% set ready = st and st.usable and st.passages %}
+        <span class="aix-attach-chip
+                     {%- if warn or failed %} aix-attach-chip--warn
+                     {%- elif ready %} aix-attach-chip--ready{% endif %}">
           <wa-icon name="{{ 'triangle-exclamation' if warn or failed else 'file-lines' }}" class="aix-fs-08 aix-color-secondary"></wa-icon>
           <span class="aix-attach-filename" title="{{ f.filename }}">{{ f.filename }}</span>
           <span class="aix-attach-chip-sep">·</span>
           <span class="aix-attach-chip-size">{{ ((f.size or 0) / 1024) | round(0, "floor") | int }} KB</span>
-          {% if st and st.preparing %}
+          {% if preparing %}
             <span class="aix-attach-chip-sep">·</span>
             <span class="aix-attach-chip-status" title="Sto leggendo e indicizzando il documento. La generazione parte appena è pronto.">
-              <wa-spinner class="aix-fs-xs"></wa-spinner> in preparazione
+              <wa-spinner class="aix-fs-xs"></wa-spinner> in preparazione…
             </span>
           {% elif failed %}
             <span class="aix-attach-chip-sep">·</span>
             <span class="aix-attach-chip-status" title="Il documento non è stato indicizzato: la lezione verrà scritta senza di esso.">non indicizzato</span>
-          {% elif st and st.passages %}
+          {% elif ready %}
+            {# The reassurance this chip exists for: the document is in, and
+               this is how much of it the lesson can actually quote. #}
             <span class="aix-attach-chip-sep">·</span>
-            <span class="aix-attach-chip-status" title="Passaggi indicizzati e ricercabili per questa lezione.">{{ st.passages }} passaggi</span>
+            <span class="aix-attach-chip-status aix-attach-chip-status--ready"
+                  title="Documento indicizzato: {{ st.passages }} passaggi sono ricercabili e citabili in questa lezione.">
+              <wa-icon name="circle-check" class="aix-fs-xs"></wa-icon> pronto · {{ st.passages }} passaggi
+            </span>
           {% endif %}
           {% if p.empty %}
             <span class="aix-attach-chip-sep">·</span>

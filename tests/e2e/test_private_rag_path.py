@@ -459,6 +459,7 @@ async def test_once_ready_the_chip_says_so_and_the_send_button_returns(
     await _drain(maker, tmp_path)
 
     ready = client.get(f"/webui/lesson/{LESSON}/attachments-fragment")
+    assert "pronto" in ready.text, "the upload is confirmed in as many words"
     assert "passaggi" in ready.text, "the teacher is told what is searchable"
     assert "in preparazione" not in ready.text
     assert "attachments-fragment" not in ready.text, "and the tray stops asking"
