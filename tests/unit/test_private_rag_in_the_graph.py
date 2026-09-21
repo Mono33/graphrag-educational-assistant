@@ -112,9 +112,27 @@ def test_the_order_comes_from_the_score_not_from_which_branch_landed_first():
 
 
 def test_the_same_passage_twice_gets_one_share_of_the_budget():
-    once = [{"citation": "[[material:a#page=3]]", "score": 0.8}]
+    once = [{"citation": "[[material:a#page=3]]", "text": "A Yalta.", "score": 0.8}]
 
     assert len(merge_material_items(once, list(once))) == 1
+
+
+def test_two_passages_of_one_page_are_two_passages():
+    """A PDF page is usually one block, so a whole page shares one citation.
+
+    Deduplicating on it threw away two of the eight passages the retriever had
+    found, in the first real run (2026-09-21) — different text, same anchor.
+    """
+    same_anchor = "[[material:v1#page=6&block=b9]]"
+    first = [{"citation": same_anchor, "text": "Il blocco navale su Cuba.", "score": 0.9}]
+    second = [{"citation": same_anchor, "text": "Il ritiro dei missili.", "score": 0.7}]
+
+    merged = merge_material_items(first, second)
+
+    assert [item["text"] for item in merged] == [
+        "Il blocco navale su Cuba.",
+        "Il ritiro dei missili.",
+    ]
 
 
 def test_nothing_to_merge_keeps_what_there_was():

@@ -90,8 +90,16 @@ def merge_material_items(
 
     The order comes from the payload — the score — and not from which coroutine
     finished first, so the prompt is the same whichever branch lands first.
-    Duplicates are dropped by citation: the same passage retrieved twice is one
+    Duplicates are dropped by *text*: the same passage retrieved twice is one
     passage, and it should not get two shares of the context budget.
+
+    Not by citation, which is what this did until 2026-09-21. A citation
+    anchors on the page and the first block of the passage, and a PDF page is
+    usually one block — so every chunk of page 6 carries the same citation. In
+    the first real run that silently threw away two of the eight passages the
+    retriever had found, and on a page-heavy document it would have thrown away
+    five. The citation identifies *where to look*; only the text identifies
+    *what was said*.
     """
     if update is None:
         return list(current or [])
@@ -100,7 +108,7 @@ def merge_material_items(
     seen: set[str] = set()
     unique: list[dict[str, Any]] = []
     for item in merged:
-        key = str(item.get("citation") or item.get("text", ""))
+        key = str(item.get("text") or item.get("citation") or "").strip()
         if key in seen:
             continue
         seen.add(key)
