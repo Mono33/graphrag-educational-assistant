@@ -94,7 +94,21 @@ class ExtractionHandler:
         ir, quality = await asyncio.to_thread(measure_extraction, content, media_type)
 
         status = status_for(quality)
-        await self._record(job, ir=ir, quality=quality, status=status)
+
+        # The IR and the quality summary are written now; the *status* is not.
+        #
+        # ``ready`` is a promise to the rest of the system: §6.1.4 lets a lesson
+        # be generated from a ready version, the chip says «pronto», and the
+        # send button unlocks. Writing it here — before the chunks exist — made
+        # that promise for several seconds while the document was still being
+        # embedded. On 2026-09-21 a teacher's second attachment caught exactly
+        # that window: its chip went blank (ready, zero passages), the tray
+        # stopped polling, and a generation started then would have searched a
+        # document with nothing in it.
+        #
+        # Same lesson as the job completion below, one object over: nothing
+        # claims to be finished until it is.
+        await self._record(job, ir=ir, quality=quality, status="processing")
 
         # Fase 2 · PR 6 — the private index, and only THEN the job's completion.
         #
@@ -107,6 +121,7 @@ class ExtractionHandler:
         if ir is not None:
             await self._index_privately(job, ir)
 
+        await self._set_version_status(job, status)
         await self._complete(job, status)
 
         if status != "ready":
@@ -219,6 +234,20 @@ class ExtractionHandler:
                 update(MaterialVersion)
                 .where(MaterialVersion.id == job.material_version_id)
                 .values(parse_quality=quality, status=status)
+            )
+            await session.commit()
+
+    async def _set_version_status(self, job: IngestionJob, status: str) -> None:
+        """The document's final word, written once everything about it is true.
+
+        Called after the private index exists, so ``ready`` never precedes the
+        chunks that make the word mean anything. See :meth:`_run`.
+        """
+        async with self._dispatcher.session_maker() as session:
+            await session.execute(
+                update(MaterialVersion)
+                .where(MaterialVersion.id == job.material_version_id)
+                .values(status=status)
             )
             await session.commit()
 

@@ -25,15 +25,35 @@
   load and the upload response — and the tray then asks for it itself, below.
 #}
 {% set states = material_states if material_states is mapping else {} %}
-{% set preparing = states.values() | selectattr("preparing") | list %}
+{#
+  Which files are still waiting for an answer. Asked of the *files*, not of the
+  states, and that is the whole point: a document uploaded a second ago has a
+  version id and no state yet, and the previous version of this condition —
+  «is anything in the states preparing?» — saw a snapshot with nothing pending,
+  stopped polling and never started again. On 2026-09-21 two PDFs uploaded a few
+  seconds apart left the second chip frozen with no badge at all, while the
+  document had in fact finished indexing three seconds later.
+
+  A file counts as pending until its state says it is usable or that it failed.
+  With the materials pipeline off there are no version ids, so nothing is
+  pending and the tray does not poll — which it used to do forever, because the
+  states were permanently empty.
+#}
+{% set pending = [] %}
+{% for f in files %}
+  {% set st = states.get(f.material_version_id) %}
+  {% if f.material_version_id and not (st and (st.usable or st.status in ("failed", "deleted"))) %}
+    {% set _ = pending.append(f.material_version_id) %}
+  {% endif %}
+{% endfor %}
 <div id="chat-attachments" class="px-1{% if files %} pb-2{% endif %}"
      {#
        While a document is being prepared the tray refreshes itself, and stops
-       as soon as everything is ready: no timer left running behind a finished
-       lesson. The same response re-renders the chat input out of band, so the
-       send button unlocks without the teacher reloading anything.
+       once every attachment has reached a final answer: no timer left running
+       behind a finished lesson. The same response re-renders the chat input out
+       of band, so the send button unlocks without the teacher reloading.
      #}
-     {% if files and (preparing or not states) %}
+     {% if pending %}
      hx-get="/webui/lesson/{{ lesson.id }}/attachments-fragment"
      hx-trigger="load delay:2s"
      hx-target="this"
@@ -55,15 +75,17 @@
         {% set warn = p.empty or unread or low %}
         {# The pipeline's own state, when we have it: preparing, ready, failed. #}
         {% set st = states.get(f.material_version_id) %}
-        {% set failed = st and st.status in ("failed", "deleted") %}
         {#
-          A file that went into the pipeline but whose state has not arrived yet
-          is being prepared — that is what "just uploaded" means. Saying so
-          keeps the chip from sitting silent for the one poll it takes to know,
-          which is the moment a teacher wonders whether the upload worked.
+          Three states, and they cover everything: a file in the pipeline is
+          failed, or usable, or still being prepared. «Still being prepared»
+          is the default on purpose — a state that has not arrived yet, or one
+          this template does not recognise, is work in progress, not silence.
+          A chip with no badge is what a teacher reads as «nothing happened to
+          my file», and on 2026-09-21 that is exactly what it meant to one.
         #}
-        {% set preparing = (st and st.preparing) or (f.material_version_id and not st) %}
-        {% set ready = st and st.usable and st.passages %}
+        {% set failed = st and st.status in ("failed", "deleted") %}
+        {% set ready = st and st.usable %}
+        {% set preparing = f.material_version_id and not failed and not ready %}
         <span class="aix-attach-chip
                      {%- if warn or failed %} aix-attach-chip--warn
                      {%- elif ready %} aix-attach-chip--ready{% endif %}">
@@ -80,12 +102,16 @@
             <span class="aix-attach-chip-sep">·</span>
             <span class="aix-attach-chip-status" title="Il documento non è stato indicizzato: la lezione verrà scritta senza di esso.">non indicizzato</span>
           {% elif ready %}
-            {# The reassurance this chip exists for: the document is in, and
-               this is how much of it the lesson can actually quote. #}
+            {#
+              The reassurance this chip exists for: the document is in. The
+              passage count comes with it when there is one — with the private
+              RAG off nothing is indexed, and «pronto · 0 passaggi» would read
+              as a failure rather than as a feature being switched off.
+            #}
             <span class="aix-attach-chip-sep">·</span>
             <span class="aix-attach-chip-status aix-attach-chip-status--ready"
-                  title="Documento indicizzato: {{ st.passages }} passaggi sono ricercabili e citabili in questa lezione.">
-              <wa-icon name="circle-check" class="aix-fs-xs"></wa-icon> pronto · {{ st.passages }} passaggi
+                  title="{% if st.passages %}Documento indicizzato: {{ st.passages }} passaggi sono ricercabili e citabili in questa lezione.{% else %}Documento letto e allegato alla lezione.{% endif %}">
+              <wa-icon name="circle-check" class="aix-fs-xs"></wa-icon> pronto{% if st.passages %} · {{ st.passages }} passaggi{% endif %}
             </span>
           {% endif %}
           {% if p.empty %}

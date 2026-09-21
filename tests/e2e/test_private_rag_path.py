@@ -463,3 +463,78 @@ async def test_once_ready_the_chip_says_so_and_the_send_button_returns(
     assert "passaggi" in ready.text, "the teacher is told what is searchable"
     assert "in preparazione" not in ready.text
     assert "attachments-fragment" not in ready.text, "and the tray stops asking"
+
+
+async def test_a_document_is_never_ready_before_its_passages_exist(
+    client, maker, tmp_path, provider, monkeypatch
+):
+    """«ready» is a promise: the lesson may use it, the chip says so, Invia unlocks.
+
+    The handler used to write that status before embedding, leaving a window of
+    seconds where the version was ready with zero chunks. On 2026-09-21 a second
+    attachment landed in it: the chip went blank and the tray stopped polling,
+    and a run started in that window would have searched an empty document.
+
+    The embedder here pauses long enough to inspect the database mid-flight.
+    """
+    from aix.webui.materials.models import MaterialVersion as MV
+
+    seen: dict = {}
+
+    async def _look_around(*args, **kwargs):
+        async with maker() as session:
+            version = (await session.execute(select(MV))).scalars().first()
+            chunks = (await session.execute(select(MaterialChunk))).scalars().all()
+            seen["status_while_embedding"] = version.status
+            seen["chunks_while_embedding"] = len(chunks)
+        return await _FakeEmbeddings.create(provider, *args, **kwargs)
+
+    _upload(client, "storia.pdf", _pdf(STORIA))
+    monkeypatch.setattr(provider, "create", _look_around)
+    await _drain(maker, tmp_path)
+
+    assert seen["chunks_while_embedding"] == 0, "the test looked at the right moment"
+    assert seen["status_while_embedding"] != "ready", (
+        "a document with no passages must not call itself ready"
+    )
+
+    async with maker() as session:
+        version = (await session.execute(select(MV))).scalars().first()
+        chunks = (await session.execute(select(MaterialChunk))).scalars().all()
+    assert version.status == "ready" and chunks, "and afterwards it is ready, with them"
+
+
+async def test_a_second_upload_does_not_freeze_the_first_one_s_tray(
+    client, maker, tmp_path, provider
+):
+    """Two files, seconds apart — the case a teacher actually performs.
+
+    The tray used to decide whether to keep polling from a snapshot of the
+    *states*: with the first document ready and the second not yet registered,
+    it saw nothing pending, stopped, and never asked again. The second chip sat
+    with no badge at all while its document had finished indexing three seconds
+    later (2026-09-21, observed in the browser).
+    """
+    _upload(client, "storia.pdf", _pdf(STORIA))
+    await _drain(maker, tmp_path)
+
+    first_done = client.get(f"/webui/lesson/{LESSON}/attachments-fragment")
+    assert "attachments-fragment" not in first_done.text, "one file, all settled: no timer"
+
+    # The second file arrives while the tray believes everything is finished.
+    _upload(client, "scienze.pdf", _pdf(SCIENZE))
+
+    waiting = client.get(f"/webui/lesson/{LESSON}/attachments-fragment")
+    assert "attachments-fragment" in waiting.text, "the tray must start asking again"
+    assert waiting.text.count("in preparazione") >= 1, "and the new chip says so"
+
+    await _drain(maker, tmp_path)
+
+    both = client.get(f"/webui/lesson/{LESSON}/attachments-fragment")
+    # The endpoint returns the tray *and* the chat input out of band, and the
+    # chat input includes the tray again — so every chip appears twice in this
+    # response. Count the first copy only.
+    tray = both.text.split('id="chat-input-wrapper"')[0]
+    assert tray.count("aix-attach-chip--ready") == 2, "both documents confirmed"
+    assert "in preparazione" not in both.text
+    assert "attachments-fragment" not in both.text, "and only then does it stop"
