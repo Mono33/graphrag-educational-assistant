@@ -562,3 +562,32 @@ def test_retriever_payload_carries_domain_and_coverage_tier() -> None:
     # doesn't conflict with the CR-ON outcome callout's token.
     assert oos["retrieval_outcome"] == "success"
     assert oos["retrieval_grade"] is None
+
+
+# ---------------------------------------------------------------------------
+# «Fuori ambito» and «the database is down» are not the same sentence
+# ---------------------------------------------------------------------------
+
+
+def test_an_unreachable_graph_is_not_reported_as_an_out_of_scope_question() -> None:
+    """Zero concepts has two causes and the teacher is owed the right one.
+
+    Both produce ``coverage_tier == "out_of_scope"``, whose copy tells the
+    teacher their question lies outside the Knowledge Graph. When the database
+    simply did not answer that is false, and it sends them rewriting a question
+    that was never the problem (2026-09-21).
+    """
+    outage = _build_retriever_payload(_state(retrieved_nodes=[], kg_unreachable=True))
+    genuinely_out_of_scope = _build_retriever_payload(
+        _state(retrieved_nodes=[], kg_unreachable=False)
+    )
+
+    assert outage["kg_unreachable"] is True
+    assert genuinely_out_of_scope["kg_unreachable"] is False
+    # The tier is unchanged in both: the banner branches on the new flag, so
+    # nothing that reads ``coverage_tier`` has to learn a fourth value.
+    assert outage["coverage_tier"] == genuinely_out_of_scope["coverage_tier"] == "out_of_scope"
+
+
+def test_a_search_that_found_something_never_claims_an_outage() -> None:
+    assert _build_retriever_payload(_state())["kg_unreachable"] is False

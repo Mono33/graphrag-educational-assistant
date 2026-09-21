@@ -1142,6 +1142,7 @@ def _build_retriever_payload(state: dict[str, Any]) -> dict[str, Any]:
     )
 
     return {
+        "kg_unreachable": bool(state.get("kg_unreachable")),
         "nodes_count": nodes_count,
         "relationships_count": len(rels),
         "recommendations_count": len(recs),

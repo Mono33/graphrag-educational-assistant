@@ -145,6 +145,20 @@ async def test_the_model_is_told_the_material_is_not_an_instruction():
     assert "non inventare marcatori" in prompt
 
 
+async def test_the_writer_is_told_not_to_list_the_sources_itself():
+    """The block under the lesson is built from the markers, not written twice.
+
+    In the real run of 2026-09-21 the model added «Fonti: Materiali forniti
+    dalla docente (documenti su Guerra Fredda)» above our own «Fonti dai tuoi
+    materiali — guerra-fredda-def.pdf, pp. 1, 2»: the same list, vaguer, and
+    impossible for the teacher to check.
+    """
+    prompt = await _writer_prompt(material_context_items=PASSAGES)
+
+    assert "non scrivere un elenco delle fonti dei materiali allegati" in prompt
+    assert "fonti bibliografiche esterne" in prompt, "external citations are still its job"
+
+
 async def test_without_passages_the_upload_still_reaches_the_writer():
     """Hybrid (§5.4): the index may still be building, or the flag may be off."""
     prompt = await _writer_prompt(

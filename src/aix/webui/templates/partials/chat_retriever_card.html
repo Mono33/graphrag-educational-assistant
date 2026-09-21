@@ -208,7 +208,29 @@
           </div>
         {% endif %}
 
-        {% if (not p.get('retrieval_grade')) and p.get('coverage_tier') and not p.get('reused') %}
+        {#
+          The graph database did not answer. Said plainly, because the banner
+          below would otherwise read «la tua domanda è fuori ambito» — blaming
+          the teacher's question for an outage. Set by the retrieve node, which
+          probes only when the search came back empty (2026-09-21).
+        #}
+        {% if p.get('kg_unreachable') and not p.get('reused') %}
+          <div class="aix-coverage-banner aix-coverage-banner--limited">
+            <span class="aix-coverage-banner-headline">
+              <span class="aix-dot aix-dot-warning"></span>
+              <span>Knowledge Graph non raggiungibile</span>
+            </span>
+            <p class="aix-coverage-banner-body">
+              La base di conoscenza pedagogica non ha risposto durante questa
+              generazione: la lezione è stata scritta <strong>senza</strong> di
+              essa, usando i documenti allegati e le fonti esterne. Non è un
+              problema della tua richiesta. Se il risultato ti sembra povero sul
+              piano didattico, rigenera più tardi o segnala il disservizio.
+            </p>
+          </div>
+        {% endif %}
+
+        {% if (not p.get('retrieval_grade')) and p.get('coverage_tier') and not p.get('reused') and not p.get('kg_unreachable') %}
           {% set _tier = p.get('coverage_tier') %}
           {% set _dom_short = p.get('domain_label_short') or 'il dominio attivo' %}
           {% set _dom_long  = p.get('domain_label_long')  or _dom_short %}

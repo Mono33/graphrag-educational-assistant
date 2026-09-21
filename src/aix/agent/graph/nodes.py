@@ -5,6 +5,7 @@ Each node wraps an agent and handles state updates.
 Nodes are the building blocks of the LangGraph state machine.
 """
 
+import asyncio
 import logging
 import os
 import re
@@ -488,12 +489,56 @@ async def retrieve_node(state: AgentState) -> dict[str, Any]:
             "external_resources": _sanitize(result.external_resources)
             if result.external_resources
             else None,
+            # Nothing found? Then say *why* nothing was found. See
+            # ``_knowledge_graph_is_reachable``.
+            "kg_unreachable": (
+                not await _knowledge_graph_is_reachable() if not result.nodes else False
+            ),
             "current_step": "retrieve_complete",
         }
 
     except Exception as e:
         logger.error(f"[Node: Retrieve] Error: {e}")
         return {"error": str(e), "current_step": "error"}
+
+
+async def _knowledge_graph_is_reachable(timeout: float = 3.0) -> bool:
+    """Is the graph database answering? Asked only when the search found nothing.
+
+    Zero concepts has two causes that look identical in the result and could not
+    be more different to a teacher: the question is outside the Knowledge Graph —
+    normal, the graph holds pedagogy and the lesson is about the Cold War — or
+    the database did not answer. Until 2026-09-21 the card said «fuori ambito»
+    for both, blaming the teacher's question for an outage.
+
+    Cheap because it is conditional: the probe runs only when there is nothing
+    to show, never on the path where the search worked. A failure here means
+    "unreachable", including a timeout — a database too slow to answer inside
+    three seconds did not contribute to this lesson either.
+    """
+    try:
+        from neo4j import GraphDatabase
+
+        from aix.core.config import config as app_config
+
+        def _check() -> bool:
+            kwargs: dict[str, Any] = {
+                "auth": (app_config.neo4j.user, app_config.neo4j.password),
+                "connection_timeout": timeout,
+            }
+            if not app_config.neo4j.encrypted:
+                kwargs["encrypted"] = app_config.neo4j.encrypted
+            driver = GraphDatabase.driver(app_config.neo4j.uri, **kwargs)
+            try:
+                driver.verify_connectivity()
+                return True
+            finally:
+                driver.close()
+
+        return await asyncio.wait_for(asyncio.to_thread(_check), timeout=timeout + 2)
+    except Exception as exc:  # noqa: BLE001 — every failure means the same thing
+        logger.warning("[Node: Retrieve] Knowledge Graph unreachable: %s", exc)
+        return False
 
 
 def _private_search_query(state: AgentState) -> str:

@@ -50,7 +50,13 @@ Come usarli:
 - un passaggio marcato «testo letto con OCR» è la lettura automatica di una
   scansione: nomi, date e numeri che vengono solo da lì non vanno dati per
   certi;
-- se i passaggi non bastano per ciò che serve, dillo invece di colmare il vuoto.
+- se i passaggi non bastano per ciò che serve, dillo invece di colmare il vuoto;
+- **non scrivere un elenco delle fonti dei materiali allegati**: l'elenco lo
+  aggiunge il sistema sotto la lezione, ricavandolo dai marcatori che hai usato,
+  con nome del file e pagine. Una riga come «Fonti: materiali forniti dalla
+  docente» duplica quell'elenco ed è più vaga di quello che sostituisce. Le
+  fonti bibliografiche esterne (articoli, video, manuali) continua invece a
+  citarle come fai di consueto.
 
 {material_passages}
 """

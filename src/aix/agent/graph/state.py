@@ -235,6 +235,10 @@ class AgentState(TypedDict, total=False):
 
     # NEW Phase A: External resources for out-of-scope queries
     external_resources: Optional[dict[str, Any]]  # Wikipedia, OER, Semantic Scholar results
+    #: True when the search came back empty *and* the graph database did not
+    #: answer. Distinguishes «your question is outside the Knowledge Graph»
+    #: from «the Knowledge Graph was down», which look identical otherwise.
+    kg_unreachable: Optional[bool]
 
     # Fase 2 · PR 6 — passages of the teacher's own documents (§8.2). Kept apart
     # from the Knowledge Graph results all the way to the prompt: one is shared
@@ -363,6 +367,10 @@ class AgentInput(TypedDict, total=False):
     conversation_summary: Optional[str]
     raw_user_turn: Optional[str]
     force_retrieval: Optional[bool]
+
+    # Whether the graph database answered is a fact about *this* turn's search.
+    # Carried over, a Tuesday outage would still be apologising on Wednesday.
+    kg_unreachable: Optional[bool]
 
     # The retrieval-reuse verdict is per-turn: turn 3 must decide for itself,
     # not inherit turn 2's answer.
