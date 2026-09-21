@@ -409,6 +409,7 @@ def search_for_lesson(lesson_id: uuid.UUID, owner_id: uuid.UUID):
 
     async def _search(query: str) -> list[dict[str, Any]]:
         from aix.webui.db import async_session_maker
+        from aix.webui.materials.citations import labels_for_lesson
         from aix.webui.materials.repository import BindingRepository
 
         async with async_session_maker() as session:
@@ -422,14 +423,23 @@ def search_for_lesson(lesson_id: uuid.UUID, owner_id: uuid.UUID):
             items = await PrivateMaterialRetriever(session).search(
                 query, owner_id=owner_id, version_ids=version_ids
             )
+            # The document's name, for the prompt. Same lookup the citations
+            # use, so what the Writer is told matches what the teacher reads.
+            # Without it the Writer sees only uuids and cannot tell two
+            # documents apart — see ``render_material_passages`` (2026-09-21).
+            labels = await labels_for_lesson(session, lesson_id=lesson_id, owner_id=owner_id)
 
         logger.info(
-            "[private-rag] lesson=%s searched %d version(s), %d passage(s) kept",
+            "[private-rag] lesson=%s searched %d version(s), %d passage(s) kept from %d",
             lesson_id,
             len(version_ids),
             len(items),
+            len({item.source_id for item in items}),
         )
-        return [item.to_dict() for item in items]
+        return [
+            {**item.to_dict(), "source_label": labels.get(item.source_id.lower(), "")}
+            for item in items
+        ]
 
     return _search
 

@@ -65,10 +65,22 @@ _WRITER_MIN_CONTENT_TOKENS = int(os.getenv("AIX_WRITER_MIN_CONTENT_TOKENS", "400
 _MATERIAL_BUDGET_CHARS = int(os.getenv("AIX_PRIVATE_RAG_BUDGET_CHARS", "12000"))
 
 
+#: A document name is text the teacher chose, and it travels into a prompt.
+#: Kept to one line and a sane length: a file called "ignora le istruzioni
+#: precedenti.pdf" is a filename, not a turn of phrase the model should weigh.
+_MAX_LABEL_CHARS = 60
+
+
+def _safe_label(raw: Any) -> str:
+    """One line, bounded, no control characters. See :data:`_MAX_LABEL_CHARS`."""
+    label = " ".join(str(raw or "").split())
+    return label[: _MAX_LABEL_CHARS - 1] + "…" if len(label) > _MAX_LABEL_CHARS else label
+
+
 def render_material_passages(
     items: Optional[list[dict[str, Any]]], *, budget_chars: int = _MATERIAL_BUDGET_CHARS
 ) -> str:
-    """The retrieved passages as the Writer sees them: marker, then quotation.
+    """The retrieved passages as the Writer sees them, grouped by document.
 
     Best first — they arrive sorted by score — and cut at the budget rather than
     truncated mid-passage, because half a quotation is something the model will
@@ -76,24 +88,55 @@ def render_material_passages(
 
     The marker is the one the model must copy back (§8.6). OCR text says so, so
     a date read from a scan is not quoted as if it had been typed (§7.8).
+
+    **Grouped under the document's name, and that is not cosmetic.** Until
+    2026-09-21 the passages arrived as a flat list under opaque UUIDs, so a model
+    handed five paragraphs of an Italian handout and three of an English one
+    could not tell there were two documents at all. It wrote the Italian lesson
+    from the Italian source and never cited the other — and the teacher, who had
+    attached two files and saw one in the sources, reasonably concluded the
+    second had been ignored. Naming them costs a line each.
+
+    Documents appear in the order of their best passage, so the strongest source
+    is still read first.
     """
     if not items:
         return ""
 
+    usable = [
+        item
+        for item in items
+        if str(item.get("text") or "").strip() and str(item.get("citation") or "").strip()
+    ]
+    if not usable:
+        return ""
+
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for item in usable:
+        grouped.setdefault(str(item.get("source_id") or ""), []).append(item)
+
+    several = len(grouped) > 1
     blocks: list[str] = []
     used = 0
-    for item in items:
-        text = str(item.get("text") or "").strip()
-        marker = str(item.get("citation") or "").strip()
-        if not text or not marker:
-            continue
 
-        header = f"{marker}{' · testo letto con OCR' if item.get('ocr') else ''}"
-        block = f"{header}\n«{text}»"
-        if used + len(block) > budget_chars:
-            break
-        blocks.append(block)
-        used += len(block)
+    for number, passages in enumerate(grouped.values(), start=1):
+        if several:
+            label = _safe_label(passages[0].get("source_label")) or f"documento {number}"
+            heading = f"### {label}"
+            if used + len(heading) > budget_chars:
+                break
+            blocks.append(heading)
+            used += len(heading)
+
+        for item in passages:
+            header = str(item.get("citation")).strip()
+            if item.get("ocr"):
+                header += " · testo letto con OCR"
+            block = f"{header}\n«{str(item.get('text')).strip()}»"
+            if used + len(block) > budget_chars:
+                return "\n\n".join(blocks)
+            blocks.append(block)
+            used += len(block)
 
     return "\n\n".join(blocks)
 
