@@ -555,6 +555,70 @@ ha già davanti dentro la lezione.
 **Resta il passo 6:** script di reindicizzazione, contatori §11.5, rollout con
 immagine pgvector e REINDEX.
 
+---
+
+### 2026-09-21 — Secondo test reale del RAG privato: **funziona**, e tre difetti trovati usandolo (`f5294eb`, `49c81c7`, `15005ba`)
+
+Angelo ha allegato i due PDF veri a una lezione nuova e ha generato. **Per la
+prima volta la catena ha funzionato per intero**, e il log lo dice riga per riga:
+
+| Passo | Log |
+| --- | --- |
+| Upload | `indexed 9 chunks` + `indexed 29 chunks`, entrambi `chunk@2` |
+| Chip | 4 richieste `attachments-fragment`, nessun 409: il pulsante si è sbloccato da solo |
+| Recupero | `searched 2 version(s), 8 passage(s) kept` |
+| Writer | `6 retrieved passage(s), 8512 chars — the document is not pasted` |
+| Critic | `APPROVE (score: 4.8)`, senza più segnalare «contenuto da fonte esterna» |
+| Totale | `run complete duration=98.0s approved=True revisions=0` |
+
+La lezione contiene **4 citazioni in linea**, tutte alla dispensa italiana, e sulle
+frasi giuste: Yalta → p. 1, Cuba → p. 3, Corea e Vietnam → p. 2. In fondo:
+«Fonti dai tuoi materiali — guerra-fredda-def.pdf — pp. 1, 2, 3».
+
+**Difetto 1 — passaggi buttati via come duplicati** (`f5294eb`). Il recuperatore
+ne aveva trovati 8, al Writer ne sono arrivati 6, e non era il budget (8512
+caratteri su 12000). Il reducer deduplicava **per citazione**, ma la citazione si
+ancora alla pagina e al primo blocco, e una pagina di PDF è quasi sempre un
+blocco solo: **sui due documenti, 38 chunk condividono appena 12 citazioni
+distinte**; a pagina 6 del PDF inglese sei chunk diversi collassano in uno. La
+citazione dice *dove guardare*, solo il testo dice *che cosa è stato detto*: ora
+la chiave è il testo.
+
+**Difetto 2 — il Planner girava due volte** (`49c81c7`). La fase 1 lo eseguiva
+solo per mostrare la sua card come anteprima, poi buttava il piano; la fase 2
+ripianificava da zero. Costo misurato: 14 secondi prima che la docente potesse
+rispondere, e **due piani diversi per una lezione sola** (6 query di ricerca
+contro 5, concetti pedagogici diversi), quindi l'analisi mostrata prima della
+scelta non era quella su cui la lezione è stata costruita. Le opzioni dell'intento
+sono un elenco fisso e da quel piano non sono mai arrivate. Ora **si chiede
+l'intento pedagogico prima**, e nessun agente parte finché la docente non ha
+risposto. Un test fallisce se qualcuno lo rimette.
+
+**Difetto 3, trovato da quel test e che quel test non causava.** Falliva solo con
+`tests/api` prima di `tests/unit`. Due oggetti di processo tengono primitive
+asyncio legate al loop che le ha create: l'Event di spegnimento di
+`sse-starlette` (problema della libreria) e il nostro run registry. La prima
+risposta SSE della sessione li lega, il test successivo su un loop nuovo muore con
+«is bound to a different event loop» — e solo in certi ordini, che è il modo in
+cui un difetto vero si traveste da test instabile. Un fixture autouse li azzera
+fra un test e l'altro; in produzione c'è un loop per processo e non si presenta.
+
+**La chip dice che il documento è dentro** (`15005ba`). «9 passaggi» era un
+numero, non una rassicurazione: ora si legge **«pronto · 9 passaggi»** con la
+spunta e il colore di successo, e il tooltip spiega che quei passaggi sono
+ricercabili e citabili in questa lezione. Un file entrato nella pipeline ma di cui
+non è ancora tornato lo stato dice «in preparazione…» invece di non dire niente:
+era un buco largo un sondaggio, ed è esattamente l'istante in cui ci si chiede se
+il caricamento sia andato a buon fine.
+
+**Verificato:** 742 test passati (i 2 noti su Windows).
+
+**Aperto, non toccato:** il KG non trova concetti per «guerra fredda» (corretto:
+il grafo è di pedagogia, la storia sta nei documenti); `[Invalid Label]
+'ConceptMapping'` da text2cypher, preesistente; e il database di sviluppo contiene
+**268 account, di cui 216 creati da `pytest` e 52 da `mcp-pytest`** — le suite
+scrivono nel DB vero invece che in uno temporaneo.
+
 4. **B4 · PR 7 — fatto** (`f8150e1`): PDF vero e scaletta con i minuti.
 5. **Corpus — avviato il 2026-09-15.** Cinque PDF pubblici del Ministero e una
    scansione reale da Internet Archive sono in `data/eval/corpus/originali/`
