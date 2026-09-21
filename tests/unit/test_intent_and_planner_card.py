@@ -128,7 +128,7 @@ async def test_an_intent_already_in_the_profile_is_not_asked_again(maker, client
 
     profile = await _profile_after_run(maker, client)
 
-    assert "__planner_only__" not in profile, "the run goes straight through"
+    assert "__ask_intent__" not in profile, "the run goes straight through"
     assert profile["pedagogical_intent"] == "misconception", "and the choice is kept"
 
 
@@ -139,7 +139,35 @@ async def test_without_an_intent_the_card_is_still_shown(maker, client, intent):
         profile["pedagogical_intent"] = intent
     await _draft(maker, profile)
 
-    assert (await _profile_after_run(maker, client))["__planner_only__"] is True
+    assert (await _profile_after_run(maker, client))["__ask_intent__"] is True
+
+
+async def test_asking_the_intent_costs_no_agent_call(maker, client, monkeypatch):
+    """The question comes first, so nothing is planned before it is answered.
+
+    Until 2026-09-21 this phase ran the Planner to show a preview card, threw
+    that plan away, and phase 2 planned again from scratch — 14 s of the
+    teacher's time, and two different plans for one lesson (measured in the
+    real run of that morning). The intent options are a fixed list; they never
+    came from the plan.
+    """
+    from aix.agent.agents.planner_agent import PlannerAgent
+
+    async def _forbidden(*_args, **_kwargs):
+        raise AssertionError("the Planner ran before the teacher chose an intent")
+
+    monkeypatch.setattr(PlannerAgent, "plan", _forbidden)
+    await _draft(maker, PROFILE)
+
+    assert (await _profile_after_run(maker, client))["__ask_intent__"] is True
+
+    with client.stream("GET", f"/webui/lesson/{LESSON}/stream") as stream:
+        body = "".join(chunk for chunk in stream.iter_text())
+
+    assert "intent" in body.lower(), "the card the teacher must answer"
+    async with maker() as session:
+        lesson = await session.get(Lesson, LESSON)
+        assert lesson.status == "draft", "and the lesson waits for the answer"
 
 
 # ---------------------------------------------------------------------------

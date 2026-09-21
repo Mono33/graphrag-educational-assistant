@@ -38,3 +38,34 @@ FEATURE_FLAGS = (
 def _feature_flags_at_their_defaults(monkeypatch):
     for name in FEATURE_FLAGS:
         monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _process_singletons_that_hold_a_loop():
+    """Reset the process-wide objects that own asyncio primitives.
+
+    Two of them, and both fail the same way: an object created on one test's
+    event loop is reused on the next test's, and raises «is bound to a
+    different event loop». Each test gets its own loop, so this only bites from
+    the second test onwards — and only in some file orders, which is exactly
+    the kind of failure that gets dismissed as a flake. On 2026-09-21 it was
+    ``tests/api`` followed by ``tests/unit``: the first SSE response of the run
+    bound sse-starlette's shutdown Event, and the next test to open a stream
+    died on it.
+
+    * ``sse_starlette.sse.AppStatus.should_exit_event`` — one Event per
+      process, created on first use. A library-level issue, not ours.
+    * ``aix.core.run_registry._REGISTRY`` — the in-memory backend owns locks.
+
+    Production has a single loop per process and hits neither; both singletons
+    are right there. This resets them between tests rather than weakening them.
+    """
+    import sse_starlette.sse as sse
+
+    import aix.core.run_registry as registry
+
+    registry._REGISTRY = None
+    sse.AppStatus.should_exit_event = None
+    yield
+    registry._REGISTRY = None
+    sse.AppStatus.should_exit_event = None

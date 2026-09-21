@@ -1251,10 +1251,10 @@ async def lesson_run(
     mode = "follow_up" if is_follow_up else "new"
 
     # ── Chat-based pedagogical intent — two-phase flow ───────────────
-    # Phase 1 (planner-only): first new-run on a draft lesson, before the
+    # Phase 1 (ask first): first new-run on a draft lesson, before the
     # teacher has confirmed an intent from the chat card.  We flag this
-    # with __planner_only__ in profile_json so the SSE generator knows to
-    # stop after the planner and render the intent selection card.
+    # with __ask_intent__ in profile_json so the SSE generator renders the
+    # intent selection card straight away, without running any agent.
     #
     # Phase 2 (full run): the teacher clicked a chip in the intent card
     # and the POST carries intent_confirmed=1.  We store the chosen intent
@@ -1275,7 +1275,7 @@ async def lesson_run(
 
     if is_phase1:
         _prof = dict(lesson.educational_profile_json or {})
-        _prof["__planner_only__"] = True
+        _prof["__ask_intent__"] = True
         lesson.educational_profile_json = _prof
     elif intent_confirmed:
         _intent_code_raw = form.get("pedagogical_intent_code")
@@ -1292,6 +1292,7 @@ async def lesson_run(
                 else None
             )
             _prof = dict(lesson.educational_profile_json or {})
+            _prof.pop("__ask_intent__", None)
             _prof.pop("__planner_only__", None)
             _prof["pedagogical_intent"] = (
                 f"{_intent_code}: {_intent_detail}" if _intent_detail else _intent_code
@@ -1803,14 +1804,21 @@ async def lesson_stream(
             yield terminal_marker
             return
 
-        # ── Phase 1: planner-only run + intent selection card ────────────
+        # ── Phase 1: ask for the pedagogical intent, and ask it first ────
         # Triggered when the teacher submits their first query on a draft
-        # lesson.  We run only the Planner, show its card, then show the
-        # intent selection card and let the SSE stream end.  The teacher
-        # picks an intent from the card → POST /run with intent_confirmed=1
-        # → Phase 2 (full pipeline) starts.
+        # lesson and no intent is known yet. The card is shown immediately;
+        # the teacher picks → POST /run with intent_confirmed=1 → phase 2
+        # runs the whole pipeline once.
+        #
+        # Until 2026-09-21 this branch ran the Planner first, to show its
+        # card as a preview. It cost 14 s of a run the teacher then had to
+        # wait through again — phase 2 re-plans from scratch — and the two
+        # plans differed (6 search queries against 5, different pedagogical
+        # concepts), so the analysis shown before the choice was not the
+        # analysis the lesson was built on. The intent options are a fixed
+        # list; they never came from that plan. Nothing was saved from it.
         _profile_j = lesson.educational_profile_json or {}
-        if _profile_j.get("__planner_only__"):
+        if _profile_j.get("__ask_intent__") or _profile_j.get("__planner_only__"):
             # Atomically claim the lesson. ``None`` → another (live) connection
             # or worker won the race between our is_active() check and here.
             _token = await _registry.claim(lesson.id, owner_id=lesson.owner_id)
@@ -1819,50 +1827,16 @@ async def lesson_stream(
                 yield terminal_marker
                 return
             try:
-                from aix.agent.agents.planner_agent import PlannerAgent
                 from aix.api.schemas.educational_profile import (
                     PEDAGOGICAL_INTENT_OPTIONS as _INTENT_OPTS,
                 )
 
                 # Pop the flag so a reconnect doesn't re-trigger phase 1
                 _updated_profile = dict(_profile_j)
+                _updated_profile.pop("__ask_intent__", None)
                 _updated_profile.pop("__planner_only__", None)
                 lesson.educational_profile_json = _updated_profile
 
-                from aix.webui.agent.service import _teacher_upload_context
-
-                _planner = PlannerAgent()
-                _plan = await _planner.plan(
-                    query=lesson.teacher_query or "",
-                    domain=lesson.domain or "neuro",
-                    language="it",
-                    # The same attachments and classroom the full run will see:
-                    # the intent card is built from this plan, and a Planner
-                    # blind to the document proposes intents for no document.
-                    educational_profile=_updated_profile,
-                    teacher_materials=_teacher_upload_context(lesson),
-                )
-
-                _planner_payload = {
-                    "query_intent": _plan.query_intent,
-                    "intent_label": _plan.query_intent,
-                    "key_concepts": _plan.key_concepts,
-                    "subject_concepts": _plan.subject_concepts or [],
-                    "search_queries": _plan.search_queries,
-                    "lesson_type": _plan.lesson_type,
-                    "target_grade": _plan.target_grade,
-                    "reasoning": _plan.reasoning,
-                    "nodes_count": 0,
-                    "scope_status": _plan.scope_status,
-                }
-                yield {
-                    "event": "card",
-                    "data": _render_partial(
-                        request,
-                        "partials/chat_planner_card.html",
-                        {"payload": _planner_payload, "lesson": lesson},
-                    ),
-                }
                 yield {
                     "event": "card",
                     "data": _render_partial(
