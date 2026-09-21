@@ -37,7 +37,14 @@ class Neo4jSchemaExtractor:
     """Extract schema information from Neo4j database"""
 
     def __init__(self, uri: str, user: str, password: str):
-        self.driver = GraphDatabase.driver(uri, auth=(user, password))
+        # Fail fast rather than hang: this driver is the one the whole hybrid
+        # retrieval chain uses, and a lesson asks the graph ten questions or
+        # more. See ``Neo4jConfig.driver_kwargs``.
+        from aix.core.config import config as _app_config
+
+        kwargs = dict(_app_config.neo4j.driver_kwargs())
+        kwargs["auth"] = (user, password)
+        self.driver = GraphDatabase.driver(uri, **kwargs)
 
     def close(self):
         """Close the Neo4j connection"""

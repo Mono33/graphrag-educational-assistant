@@ -21,6 +21,9 @@ spegne. Una variabile assente o vuota vale il suo default.
 | `OPENROUTER_API_KEY` | — | Nessuna chiamata al modello. Ripiego: `OPENAI_API_KEY` |
 | `LLM_MODEL` | `anthropic/claude-sonnet-5` | Usa il default del codice |
 | `NEO4J_URI` · `NEO4J_USER` · `NEO4J_PASSWORD` | — | Nessun recupero dal Knowledge Graph: lezioni senza fondamento pedagogico |
+| `AIX_NEO4J_CONNECT_TIMEOUT_S` | `5` | Quanto si aspetta la connessione al grafo. **Il default del driver è 60 s**, e una lezione fa dieci domande al grafo: il 2026-09-21 un database raggiungibile ma muto ha tenuto una generazione ferma 3 minuti e 14 |
+| `AIX_NEO4J_RETRY_TIME_S` | `5` | Per quanto si riprova una transazione fallita (default del driver: 30 s) |
+| `AIX_NEO4J_ACQUIRE_TIMEOUT_S` | `10` | Attesa di una connessione libera dal pool |
 | `WEBUI_AUTH_SECRET` | **valore di sviluppo nel codice** | L'app parte e logga un avviso. In produzione significa token di sessione firmati con un segreto pubblico |
 
 ## 2. Modello e chiamate LLM

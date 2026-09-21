@@ -179,12 +179,7 @@ async def lifespan(app: FastAPI):
 
         from aix.core.config import config
 
-        driver_kwargs = {
-            "auth": (config.neo4j.user, config.neo4j.password),
-        }
-        if not config.neo4j.encrypted:
-            driver_kwargs["encrypted"] = config.neo4j.encrypted
-        driver = GraphDatabase.driver(config.neo4j.uri, **driver_kwargs)
+        driver = GraphDatabase.driver(config.neo4j.uri, **config.neo4j.driver_kwargs())
         driver.verify_connectivity()
         driver.close()
         logger.info("✅ Neo4j connection verified")

@@ -522,12 +522,8 @@ async def _knowledge_graph_is_reachable(timeout: float = 3.0) -> bool:
         from aix.core.config import config as app_config
 
         def _check() -> bool:
-            kwargs: dict[str, Any] = {
-                "auth": (app_config.neo4j.user, app_config.neo4j.password),
-                "connection_timeout": timeout,
-            }
-            if not app_config.neo4j.encrypted:
-                kwargs["encrypted"] = app_config.neo4j.encrypted
+            kwargs: dict[str, Any] = dict(app_config.neo4j.driver_kwargs())
+            kwargs["connection_timeout"] = timeout
             driver = GraphDatabase.driver(app_config.neo4j.uri, **kwargs)
             try:
                 driver.verify_connectivity()

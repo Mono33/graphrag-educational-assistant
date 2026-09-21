@@ -13,6 +13,17 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+def _float_env(name: str, default: float) -> float:
+    """A float from the environment, or the default when unset or unreadable."""
+    raw = os.getenv(name)
+    if not raw:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        return default
+
+
 @dataclass
 class Neo4jConfig:
     """Neo4j database configuration"""
@@ -22,6 +33,46 @@ class Neo4jConfig:
     password: str = ""
     database: str = "neo4j"
     encrypted: bool = True
+
+    def driver_kwargs(self) -> dict:
+        """Connection settings for every driver this process opens.
+
+        **Why these exist at all.** The driver's defaults wait up to 60 s for a
+        server that is not answering, and retry a failed transaction for 30 s
+        on top. A lesson asks the graph eleven questions, so on 2026-09-21 —
+        with the database reachable at the TCP and TLS level but silent at the
+        Bolt handshake — a single generation sat in the retrieval phase for
+        minutes, one full minute per question, while the teacher watched a
+        spinner. The private-material branch beside it had finished in one
+        second.
+
+        A database that has not answered in five seconds is not going to
+        rescue this lesson: better to degrade to what we have — the cached
+        embeddings, the teacher's own documents, the external sources — and
+        say so, which is what the retriever card now does.
+
+        ``encrypted`` is only passed when it is False: a ``bolt+s://`` or
+        ``neo4j+s://`` URI already carries the setting, and passing it again
+        makes the driver raise.
+        """
+        kwargs: dict = {
+            "auth": (self.user, self.password),
+            # TCP connect + handshake.
+            "connection_timeout": _float_env("AIX_NEO4J_CONNECT_TIMEOUT_S", 5.0),
+            # How long a failed transaction is retried before giving up.
+            "max_transaction_retry_time": _float_env("AIX_NEO4J_RETRY_TIME_S", 5.0),
+            # Waiting for a free connection from the pool.
+            "connection_acquisition_timeout": _float_env("AIX_NEO4J_ACQUIRE_TIMEOUT_S", 10.0),
+        }
+        if not self.encrypted:
+            kwargs["encrypted"] = self.encrypted
+        return kwargs
+
+    def get_driver(self):
+        """A driver configured to fail fast. See :meth:`driver_kwargs`."""
+        from neo4j import GraphDatabase
+
+        return GraphDatabase.driver(self.uri, **self.driver_kwargs())
 
 
 @dataclass
