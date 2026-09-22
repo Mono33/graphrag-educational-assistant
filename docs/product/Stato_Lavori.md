@@ -613,6 +613,356 @@ il caricamento sia andato a buon fine.
 
 **Verificato:** 742 test passati (i 2 noti su Windows).
 
+---
+
+### 2026-09-21 (pomeriggio) — Il RAG privato regge con più documenti, e le citazioni si verificano
+
+**Test reale con due PDF: funziona.** Entrambi indicizzati (29 e 9 chunk),
+recupero 8 passaggi **da 2** documenti, citazioni a entrambi, Critic approvato.
+Il Knowledge Graph ha contribuito con 84 concetti e 160 relazioni.
+
+| Difetto trovato usandolo | Correzione |
+| --- | --- |
+| Il Writer vedeva solo UUID: non sapeva che i documenti fossero due, e citava solo l'italiano | Passaggi raggruppati sotto il nome del documento (`fce04f7`) |
+| Una versione risultava `ready` **prima** di avere i chunk: chip muta, tray bloccata, e il pulsante Invia si sbloccava su un documento non ricercabile | Lo stato si scrive dopo l'indicizzazione (`fc2a19b`) |
+| Neo4j muto costava **60 s per ogni domanda al grafo**: una generazione ferma 3 minuti e 14 | Timeout centralizzati: 60 s → 10 s (`030921b`) |
+| Il modello scriveva la sua riga «Fonti:» sopra il nostro blocco | La regola sta ora dove il footer è definito (`920c7c0`) |
+| Citazioni a pagine di apparato (standard Common Core) | Verifica del sostegno, vedi sotto |
+
+**Le citazioni ora si verificano** (`0b1c019`, `3586fe5`, `206d1bd`, `bc21b7b`).
+Dopo la scrittura, ogni citazione è confrontata con il passaggio che cita: se
+non lo sostiene **il riferimento sparisce e la frase resta**, perché di solito
+l'affermazione è giusta ed è il puntatore a essere sbagliato. Decisione (a) di
+Angelo.
+
+Il metro è stato costruito **prima** della correzione: 9 casi d'oro su passaggi
+reali. Il conteggio delle parole in comune segna 5/9 con tre falsi allarmi — boccia
+una frase italiana che cita un passaggio inglese, cioè il caso normale. Il modello
+segna 9/9. In caso di dubbio non si tocca niente: timeout, rifiuto o risposta
+illeggibile lasciano la bozza identica.
+
+**Quattro difetti trovati provandolo sul testo vero, non dai casi d'oro** — che
+misurano il giudice, non la tubatura attorno:
+
+1. la frase era tagliata al primo `.?!;:`, e da «espansione comunista **vs.** paura
+   di nuove invasioni» il giudice riceveva «paura di nuove invasioni) .»;
+2. il blocco fra righe vuote inghiottiva un elenco puntato intero, marcatori altrui
+   compresi;
+3. il passaggio era troncato a 700 caratteri, cioè **il 24% della prova**: tolte tre
+   citazioni sane (Bandung, NATO/Varsavia, dottrina Truman) perché la frase che le
+   sosteneva stava nella parte non mostrata;
+4. **il prompt era scritto due volte**, uno nella pipeline e uno nell'harness, e in un
+   giorno erano divergenti: misuravo un prompt che non spedivo. Ora il metro chiama
+   il giudice vero.
+
+**E un difetto vecchio, trovato per caso:** il Planner aveva `max_tokens=2000` —
+la stessa trappola del Writer del 16 settembre. Con un modello di ragionamento il
+JSON esce troncato, il parsing fallisce, e il run prosegue con i default: intento
+LOW, **nessun concetto disciplinare**. Alzato a 4000, e un messaggio che dice
+«troncato» invece di «No valid JSON found».
+
+**Verificato:** 768 test passati (i 2 noti su Windows), casi d'oro 9/9.
+
+---
+
+### 2026-09-22 — Passo 1 del piano API, e quattro difetti trovati usando il prodotto
+
+**Passo 1 fatto** (`13c9a90`): i documenti privati non si cercano più per
+`session_id`. Quella chiave è il `thread_id` di LangGraph e sull'API **la sceglie
+il chiamante**: due integratori che mandano lo stesso valore avrebbero letto i
+documenti l'uno dell'altro. Ora la chiave è `material_scope_id`, la mette chi
+registra la ricerca, e non esiste nello schema pubblico della richiesta.
+
+Il piano prevedeva un ripiego su `session_id` «per non toccare la WebUI».
+Scritto così, poi tolto: **il ripiego riapre la stessa falla**, perché un
+chiamante API che manda l'id di una lezione registrata altrove nello stesso
+processo leggerebbe quei documenti. La WebUI non ne ha bisogno — passa la chiave
+esplicitamente. Nessuno scope, nessun recupero privato.
+
+**Campi sconosciuti nelle richieste API** (`fc69275`): chi scrive `languag`
+invece di `language` oggi si vede ignorare il campo in silenzio. `extra="forbid"`
+lo trasformerebbe in un 422, ma romperebbe il worker che già integra, su codice
+che non controlliamo. Quindi per ora si **logga il nome** dei campi non
+dichiarati — mai il valore, potrebbe contenere testo di una docente — e quando i
+log diranno che nessuno ne manda, stringere sarà una riga.
+
+*Trappola:* la prima versione non funzionava e sembrava funzionare. Il corpo di
+una classe ha **un solo** `model_config` e vince l'ultima assegnazione: la mia
+era codice morto che si leggeva come attivo.
+
+### Quattro difetti trovati provando il prodotto, non leggendolo
+
+| Difetto | Correzione |
+| --- | --- |
+| Un documento piccolo veniva schiacciato: 227 chunk contro 5, e il PEI non entrava mai nei 24 candidati. «8 passage(s) kept from 1» | Pavimento di 4 posti per ogni documento allegato, resto in proporzione a quanto ciascuno ha portato (`ed49446`) |
+| Il terzo allegato rispondeva 422. Non un limite sui file — è `MAX_TOTAL_EXCERPT`, il budget del testo *incollato* nel prompt, che a RAG acceso non viene nemmeno spedito | Il file si salva senza estratto e resta indicizzato. A RAG spento il rifiuto resta: lì l'estratto è l'unico canale (`a0cf2d4`) |
+| I documenti si potevano solo cercare con la graffetta | Trascinamento sul riquadro della chat, stesso endpoint, più file diventano una coda (`a0cf2d4`) |
+| Una lezione con tre allegati ne citava uno solo | Due cause, sotto (`595b0e5`) |
+
+**Sulla quota:** allargare l'ingresso non bastava, e l'ho scoperto misurando. Le
+due classifiche venivano **troncate prima della fusione**, quindi i passaggi del
+documento corto sparivano prima che il pavimento potesse vederli. Ora si fondono
+per intero. Sui casi d'oro i numeri sono **identici** (recall@3 0,92 · MRR 0,86 ·
+boilerplate 0,07); sul caso reale la ripartizione passa da 8/0 a 5/3.
+
+**Sulle citazioni sparite**, due cause e la seconda nascosta dietro la prima:
+
+1. il mio prompt diceva che «un elenco di standard curricolari è apparato». Nel
+   PDF americano lo è — i Common Core sono un'appendice a una scheda sulla
+   guerra fredda. Nelle **Indicazioni nazionali gli obiettivi *sono* il
+   documento**, e una lezione che ne enuncia uno sta citando benissimo. La regola
+   ora guarda che cosa afferma la frase, non il genere del passaggio, e nei casi
+   d'oro ci sono entrambe le situazioni: stesso tipo di testo, verdetti opposti;
+2. il giudizio era **in un solo lotto**, tutte le citazioni insieme. Con sei
+   affermazioni sullo stesso documento, quattro delle quali attività inventate
+   dal modello, bocciava anche le due sane. Misurato: **11/11 una alla volta,
+   10/11 in lotto**, e quella persa era proprio il caso limite. Ora una chiamata
+   per citazione, tutte in parallelo: una lezione con dieci citazioni costa un
+   giro di rete, non dieci.
+
+**Verificato:** 780 test passati (i 2 noti su Windows), casi d'oro del recupero
+identici, casi d'oro delle citazioni **11/11**.
+
+### Quell'11/11 era comprato male — il giudice non deve conoscere i documenti
+
+Angelo, guardando il prompt: *«non possiamo creare prompt specifici per ogni tipo
+di documento … lo strumento deve rimanere generico e deve essere in grado di
+gestire doc diversi e nuovi»*. Aveva ragione, ed era un difetto del codice
+scritto poche ore prima: per arrivare a 11/11 il prompt elencava tre generi e per
+spiegarli citava le Indicazioni nazionali, i Common Core, «Reagan», «la LIM».
+Una **tassonomia ricavata dai tre PDF di prova**. Un manuale, un articolo,
+un'antologia, un testo di legge non ricadono in nessuna di quelle voci.
+
+Le tre voci dicevano però la stessa cosa, che avevo scoperto un caso alla volta
+invece di enunciarla una volta sola: **il genere del passaggio non decide niente,
+decide che cosa fa la frase.** Chi racconta sostiene chi racconta lo stesso
+fatto; chi prescrive o propone sostiene chi prescrive o propone la stessa cosa;
+nominare un argomento non è affermarne qualcosa. La *forma* del giudizio ora si
+insegna con esempi **inventati e senza materia** — due coppie in cui lo stesso
+passaggio sostiene una frase e non ne sostiene un'altra — invece che con i
+documenti che abbiamo sottomano.
+
+Tre riscritture, tutte misurate:
+
+| Prompt | Corretti | Non sostenute prese | Falsi allarmi |
+| --- | --- | --- | --- |
+| Solo il principio, in prosa | 9/11 | 5/5 | 2 |
+| **+ esempi astratti** — tenuto | **10/11** | **5/5** | **1** |
+| + «nel dubbio tieni la citazione» | 9/11 | 4/5 | 1 |
+
+La terza riga è istruttiva: l'asimmetria dei costi è vera come **decisione di
+prodotto** — togliere una citazione buona costa più che lasciarne una da
+verificare — e come **istruzione al giudice** non funziona. Non ha recuperato il
+caso al limite e ha fatto passare lo standard che nomina «Reagan». Revocata sulla
+misura, non sull'impressione.
+
+**Il punto perso è rimasto perso, di proposito.** È la riformulazione più larga
+dei casi: «ruoli definiti» e «turni di parola» sono parole della lezione, il
+passaggio dice «formulando domande, dando risposte» — e onestamente l'etichetta
+è discutibile quanto il verdetto. Un caso al limite non vale un prompt da
+aggiornare a ogni genere nuovo che una docente allega. Si chiude **allargando i
+casi d'oro a tipi di documento che non abbiamo ancora provato**, che dirà anche
+se le prescrizioni riformulate falliscono come classe o solo qui.
+
+**Verificato:** casi d'oro 10/11 con 5/5 e un falso allarme, 743 test unitari
+passati (i 2 noti su Windows), nessun nome di documento nel prompt — restano
+solo nei commenti che registrano gli incidenti.
+
+### Un numero di rivista da 13,5 MB, e il limite che misurava la cosa sbagliata
+
+Angelo prova ad allegare `Internazionale1682.pdf` e non capisce se il file non
+sia processabile o se l'allegato sia rotto. **Dal log non si poteva sapere**:
+c'era solo `POST /webui/lesson/…/upload 422`, senza un motivo. Per scoprirlo
+bisognava leggere il codice. Ora ogni rifiuto scrive nome, dimensione e ragione
+— il nome e il peso, **mai il contenuto**: il file è della docente.
+
+Il limite era 10 MB e risale a quando un allegato arrivava all'agente solo
+incollato per intero nel prompt. Misurato quel PDF: **114 pagine, 375 000
+caratteri di testo pulito, letti da pypdf in 4 secondi, zero OCR.** I 13,5 MB
+sono le fotografie della rivista. Una scansione da 9 MB sarebbe invece passata
+e sarebbe costata minuti. **I byte sono un cattivo sostituto del lavoro**, e il
+lavoro è già limitato dove va limitato: `MAX_PAGES = 200` e OCR a concorrenza 1.
+Alzato a **100 MB**, su richiesta.
+
+Quello che il limite in byte continua a proteggere è la **memoria**, perché
+l'upload sta tutto in RAM mentre viene analizzato — e lì c'era il secondo
+difetto: la dimensione veniva controllata **dopo** la lettura. A 10 MB era
+sciatteria; a 100 MB una docente che trascina un video avrebbe speso alla VM da
+4 GB l'intero file prima di sentirsi dire di no. Ora si rifiuta sulla dimensione
+dichiarata nel multipart, prima di leggere, e il controllo dentro `save_upload`
+resta valido per i client che non la dichiarano.
+
+Terzo difetto, piccolo e velenoso: il messaggio diceva «massimo 10 MB» in una
+stringa **accanto** alla costante. Alzare l'una avrebbe lasciato leggere l'altra.
+Ora deriva dalla costante.
+
+**Su questo limite non c'era un solo test** — l'ho cambiato e niente mi avrebbe
+fermato. Tre nuovi test, verificati rimettendo la stringa letterale e guardandone
+fallire due.
+
+**Deploy:** davanti c'è **Caddy**, che non impone un limite al corpo della
+richiesta, quindi i 100 MB arrivano a FastAPI e `deploy/` non cambia. Con nginx
+sarebbe stato un `413` a 1 MB, scoperto il giorno del pilota. Da tenere a mente
+sulla VM: `MAX_FILES_PER_LESSON` (12) × 100 MB è il disco che una singola
+lezione può occupare.
+
+**E non bastava.** Angelo riprova, il file non si carica lo stesso, e il log —
+che finalmente il motivo lo scriveva — diceva ancora «massimo 10 MB». Un file
+attraversa **due** gate: `lessons.uploads`, l'allegato in chat, e
+`parsing.intake`, l'ingresso della pipeline RAG. Avevo alzato il primo.
+`IntakeRejected` è una `ValueError`, quindi i due rifiuti escono identici, con
+lo stesso 422 e la stessa forma: da fuori non c'era modo di distinguerli, ed è
+per questo che sembrava un upload rotto invece di un file rifiutato.
+
+**Due controlli che devono concordare sono un controllo scritto due volte.** Il
+numero ora sta in `intake` — lo strato basso che entrambi i percorsi già
+importano — e `uploads.MAX_FILE_BYTES` è un alias tenuto per chi lo importa. La
+frase italiana era scritta **tre** volte: i due gate e il tooltip della
+graffetta, che continuava a promettere 10 MB. Ora derivano tutte dalla costante.
+
+Nota sul test: il primo tentativo imbottiva di zeri un'intestazione PDF fino a
+13,5 MB, e intake lo ha rifiutato come corrotto prima ancora di arrivare alla
+dimensione. Faceva bene. Il test ora afferma il conteggio dei byte: un file da
+14 MB nel repo è un pessimo modo di dimostrare un limite, e uno finto non
+dimostra niente.
+
+**Verificato:** 749 test unitari passati (i 2 noti su Windows), regressione
+provata rimettendo il vecchio numero in `intake` e guardando fallire due test.
+
+### «Non si capisce cosa succede» — e infatti non lo diceva nessuno
+
+Terzo tentativo, stesso file, e la pagina non fa **niente**. Il log però diceva
+che l'upload era andato: 280 chunk indicizzati. Tre difetti, e nessuno dei tre
+era l'upload.
+
+**1. htmx applica solo le risposte 2xx.** La rotta risponde con 422 e una frase
+scritta per la docente, e htmx buttava via la risposta intera. Tutti i rifiuti
+di oggi — il limite di dimensione, due volte — esistevano **solo nel log del
+server**. La pagina non stava fallendo nello spiegare: le veniva data la
+spiegazione e la scartava.
+
+**2. L'errore non aveva dove atterrare.** L'input punta a `#chat-attachments`
+con `outerHTML`: un errore lasciato entrare lì avrebbe sostituito il tray con
+un paragrafo, **distruggendo il bersaglio dello swap** — e dopo, nessun upload
+avrebbe più potuto mostrarsi senza un reload. Ora gli errori hanno uno slot
+loro, sopra il tray, con lo stile di swap sovrascritto.
+
+**3. E la richiesta poteva non rispondere affatto.** SQLite era rimasto in
+`journal_mode=delete` mentre il worker di ingestione gira **dentro lo stesso
+processo** delle rotte: indicizzare la rivista ha tenuto il lock in scrittura
+per 17 secondi, e la richiesta di upload — che nel frattempo annotava il
+manifest della lezione — non è mai tornata. Nessuna risposta, nessun chip, e il
+file indicizzato lo stesso: la pagina sembrava rotta mentre il lavoro riusciva.
+Si vedeva solo dal log di accesso, dove il `POST /upload` non aveva riga.
+
+WAL lascia lavorare il lettore mentre lo scrittore scrive; `busy_timeout` copre
+il caso di due scrittori, e i 30s sono misurati sulla durata di una transazione
+di ingestione, non sulla pazienza di una persona. `htmx:sendError` e
+`htmx:timeout` ora lo dicono, invece di lasciare la pagina muta.
+
+In più: il parsing di quel documento dura **4,7 secondi** misurati, e nessuno lo
+diceva. Ora l'upload nomina il file e il suo peso mentre lavora.
+
+**Verificato:** 754 test unitari passati (i 2 noti su Windows), 5 nuovi che
+fissano la struttura su cui si appoggiano i listener, `journal_mode=wal` sul
+database di sviluppo.
+
+### «13 pagine non lette», e chi doveva indovinare il perché
+
+Sono le **pubblicità e le foto a piena pagina** del settimanale: pagine 2, 3, 4,
+7, 9, 11, 12, 15 all'apertura, poi 27, 49, 107, 108. Zero caratteri, tutte con
+immagini. E l'OCR non ci ha provato perché **tesseract non è installato su
+questa macchina** — un fatto che il parser registra come `ocr_unavailable` e che
+il chip buttava via, lasciando alla docente un triangolo di avviso, un numero e
+nessun modo di distinguere una rivista normale da un upload rotto.
+
+Il chip ora dice **quali** pagine e **perché**, distinguendo «l'OCR non era
+disponibile» da «l'OCR ha provato e non è riuscito»: sono due situazioni
+diverse e solo la seconda è un problema di qualità del documento. E il triangolo
+è sparito dal caso normale: 13 pagine su 114 sono le foto di una rivista, non un
+guasto. Resta dove serve — documento illeggibile, OCR di bassa qualità, o più di
+un quarto delle pagine non lette, perché lì la lezione verrebbe scritta da una
+frazione di quello che è stato allegato.
+
+*Nota per il pilota:* sulla VM tesseract va installato, altrimenti ogni
+scansione entrerà nell'indice vuota. Qui non c'è, e finora non se n'era accorto
+nessuno.
+
+### Citazioni sulle attività invece che sui contenuti
+
+Lezione sull'attualità dal settimanale: **5 citazioni su 5 rimosse**, e il
+giudice aveva ragione tutte e cinque le volte. I marcatori stavano su
+«Distribuzione di brevi estratti a stazioni», «Analisi guidata dalla docente
+della mappa», «Si proietta sulla LIM la copertina»: **attività didattiche
+inventate dal Writer**, che nel giornale non ci sono. Le frasi che venivano
+davvero dal documento — gli arresti, le deportazioni nei paesi terzi — non
+avevano alcun marcatore.
+
+Writer e giudice seguivano due definizioni diverse di citazione, per colpa di
+un'istruzione che avevo scritto io: «metti il marcatore subito dopo la frase che
+lo usa». In un piano di lezione la frase che *usa* un passaggio è l'attività.
+Ora l'istruzione dice di marcare la frase che **afferma qualcosa preso dal
+documento** — un fatto, un dato, un termine — e non l'attività che se ne serve.
+Da riprovare: è un cambio di prompt, e su quelli le previsioni valgono poco.
+
+### Storia dei commit condensata
+
+Venti commit per 30 file, sei dei quali iterazioni sullo stesso controllo delle
+citazioni, compresi tentativi poi revocati. Condensati in **4**, uno per area,
+con messaggi brevi: il racconto sta qui, che è il posto suo. Ramo
+`backup/pre-squash-20260922` con i venti originali, da cancellare dopo il push;
+il diff fra quello e la nuova testa è solo il lavoro fatto dopo.
+
+**Verificato:** 763 test unitari passati (i 2 noti su Windows).
+
+### Il marcatore sul contenuto: misurato sulla stessa lezione
+
+Rigenerata la lezione sull'attualità dal settimanale, stesso documento, dopo la
+correzione dell'istruzione al Writer:
+
+| | prima | dopo |
+| --- | --- | --- |
+| citazioni prodotte | 5 | **10** |
+| rimosse dal controllo | 5 | 3 |
+| **sopravvissute** | **0** | **7** |
+
+E le tre rimosse sono quelle giuste: «Domanda guida: quali ripercussioni
+potrebbe avere questa politica…» (due volte) e «Collegamento interdisciplinare:
+lettura di variazioni percentuali» — domande e attività della docente, che nel
+giornale non esistono. Le sette rimaste stanno su contenuto verificabile: la
+definizione dell'ICE (p. 1), la promessa di espulsioni e i numeri degli arresti
+(p. 40), i due migranti uccisi (p. 42), il Ghana (p. 46), i sondaggi (p. 44).
+
+**«Fonti dai tuoi materiali — Internazionale1682.pdf, pp. 1, 40, 42, 44, 46».**
+È la prima volta che la catena completa funziona su un documento vero.
+
+### La nota sulle fonti stampata due volte
+
+Nella stessa lezione, a fondo pagina, «⚠️ Nota sulle fonti» compariva **due
+volte**, con il footer `*Fonti:*` in mezzo: una copia con i riferimenti
+pedagogici aggiunti, una nuda. Due istruzioni del prompt rivendicavano
+entrambe l'ultima posizione — *«Output order: … → footer Fonti»* e *«at the end
+of EVERY response, include this disclaimer»* — e il modello le soddisfaceva
+nell'unico modo possibile: scrivendola prima del footer **e** dopo.
+
+Il prompt ora dice quale delle due viene per ultima e che la nota compare
+**esattamente una volta**. Ma i prompt oggi mi hanno già smentito due volte, e
+lo stesso difetto — due istruzioni che chiedono una cosa sola due volte — aveva
+già prodotto il doppio elenco delle fonti *dopo* essere stato corretto una
+prima volta. Quindi sotto c'è anche una **rete deterministica** al render, che
+tiene la prima copia: è quella scritta nel contesto, e dove il modello ci ha
+messo i riferimenti non si perdono.
+
+**Verificato:** 763 test unitari passati (i 2 noti su Windows), 5 nuovi sulla
+rete, di cui uno controlla che il percorso di render la usi davvero — una
+protezione che nessuno invoca non protegge niente.
+
+**Aperto:** il buco API ↔ RAG privato (piano in `Piano_RAG_Effimero_API.md`,
+passo 0 da fare comunque: `session_id` è scelto dal chiamante ed è anche la
+chiave dei materiali); la verifica confronta con i **passaggi recuperati**, non
+con la pagina intera, quindi una citazione corretta può cadere se il recupero non
+ha preso il pezzo giusto.
+
 **Aperto, non toccato:** il KG non trova concetti per «guerra fredda» (corretto:
 il grafo è di pedagogia, la storia sta nei documenti); `[Invalid Label]
 'ConceptMapping'` da text2cypher, preesistente; e il database di sviluppo contiene

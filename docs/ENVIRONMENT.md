@@ -43,6 +43,7 @@ spegne. Una variabile assente o vuota vale il suo default.
 
 | Variabile | Default | A cosa serve |
 | --- | --- | --- |
+| `AIX_PLANNER_MAX_TOKENS` | `4000` | Token in uscita per il piano. **Stessa trappola del Writer**: a 2000 con un modello di ragionamento il JSON esce troncato, il parsing fallisce e il run prosegue con i default — nessun concetto disciplinare (2026-09-21) |
 | `AIX_WRITER_MAX_TOKENS` | `8000` | Token in uscita per una lezione. **Troppo basso con un modello di ragionamento = zero caratteri**: a 2000 il budget se n'è andato nel pensiero (2026-09-16) |
 | `AIX_WRITER_MIN_CONTENT_TOKENS` | `4000` | Pavimento del secondo tentativo dopo una risposta vuota |
 | `AIX_WRITER_MAX_CONTINUATIONS` | `1` | Chiamate di continuazione se la risposta è troncata |
@@ -86,6 +87,8 @@ Tutte spente: §5.2 dice che a flag spente il prodotto è quello di prima.
 | `AIX_PRIVATE_RAG_BUDGET_CHARS` | `12000` | Quanto prompt spetta al materiale privato (§8.7) |
 | `AIX_PRIVATE_RAG_HYBRID` | `true` | Fonde la ricerca per parole con quella vettoriale (§8.5). Spegnerla torna al solo vettoriale: serve a bisezionare una regressione, non è una configurazione da tenere — sui casi d'oro l'ibrida è migliore su tutte le misure |
 | `AIX_VALIDATOR_MAX_RETRIES` | `2` | Riscritture che il validatore può chiedere |
+| `AIX_CITATION_CHECK_ENABLED` | `true` | Verifica che il passaggio citato sostenga la frase, e toglie il riferimento quando non lo sostiene (la frase resta). Costa una chiamata al modello, e **solo** se la bozza contiene citazioni ai materiali privati |
+| `AIX_CITATION_CHECK_MODEL` | come `LLM_MODEL` | Modello diverso per quella verifica |
 
 ## 4. WebUI, database, sicurezza
 
