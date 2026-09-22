@@ -3,8 +3,8 @@
 **Progetto:** Agentic GraphRAG — Sistema multi-agente per la pianificazione delle lezioni
 **Owner:** FEM AI Team
 **Tipo di documento:** Riferimento tecnico per ingegneria, integrazione e operazioni
-**Versione:** 1.3
-**Ultimo aggiornamento:** Luglio 2026
+**Versione:** 1.4
+**Ultimo aggiornamento:** Settembre 2026
 
 ---
 
@@ -17,6 +17,7 @@
 | 1.1 | Giugno 2026 | Aggiunto il livello media dinamici (§7.8) e le variabili `AIX_MEDIA_*` (§8.2); note sulla media-cache (§3.4/§7.5); item di test e runbook per i media live (§10.3/§16.1); riconciliazione YouTube (§7.6); indice riallineato ai titoli reali. |
 | 1.2 | Giugno 2026 | storia delle modifiche spostata in testa al documento; alleggerimenti redazionali. |
 | 1.3 | Luglio 2026 | Riallineamento al codice corrente: UX docente WebUI a due fasi, profili salvati, intento pedagogico, raffinamento SAM, badge UDL, pannello "Cosa esplorare dopo", export MD/TXT/PDF, default Writer aggiornato, note CSS, registrazione primo utente e concorrenza multi-worker con registro run su database. |
+| 1.4 | Settembre 2026 | Riallineamento dei controlli già implementati: marcatura dei contenuti IA, limiti di concorrenza e rate limiting per utente; aggiunti gli errori 429/503, i limiti del paperclip corrente e lo stato in corso delle funzionalità avanzate di input ed export. |
 
 ---
 
@@ -354,7 +355,7 @@ Quando `AIX_CORRECTIVE_RAG_ENABLED=true`, un nodo extra `grade_retrieval` viene 
 
 | Package | Responsabilità |
 |---|---|
-| `aix.core` | Configurazione condivisa (`config.py`), connectivity probe, utility trasversali |
+| `aix.core` | Configurazione condivisa, connectivity probe, limiti di concorrenza/rate limiting, registro delle run e marcatura dei contenuti IA |
 | `aix.retrieval` | Retrieval GraphRAG: Text2Cypher, retriever ibrido sul grafo, context builder, metriche di query |
 | `aix.generation` | Generazione di risposte LLM per il percorso GraphRAG legacy (`llm_chain.py`) |
 | `aix.agent` | Pipeline agentica: orchestrator, graph/nodes/state LangGraph, i 4 agenti, prompt, media, tool, config dei prompt di dominio |
@@ -454,7 +455,10 @@ Il progetto usa il moderno **src layout**: tutto il codice importabile vive sott
 src/aix/
 ├── core/
 │   ├── config.py             # `from aix.core.config import config` — Neo4j/LLM/embeddings config
-│   └── connectivity_probe.py # one-shot startup LLM-endpoint probe (TLS/DNS/401/timeout)
+│   ├── connectivity_probe.py # one-shot startup LLM-endpoint probe (TLS/DNS/401/timeout)
+│   ├── concurrency.py        # run/LLM caps, load shedding e rate limiting per utente
+│   ├── run_registry.py       # coordinamento delle run per lezione (memory/PostgreSQL)
+│   └── ai_marking.py         # marcatura machine-readable e disclosure dei contenuti IA
 ├── retrieval/                # GraphRAG retrieval layer
 │   ├── text2cypher.py            # NL → Cypher conversion (+ self-repair)
 │   ├── multilingual_text2cypher.py # IT/EN translation wrapper around text2cypher
@@ -572,7 +576,7 @@ Esaurisce l'intera pipeline **Planner → Retriever → Writer → Critic** e ri
 | `language` | `"it"` \| `"en"` | — | Lingua di output (default `it`) |
 | `session_id` | string (≤128) | — | Id di correlazione/thread; UUID4 generato se omesso |
 | `educational_profile` | `EducationalProfile` | — | Contesto di classe/aula (CORE 1 #2.5) |
-| `teacher_provided_context` | string (≤48000) | — | Testo unito dagli upload; solo Writer, **non** ingerito nel KG |
+| `teacher_provided_context` | string (≤48000) | — | Testo unito dagli upload; usato nel primo passaggio del Writer, **non** ingerito nel KG; vedere il limite di revisione in §14.1 |
 | `max_revisions` | int (0–4) | — | Cap del ciclo Critic; `null` → `AIX_MAX_REVISIONS` (default 1); `0` disabilita |
 
 Richiesta minimale:
@@ -610,7 +614,7 @@ Richiesta minimale:
 }
 ```
 
-**Codici di stato:** `200` successo · `401` auth mancante/non valida · `422` errore di validazione del body · `502` errore a runtime della pipeline agenti (fallimento LLM, KG irraggiungibile — potenzialmente ritentabile).
+**Codici di stato:** `200` successo · `401` auth mancante/non valida · `422` errore di validazione del body · `429` limite per utente superato (`Retry-After`) · `503` capacità concorrente esaurita · `502` errore a runtime della pipeline agenti (fallimento LLM, KG irraggiungibile — potenzialmente ritentabile).
 
 ### 5.4 `POST /api/v1/agent/stream` — Server-Sent Events
 
@@ -667,6 +671,8 @@ Tutti i campi sono opzionali; omettere il profilo fa sì che l'agente ricada su 
 ### 5.8 Modello degli errori
 
 - Gli endpoint dell'agente sollevano `502 Bad Gateway` (non `500`) quando fallisce la *pipeline* — comunicando che la route stessa non è crashata e che la richiesta può essere ritentabile.
+- Prima dell'avvio della pipeline, il superamento del budget per utente produce `429 Too Many Requests` con header `Retry-After`.
+- Per `POST /api/v1/agent/run`, l'esaurimento degli slot concorrenti entro la finestra di coda produce `503 Service Unavailable`; sul percorso SSE lo stesso stato viene comunicato come evento terminale `error`.
 - Lo stream SSE non lascia mai attraversare un'eccezione il confine del generator: i fallimenti sono emessi come evento terminale `error` (trattato come dato di dominio).
 - Gli errori di validazione (`422`) seguono la forma standard FastAPI `{"detail": [...]}`.
 
@@ -698,7 +704,7 @@ Tutti i campi sono opzionali; omettere il profilo fa sì che l'agente ricada su 
 
 ### 6.4 Agente Writer
 
-`agent/agents/writer_agent.py` (nodo `write`) genera il piano di lezione. Il suo prompt è assemblato dal **prompt specifico per intento** (`agent/prompts/`), dall'**estensione di prompt di dominio** (`agent/configs/`), dal **profilo educativo**, dall'eventuale **intento pedagogico confermato dal docente**, dal **contesto recuperato + media**, dall'eventuale **contesto fornito dal docente**, dall'eventuale **istruzione di raffinamento SAM** e da qualsiasi **storico/riassunto della conversazione**. La lunghezza dell'output è limitata da `AIX_WRITER_MAX_TOKENS` (default codice 8000; il template prod può impostare un cap più conservativo, es. 2000) con fino a `AIX_WRITER_MAX_CONTINUATIONS` continuazioni automatiche quando il modello raggiunge `finish_reason="length"`. Nella WebUI i token del writer fanno streaming live (`writer_chunk`); l'API pubblica consegna l'output del writer come singolo evento `writer` per revisione.
+`agent/agents/writer_agent.py` (nodo `write`) genera il piano di lezione. Nel primo passaggio il suo prompt è assemblato dal **prompt specifico per intento** (`agent/prompts/`), dall'**estensione di prompt di dominio** (`agent/configs/`), dal **profilo educativo**, dall'eventuale **intento pedagogico confermato dal docente**, dal **contesto recuperato + media**, dall'eventuale **contesto fornito dal docente**, dall'eventuale **istruzione di raffinamento SAM** e da qualsiasi **storico/riassunto della conversazione**. La lunghezza dell'output è limitata da `AIX_WRITER_MAX_TOKENS` (default codice 8000; il template prod può impostare un cap più conservativo, es. 2000) con fino a `AIX_WRITER_MAX_CONTINUATIONS` continuazioni automatiche quando il modello raggiunge `finish_reason="length"`. Nella WebUI i token del writer fanno streaming live (`writer_chunk`); l'API pubblica consegna l'output del writer come singolo evento `writer` per revisione. Limitazione corrente: il percorso `writer.revise()` richiamato dal Critic riceve la bozza e le istruzioni di revisione, ma non reinietta `teacher_provided_context`; questo va corretto prima di abilitare il trattamento avanzato dei materiali.
 
 ### 6.5 Agente Critic e ciclo di revisione
 
@@ -872,6 +878,16 @@ La configurazione è guidata dall'ambiente. `src/aix/core/config.py` carica le v
 | `AIX_CORRECTIVE_RAG_MAX_ATTEMPTS` | `2` | Budget di retry quando CR è on (1–4) |
 | `AIX_CONVERSATION_WINDOW_TURNS` | `4` | Turni verbatim prima del summary buffering |
 | `AIX_LLM_PROBE_ENABLED` | `true` | Connectivity probe LLM all'avvio |
+
+**Concorrenza e protezione dal carico** (limiti per-processo; il coordinamento condiviso è indicato in §17.2)
+
+| Variabile | Default | Scopo |
+|---|---|---|
+| `AIX_MAX_CONCURRENT_RUNS` | `6` | Numero massimo di pipeline agentiche contemporanee per processo |
+| `AIX_RUN_QUEUE_TIMEOUT_S` | `5.0` | Attesa massima di uno slot prima del load shedding |
+| `AIX_MAX_CONCURRENT_LLM_CALLS` | `12` | Tetto alle chiamate LLM contemporanee per processo |
+| `AIX_USER_RATE_LIMIT` | `10` | Numero di run avviabili da un utente nella finestra; `0` disabilita |
+| `AIX_USER_RATE_WINDOW_S` | `60.0` | Durata in secondi della finestra mobile del rate limiter |
 
 **Media dinamici / live** (vedere §7.8; tutti opzionali e con default sicuro — il livello è disattivo finché `AIX_MEDIA_LIVE_ENABLED` non è true)
 
@@ -1147,7 +1163,7 @@ Vedere §8.3. In sintesi: i segreti sono solo da ambiente (`.env` / `deploy/.env
 
 ### 13.5 Rate limiting
 
-Non c'è un rate limiter a livello applicativo nel pilot. Il throttle naturale è dato dai rate limit del provider LLM (OpenRouter), e Caddy può imporre limiti a livello di connessione al bordo se richiesto. Il rate limiting per-utente a livello applicativo è un candidato per una wave successiva se l'abuso diventa una preoccupazione. (Nota: il livello media dinamici di §7.8 ha un proprio rate limiting solo verso le API esterne come Semantic Scholar, non sulle chiamate LLM degli agenti.)
+Il pilot applica un **rate limiter per utente** con finestra mobile prima di acquisire uno slot di generazione. I default consentono 10 avvii in 60 secondi (`AIX_USER_RATE_LIMIT`, `AIX_USER_RATE_WINDOW_S`); il superamento produce `429 Too Many Requests` con `Retry-After`. L'implementazione corrente è in-memory e per-processo: con più worker garantisce protezione locale, ma non una quota globale perfettamente condivisa. Un backend condiviso (es. Redis) resta un'evoluzione di scaling (§17.2). Separatamente, i semafori di processo limitano pipeline e chiamate LLM concorrenti; i provider esterni mantengono inoltre i propri rate limit.
 
 ### 13.6 Isolamento di rete
 
@@ -1159,7 +1175,7 @@ Il sistema è progettato per rendere esplicito il coinvolgimento dell'IA, in lin
 
 - **Trasparenza in-product (implementata):** la WebUI mostra spiegabilità per fase (intento/scope del planner, coverage tier del retriever, score del critic) e un banner esplicito quando una lezione è composta con copertura KG ridotta o da fonti esterne ("La lezione è generata con queste limitazioni…"). Gli output sono sempre presentati come bozze generate da IA da rivedere da parte di un educatore umano.
 - **Human-in-the-loop:** il docente è il decisore; il sistema produce bozze, non contenuti autorevoli. Il ciclo Critic e i segnali di copertura supportano, ma non sostituiscono, il giudizio umano.
-- **Marcatura IA machine-readable (pianificata):** un marcatore a livello di risposta (es. un header `X-AI-Generated` e/o un commento Markdown embedded sui piani di lezione esportati) è tracciato come enhancement di compliance così che i consumatori a valle e gli artefatti esportati possano essere identificati programmaticamente come IA-assistiti. Non è ancora imposto nel codice e dovrebbe essere aggiunto prima di qualsiasi rollout esterno/pubblico.
+- **Marcatura IA machine-readable (implementata):** i contenuti finalizzati portano l'header HTTP `X-AI-Generated: true` sulle superfici applicabili e un commento HTML idempotente nel Markdown con identificatore del sistema e `trace_id`. La copy umana "Generato dall'IA" è centralizzata e riutilizzata dalla WebUI e dagli artefatti esportati; l'export testuale rimuove il commento tecnico senza eliminare la disclosure destinata all'utente.
 
 Fare riferimento al documento normativo per la mappatura completa agli obblighi EU AI Act e UNI/PdR; questa sezione cattura solo i controlli tecnici.
 
@@ -1178,7 +1194,8 @@ Il flusso principale della WebUI è server-driven (Jinja2 + htmx + SSE) e oggi i
 3. **Storico e biblioteca lezioni.** Le lezioni e i turni conversazionali sono persistiti in SQL (`lesson`, `lesson_message`) e alimentano la libreria, il dettaglio lezione e i follow-up multi-turno.
 4. **Raffinamento SAM.** Nel footer della lezione il pannello "Raffina" offre cinque opzioni (`Semplifica`, `Approfondisci`, `Più attività`, `Adatta alla classe`, `Personalizza`) che diventano `refinement_instruction` per una nuova run sulla stessa lezione.
 5. **Segnali pedagogici in UI.** La card finale mostra pill di intento pedagogico, badge UDL quando sono disponibili conteggi sui tre principi e il pannello "Cosa esplorare dopo" con concetti KG adiacenti.
-6. **Export.** Ogni lezione finalizzata espone download MD/TXT e una pagina print-friendly per generare PDF tramite il dialog di stampa del browser.
+6. **Paperclip corrente.** Gli allegati sono gestiti dalle route WebUI di upload/rimozione e salvati su disco per lezione. Sono accettati PDF digitali, TXT e Markdown, fino a 10 MB per file e 12 file per lezione; il testo viene estratto sincronicamente e limitato a 8.000 caratteri per file / 48.000 complessivi. Gli estratti entrano solo nel primo prompt del Writer come `teacher_provided_context`, non nel Knowledge Graph. Non sono ancora supportati immagini/OCR, DOCX, PPTX, retrieval privato o modifica del file sorgente. Se il Critic richiede una revisione automatica, il contesto degli allegati non viene oggi reiniettato nel metodo `writer.revise()`.
+7. **Export corrente.** Ogni lezione finalizzata espone download MD/TXT e una pagina print-friendly per generare PDF tramite il dialog di stampa del browser.
 
 ### 14.2 Mode B — integrazione nativa AixLearning
 
@@ -1295,7 +1312,8 @@ Elementi intenzionalmente fuori scope per il pilot attuale (tracciati nel backlo
 - Rifinitura della copy italiana, accessibilità, breakpoint mobile e build Tailwind CLI dedicata.
 - Copertura end-to-end automatica completa della pipeline media e del flusso di upsell (attualmente validati manualmente — §10.3).
 - Parità di contenuti UDL (arricchimento del media-mapping) e criteri Critic UDL arricchiti; integrazione del Critic con le domain-config rispecchiando il pattern del Writer.
-- Rate limiting condiviso a livello applicativo e autorizzazione per-tenant.
+- Rate limiting condiviso tra worker/repliche e autorizzazione per-tenant; il rate limiting locale per utente è già implementato (§13.5).
+- **Funzionalità avanzate in corso di pianificazione e implementazione:** evoluzione del paperclip per PDF, immagini, DOCX e PPTX con elaborazione asincrona, OCR, retrieval privato, citazioni e revisione assistita; export server-side in PDF/scaletta e integrazioni modificabili con Google Slides e Google Classroom. Queste capacità sono in evoluzione e non fanno parte del comportamento corrente descritto nelle sezioni operative.
 - Decisione su `lesson_template.txt` (collegarlo al Writer o rimuoverlo).
 
 ### 17.2 Concorrenza & scaling
