@@ -1757,6 +1757,10 @@ body.aix-body {
   border-color: var(--aix-status-warning, #d97706);
   background: var(--aix-status-warning-soft, #fef3c7);
 }
+.aix-chat-input-shell--drop {
+  border-color: var(--aix-status-success);
+  background: var(--aix-status-success-soft);
+}
 .aix-attach-chip--ready {
   border-color: var(--aix-status-success);
   background: var(--aix-status-success-soft);

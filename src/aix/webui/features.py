@@ -53,12 +53,15 @@ def upload_accept_attribute() -> str:
 
 def upload_hint() -> str:
     """The tooltip on the paperclip, in the teacher's words."""
+    from aix.webui.materials.parsing.intake import MAX_BYTES
+
+    limit = f"max {MAX_BYTES // (1024 * 1024)} MB"
     if upload_parser_enabled():
         return (
             "Allega PDF, Word, PowerPoint, testo o immagini (anche scansioni) "
-            "come contesto per la lezione (max 10 MB)"
+            f"come contesto per la lezione ({limit})"
         )
-    return "Allega PDF, TXT o Markdown come contesto per la lezione (max 10 MB)"
+    return f"Allega PDF, TXT o Markdown come contesto per la lezione ({limit})"
 
 
 def register(templates) -> None:

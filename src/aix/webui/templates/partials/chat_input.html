@@ -84,10 +84,24 @@
          hx-trigger="change"
          hx-target="#chat-attachments"
          hx-swap="outerHTML"
-         hx-on::after-request="this.value = ''" />
+         hx-on::after-request="this.value = ''; window.aixUploadNext && window.aixUploadNext(this)" />
 
   {# Attachment chips tray (P3). Re-rendered by /upload + DELETE responses
      via the htmx hooks on this same id. Empty when no files are attached. #}
+  {#
+    Where an upload says what it is doing, and why it was refused.
+
+    Outside the tray deliberately: the tray is replaced wholesale by every
+    upload and delete response, so a message rendered inside it would be swept
+    away by the next swap — and an error swapped *over* it would take the swap
+    target with it, leaving the page with no ``#chat-attachments`` at all and
+    no working upload until a reload.
+  #}
+  <div id="chat-upload-status" class="px-2 space-y-1" aria-live="polite">
+    <p id="chat-upload-busy" class="text-sm text-slate-600"></p>
+    <div id="chat-upload-error" role="alert"></div>
+  </div>
+
   {% include "partials/chat_attachments.html" %}
 
   <form id="chat-input-form"
@@ -97,7 +111,16 @@
         hx-disabled-elt="find textarea, find button[type=submit]"
         class="aix-col-4">
 
-    <div class="aix-chat-input-shell">
+    {#
+      Drop a file anywhere on the input. The handlers live in _base.html —
+      htmx does not run <script> it swaps in, and this partial is swapped out
+      of band on every terminal SSE event; attributes survive that, scripts do
+      not. The file ends up in the same hidden input the paperclip fills.
+    #}
+    <div class="aix-chat-input-shell"
+         ondragover="event.preventDefault(); this.classList.add('aix-chat-input-shell--drop')"
+         ondragleave="this.classList.remove('aix-chat-input-shell--drop')"
+         ondrop="window.aixDrop(event, this)">
 
       <div class="aix-chat-input-icons">
         <button type="button"
@@ -196,7 +219,21 @@
          hx-trigger="change"
          hx-target="#chat-attachments"
          hx-swap="outerHTML"
-         hx-on::after-request="this.value = ''" />
+         hx-on::after-request="this.value = ''; window.aixUploadNext && window.aixUploadNext(this)" />
+
+  {#
+    Where an upload says what it is doing, and why it was refused.
+
+    Outside the tray deliberately: the tray is replaced wholesale by every
+    upload and delete response, so a message rendered inside it would be swept
+    away by the next swap — and an error swapped *over* it would take the swap
+    target with it, leaving the page with no ``#chat-attachments`` at all and
+    no working upload until a reload.
+  #}
+  <div id="chat-upload-status" class="px-2 space-y-1" aria-live="polite">
+    <p id="chat-upload-busy" class="text-sm text-slate-600"></p>
+    <div id="chat-upload-error" role="alert"></div>
+  </div>
 
   {% include "partials/chat_attachments.html" %}
 
@@ -207,7 +244,16 @@
         hx-disabled-elt="find textarea, find button[type=submit]"
         class="aix-col-4">
 
-    <div class="aix-chat-input-shell">
+    {#
+      Drop a file anywhere on the input. The handlers live in _base.html —
+      htmx does not run <script> it swaps in, and this partial is swapped out
+      of band on every terminal SSE event; attributes survive that, scripts do
+      not. The file ends up in the same hidden input the paperclip fills.
+    #}
+    <div class="aix-chat-input-shell"
+         ondragover="event.preventDefault(); this.classList.add('aix-chat-input-shell--drop')"
+         ondragleave="this.classList.remove('aix-chat-input-shell--drop')"
+         ondrop="window.aixDrop(event, this)">
 
       <div class="aix-chat-input-icons">
         <button type="button"

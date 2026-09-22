@@ -124,7 +124,12 @@ from aix.webui.features import (
 from aix.webui.lessons.display import lesson_to_row
 from aix.webui.lessons.models import Lesson, LessonMessage, SavedProfile
 from aix.webui.lessons.schemas import form_to_profile_dict, profile_to_form_values
-from aix.webui.lessons.uploads import delete_upload, save_upload
+from aix.webui.lessons.uploads import (
+    MAX_FILE_BYTES,
+    delete_upload,
+    save_upload,
+    too_large_message,
+)
 from aix.webui.materials.citations import (
     labels_for_lesson_safe,
     resolve_for_lesson,
@@ -1537,8 +1542,28 @@ async def lesson_upload(
             content='<p class="text-sm text-rose-700 px-2 py-1">Nessun file selezionato.</p>',
             status_code=422,
         )
-    content = await up.read()  # type: ignore[union-attr]
     filename = getattr(up, "filename", None) or "upload"
+
+    # Measured before it is read, not after. ``save_upload`` checks the size
+    # too, but by then the whole file is a bytes object in RAM: with the limit
+    # at 100 MB a teacher who drags a 400 MB video would cost 400 MB of the
+    # pilot VM's 4 GB before being told no. Starlette fills ``size`` from the
+    # multipart part, and a client that sends none falls through to the check
+    # inside ``save_upload``, which is authoritative either way.
+    declared = getattr(up, "size", None)
+    if isinstance(declared, int) and declared > MAX_FILE_BYTES:
+        logger.info(
+            "[upload] refused %s (%.1f MB) for lesson %s before reading it: over the limit",
+            filename,
+            declared / (1024 * 1024),
+            lesson_id,
+        )
+        return HTMLResponse(
+            content=f'<p class="text-sm text-rose-700 px-2 py-1">{html.escape(too_large_message())}</p>',
+            status_code=422,
+        )
+
+    content = await up.read()  # type: ignore[union-attr]
 
     try:
         # In a thread: parsing a scan runs OCR, and that must not stall the
@@ -1550,6 +1575,20 @@ async def lesson_upload(
         await session.commit()
         await session.refresh(lesson)
     except ValueError as exc:
+        # Logged, because a refusal that only exists in the browser is a
+        # support call. A teacher uploaded a 13.5 MB magazine issue and the
+        # server recorded nothing but "422 Unprocessable Entity" — from the
+        # log alone there was no telling a rejected file from a broken
+        # attachment, and finding out took reading the code (2026-09-22).
+        #
+        # The name and the size, never the bytes: the file is the teacher's.
+        logger.info(
+            "[upload] refused %s (%.1f MB) for lesson %s: %s",
+            filename,
+            len(content) / (1024 * 1024),
+            lesson_id,
+            exc,
+        )
         return HTMLResponse(
             content=f'<p class="text-sm text-rose-700 px-2 py-1">{html.escape(str(exc))}</p>',
             status_code=422,

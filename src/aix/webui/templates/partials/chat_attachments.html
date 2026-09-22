@@ -72,7 +72,23 @@
         {% set unread = p.unread_pages or 0 %}
         {% set ocr = p.ocr_pages or 0 %}
         {% set low = "ocr_low_confidence" in ((p.warnings or []) | join(" ")) %}
-        {% set warn = p.empty or unread or low %}
+        {#
+          Why those pages went unread, which is the part the teacher was left to
+          guess. A magazine issue reported «13 pag. non lette» and said nothing
+          else: they were the full-page adverts and photographs, and OCR had not
+          run because tesseract is not installed here — a fact the parser
+          records as ``ocr_unavailable`` and the chip was throwing away
+          (2026-09-22).
+        #}
+        {% set no_ocr = "ocr_unavailable" in ((p.warnings or []) | join(" ")) %}
+        {#
+          A few image pages in a long document are its photographs, not a
+          failure. Warn when the document is unusable or read badly, or when so
+          much of it went unread that the lesson will be written from a fraction
+          of what the teacher attached.
+        #}
+        {% set mostly_unread = unread and p.pages and (unread / p.pages) > 0.25 %}
+        {% set warn = p.empty or low or mostly_unread %}
         {# The pipeline's own state, when we have it: preparing, ready, failed. #}
         {% set st = states.get(f.material_version_id) %}
         {#
@@ -126,7 +142,8 @@
           {% endif %}
           {% if unread and not p.empty %}
             <span class="aix-attach-chip-sep">·</span>
-            <span class="aix-attach-chip-status" title="Pagine senza testo che non è stato possibile leggere.">{{ unread }} pag. non lette</span>
+            <span class="aix-attach-chip-status"
+                  title="{{ unread }} pagine su {{ p.pages or unread }} non contengono testo: di solito foto, illustrazioni o pubblicità a piena pagina{% if no_ocr %}. Su questo server l'OCR non è disponibile, quindi non è stato tentato di leggerle come immagini{% else %}, oppure scansioni che l'OCR non è riuscito a leggere{% endif %}. Il resto del documento è stato indicizzato normalmente.">{{ unread }} pag. senza testo</span>
           {% endif %}
           {% if lesson.status != "running" %}
             <button type="button"

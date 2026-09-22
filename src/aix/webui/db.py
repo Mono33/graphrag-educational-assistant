@@ -33,6 +33,8 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import urlsplit, urlunsplit
 
+from sqlalchemy import event
+
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -107,6 +109,40 @@ engine: AsyncEngine = create_async_engine(
     # asyncio tasks (FastAPI dependency injection does this).
     connect_args={"check_same_thread": False} if _DB_URL.startswith("sqlite") else {},
 )
+
+if _DB_URL.startswith("sqlite"):
+
+    @event.listens_for(engine.sync_engine, "connect")
+    def _sqlite_pragmas(dbapi_connection, _record) -> None:  # pragma: no cover - driver glue
+        """WAL, and a long wait for the lock.
+
+        SQLite in its default ``journal_mode=delete`` has one writer and no
+        concurrent reader: a reader blocks the writer and the writer blocks the
+        reader. That is a fine trade for a database a single request touches,
+        and a bad one here, because the ingestion worker runs **inside the same
+        process** as the routes and writes hundreds of chunk rows in one
+        transaction.
+
+        On 2026-09-22 a teacher attached a 114-page magazine. The worker took
+        seventeen seconds to index it; the upload request, trying to annotate
+        the lesson's manifest in the meantime, never returned at all — no
+        response, no chip, no error. The file was indexed and the page looked
+        broken, which is the worst of both. It took reading the access log to
+        notice the POST had no reply.
+
+        WAL lets the reader carry on while the writer works. ``busy_timeout``
+        covers what WAL does not — two writers — and 30s is chosen against the
+        length of an ingestion transaction, not against a human's patience: the
+        alternative to waiting is an error on an upload that is actually fine.
+        """
+        cursor = dbapi_connection.cursor()
+        try:
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA busy_timeout=30000")
+            cursor.execute("PRAGMA synchronous=NORMAL")
+        finally:
+            cursor.close()
+
 
 async_session_maker: async_sessionmaker[AsyncSession] = async_sessionmaker(
     engine,

@@ -20,12 +20,19 @@ from pathlib import Path
 from typing import Any, Optional
 
 from aix.webui.materials.parsing import IntakeRejected, check_upload, parse_document
+from aix.webui.materials.parsing import intake as intake_limits
 from aix.webui.materials.parsing.intake import ALLOWED
 from aix.webui.materials.parsing.parsers import FormatDisabled
 
 logger = logging.getLogger(__name__)
 
-MAX_FILE_BYTES = 10 * 1024 * 1024
+#: The attachment limit, which is ``intake.MAX_BYTES`` and not a second opinion.
+#:
+#: Kept as a name here because this module is the legacy chat-attachment path
+#: and its callers import it, but it is an alias: the two gates a file passes
+#: — this one and the parser's — used to hold separate copies of the number,
+#: and raising one of them left the other refusing the file (2026-09-22).
+MAX_FILE_BYTES = intake_limits.MAX_BYTES
 MAX_FILES_PER_LESSON = 12
 #: Was 8000: a three-page history handout (9985 characters) lost its last fifth
 #: — distensione, Gorbaciov, 1989 — and the lesson never mentioned them. The
@@ -49,6 +56,11 @@ LEGACY_EXT = {
 ALLOWED_EXT = frozenset(ALLOWED)
 
 MIME_FOR_EXT = dict(ALLOWED)
+
+
+def too_large_message() -> str:
+    """One wording for one limit, defined with the limit itself."""
+    return intake_limits.too_large_message()
 
 
 def allowed_extensions() -> dict[str, str]:
@@ -186,7 +198,7 @@ def save_upload(
         raise ValueError("File vuoto.")
 
     if len(content) > MAX_FILE_BYTES:
-        raise ValueError("File troppo grande (massimo 10 MB).")
+        raise ValueError(too_large_message())
 
     manifest = _normalize_manifest(existing_raw)
     if len(manifest) >= MAX_FILES_PER_LESSON:
@@ -196,7 +208,33 @@ def save_upload(
 
     excerpt = truncate_excerpt(text)
     if total_excerpt_len(manifest) + len(excerpt) > MAX_TOTAL_EXCERPT:
-        raise ValueError("Troppo testo estratto complessivo: rimuovi un file o accorcia.")
+        # The excerpt is what the Writer is *pasted* when there is no private
+        # index — a fallback, not the document. With the private RAG on, the
+        # lesson is written from retrieved passages and this text is never sent,
+        # so refusing an upload over its size refuses a file for the weight of
+        # something nobody reads.
+        #
+        # On 2026-09-22 that is what happened: the Indicazioni nazionali filled
+        # the budget on their own, and the third attachment came back 422. The
+        # teacher read it as "this cannot take more than two documents".
+        #
+        # So the file is stored with no excerpt. It is parsed, chunked, indexed
+        # and searchable exactly like the others — only the fallback text is
+        # dropped, which is the thing there was no room for. With the private
+        # RAG off the excerpt is the *only* channel, and then the refusal is
+        # honest: there is nowhere for the document to go.
+        from aix.webui.materials.embedding import private_rag_enabled
+
+        if not private_rag_enabled():
+            raise ValueError("Troppo testo estratto complessivo: rimuovi un file o accorcia.")
+
+        logger.info(
+            "[upload] %s: excerpt dropped, the total budget is full (%d chars). "
+            "The document is still indexed and searchable.",
+            filename,
+            total_excerpt_len(manifest),
+        )
+        excerpt = ""
 
     ext = Path(filename).suffix.lower()
     file_id = str(uuid.uuid4())

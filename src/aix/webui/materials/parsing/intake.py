@@ -32,7 +32,27 @@ from typing import Optional
 
 import filetype
 
-MAX_BYTES = 10 * 1024 * 1024
+#: The biggest upload anything in this system will look at, and the **only**
+#: place this number is written.
+#:
+#: It was 10 MB here and 10 MB again in ``lessons.uploads``, each with its own
+#: hand-written Italian sentence, and a third copy in the paperclip's tooltip.
+#: On 2026-09-22 the limit was raised in one of the three: the teacher went on
+#: being refused, by the other gate, with a message quoting the old number. Two
+#: checks that must agree are one check written twice.
+#:
+#: Raised from 10 MB when a 13.5 MB magazine issue was refused: 114 pages,
+#: 375 000 characters, read in four seconds with no OCR. Bytes are a poor proxy
+#: for the work — that is bounded by ``MAX_PAGES`` and by OCR concurrency. What
+#: this guards is memory, since the upload is held whole in RAM while it is
+#: parsed, and on the 4 GB pilot VM that is the ceiling to respect.
+MAX_BYTES = 100 * 1024 * 1024
+
+
+def too_large_message() -> str:
+    """What the teacher reads, derived from the limit actually in force."""
+    return f"File troppo grande (massimo {MAX_BYTES // (1024 * 1024)} MB)."
+
 #: Reading a text layer is cheap, and the ministerial documents in the corpus run
 #: to 68 and 97 pages. What the VM cannot afford is OCR on hundreds of pages, and
 #: that is capped separately, per document, by ``ParseOptions.max_ocr_pages``.
@@ -202,7 +222,7 @@ def check_upload(filename: str, content: bytes) -> IntakeResult:
     if not content:
         raise IntakeRejected("empty", "File vuoto.")
     if len(content) > MAX_BYTES:
-        raise IntakeRejected("too_large", "File troppo grande (massimo 10 MB).")
+        raise IntakeRejected("too_large", too_large_message())
 
     extension = _extension(filename)
     expected = ALLOWED[extension]
