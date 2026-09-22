@@ -214,12 +214,23 @@ async def test_the_writer_is_told_not_to_list_the_sources_itself():
     In the real run of 2026-09-21 the model added «Fonti: Materiali forniti
     dalla docente (documenti su Guerra Fredda)» above our own «Fonti dai tuoi
     materiali — guerra-fredda-def.pdf, pp. 1, 2»: the same list, vaguer, and
-    impossible for the teacher to check.
+    impossible for the teacher to check. A first attempt to forbid it failed
+    because the *system* prompt requires a ``*Fonti:*`` footer and lists it in
+    the strict output order — the model kept the footer, as instructed, and put
+    the attachments in it. Both prompts must say the same thing, which is what
+    this test holds.
     """
     prompt = await _writer_prompt(material_context_items=PASSAGES)
 
-    assert "non scrivere un elenco delle fonti dei materiali allegati" in prompt
-    assert "fonti bibliografiche esterne" in prompt, "external citations are still its job"
+    assert "non vanno mai nominati nel footer" in prompt, "the appendix forbids it"
+
+    from aix.agent.prompts.writer_prompt import WRITER_SYSTEM_PROMPT_LESSON
+
+    system = WRITER_SYSTEM_PROMPT_LESSON
+    assert "must NOT name the teacher's own attached documents" in system, (
+        "and the system prompt, which is what asks for the footer, agrees"
+    )
+    assert "external bibliography" in system, "external citations are still its job"
 
 
 async def test_without_passages_the_upload_still_reaches_the_writer():

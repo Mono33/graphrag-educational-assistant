@@ -27,6 +27,7 @@ from aix.webui.materials.retrieval import (
     MaterialContextItem,
     PrivateMaterialRetriever,
     cosine,
+    limit_per_document,
     share_between_documents,
 )
 
@@ -313,6 +314,56 @@ async def test_chunks_from_an_older_chunker_are_not_searched(session):
 
 def _item(source, score):
     return MaterialContextItem(source_id=source, text=f"{source}-{score}", score=score)
+
+
+def test_a_short_document_reaches_the_pool_at_all():
+    """The floor, and the reason it exists.
+
+    A lesson on 2026-09-22 attached the 227-chunk *Indicazioni nazionali* and a
+    5-chunk PEI model. Every one of the eight passages came from the first —
+    «8 passage(s) kept from 1» — because the PEI's five never placed in the top
+    24 of 232. The fair share downstream could not help: it shares out the pool,
+    and the PEI was not in it. The teacher had attached that document on
+    purpose.
+    """
+    long_document = [_item("indicazioni", 0.60 - 0.001 * i) for i in range(227)]
+    short_document = [_item("pei", 0.50 - 0.001 * i) for i in range(5)]
+    ranked = sorted(long_document + short_document, key=lambda i: i.score, reverse=True)
+
+    pooled = limit_per_document(ranked, 24)
+
+    assert len(pooled) == 24
+    assert sum(1 for i in pooled if i.source_id == "pei") >= 4, "its floor of slots"
+    assert sum(1 for i in pooled if i.source_id == "indicazioni") > 15, (
+        "and the long document still takes most of the pool, because it brought more"
+    )
+
+
+def test_the_pool_is_shared_in_proportion_to_what_each_document_brought():
+    """A floor, not an equal split: length still counts for the rest."""
+    many = [_item("long", 0.9 - 0.001 * i) for i in range(100)]
+    few = [_item("short", 0.8 - 0.001 * i) for i in range(10)]
+
+    pooled = limit_per_document(sorted(many + few, key=lambda i: i.score, reverse=True), 24)
+
+    long_slots = sum(1 for i in pooled if i.source_id == "long")
+    short_slots = sum(1 for i in pooled if i.source_id == "short")
+    assert long_slots > short_slots
+    assert short_slots >= 4
+
+
+def test_one_document_keeps_the_whole_pool():
+    items = [_item("a", 0.9 - 0.01 * i) for i in range(40)]
+
+    assert len(limit_per_document(items, 24)) == 24
+    assert {i.source_id for i in limit_per_document(items, 24)} == {"a"}
+
+
+def test_the_pool_keeps_the_ranking_it_was_given():
+    """Entry to the pool reorders nothing: the best passage is still first."""
+    items = [_item("a", 0.9), _item("b", 0.8), _item("a", 0.7)]
+
+    assert limit_per_document(items, 24) == items
 
 
 def test_the_share_cap_lifts_when_the_other_documents_run_out():

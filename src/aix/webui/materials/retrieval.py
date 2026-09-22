@@ -55,6 +55,63 @@ DEFAULT_TOP_K = 8
 #: How many candidates to rank before sharing them out between documents.
 CANDIDATE_FACTOR = 3
 
+#: Candidate slots every attached document keeps, however short it is.
+#:
+#: The teacher attached it on purpose, so it is worth looking at. Without a
+#: floor a short document never reaches the pool at all: on 2026-09-22 a lesson
+#: with the 227-chunk *Indicazioni nazionali* and a 5-chunk PEI model gave all
+#: eight passages to the first — «8 passage(s) kept from 1» — because the PEI's
+#: five chunks never placed in the top 24 of 232. The fair share below could not
+#: help: it shares out the pool, and the PEI was not in it.
+MIN_CANDIDATES_PER_DOCUMENT = 4
+
+
+def limit_per_document(items: list[MaterialContextItem], pool: int) -> list[MaterialContextItem]:
+    """Trim a ranked list to ``pool``, giving every document a look-in.
+
+    Best first, but each document is capped: a floor of
+    :data:`MIN_CANDIDATES_PER_DOCUMENT` slots, then the rest of the pool shared
+    in proportion to how much each document actually brought — a long document
+    has more to say and should have more room to say it, it just cannot have
+    all of it.
+
+    This is *entry* to the pool. What leaves it is decided by
+    :func:`share_between_documents`, which is a ceiling, not a floor.
+    """
+    if not items:
+        return []
+
+    per_document: dict[str, int] = {}
+    for item in items:
+        per_document[item.source_id] = per_document.get(item.source_id, 0) + 1
+    if len(per_document) <= 1:
+        return items[:pool]
+
+    floor = min(MIN_CANDIDATES_PER_DOCUMENT, max(1, pool // len(per_document)))
+    spare = max(0, pool - floor * len(per_document))
+    found = sum(per_document.values())
+    quota = {source: floor + int(spare * count / found) for source, count in per_document.items()}
+
+    # Integer division leaves slots on the table — with 227 chunks against 5 it
+    # loses one — and an unfilled pool is a passage the Writer never sees. They
+    # go to the documents that brought the most, which is where the proportional
+    # share was rounding down in the first place.
+    by_weight = sorted(per_document, key=lambda source: per_document[source], reverse=True)
+    for index in range(max(0, pool - sum(quota.values()))):
+        quota[by_weight[index % len(by_weight)]] += 1
+
+    taken: dict[str, int] = {}
+    chosen: list[MaterialContextItem] = []
+    for item in items:  # already best-first
+        used = taken.get(item.source_id, 0)
+        if used < quota[item.source_id]:
+            chosen.append(item)
+            taken[item.source_id] = used + 1
+        if len(chosen) == pool:
+            break
+    return chosen
+
+
 #: No single document takes more than this share of the passages while another
 #: bound document has relevant ones. Not an equal split: a lesson built mostly on
 #: one document should still quote mostly that one.
@@ -211,10 +268,17 @@ class PrivateMaterialRetriever:
             return []
 
         wanted = limit or top_k()
-        # A wider pool first, then a fair share per document. Ranked purely by
-        # score, the first real test gave 7 of 8 passages to the 45-chunk English
-        # PDF — its bibliography and standards lists among them — and 1 to the
-        # 10-chunk Italian handout the lesson was about (2026-09-16).
+        # Three steps, and each answers a different question.
+        #
+        #   the dialect  — how well does every passage match? (all of them)
+        #   limit_per_document — which of them get into the pool? Each document
+        #                 keeps a floor of slots, so a short one is looked at
+        #                 rather than buried under a long one's hundreds.
+        #   share_between_documents — which of the pool reach the prompt? Ranked
+        #                 purely by score, the first real test gave 7 of 8
+        #                 passages to the 45-chunk English PDF — bibliography
+        #                 and standards lists among them — and 1 to the 10-chunk
+        #                 Italian handout the lesson was about (2026-09-16).
         pool = wanted * CANDIDATE_FACTOR
         if self._session.bind.dialect.name == "postgresql":
             candidates = await self._search_in_the_database(
@@ -222,7 +286,7 @@ class PrivateMaterialRetriever:
             )
         else:
             candidates = await self._search_in_python(query, vector, owner_id, version_ids, pool)
-        return share_between_documents(candidates, wanted)
+        return share_between_documents(limit_per_document(candidates, pool), wanted)
 
     async def _search_in_the_database(
         self,
@@ -352,9 +416,14 @@ class PrivateMaterialRetriever:
         vector: list[float],
         owner_id: uuid.UUID,
         version_ids: list[uuid.UUID],
-        wanted: int,
+        breadth: int,
     ) -> list[MaterialContextItem]:
-        """SQLite: the same authorized set, ranked here instead of in the engine."""
+        """SQLite: the same authorized set, ranked here instead of in the engine.
+
+        ``breadth`` is how deep each of the two rankings is read before they are
+        fused — not how many passages come back. Everything scored comes back,
+        because who enters the pool is decided one level up, by document.
+        """
         from aix.webui.materials.repository import ChunkRepository
 
         # Only the current chunking. A document indexed by an older chunker is not
@@ -378,11 +447,20 @@ class PrivateMaterialRetriever:
                 index
                 for index, score in sorted(enumerate(words), key=_second, reverse=True)
                 if score > 0.0
-            ][:wanted]
-            order = fuse([by_vector[:wanted], by_words], tiebreak=similarity)
+            ]
+            # Both rankings in full. Truncating them here defeated the
+            # per-document floor: with 227 chunks against 5, the short
+            # document's passages were cut before the fusion ever saw them,
+            # so there was nothing left for the floor to protect
+            # (2026-09-22). Fusing a few hundred ranks is a dictionary.
+            order = fuse([by_vector, by_words], tiebreak=similarity)
         else:
             order = by_vector
 
+        # Everything scored, in ranked order — the truncation belongs to
+        # ``limit_per_document``, which needs to see every document's best
+        # passages to give each one its floor. Scoring has already happened for
+        # all of them, so carrying them a few lines further costs nothing.
         return [
             _item(
                 chunks[index].material_version_id,
@@ -390,7 +468,7 @@ class PrivateMaterialRetriever:
                 chunks[index].locator_json,
                 similarity[index],
             )
-            for index in order[:wanted]
+            for index in order
         ]
 
 

@@ -240,6 +240,18 @@ class AgentState(TypedDict, total=False):
     #: from «the Knowledge Graph was down», which look identical otherwise.
     kg_unreachable: Optional[bool]
 
+    #: Which registered set of the teacher's documents this turn may search.
+    #:
+    #: Separate from ``session_id`` on purpose. ``session_id`` is LangGraph's
+    #: thread id *and* it is chosen by the caller on the API, so using it to
+    #: key private material means two callers who pick the same string share
+    #: each other's documents. The WebUI has no such exposure — it uses the
+    #: lesson id — but the API must hand out a value the request cannot set.
+    #:
+    #: ``retrieve_private_node`` prefers this and falls back to ``session_id``,
+    #: so a caller that registers the old way keeps working.
+    material_scope_id: Optional[str]
+
     # Fase 2 · PR 6 — passages of the teacher's own documents (§8.2). Kept apart
     # from the Knowledge Graph results all the way to the prompt: one is shared
     # pedagogy, the other is one school's handout, and the Writer has to be able
@@ -372,6 +384,12 @@ class AgentInput(TypedDict, total=False):
     # Carried over, a Tuesday outage would still be apologising on Wednesday.
     kg_unreachable: Optional[bool]
 
+    # Per turn, and load-bearing: an ephemeral scope belongs to one request and
+    # its index is gone when that request ends. Carried over, turn two would
+    # look up a registration that no longer exists — or, worse, one that a
+    # different request has since taken.
+    material_scope_id: Optional[str]
+
     # The retrieval-reuse verdict is per-turn: turn 3 must decide for itself,
     # not inherit turn 2's answer.
     retrieval_reused: Optional[bool]
@@ -443,6 +461,7 @@ def create_initial_state(
     pedagogical_intent: Optional[str] = None,
     refinement_instruction: Optional[str] = None,
     force_retrieval: Optional[bool] = None,
+    material_scope_id: Optional[str] = None,
 ) -> AgentInput:
     """
     Create initial state for a new lesson planning request.
@@ -491,6 +510,13 @@ def create_initial_state(
         domain=domain,
         language=language,
         session_id=session_id,
+        # No fallback to ``session_id``, deliberately. That would mean an API
+        # caller who sends the id of a lesson registered by the WebUI in this
+        # same process reads that teacher's documents — the very leak the
+        # separate key exists to close, in a narrower form. Whoever registers a
+        # search function passes the key it was registered under; everyone else
+        # gets no private retrieval, which is the safe answer.
+        material_scope_id=material_scope_id,
         educational_profile=educational_profile,
         pedagogical_intent=pedagogical_intent,
         refinement_instruction=refinement_instruction,

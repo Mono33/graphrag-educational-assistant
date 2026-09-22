@@ -49,20 +49,27 @@ semplicemente non citarlo.
 Come usarli:
 
 - servono per il contenuto disciplinare, la terminologia e i brani da citare;
-- quando ti servi di un passaggio, riporta il suo marcatore **esattamente come
-  te lo trovi** subito dopo la frase che lo usa: il sistema lo trasforma nel
-  riferimento leggibile per la docente;
+- riporta il marcatore **esattamente come te lo trovi**, e mettilo sulla frase
+  che **afferma qualcosa preso dal documento** — un fatto, un dato, una
+  citazione, un termine. Non sull'attività che se ne serve: l'attività è una tua
+  scelta didattica e nel documento non c'è. «Si distribuiscono estratti a
+  stazioni» non è nel documento e non va marcato; il dato che gli studenti
+  leggeranno a quelle stazioni sì. Se un'attività poggia su un contenuto, marca
+  il contenuto, non l'attività — altrimenti la docente apre la pagina e non ci
+  trova quello che la frase dice;
 - non inventare marcatori e non scrivere indirizzi web;
 - un passaggio marcato «testo letto con OCR» è la lettura automatica di una
   scansione: nomi, date e numeri che vengono solo da lì non vanno dati per
   certi;
 - se i passaggi non bastano per ciò che serve, dillo invece di colmare il vuoto;
-- **non scrivere un elenco delle fonti dei materiali allegati**: l'elenco lo
-  aggiunge il sistema sotto la lezione, ricavandolo dai marcatori che hai usato,
-  con nome del file e pagine. Una riga come «Fonti: materiali forniti dalla
-  docente» duplica quell'elenco ed è più vaga di quello che sostituisce. Le
-  fonti bibliografiche esterne (articoli, video, manuali) continua invece a
-  citarle come fai di consueto.
+- **i documenti allegati non vanno mai nominati nel footer `*Fonti:*`**, in
+  nessuna forma, nemmeno insieme alla bibliografia esterna. Quel footer è per il
+  Knowledge Graph e per le fonti esterne; l'elenco degli allegati lo aggiunge il
+  sistema sotto la lezione, ricavato dai marcatori che hai usato davvero, con
+  nome del file e numeri di pagina. Scrivere «Fonti: dispensa.pdf, Cold-War.pdf;
+  Rossi (2016)…» produce due elenchi della stessa cosa, e il tuo è il più vago.
+  I marcatori nel corpo della lezione sono il modo di citare gli allegati: sono
+  già sufficienti.
 
 {material_passages}
 """
@@ -107,7 +114,8 @@ Every lesson plan should include:
 - Apply the Duration silently. Do NOT echo this constraint as parenthetical or explanatory text in the rendered lesson (e.g. avoid wording like "(vincolo rigido — somma esatta di tutte le fasi)" or "(come da profilo docente — vincolo rigido)" after the **Durata** line). Just produce a lesson whose section timings sum to the specified Duration; that is sufficient.
 - **Output Length**: Write concisely — target **max 1 600 words** (approximately 8 000 characters). Each section must be actionable and classroom-ready, not exhaustive. Prefer structured bullet points and markdown over long prose paragraphs for activity descriptions.
 - **Inline markers**: Do NOT insert `[✅ ...]`, `[📌 ...]`, or similar annotation brackets anywhere in the lesson body. Reference the Knowledge Graph and external sources only in the `*Fonti:*` footer.
-- **Output order (strict)**: Generate sections in this exact sequence: Title → Objectives → Materials → Introduction → Activities → Assessment → Differentiation → `*Fonti:*` footer. If you are near the token limit, shorten Activities and Differentiation rather than omitting the `*Fonti:*` footer.
+- **The `*Fonti:*` footer is for the Knowledge Graph and the external bibliography ONLY** — methodologies, papers, videos, textbooks. It must NOT name the teacher's own attached documents, not even in passing: the system appends its own «Fonti dai tuoi materiali» block below the lesson, built from the citation markers you actually used, with the file name and the page numbers. Naming a `.pdf` the teacher attached in this footer produces two lists of the same thing, and yours is the vaguer one. If the Knowledge Graph and the external sources contributed nothing, write `*Fonti: —*` rather than filling the footer with the attachments.
+- **Output order (strict)**: Generate sections in this exact sequence: Title → Objectives → Materials → Introduction → Activities → Assessment → Differentiation → `*Fonti:*` footer → the **Nota sulle fonti** disclaimer, which is the very last thing and appears **exactly once** in the whole response. If you are near the token limit, shorten Activities and Differentiation rather than omitting either of the last two.
 
 ### Language
 Write in {language}:
@@ -605,10 +613,12 @@ Cite all sources (Knowledge Graph methodologies + external content) in the `*Fon
 - Apply the Duration silently. Do NOT echo this constraint as parenthetical or explanatory text in the rendered lesson (e.g. avoid wording like "(vincolo rigido — somma esatta di tutte le fasi)" or "(come da profilo docente — vincolo rigido)" after the **Durata** line). Just produce a lesson whose section timings sum to the specified Duration; that is sufficient.
 - **Output Length**: Write concisely — target **max 1 600 words** (approximately 8 000 characters). Each section must be actionable and classroom-ready, not exhaustive. Prefer structured bullet points and markdown over long prose paragraphs for activity descriptions.
 - **Inline markers**: Do NOT insert `[✅ ...]`, `[📌 ...]`, or similar annotation brackets anywhere in the lesson body. Cite sources only in the `*Fonti:*` footer.
-- **Output order (strict)**: Generate sections in this exact sequence: Title → Objectives → Materials → Introduction → Activities → Assessment → Differentiation → `*Fonti:*` footer. If you are near the token limit, shorten Activities and Differentiation rather than omitting the `*Fonti:*` footer.
+- **Output order (strict)**: Generate sections in this exact sequence: Title → Objectives → Materials → Introduction → Activities → Assessment → Differentiation → `*Fonti:*` footer → the **Nota sulle fonti** disclaimer, which is the very last thing and appears **exactly once** in the whole response. If you are near the token limit, shorten Activities and Differentiation rather than omitting either of the last two.
 
 ## Footer Disclaimer (REQUIRED)
-At the end of EVERY response, include:
+Once, at the very end, after the `*Fonti:*` footer, reproduced verbatim and
+with nothing added to it — not the pedagogy references, which belong in
+`*Fonti:*`:
 
 ---
 ⚠️ **Nota sulle fonti**: Il contenuto disciplinare (argomento specifico) proviene da fonti esterne

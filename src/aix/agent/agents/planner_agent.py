@@ -7,6 +7,7 @@ Determines what to search in the knowledge graph.
 
 import json
 import logging
+import os
 import re
 from dataclasses import dataclass
 from typing import Any, Optional
@@ -26,9 +27,32 @@ from aix.core.config import extract_response_content
 logger = logging.getLogger(__name__)
 
 
+def _planner_max_tokens() -> int:
+    """Output budget for the plan. See the comment at the call site."""
+    raw = os.getenv("AIX_PLANNER_MAX_TOKENS")
+    try:
+        return max(1000, int(raw)) if raw else 4000
+    except ValueError:
+        return 4000
+
+
 def _extract_json(content: str) -> dict:
-    """Multi-strategy JSON extractor for LLM responses that may wrap JSON in markdown."""
+    """Multi-strategy JSON extractor for LLM responses that may wrap JSON in markdown.
+
+    A truncated answer is named as such. «No valid JSON found» sent the next
+    reader hunting for markdown fences when the real cause was a plan cut off
+    mid-array by the token ceiling (2026-09-21) — the fences were being handled
+    correctly all along.
+    """
     content = content.strip()
+
+    if content and content.count("{") > content.count("}"):
+        raise json.JSONDecodeError(
+            "the plan is truncated — more '{' than '}', so the model ran out of "
+            "output budget (AIX_PLANNER_MAX_TOKENS)",
+            content,
+            0,
+        )
 
     # Strategy 1: direct parse
     try:
@@ -365,9 +389,16 @@ class PlannerAgent:
             # is byte-identical for those families and a hardening boost for
             # everything else. The PLANNER_SYSTEM_PROMPT already asks for
             # strict JSON so this is purely additive — no prompt change.
+            # 4 000, not 2 000. A reasoning model spends part of the budget
+            # thinking before it writes a character, so a ceiling that fits the
+            # JSON exactly does not fit it at all: on 2026-09-21 the plan came
+            # back cut off mid-array, the parse failed, and the run fell through
+            # to defaults — intent LOW, no subject concepts, and a lesson whose
+            # Planner card showed nothing from the teacher's documents. Same
+            # trap as ``AIX_WRITER_MAX_TOKENS`` on 2026-09-16, one agent over.
             completion_kwargs = app_config.openai.build_completion_kwargs(
                 temperature=0.3,
-                max_tokens=2000,
+                max_tokens=_planner_max_tokens(),
                 json_mode=True,
             )
             response = await guarded_chat_completion(

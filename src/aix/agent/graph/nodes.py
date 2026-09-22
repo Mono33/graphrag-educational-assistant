@@ -577,7 +577,12 @@ async def retrieve_private_node(state: AgentState) -> dict[str, Any]:
     """
     from aix.agent.graph import material_source
 
-    search = material_source.get(state.get("session_id"))
+    # The scope, and only the scope. ``session_id`` is LangGraph's thread id
+    # and, on the API, a string the caller chooses; reading it here — even as a
+    # fallback — would let a caller who sends the id of a lesson registered
+    # elsewhere in this process search that teacher's documents. Whoever
+    # registers a search function sets ``material_scope_id`` to the key it used.
+    search = material_source.get(state.get("material_scope_id"))
     if search is None:
         return {"current_step": "retrieve_complete"}
 
@@ -726,6 +731,16 @@ async def write_node(state: AgentState) -> dict[str, Any]:
                 ),
                 "current_step": "error",
             }
+
+        # §8.6 — a citation the teacher cannot verify is worse than none. The
+        # markers are authentic, but one can end up on a sentence its passage
+        # does not support; those are removed here, and the sentence stays.
+        # Costs one call, and only when the draft carries private citations.
+        from aix.agent.validation.citation_support import drop_unsupported_citations
+
+        lesson_plan = await drop_unsupported_citations(
+            lesson_plan, state.get("material_context_items")
+        )
 
         return {"lesson_plan_draft": lesson_plan, "current_step": "write_complete"}
 

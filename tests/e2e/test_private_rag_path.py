@@ -301,6 +301,7 @@ async def test_the_lesson_is_written_from_the_passages_not_the_pasted_document(
         updates = await retrieve_private_node(
             {
                 "session_id": session_id,
+                    "material_scope_id": session_id,
                 "teacher_query": "crea una lezione basandoti sui documenti allegati",
                 "educational_profile": {"specific_topic": "guerra fredda"},
                 "subject_concepts": ["Conferenza di Yalta", "cortina di ferro"],
@@ -344,6 +345,7 @@ async def test_a_citation_reaches_the_teacher_readable(client, maker, tmp_path, 
             await retrieve_private_node(
                 {
                     "session_id": session_id,
+                    "material_scope_id": session_id,
                     "teacher_query": "la guerra fredda",
                     "subject_concepts": ["Yalta", "cortina di ferro"],
                 }
@@ -404,7 +406,8 @@ async def test_removing_an_attachment_removes_it_from_retrieval(client, maker, t
     material_source.register(session_id, search)
     try:
         updates = await retrieve_private_node(
-            {"session_id": session_id, "teacher_query": "guerra fredda"}
+            {"session_id": session_id,
+                    "material_scope_id": session_id, "teacher_query": "guerra fredda"}
         )
     finally:
         material_source.deregister(session_id)
@@ -538,3 +541,18 @@ async def test_a_second_upload_does_not_freeze_the_first_one_s_tray(
     assert tray.count("aix-attach-chip--ready") == 2, "both documents confirmed"
     assert "in preparazione" not in both.text
     assert "attachments-fragment" not in both.text, "and only then does it stop"
+
+
+async def test_the_chat_input_accepts_a_dropped_file(client, maker, tmp_path, provider):
+    """Dropping a file posts through the same input the paperclip fills.
+
+    The handlers must be attributes, not a <script>: htmx does not execute
+    scripts it swaps in, and this partial is re-rendered out of band on every
+    terminal SSE event. A script would work until the first generation and then
+    quietly stop.
+    """
+    page = client.get(f"/webui/lesson/{LESSON}/chat-input-fragment").text
+
+    assert "ondrop=" in page and "aixDrop" in page, "the drop target is an attribute"
+    assert "<script" not in page, "a script here would not survive an out-of-band swap"
+    assert "aixUploadNext" in page, "and several files at once go up one after another"

@@ -1,0 +1,221 @@
+# Does the cited passage support the sentence that cites it?
+#
+# A citation the teacher cannot verify is worse than no citation: it spends the
+# credit the feature exists to earn. The markers themselves are sound — the
+# Writer only ever copies back a marker it was handed, measured on 2026-09-21 —
+# so what is left to check is whether the passage *says* what the sentence
+# claims.
+#
+# The passages below are the real chunks of the real corpus, copied from the
+# development database, and the first four cases are from lessons a teacher
+# actually generated. Nothing here is invented: a synthetic failure would teach
+# a checker to catch synthetic failures.
+#
+# ``verdict`` is what a correct checker must answer:
+#   supported   — the passage carries the claim, or enough of it to cite
+#   unsupported — the passage is about something else, or is apparatus
+#                 (a list of standards, a bibliography, a copyright line)
+#
+# Run with: python scripts/eval/check_citation_support.py
+
+cases:
+  # ── The two real failures of 2026-09-21 ──────────────────────────────────
+  - id: standards-page-for-nato
+    document: Cold-War.pdf
+    page: 6
+    claim: >-
+      Il ruolo della NATO nel contenimento: approfondimento sul ruolo delle
+      alleanze militari nella deterrenza dell'espansionismo comunista.
+    passage: >-
+      14 US HISTORY Standards Chinese Civil War Common Core Standard RH.9-10.2:
+      Determine the central ideas or information of a primary or secondary
+      source; provide an accurate summary of how key events or ideas develop
+      over the course of the text.
+    verdict: unsupported
+    why: A list of curriculum standards. It names no alliance and no policy.
+
+  - id: standards-page-for-soviet-collapse
+    document: Cold-War.pdf
+    page: 6
+    claim: >-
+      Il crollo dell'Unione Sovietica: analisi delle cause che portano alla fine
+      del blocco sovietico.
+    passage: >-
+      (3) Understands the impact of the Reagan presidency on relations with
+      other countries (e.g., . . . Reagan's view of the Soviet Union as an
+      "evil empire" and how that shaped defense policy). . . . (5) Understands
+      the influence of Revolution
+    verdict: unsupported
+    why: >-
+      The hard case, and the reason a keyword rule fails: the passage does say
+      "Reagan" and "Soviet Union". It is still a standards descriptor telling a
+      teacher what students should understand, not an account of the collapse.
+
+  - id: activity-questions-for-the-iron-curtain-speech
+    document: Cold-War.pdf
+    page: 4
+    claim: >-
+      Il discorso della "Cortina di Ferro" di Churchill e la risposta di Stalin
+      (1946): analisi comparata delle fonti primarie.
+    passage: >-
+      When citing evidence, quote particular passages (and state the number of
+      the line the passages are on). a. What explains the growth of Communist
+      parties in Eastern Europe? b. What should be the most important
+      characteristic
+    verdict: unsupported
+    why: >-
+      Partly grounded and still wrong for a teacher: these are the questions of
+      that activity, but the speech and the reply are printed on other pages.
+      Open page 4 expecting Churchill and you find an exercise.
+
+  - id: activity-questions-for-an-activity
+    document: Cold-War.pdf
+    page: 4
+    claim: >-
+      Fine della Guerra Fredda: Reagan e Gorbačëv. Attività di analisi storica
+      per discutere chi ha avuto un ruolo decisivo nella conclusione del
+      conflitto, con formazione di tesi argomentate in piccoli gruppi.
+    passage: >-
+      Who do you think played a more important role in ending the Cold War:
+      Reagan or Gorbachev? Why? 3. Who do you think won the Cold War? Why?
+      #1: Why Did the Cold War End? We know how the Cold War ended, but why
+      did it end
+    verdict: supported
+    why: >-
+      The pair to the case above, and the distinction the first prompt missed.
+      Exercise questions are apparatus when the sentence claims a historical
+      fact; when the sentence *proposes that activity*, they are precisely the
+      source. Told only "exercise instructions are apparatus", the judge removed
+      this citation too — and it was the right one (2026-09-21).
+
+  - id: iron-curtain-speech-where-it-is
+    document: Cold-War.pdf
+    page: 1
+    claim: >-
+      Nel marzo 1946 Churchill tenne un discorso negli Stati Uniti, avvertendo
+      che una cortina di ferro era calata sull'Europa.
+    passage: >-
+      In March 1946, Winston Churchill delivered a speech in the United States,
+      warning that Stalin was rapidly transforming the Eastern European
+      countries into communist states. He said, "an iron curtain has descended
+      across the continent".
+    verdict: supported
+    why: The same claim, in the source's own words. A checker that flags this is useless.
+
+  # ── Cited and correct, in the lesson's language and in the source's ──────
+  - id: yalta-in-italian
+    document: guerra-fredda-def.pdf
+    page: 1
+    claim: >-
+      Alla Conferenza di Yalta del febbraio 1945 Churchill, Roosevelt e Stalin
+      divisero l'Europa in sfere d'influenza.
+    passage: >-
+      A Yalta, nel febbraio 1945, Churchill, Roosevelt e Stalin divisero
+      l'Europa in due sfere d'influenza separate dalla "cortina di ferro".
+    verdict: supported
+    why: Plain agreement, same language.
+
+  - id: cross-language-support
+    document: Cold-War.pdf
+    page: 1
+    claim: >-
+      La Guerra Fredda fu un conflitto fra Stati Uniti e Unione Sovietica in cui
+      le due superpotenze non si scontrarono mai direttamente.
+    passage: >-
+      THE COLD WAR WAS A CONFLICT AFTER WORLD WAR II BETWEEN THE U.S. AND SOVIET
+      UNION. THE SUPERPOWERS NEVER FOUGHT EACH OTHER, BUT BACKED OPPOSITE SIDES
+      IN "HOT WARS", OFFERED AID TO INFLUENCE NEUTRAL COUNTRIES
+    verdict: supported
+    why: >-
+      An Italian claim on an English passage. Any checker that compares words
+      rather than meaning fails here — and this is the common case, because the
+      lesson is written in Italian whatever the document's language.
+
+  # ── The same genre of text, and the opposite verdict ────────────────────
+  #
+  # These two are why "a list of standards is apparatus" is the wrong rule.
+  # In Cold-War.pdf the Common Core standards are an appendix to a worksheet
+  # about the Cold War: a claim about NATO is not carried by them. In the
+  # Italian ministerial curriculum the learning objectives *are* the document,
+  # and a lesson that states one of them is citing it exactly right.
+  #
+  # Told only "standards lists are apparatus", the judge removed both citations
+  # below from a real lesson (2026-09-22). The teacher was left with one
+  # document cited out of three.
+
+  - id: ministerial-objectives-for-an-objective
+    document: indicazioni_nazionali_dm254_2012.pdf
+    page: 32
+    claim: >-
+      Partecipare a un lavoro cooperativo strutturato con ruoli definiti,
+      rispettando tempi e turni di parola.
+    passage: >-
+      Obiettivi di apprendimento al termine della classe quinta della scuola
+      primaria. Ascolto e parlato — Interagire in modo collaborativo in una
+      conversazione, in una discussione, in un dialogo su argomenti di
+      esperienza diretta, formulando domande, dando risposte e fornendo
+      spiegazioni ed esempi.
+    verdict: supported
+    why: >-
+      The claim is a learning objective and the passage is that objective, in
+      the document whose subject is learning objectives. A teacher opening the
+      page finds what the sentence says.
+
+      KNOWN MISS, and the label is arguable. The prompt that got this right
+      named this document; the generic one does not, and answers "unsupported"
+      (2026-09-22). It is the loosest paraphrase in the set — "ruoli definiti"
+      and "turni di parola" are the lesson's words, not the passage's, which
+      says "formulando domande, dando risposte". Left failing on purpose: one
+      borderline case is not worth a prompt that has to learn a new genre of
+      document every time a teacher attaches one. What closes it is more cases,
+      from document types we have not tested, telling us whether paraphrased
+      prescriptions fail as a class or only here.
+
+  - id: ministerial-objectives-for-an-invented-activity
+    document: indicazioni_nazionali_dm254_2012.pdf
+    page: 32
+    claim: >-
+      La docente legge ad alta voce un breve testo alla LIM, verbalizzando il
+      proprio pensiero e mostrando come usare titolo e immagini per orientarsi.
+    passage: >-
+      Obiettivi di apprendimento al termine della classe quinta della scuola
+      primaria. Ascolto e parlato — Interagire in modo collaborativo in una
+      conversazione, in una discussione, in un dialogo su argomenti di
+      esperienza diretta, formulando domande, dando risposte e fornendo
+      spiegazioni ed esempi.
+    verdict: unsupported
+    why: >-
+      The pair to the case above, from the same page of the same document. The
+      activity is the model's own invention; the curriculum says what students
+      should be able to do, not how this teacher runs her lesson. The genre of
+      the passage decides nothing — the claim does.
+
+  # ── Apparatus of other kinds ────────────────────────────────────────────
+  - id: bibliography-for-a-claim-about-warheads
+    document: Cold-War.pdf
+    page: 7
+    claim: >-
+      L'equilibrio del terrore si reggeva sugli arsenali nucleari delle due
+      superpotenze.
+    passage: >-
+      • "Nuclear Weapons: Who Has What at a Glance." Arms Control Association,
+      Jan. 2008. URL: www.armscontrol.org • Rousseau, David. "The Cold War"
+    verdict: unsupported
+    why: A bibliography entry about nuclear weapons is not a statement about them.
+
+  - id: copyright-line-beside-the-content
+    document: Cold-War.pdf
+    page: 1
+    claim: Roosevelt morì due mesi dopo.
+    passage: "FDR died two months later.\n\n(c) 2014 Constitutional Rights Foundation http://www.crf-usa.org"
+    verdict: supported
+    why: >-
+      Deliberately awkward: the claim is carried by the passage, and a copyright
+      line sits next to it. A checker must judge the sentence, not the tidiness
+      of the chunk.
+
+      This case was first written with a claim that also asserted the date and
+      the succession to Truman — neither of which the passage states. The model
+      answered "unsupported", the harness recorded a false alarm, and the label
+      was the thing that was wrong. Kept in the open here: a case file is a
+      claim about the world too, and it can be as mistaken as the code.

@@ -24,6 +24,7 @@ it is noise in a printed lesson, and it invites someone to paste it somewhere.
 
 from __future__ import annotations
 
+import logging
 import re
 import uuid
 from typing import Any, Optional
@@ -130,6 +131,47 @@ def sources_block(text: str, labels: Optional[dict[str, str]] = None) -> str:
     return "\n".join(lines)
 
 
+#: The disclaimer the Writer must end on (EU AI Act Art. 50, §12).
+#:
+#: Matched on its opening words rather than in full: the model reproduces the
+#: sentence but not always the whitespace, and in the lesson that exposed this
+#: one of the two copies carried the pedagogy references appended to it.
+logger = logging.getLogger(__name__)
+
+_DISCLAIMER = re.compile(
+    r"\n*(?:---\s*\n+)?\u26a0\ufe0f?\s*\*\*Nota sulle fonti\*\*.*?(?=\n\s*\n|\Z)",
+    re.DOTALL,
+)
+
+
+def once_only_disclaimer(text: str) -> str:
+    """The source disclaimer kept once, and never twice.
+
+    Two instructions in the Writer's prompt each claimed the last position --
+    "Output order: ... -> `*Fonti:*` footer" and "at the end of EVERY response,
+    include this disclaimer" -- and the model satisfied both the only way it
+    could: writing the disclaimer before the footer *and* again after it. A
+    teacher's lesson carried it twice, a few lines apart (2026-09-22).
+
+    The prompt now says which of the two comes last and that the disclaimer
+    appears exactly once. This is the net under that, because a prompt is a
+    request: the two-lists-of-sources defect came back this week after being
+    asked away once already.
+
+    The first copy is the one kept. It is the one the model wrote in context,
+    so where it added the pedagogy references they are not lost.
+    """
+    found = list(_DISCLAIMER.finditer(text or ""))
+    if len(found) < 2:
+        return text
+
+    # Right to left, so the offsets of the ones not yet removed stay valid.
+    for match in reversed(found[1:]):
+        text = text[: match.start()] + text[match.end() :]
+    logger.info("[citations] the disclaimer appeared %d times -- kept one", len(found))
+    return text
+
+
 def with_sources(text: str, labels: Optional[dict[str, str]] = None) -> str:
     """``text`` with its citations made readable and its sources listed below.
 
@@ -137,6 +179,7 @@ def with_sources(text: str, labels: Optional[dict[str, str]] = None) -> str:
     rendering removes them, so text that has already been through this function
     gains nothing a second time.
     """
+    text = once_only_disclaimer(text)
     block = sources_block(text, labels)
     rendered = render_citations(text, labels)
     return f"{rendered.rstrip()}\n\n{block}\n" if block else rendered

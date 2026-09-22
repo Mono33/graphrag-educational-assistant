@@ -1400,6 +1400,10 @@ async def run_agent_stream(
             domain=pipeline.domain,
             language=pipeline.language,
             session_id=str(lesson.id),
+            # The same key the search function was registered under, above.
+            # Explicit, so the fallback in ``create_initial_state`` is only
+            # ever a courtesy to callers outside this module.
+            material_scope_id=str(lesson.id),
             max_revisions=pipeline.max_revisions,
             educational_profile=profile_dict,
             teacher_provided_context=teacher_ctx,
@@ -1694,6 +1698,7 @@ async def stream_agent_events(
     educational_profile: Optional[dict[str, Any]] = None,
     teacher_provided_context: Optional[str] = None,
     max_revisions: Optional[int] = None,
+    material_scope_id: Optional[str] = None,
 ) -> AsyncIterator[StreamEvent]:
     """
     Run the LangGraph lesson-planner pipeline for an *ad-hoc* request and
@@ -1750,6 +1755,11 @@ async def stream_agent_events(
             domain=pipeline.domain,
             language=pipeline.language,
             session_id=session_id,
+            # Which documents this run may search, when the caller registered
+            # any. Never ``session_id`` here: on this path that string is the
+            # caller's own, and two callers picking the same one would read
+            # each other's uploads.
+            material_scope_id=material_scope_id,
             max_revisions=effective_max_revisions,
             educational_profile=educational_profile,
             teacher_provided_context=teacher_provided_context,

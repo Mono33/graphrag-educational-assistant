@@ -41,6 +41,69 @@ def _clean_registry():
 
 
 # ---------------------------------------------------------------------------
+# Whose documents this turn may read
+# ---------------------------------------------------------------------------
+
+
+async def test_two_callers_sharing_a_session_id_do_not_share_documents():
+    """``session_id`` is LangGraph's thread id *and* a string the API caller picks.
+
+    Keyed on it, two integrators who both send "lesson-1" — or one who reuses a
+    counter across tenants — would search each other's uploads. The scope is a
+    separate key the request cannot set, and this is the test that says so.
+    """
+
+    async def _mine(_query):
+        return [{**PASSAGE, "text": "Il mio documento."}]
+
+    async def _theirs(_query):
+        return [{**PASSAGE, "text": "Il documento di qualcun altro."}]
+
+    material_source.register("scope-mine", _mine)
+    material_source.register("scope-theirs", _theirs)
+    try:
+        same_session = {"session_id": "lesson-1", "teacher_query": "x"}
+        mine = await retrieve_private_node({**same_session, "material_scope_id": "scope-mine"})
+        theirs = await retrieve_private_node({**same_session, "material_scope_id": "scope-theirs"})
+    finally:
+        material_source.deregister("scope-mine")
+        material_source.deregister("scope-theirs")
+
+    assert mine["material_context_items"][0]["text"] == "Il mio documento."
+    assert theirs["material_context_items"][0]["text"] == "Il documento di qualcun altro."
+
+
+async def test_a_turn_with_no_scope_searches_nothing():
+    """The session id is not a fallback, on purpose.
+
+    Reading it here would let an API caller who sends the id of a lesson
+    registered elsewhere in this process search that teacher's documents — the
+    leak the separate key exists to close, in a narrower form. Whoever registers
+    a search function passes the key it used; everyone else gets silence.
+    """
+
+    async def _search(_query):
+        return [PASSAGE]
+
+    material_source.register(SESSION, _search)
+
+    updates = await retrieve_private_node({"session_id": SESSION, "teacher_query": "x"})
+
+    assert "material_context_items" not in updates
+
+
+async def test_a_scope_nobody_registered_retrieves_nothing():
+    """A stale or invented scope is silence, never a fallback to someone else's."""
+    material_source.register(SESSION, lambda _q: [PASSAGE])
+
+    updates = await retrieve_private_node(
+        {"session_id": SESSION, "material_scope_id": "scope-that-ended", "teacher_query": "x"}
+    )
+
+    assert "material_context_items" not in updates
+
+
+# ---------------------------------------------------------------------------
 # The node
 # ---------------------------------------------------------------------------
 
@@ -55,6 +118,7 @@ async def test_the_node_returns_the_passages_it_was_given():
     updates = await retrieve_private_node(
         {
             "session_id": SESSION,
+            "material_scope_id": SESSION,
             "teacher_query": "amplia la lezione",
             "subject_concepts": ["guerra fredda", "Yalta"],
         }
