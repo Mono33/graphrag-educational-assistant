@@ -194,6 +194,30 @@ _AGENT_REQUEST_OPENAPI_EXAMPLES: dict = {
 # ---------------------------------------------------------------------------
 
 
+def _log_unknown_fields(payload: AgentRunRequest, endpoint: str, caller: str) -> None:
+    """Name the fields we did not ask for, so nobody has to guess later.
+
+    A misspelled field is dropped silently by Pydantic's default, and the
+    caller spends a week wondering why a setting has no effect. This API should
+    end up refusing them outright (``extra="forbid"``); until the logs show
+    that no integrator sends any, refusing would break a running worker on code
+    we do not control.
+
+    **Names only, never values.** An undeclared field may carry a teacher's
+    text, and a log is the last place that should end up.
+    """
+    unknown = sorted(payload.model_extra or {})
+    if unknown:
+        logger.warning(
+            "[api.agent] %s: %d field(s) this API does not declare, ignored: %s "
+            "(caller=%s). A misspelled field name looks exactly like this.",
+            endpoint,
+            len(unknown),
+            ", ".join(unknown),
+            caller,
+        )
+
+
 def _serialise_event(event: StreamEvent) -> dict:
     """
     Map an internal ``StreamEvent`` to the public SSE event JSON shape.
@@ -327,6 +351,7 @@ async def run_agent(
     # CORE 6 #33 — per-user rate limit. Checked before the run slot so an
     # abusive caller is rejected cheaply (429) without consuming a slot.
     caller_id = caller if isinstance(caller, str) else caller.email
+    _log_unknown_fields(payload, "/run", caller_id)
     try:
         check_user_rate_limit(f"api:{caller_id}")
     except RateLimited as exc:
@@ -444,6 +469,7 @@ async def stream_agent(
     )
 
     caller_id = caller if isinstance(caller, str) else caller.email
+    _log_unknown_fields(payload, "/stream", caller_id)
 
     # CORE 6 #33 — per-user rate limit. Rejected before the stream opens
     # (and before a run slot is acquired) with a 429 + Retry-After.

@@ -43,6 +43,20 @@ class AgentRunRequest(BaseModel):
     Input to either ``POST /api/v1/agent/run`` (sync JSON) or
     ``POST /api/v1/agent/stream`` (SSE-encoded JSON events).
 
+    **Unknown fields are kept and logged, not rejected — for now.** A field the
+    caller misspells (``languag`` for ``language``) is silently dropped under
+    Pydantic's default, so the lesson comes back in the wrong language and
+    nothing anywhere says why. ``extra="forbid"`` would turn that into an
+    immediate 422, which is the behaviour this API should end up with.
+
+    It is not on yet because we do not know what the integrating worker
+    actually sends: one undeclared field in its payload — a trace id, a client
+    version, a leftover — and every call it makes starts failing, on code we do
+    not control. So the route logs the *names* of unknown fields on each
+    request (never the values: an unknown field may carry a teacher's data),
+    and once the logs show nobody is sending any, this becomes
+    ``extra="forbid"`` and the guesswork ends (2026-09-22).
+
     Mandatory fields are ``query`` + ``domain``. Everything else has sensible
     defaults so the smallest valid call from /docs is just::
 
@@ -119,6 +133,12 @@ class AgentRunRequest(BaseModel):
     )
 
     model_config = ConfigDict(
+        # Unknown fields are kept rather than dropped, so the route can name
+        # them in the log; see the class docstring. It lives in *this*
+        # ConfigDict and not in a second one earlier in the class, because a
+        # class body has one ``model_config`` and the last assignment wins —
+        # an earlier one is simply dead code.
+        extra="allow",
         # Single canonical example for the OpenAPI Schema tab and any
         # client-codegen tool (Postman / openapi-generator) that consumes
         # the bare schema. The /docs "Try it out" picker also shows the

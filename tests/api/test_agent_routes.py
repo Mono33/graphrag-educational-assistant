@@ -461,3 +461,52 @@ def pytest_collection_modifyitems(config, items):
 
         item.function = _runner
         item.obj = _runner
+
+
+# ---------------------------------------------------------------------------
+# Fields we did not ask for
+# ---------------------------------------------------------------------------
+
+
+async def test_an_unknown_field_is_logged_by_name_and_the_call_proceeds(
+    client, fresh_user_token, monkeypatch, caplog
+):
+    """A misspelled field is invisible today; this is the step before refusing it.
+
+    The request is still accepted — refusing would break an integrating worker
+    on code we do not control — but the name reaches the log, so the decision
+    to switch to ``extra="forbid"`` rests on evidence rather than on a guess
+    about what callers send.
+    """
+    import logging
+
+    _patch_stream(monkeypatch, [{"kind": "done", "lesson_plan_md": "# Lezione"}])
+
+    with caplog.at_level(logging.WARNING, logger="aix.api.routes.agent"):
+        response = client.post(
+            "/api/v1/agent/run",
+            json={"query": "una lezione", "domain": "neuro", "languag": "it", "trace_id": "abc"},
+            headers={"Authorization": f"Bearer {fresh_user_token}"},
+        )
+
+    assert response.status_code != 422, "unknown fields do not break the caller yet"
+
+    named = [r.getMessage() for r in caplog.records if "does not declare" in str(r.msg)]
+    assert named, "the unknown fields must be named in the log"
+    assert "languag" in named[0] and "trace_id" in named[0]
+    assert "abc" not in named[0], "names only — a value may carry a teacher's data"
+
+
+async def test_a_declared_request_logs_nothing(client, fresh_user_token, monkeypatch, caplog):
+    import logging
+
+    _patch_stream(monkeypatch, [{"kind": "done", "lesson_plan_md": "# Lezione"}])
+
+    with caplog.at_level(logging.WARNING, logger="aix.api.routes.agent"):
+        client.post(
+            "/api/v1/agent/run",
+            json={"query": "una lezione", "domain": "neuro"},
+            headers={"Authorization": f"Bearer {fresh_user_token}"},
+        )
+
+    assert not [r for r in caplog.records if "does not declare" in str(r.msg)]
