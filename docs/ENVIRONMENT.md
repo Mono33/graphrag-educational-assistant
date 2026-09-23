@@ -61,7 +61,7 @@ Tutte spente: §5.2 dice che a flag spente il prodotto è quello di prima.
 | `AIX_MATERIALS_ENABLED` | `false` | Storage durevole, tabelle `material*`, coda e worker di ingestione |
 | `AIX_PRIVATE_RAG_ENABLED` | `false` | Chunking, embedding e recupero dai documenti della docente. **Il testo esce dalla macchina** verso il provider di embedding |
 | `AIX_VALIDATOR_ENABLED` | `false` | Validatore dei vincoli d'aula fra Writer e Critic |
-| `AIX_CONDITIONAL_RETRIEVAL_ENABLED` | `false` | Un turno che non porta concetti nuovi riusa il corpus del thread |
+| `AIX_CONDITIONAL_RETRIEVAL_ENABLED` | `false` | Un turno che non porta concetti nuovi riusa il corpus del thread. **Da accendere nel pilota.** Misurato il 2026-09-23 su quattro turni (`scripts/eval/measure_followup_turns.py`): il router riusa quando si riscrive e cerca quando arriva un argomento nuovo, e sui turni di modifica risparmia 4–9 s su ~65 — il resto è il Writer che riscrive la lezione intera |
 | `AIX_CORRECTIVE_RAG_ENABLED` | `false` | Nodo che giudica il recupero e riprova |
 | `AIX_CORRECTIVE_RAG_MAX_ATTEMPTS` | `2` | Quante volte può riprovare (limitata fra 1 e 4) |
 | `AIX_EXPORT_PDF_ENABLED` | `true` | Bottone PDF (server-side) |
