@@ -125,6 +125,8 @@ Write in {language}:
 ## Output Format
 
 Use clear markdown formatting:
+Write the answer directly as Markdown. The block below shows its shape only: never wrap your answer in a ``` code fence.
+
 ```markdown
 # [Lesson Title]
 
@@ -189,6 +191,8 @@ Write in {language} using appropriate educational register.
 
 ## Output Format
 
+Write the answer directly as Markdown. The block below shows its shape only: never wrap your answer in a ``` code fence.
+
 ```markdown
 # [Concept Name]
 
@@ -240,6 +244,8 @@ Your role is to:
 Write in {language} using appropriate educational register.
 
 ## Output Format
+
+Write the answer directly as Markdown. The block below shows its shape only: never wrap your answer in a ``` code fence.
 
 ```markdown
 # Confronto: [Concept A] vs [Concept B]
@@ -297,6 +303,8 @@ Write in {language} using appropriate educational register.
 
 ## Output Format
 
+Write the answer directly as Markdown. The block below shows its shape only: never wrap your answer in a ``` code fence.
+
 ```markdown
 # Come Funziona: [Process/Mechanism Name]
 
@@ -348,6 +356,8 @@ Your role is to:
 Write in {language} using appropriate educational register.
 
 ## Output Format
+
+Write the answer directly as Markdown. The block below shows its shape only: never wrap your answer in a ``` code fence.
 
 ```markdown
 # Strategie Consigliate: [Topic]
@@ -410,6 +420,8 @@ Your role is to:
 Write in {language} using appropriate educational register.
 
 ## Output Format
+
+Write the answer directly as Markdown. The block below shows its shape only: never wrap your answer in a ``` code fence.
 
 ```markdown
 # [List Topic]

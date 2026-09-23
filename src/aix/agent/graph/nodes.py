@@ -736,7 +736,14 @@ async def write_node(state: AgentState) -> dict[str, Any]:
         # markers are authentic, but one can end up on a sentence its passage
         # does not support; those are removed here, and the sentence stays.
         # Costs one call, and only when the draft carries private citations.
+        from aix.agent.validation.answer_shape import tidy_answer
         from aix.agent.validation.citation_support import drop_unsupported_citations
+
+        # Every draft passes through here -- first version and revisions -- and
+        # from here it reaches the WebUI, the exports and the public API alike.
+        # Tidied first, so the citation check reads the answer and not its
+        # packaging. See ``answer_shape`` for why this is not the renderer's job.
+        lesson_plan = tidy_answer(lesson_plan)
 
         lesson_plan = await drop_unsupported_citations(
             lesson_plan, state.get("material_context_items")
