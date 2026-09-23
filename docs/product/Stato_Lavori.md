@@ -1,6 +1,6 @@
 # Stato dei lavori — Advanced Input & Export
 
-Branch: `feature/advanced-input-and-export` · Aggiornato: 2026-09-18 (**non ancora pushati**: `b305413`, `46d5ec8`, `f041d5e`, `3f79ab6` e il commit della ricerca ibrida)
+Branch: `feature/advanced-input-and-export` · Aggiornato: 2026-09-23 (stato delle fasi verificato sul codice, non ricopiato dalle voci)
 
 Questo file ha un solo scopo: in qualunque momento si deve poter leggere **cosa
 è fatto**, **cosa manca** e **cosa aspetta qualcun altro**, senza ricostruirlo
@@ -19,43 +19,498 @@ sono quelli del piano di lavoro.
 
 ## In una riga
 
-**Fase 0 completa, e la Fase 1 è partita: PR 4 fatta.** Il grafo è risanato e
-testato, le migrazioni ci sono, due difetti che erano in produzione sono chiusi,
-il retrieval condizionale funziona davvero e si vede nell'interfaccia, e lo
-strato che regge input e output — storage durevole, materiali versionati,
-accesso per proprietario, coda di job — esiste ed è testato.
+**Fasi 0 e 1 chiuse, Fase 2 quasi, Fase 3 in gran parte, Google non iniziato.**
+Il RAG privato funziona su documenti veri: una lezione dal settimanale di 114
+pagine cita sette passaggi, verificati, con le pagine giuste. Quello che separa
+il codice dal pilota non è più una grande quantità di codice nuovo: sono i «Done
+when» ancora aperti della Fase 2, un difetto dell'export, due comportamenti
+dell'agente da sistemare e il deploy.
 
-Quello strato non è più inerte: dal 2026-09-11 l'upload lo alimenta **in
-ombra**. Con `AIX_MATERIALS_ENABLED` acceso ogni file caricato entra anche nella
-pipeline nuova, senza che la docente veda niente di diverso. Il passo dopo è
-usarlo davvero.
+### Dove siamo rispetto alla guida
+
+Verificato sul codice il 2026-09-23, voce per voce contro i «Done when» del §5
+della guida, non ricostruito dalle voci del registro.
+
+| Fase | PR | Stato | Cosa manca rispetto ai «Done when» |
+| --- | --- | --- | --- |
+| 0 — Fondazioni | 0, 0-bis, 1, 2, 3 | **chiusa** | — |
+| 1 — Shadow | 4 | **chiusa** | — (la cancellazione ritira anche i chunk: `retire_material`, e la citazione diventa «materiale rimosso») |
+| 2 — Parsing | 5 | **quasi** | preview di pagina/slide; download dell'originale per il solo proprietario; corpus derivato DOCX/PPTX/foto; **provato da una docente solo il PDF**; Tesseract assente in locale e sulla VM |
+| 2 — RAG privato | 6 | **fatta, provata dal vero** | «una citazione apre la pagina giusta»: oggi la citazione è testo, e dipende dalla preview della PR 5. Il test di injection dentro un documento è da verificare |
+| 3 — Export locale | 7 | **in gran parte** | il riuso dello snapshot per content hash non è verificato. (Il markdown grezzo nel PDF è chiuso, `d720814`) |
+| 4 — Google | 8, 9 (+ Docs) | non iniziata, **nel pilota** | sbloccata lato Google (FEM ha Workspace for Education, consenso *Internal*); mancano il template Slides e le decisioni C.3. **Google Docs non è nella guida**: va aggiunto come PR a sé, vedi sotto |
+| 5 — Classroom | 10 | **rimandata** | fuori dal pilota per decisione del 2026-09-23 |
+| 6 — Revisione sorgenti | 11+ | post-pilota | — |
+
+**Fatto e non previsto dalla guida**, ma nato usando il prodotto: controllo delle
+citazioni (casi d'oro 10/11), allegati fino a 100 MB con errori visibili, SQLite
+in WAL, harness di valutazione del recupero (14 casi) e delle citazioni (11).
+
+**Assi paralleli.** API effimera (`Piano_RAG_Effimero_API.md`): passo 1 di 6
+fatto — lo scope dei materiali non lo sceglie più il chiamante — e dal 2 in poi
+fermo. Qualità (Q0–Q3, vedi sotto): Q1 chiuso.
+
+### Ambito del pilota — deciso il 2026-09-23
+
+Angelo: **l'export verso Google Docs e Google Slides serve, Classroom per ora
+no.** Quindi il pilota è Fasi 0–4, con la 5 rimandata.
+
+Una conseguenza da non perdere: **la guida non prevede Google Docs.** Il §10 parla
+di Slides (`SlideDeckIRV1`, `presentations.batchUpdate`) e di Classroom, non di
+documenti. Docs va aggiunto come PR a sé, ma riusa quasi tutto: l'OAuth della
+PR 8 con lo stesso scope `drive.file`, lo stesso `ExportIRV1` della PR 7 da cui
+nasce già il PDF, e l'idempotenza via `appProperties` della PR 9. La parte nuova
+è la traduzione di `ExportIRV1` in richieste `documents.batchUpdate`. Da
+ratificare con Louis, perché cambia l'elenco delle PR della sua guida.
 
 ---
 
 ## Da fare
 
-### Subito
+### Subito, in quest'ordine
 
-Dal 2026-09-14 c'è un piano completo fino al tempo di test — blocchi **B0–B8**,
-in `C:\Users\Angelo\.claude\plans\swirling-imagining-tiger.md`. In sintesi:
+1. **La conversazione dopo il primo turno — il riuso è misurato, la leggerezza
+   no.** Acceso in locale e raccomandato per il pilota (vedi il registro del
+   2026-09-23): il router decide bene in entrambe le direzioni, ma un turno di
+   modifica dura ancora ~60 s perché **il Writer riscrive la lezione intera**
+   (42–55 s, il 65–85 % del turno). Il passo che rende davvero libera la
+   conversazione è un turno di modifica in cui il Writer produce **solo le
+   sezioni che cambiano** e il sistema le ricompone: meno output, meno secondi.
+   È un disegno nuovo, da concordare prima di costruirlo.
+2. **Ricerca a due passaggi per le richieste di panoramica.** Leggere l'indice,
+   ricavarne gli argomenti, cercarli uno per uno. Il caso d'oro
+   `survey-quali-discipline` fallisce apposta (0 su 6) ed è la misura.
+3. ~~Export: le risposte non-lezione in markdown grezzo~~ — **chiuso** (`d720814`).
+4. **Chiudere la Fase 2 come la chiede la guida**: preview e download
+   dell'originale (sblocca anche le citazioni cliccabili), DOCX/PPTX/foto
+   provati dal vero, Tesseract.
+5. **Casi d'oro delle citazioni da altri generi di documento.** Oggi vengono da
+   tre documenti soli; servono file veri di generi diversi.
+6. **Il deploy del pilota**: vedi «In attesa di altri».
 
-1. **B0 — due risposte arrivate il 2026-09-14.** FEM **ha** un dominio Google
-   Workspace for Education: Slides e Classroom si potranno testare con consenso
-   *Internal*, quindi senza audit di Google e senza i refresh token che scadono
-   ogni 7 giorni. E il **corpus lo generiamo noi**, come insieme di esempio —
-   è il prossimo lavoro concreto, perché senza documenti veri il benchmark non
-   misura niente. Restano il template Slides e le decisioni UX U1–U4. La policy
-   per l'embedding è chiusa il 2026-09-15: OpenRouter con Zero Data Retention.
-2. **B1 · Q1 — chiuso** (`628baaa` + `fb95e51`): il profilo intero arriva ai
-   prompt, e il validator deterministico separa «è fattibile» da «è bella».
-3. **B3 · PR 6 — fatto** (`090ffab`, `e3de068`, `6f0664c`): RAG privato, dietro
-   `AIX_PRIVATE_RAG_ENABLED` (spenta).
-4. **B2 · PR 5 — in corso.** Parsing e OCR, un parser per formato dietro la sua
-   flag. Diviso in due: prima il parsing puro (IR, controllo dei file in
-   ingresso, parser, OCR) — **fatto, `387034a`** — poi il collegamento
-   all'upload e la persistenza — **fatto, `730fed2`**. Resta: corpus derivato
-   (DOCX, PPTX, foto) con script e manifest; Tesseract su Windows per chi
-   sviluppa in locale.
+### Fase 0 — chiusa
+
+Niente. Le voci del gate della guida sono soddisfatte: Alembic operativo, upload
+legacy durevoli, CSRF e sanitizer attivi, zero accessi cross-user nei test, flag
+centralizzate, recovery del worker dimostrato.
+
+Resta fuori `document_ir`, che è nel DDL dell'Appendice A.2 ma non nell'obiettivo
+della PR 3: è l'output del parser e arriva con lui, in Fase 1. Aggiungerlo adesso
+avrebbe creato una tabella vuota senza nessuno che ci scrive.
+
+### Igiene — non blocca il gate, ma è noto
+
+| | Cosa | Perché prima o poi |
+| --- | --- | --- |
+| T13 | Retention dei checkpoint | ogni run effimero scrive `ephemeral-{uuid}` che nessuno rilegge e nessun percorso cancella. Verificato: niente sotto `scripts/ops/` |
+| T14 | Streaming su `stream_mode="messages"`, ritiro di `agent/graph/write_stream.py` | il bus è un `dict` globale, quindi per-processo. Non è rotto oggi perché la produzione gira a un worker: **è bloccante nel momento in cui si passa a due** |
+| — | `marked.min.js` è caricato senza versione | `<script src=".../npm/marked/marked.min.js">` prende sempre l'ultima. DOMPurify accanto è pinnato; questo no |
+| — | `/auth/logout` è una GET | un `<img src="/auth/logout">` disconnette la docente. Fastidio, non danno; per sistemarlo serve cambiare il link in navbar in un POST |
+| — | Il Critic non sa quando il retrieval è stato riusato | `retrieval_reused` è in stato, il prompt non lo legge: valuta il grounding come se le fonti fossero appena arrivate |
+| — | `force_retrieval` non ha un controllo in interfaccia | il campo di stato c'è, il grafo lo onora: manca la decisione UX (§6.4, decisione U2) |
+| — | Il planner classifica «traduci in inglese» come `lesson_creation` | il routing non ne dipende più, ma la classificazione resta sbagliata a monte |
+
+---
+
+## Numerazione delle fasi — quale vale
+
+Tre documenti in `docs/product/` usano la parola «Fase» con tre significati
+diversi. Nessuno dei tre è sbagliato: descrivono assi di lavoro diversi. Ma
+«partiamo da Fase 0+1+2» significa tre cose a seconda di chi lo dice, e questo
+sì che è un problema.
+
+**Canonica è la numerazione della guida di Louis**
+(`Advanced_Input_and_Export_Architecture_v2-1_Angelo.md`, §5). Non perché sia
+migliore, ma perché è quella a cui sono agganciati i numeri di PR, i gate, il
+documento delle decisioni e ormai i commenti nel codice (`Fase 0 · PR 3`).
+Rinumerare costerebbe churn senza guadagnare chiarezza.
+
+| Fase | Nella guida (canonica) | Stato |
+| --- | --- | --- |
+| 0 | Fondazioni: migrazioni, storage, sicurezza, coda | chiusa |
+| 1 | Material pipeline in **shadow mode** | chiusa |
+| 2 | Parsing, preview e private RAG | quasi — vedi «Dove siamo» |
+| 3 | Export locale | in gran parte |
+| 4 | Google account link e Slides | non iniziata |
+| 5 | Classroom DRAFT | non iniziata |
+| 6 | Revisione avanzata dei sorgenti | post-pilota |
+
+### L'altro asse: la qualità dell'output dell'agente
+
+`WebUI_Improvement_Strategy.md` ha anch'esso «Fase 0–3», ma parla d'altro: i
+sette difetti D1–D7 dell'output dell'agente. Non è input/output, è *cosa scrive*
+il Writer. Per non collidere, d'ora in poi quelle vanno chiamate **Q0–Q3**
+(«qualità»), mai «Fase».
+
+| | In `WebUI_Improvement_Strategy.md` | Rapporto con la guida |
+| --- | --- | --- |
+| **Q0** | Harness record/replay | indipendente — abilita tutto il resto senza spendere token |
+| **Q1** | Fondamenta della fattibilità (D1 profilo mutilato, D2 etichette BES grezze, D3 validator, D4 ricerca web) | indipendente: nessuna sovrapposizione con la guida |
+| **Q2** | Risorse: qualità, persistenza, libreria (D5) | **si sovrappone** alla Fase 1–2. La persistenza dei media la risolve il material pipeline; la *qualità* della selezione no |
+| **Q3** | Documento strutturato a blocchi (D6) | **si sovrappone** alla Fase 3: `LessonDocumentV1 -> ExportIRV1` è la stessa cosa vista dall'altro lato |
+
+**D7 — «LangGraph usato al minimo» è in buona parte già fatto**, il 2026-09-08:
+compilazione unica, `input_schema`, reducer, `RetryPolicy`, retrieval
+condizionale. Va spuntato lì dentro invece di restare aperto.
+
+### Cosa NON perdere
+
+Q1 non è coperto da nessuna fase della guida, ed è la parte che tocca più da
+vicino la qualità percepita dalla docente: un profilo educativo reso per intero
+al Writer, e le etichette BES in italiano invece che come codici enum grezzi.
+La guida non lo cita perché parla di input e output, non di prompt. Va tenuto
+vivo qui.
+
+### Che cosa significa «Fase 0+1+2»
+
+Sotto la numerazione canonica: fondazioni (fatte), material pipeline in shadow
+mode, parsing e private RAG. **Non** include l'export locale, che è la Fase 3.
+Se l'intenzione della riunione era «arriviamo all'export», allora l'ambito è
+0+1+2+3 — ed è una domanda da porre a Louis in una riga, non da assumere.
+
+---
+
+## In attesa di altri
+
+| Cosa | Da chi | Blocca |
+| --- | --- | --- |
+| `alembic stamp head` sul DB di produzione, prima del primo `upgrade` | team DEV | il primo deploy con migrazioni |
+| Variabili d'ambiente delle nuove flag | team DEV | l'attivazione, non il deploy |
+| Ricostruzione dell'immagine per il volume degli allegati | team DEV | il volume è già nel compose (`21dfd53`); aggiungerlo contro un'immagine precedente ricrea il caso root-owned |
+| ~~Ratifica di `bge-m3` via OpenRouter invece che locale~~ | — | **Chiuso il 2026-09-15.** Confermato via OpenRouter, con la policy **Zero Data Retention** attivata sull'account, e vale anche per i modelli di embedding. È la risposta alla preoccupazione della decisione 05 sui materiali con dati personali: il testo attraversa i provider ma non viene conservato. La dimensione resta 1024 |
+| Tesseract (e il pacchetto della lingua italiana) nell'immagine della VM | team DEV | ogni scansione: senza, entra nell'indice vuota. Il parser lo segnala (`ocr_unavailable`) e il chip ora lo dice |
+| Ratifica dell'ambito del pilota (Fasi 0–4 con Google Docs in più, Classroom rimandata) | Louis | l'elenco delle PR della guida, non il lavoro: vedi «Ambito del pilota» sopra |
+
+---
+
+## Registro
+
+Dal più vecchio al più recente. Solo ciò che è entrato nel branch.
+
+### 2026-09-08 — Baseline verificabile
+
+La CI era rossa e `pytest` non era installato: finché non è stato chiuso questo
+blocco, nessuna affermazione di verifica valeva niente.
+
+| Commit | Cosa |
+| --- | --- |
+| `ad52985` | chiusi i sei errori di lint aperti |
+| `f19449b` | ruff pinnato **esatto**: il formatter cambia le sue scelte di a-capo tra minori, quindi con `>=` la CI installava ogni mattina un formatter diverso e il check diventava rosso senza che nessuno toccasse il codice |
+| `f8fc611` | reformat di massa, isolato in un commit suo |
+| `b7ae51c` | quel commit escluso da `git blame` |
+| `2a371f7` | set di dipendenze di nuovo installabile |
+| `352df91` | primi test sulla topologia del grafo compilato: prima non ne esisteva nessuno, e le due funzioni dove vive tutta la logica di diramazione non erano esercitate da niente |
+
+### 2026-09-08 — Risanamento del grafo
+
+Quattro correzioni retroattive: nessuna cambia il comportamento osservabile,
+tutte rendono possibile ciò che viene dopo.
+
+| Commit | Cosa |
+| --- | --- |
+| `0fed375` | grafo compilato una volta per processo. Il service costruiva un orchestratore nuovo a ogni run, quindi la cache era sempre vuota e `compile()` girava per ogni lezione |
+| `e64480e` | `input_schema` e reducer ordine-indipendenti. `create_initial_state()` azzerava esplicitamente ogni campo di output: al secondo turno il retrieval del primo veniva cancellato prima che il grafo partisse, e **lo stato del checkpointer era funzionalmente inutilizzato** |
+| `f69a7aa` | timeout e retry espliciti sulle chiamate LLM. Il budget era quello di default dell'SDK — 600 secondi — quindi una chiamata appesa poteva tenere una lezione per mezz'ora mentre l'heartbeat la dichiarava sana |
+| `c5338dc` | retrieval condizionale: dal secondo turno il grafo può riusare il corpus invece di ricercare — ma non scattava mai, corretto il giorno dopo in `8e540e5` |
+
+### 2026-09-08 — Due difetti che erano in produzione
+
+| Commit | Cosa |
+| --- | --- |
+| `3ca2e0b` | il materiale caricato dalla docente non arrivava alla revisione: `revise()` non accettava il parametro. Dal punto di vista di chi usa il sistema, l'assistente si dimenticava il file appena il Critic chiedeva una modifica |
+| `21dfd53` | gli allegati si perdevano alla sostituzione del container: `docker-compose.prod.yml` non montava un volume per `data/webui/uploads` |
+
+### 2026-09-08 — Migrazioni (PR 0)
+
+| Commit | Cosa |
+| --- | --- |
+| `8648795` | schema WebUI sotto Alembic. Prima era `create_all` più `ALTER TABLE` a mano dietro un `if not sqlite: return`, quindi **in produzione su Postgres nessuna patch veniva applicata**. I DB esistenti si marcano, non si ricreano |
+| `ca0c124` | lock rigenerato perché la produzione riceva Alembic |
+| `43514d8` | changelog |
+
+### 2026-09-08 — CI
+
+| Commit | Cosa |
+| --- | --- |
+| `51dbcb5` | i test di integrazione non girano più su un runner che non ha Neo4j né le chiavi LLM |
+| `0d17c57` | un modulo di test non ne importa più un altro. Funzionava sotto `python -m pytest`, che mette la working directory su `sys.path`, e falliva sotto `pytest` nudo — che è quello che gira in CI |
+
+### 2026-09-09 — Il retrieval condizionale funziona, e la sicurezza WebUI parte
+
+| Commit | Cosa |
+| --- | --- |
+| `8e540e5` | il retrieval condizionale non scattava mai. Il planner veniva chiamato con la sola domanda e nessun thread, quindi «traduci la lezione in inglese» gli sembrava una richiesta nuova: restituiva i concetti di una lezione che nessuno aveva chiesto, e il router — che confrontava quei concetti col corpus — non ha mai scelto il riuso su un thread reale. Ora il planner riceve la conversazione e il corpus e risponde direttamente; il confronto sui concetti resta come fallback. Inoltre la chat lasciava appeso il turno riusato: il ciclo SSE scarta i nodi che non conosce, quindi `reuse` non emetteva nulla e la card del retriever filava all'infinito |
+| `e997574` | CSRF su `/webui` e `/auth`. Prima nessuno verificava da dove arrivasse una richiesta che cambia stato: con la sessione in un cookie, qualunque pagina aperta nel browser della docente poteva far cancellare una lezione o un allegato a suo nome. Token double-submit firmato sulla sessione, un middleware ASGI invece di una dipendenza per rotta, `/api/v1` non toccato |
+
+**Verificato prima del commit:** ruff pulito, 301 test passati, e uno smoke contro
+l'applicazione vera (non contro un'app di test) su tutti e quattro i percorsi —
+nuova lezione, login, register, DELETE htmx: 403 senza token, passano con.
+Restano rosse solo le due `test_concurrency_limits`, che falliscono su
+`aix/core/concurrency.py` — file non toccato — per la risoluzione del timer su
+Windows (`waited 0.0s`).
+
+### 2026-09-09 — Storage e modelli dei materiali (PR 2)
+
+| Commit | Cosa |
+| --- | --- |
+| `03748aa` | un upload era un nome di file dentro una lista JSON sulla riga della lezione, scritto con una `write()` normale su un percorso costruito da quel nome. Ora: `StorageBackend` con `LocalDurableStorage` per il pilot e uno scaffold `S3CompatibleStorage`, chiavi derivate da proprietario e digest — **mai** dal nome del file o dall'email — scrittura via file temporaneo, `fsync` e rename, e verifica del checksum su `put`, `get` e `delete`. Quattro tabelle secondo l'Appendice A.2: sostituire un file **aggiunge una versione** invece di sovrascriverla, così una lezione continua a risolvere il file da cui è stata scritta. Ogni metodo dei repository richiede `owner_id` come argomento keyword obbligatorio, anche le letture per chiave primaria |
+
+**Un difetto intercettato prima del commit.** L'autogenerate di Alembic aveva
+compilato il default booleano con il dialetto SQLite su cui girava, producendo
+`enabled BOOLEAN DEFAULT 1`. PostgreSQL lo rifiuta — *column is of type boolean
+but default expression is of type integer* — quindi la migrazione sarebbe
+passata in locale e fallita sul database di produzione. Trovato rendendo l'SQL
+offline per entrambi i dialetti prima di committare; ora `DEFAULT true` su
+Postgres e `DEFAULT 1` su SQLite.
+
+**Verificato:** upgrade, downgrade e di nuovo upgrade su SQLite; `alembic check`
+non rileva differenze fra modelli e migrazione; 56 test nuovi, 357 in totale.
+
+**Non collegato a nessuna rotta.** L'adapter shadow sull'endpoint di upload è la
+PR 4, e `AIX_MATERIALS_ENABLED` è spento di default: il percorso legacy resta
+l'unico che gira.
+
+### 2026-09-09 — La sicurezza WebUI è completa (PR 1)
+
+| Commit | Cosa |
+| --- | --- |
+| `d999e52` | **Sanitizzazione.** Il corpo della lezione è reso da Markdown e marcato `\| safe` in quattro template; python-markdown lascia passare l'HTML grezzo per scelta, e quel Markdown è scritto da un LLM, da un corpus, da ciò che digita la docente e dal testo estratto dai file che carica. Ora è filtrato contro una allowlist nell'unica funzione che produce quell'HTML. Lo stream del writer aveva lo stesso buco lato client, dove l'output di `marked` finisce in `innerHTML`: DOMPurify pinnato, e se uno dei due script non carica il riquadro degrada a testo semplice. **Errori.** Quattro percorsi mettevano `str(exc)` in un campo che la chat mostra — la query SQL fallita, l'host del database, i percorsi del container, l'URL chiamato. Ora il fallimento viene loggato con un codice incidente e alla docente arriva una frase che dice cosa fare, con quel codice. **IDOR.** Due utenti esercitano ogni rotta owner-scoped in entrambi i versi |
+
+**Il comportamento era già corretto, mancava il test.** Ho sondato tutte e dodici
+le rotte owner-scoped come utente sbagliato prima di scrivere gli assert: tutte
+404, nessuna perdita di contenuto. Il valore del test è che se un `WHERE` sparisce
+qualcuno se ne accorge — il sintomo non è un errore, è una docente che legge la
+lezione di un'altra. Ogni caso verifica anche il verso opposto, perché
+un'applicazione che desse 404 a tutti soddisfarebbe la prima metà.
+
+**Due difetti trovati mentre lavoravo:**
+
+- il mio primo test IDOR usava due client con `dependency_overrides`, che vive
+  sull'app e non sul client: il secondo fixture sovrascriveva il primo e «Bruno»
+  agiva da Anna. Tre test rossi che sembravano bug dell'app; ho verificato la
+  rotta profili a mano prima di concludere che era il test;
+- `logger.exception()` legge `sys.exc_info()`, quindi fuori da un blocco `except`
+  registra il codice incidente **senza** l'eccezione — perdendo esattamente ciò
+  che il codice serve a ritrovare. Ora l'eccezione è passata esplicitamente.
+
+**Sul lock:** aggiungere `nh3` ricompilando su Windows aveva tolto `uvloop`,
+`jeepney` e `secretstorage` e aggiunto `pywin32` — l'immagine di produzione è
+Linux. Ricompilato con `--python-platform x86_64-manylinux_2_36` come il lock
+originale: il diff è esattamente una riga.
+
+**Verificato:** 410 test passati, ruff pulito, e uno smoke sull'applicazione vera
+(CSRF ancora attivo, DOMPurify caricato, sanitizzazione prima di `innerHTML`).
+
+### 2026-09-09 — La coda di job durevole (PR 3)
+
+| Commit | Cosa |
+| --- | --- |
+| `a3ec87b` | `ingestion_job` più `JobDispatcher` e worker interno. Un job è una riga committata prima che qualunque lavoro cominci, quindi un riavvio a metà parsing perde il tentativo e non il lavoro. Il claim legge id candidati e poi fa un `UPDATE` condizionale: il lock di riga fa sì che esattamente un worker ottenga `rowcount 1` e gli altri passino oltre. `SKIP LOCKED` è usato **solo** su PostgreSQL e **solo** per risparmiare un round trip a chi perde — la correttezza non ci dipende, ed è questo che tiene in piedi SQLite. Al posto dell'heartbeat c'è un lease rinnovato a ogni step, perché un job è una sequenza di passi con una scrittura in mezzo, non una coroutine unica |
+
+**Perché un lease e non un heartbeat.** `agent_run` rinnova un heartbeat perché
+una run è una coroutine continua. Un job no: un worker che muore blocca il suo
+job per al massimo un lease, poi chiunque può prenderlo — con il tentativo già
+addebitato, così un job che uccide sistematicamente il suo worker si arrende
+invece di mangiare la coda.
+
+**Un bug di portabilità trovato dai test.** SQLite restituisce le colonne
+`DateTime(timezone=True)` senza tzinfo, e SQLAlchemy valuta la `WHERE` di un
+`UPDATE` anche in Python sulle righe già in identity map: lì un valore aware e
+uno naive si incontrano e sollevano. Ora tutto il modulo usa UTC naive come
+`agent_run`, ed è proprio la coerenza fra i due a evitare che ricapiti.
+
+**Verificato:** 25 test nuovi (le quattro condizioni di accettazione della guida
+hanno una sezione ciascuna), 435 in totale, ruff pulito, migrazione su e giù e su
+di nuovo con `alembic check` senza differenze.
+
+**Inerte per costruzione:** il worker non parte se `AIX_MATERIALS_ENABLED` è
+spento, e il handler predefinito **rifiuta** invece di marcare pronto un
+documento che nessuno ha processato — completarlo lascerebbe la docente ad
+aspettare contenuto che non arriverà mai.
+
+---
+
+## Decisioni prese il 2026-09-09 (da ratificare con Louis)
+
+Angelo decide per andare avanti; Louis rivede a lavoro svolto.
+
+### Parser: `pypdf@1` oggi, e Tesseract per le scansioni — **non** Docling
+
+> **Corretto il 2026-09-14.** Il 9 settembre avevo consigliato Docling come
+> secondo profilo. Su questa VM è sbagliato, e la correzione è verificata, non
+> un ripensamento.
+
+`parser_profile_version` è una stringa e fa parte della chiave unica di
+`ingestion_job`: **un profilo nuovo è un job nuovo**, cioè un re-parse del
+corpus senza cancellare niente a mano. Lo schema è già costruito per cambiare
+parser dopo, quindi la scelta non blocca nulla.
+
+| Opzione | Valutazione |
+| --- | --- |
+| **`pypdf`** (oggi, `pypdf@1`) | Nessuna dipendenza nuova. Perde tabelle e ordine di lettura sui layout a due colonne, e su un PDF scansionato restituisce **stringa vuota** |
+| **Tesseract** via OCRmyPDF — *consigliato per le scansioni* | ~100 MB medi per pagina, p90 200–300 MB, con `--jobs 1` e downsample. È l'OCR locale che la guida stessa propone in §3.3, e mantiene vero il «parser e OCR locali» di §12.4 |
+| **Docling** | **Escluso da questa VM.** Picchi di 3–4 GB su un singolo PDF e `bad_alloc` anche su macchine da 16 GB (issue docling #2877, #2149). Con 4 GB condivisi fra Postgres, app e Caddy, un solo PDF scansionato abbatte il container e con lui la chat. Rientra in gioco solo a 8 GB |
+| **PyMuPDF** | **Scartato.** AGPL-3.0 oppure licenza commerciale Artifex, e `pyproject.toml` dichiara questo progetto `Proprietary` |
+| **Marker** | Qualità alta ma pensato per GPU; la VM non ne ha |
+
+Il momento giusto per misurare resta quando ci sono documenti veri:
+`scripts/eval/benchmark_parsers.py` esiste apposta.
+
+### Embedding: `bge-m3` via OpenRouter, 1024 dimensioni
+
+OpenRouter **ha** un endpoint `/embeddings` e serve `baai/bge-m3` — 1024
+dimensioni, multilingue, quindi adatto all'italiano. Le altre due BGE su
+OpenRouter (`bge-base-en-v1.5` 768, `bge-large-en-v1.5` 1024) sono **solo
+inglese**: sarebbero la scelta sbagliata per lezioni in italiano a prescindere
+dalla dimensione.
+
+Il repo chiama già OpenRouter per gli embedding dei media
+(`embedding_model = "openai/text-embedding-3-small"` con
+`base_url = https://openrouter.ai/api/v1`), quindi il client esiste già.
+
+**Quello che questa scelta cambia davvero.** La decisione 03 del 2026-09-08
+diceva «embedder **locale** per il corpus privato», e la ragione non era tecnica:
+il corpus è fatto dei materiali della docente, e la decisione 05 prevede
+un'etichetta per quelli che contengono dati personali di studenti. Passare da
+OpenRouter significa che quel testo esce dal perimetro e attraversa i provider a
+cui OpenRouter instrada (per `bge-m3`: Parasail e DeepInfra). Non è un blocco —
+è una scelta di rischio, e va presa sapendola invece che ereditandola.
+
+Due cose la rendono reversibile a costo quasi nullo:
+
+- **la dimensione è 1024 in entrambi i casi.** `bge-m3` locale e `bge-m3` via
+  OpenRouter sono lo stesso modello, quindi `vector(1024)` è giusto comunque e
+  la migrazione non aspetta questa decisione;
+- lo schema salva già `embedding_model` per chunk, quindi un cambio di hosting è
+  tracciabile. *(Caveat: provider diversi possono normalizzare o quantizzare in
+  modo leggermente diverso, quindi vettori prodotti altrove non sono garantiti
+  identici — un cambio di hosting va trattato come re-embedding, non come
+  configurazione.)*
+
+Mitigazione che costa una riga: OpenRouter espone controlli `data_collection`
+per provider nella richiesta. Vanno impostati espliciti prima del primo
+materiale reale, non dopo.
+
+### 2026-09-11 — L'upload alimenta la pipeline in ombra (PR 4)
+
+| Commit | Cosa |
+| --- | --- |
+| `50473c3` | `POST /webui/lesson/{id}/upload` continua a produrre lo stesso manifest, lo stesso estratto e lo stesso frammento htmx. Con la flag accesa memorizza **anche** i byte in modo durevole, registra materiale e prima versione, e li accoda. Tre chiavi opzionali finiscono nella voce di manifest perché una run in ombra sia ispezionabile dopo; il frammento non cambia — shadow mode che si vede non è shadow mode. Il worker parte nel lifespan con un `ExtractionHandler` che gira l'estrazione già in uso e registra **quanto bene è andata** invece di cosa ha prodotto |
+
+**Il vincolo che ha governato la PR:** «failure del worker non rompe la chat».
+Il lavoro shadow gira su una sessione propria, dopo il commit legacy, dietro
+funzioni che non possono sollevare. I test rompono lo storage e la coda
+*apposta* e verificano che la docente riceva comunque il suo file.
+
+**Due difetti trovati scrivendo i test:**
+
+- `session.refresh(lesson)` ricarica la colonna JSON dal database, quindi la
+  voce di manifest che la route aveva in mano diventava un dizionario orfano e
+  l'annotazione shadow scriveva nel vuoto. Ora la voce viene ritrovata per id
+  nella lista ricaricata;
+- `extract_text` **solleva** su un PDF corrotto. Nell'handler ora è catturato e
+  registrato come `unreadable: true`: quei byte non diventeranno leggibili al
+  terzo tentativo, e ritentare cinque volte spenderebbe uno slot su una
+  conclusione già nota.
+
+**Verificato:** 18 test nuovi, 453 in totale, ruff pulito. E contro
+l'applicazione vera: il DB di dev è migrato da solo a `48f042517314`, il worker
+scrive `[jobs] worker ... started` all'avvio e `stopped` in chiusura con
+teardown immediato, e con la flag spenta non parte.
+
+---
+
+### 2026-09-14 — Il modello vede finalmente tutta l'aula (Q1 · 1.1)
+
+| Commit | Cosa |
+| --- | --- |
+| `628baaa` | Il Writer costruiva la sezione del profilo da **cinque campi**. Numero di studenti, dispositivi, LIM, WiFi, postazioni PC, mobilità degli arredi, caratteristiche della classe: raccolti dal form, salvati, mostrati nella sidebar, e **mai** nel prompt. Ecco perché una lezione chiedeva Kahoot dagli smartphone a una classe che dichiara di non averne: il modello non ignorava il vincolo, non l'aveva mai visto. Ora `profile_renderer` rende ogni campo con la sua etichetta e riscrive l'aula come **vincoli imperativi**. Gli stessi vincoli vanno anche al Planner, così il retrieval non si spende su attività che l'aula non può fare |
+
+**I codici BES non arrivano più grezzi.** Venivano uniti come `ADHD, DCGM, DLDS`
+e il modello li riespandeva a memoria: `DCGM` diventava disprassia invece di
+disabilità cognitiva media, `DLDS` un disturbo del linguaggio invece di uno
+studente che impara l'italiano. Le etichette italiane esistevano già in
+`educational_profile.py`; le usavano solo i template.
+
+**Una regola che vale la pena ricordare:** *ignoto non è no*. `has_lim=None`
+significa che la docente non ha risposto e non produce nessuna riga; solo un
+`False` esplicito diventa «non disponibile». Altrimenti un profilo compilato a
+metà vieterebbe metà dell'aula.
+
+**Anche:** `scripts/eval/benchmark_parsers.py`, che fa la misura del worker su
+una cartella di documenti — la metà «in batch» del piano, e lo strumento che
+trasforma il corpus in numeri appena arriva.
+
+**Verificato:** 41 test nuovi, 490 in totale, ruff pulito. Restano le due
+`test_concurrency_limits` note su Windows.
+
+---
+
+### 2026-09-14 — «È fattibile» smette di essere un'opinione (Q1 · 1.3)
+
+| Commit | Cosa |
+| --- | --- |
+| `fb95e51` | Il Critic giudicava qualità pedagogica e fattibilità con la stessa rubrica 1–5: ecco perché una lezione che chiedeva Kahoot dagli smartphone a venticinque studenti senza dispositivi, in un'aula con i banchi fissi, tornava al 91%. Niente nella pipeline sapeva **contare**. Ora un nodo `validate` sta fra Writer e Critic: Python puro, nessuna chiamata al modello, sette regole che rispondono a domande numerabili |
+
+**La separazione è il punto.** Il Critic continua a giudicare se una lezione è
+*buona* — è soggettivo, e va bene che lo faccia un modello. Il validator decide
+se è *possibile* — è oggettivo, e non deve dipendere dall'umore di un LLM.
+
+**Le regole, e perché alcune non bloccano.** `duration_mismatch`, `byod_off`,
+`no_wifi`, `furniture_static` e `bes_label_drift` bloccano: si appoggiano a un
+fatto dichiarato nel profilo. `group_size` e `no_projection` sono solo
+avvertimenti, perché si appoggiano a euristiche sul testo — un falso positivo
+che riscrive in silenzio una lezione valida è peggio di una nota visibile.
+
+`bes_label_drift` è la **sentinella di regressione** del profile renderer: se
+qualcuno rimette i codici grezzi nel prompt, fallisce prima che se ne accorga
+una docente.
+
+**Il retry riusa il canale che c'era.** Una violazione bloccante rimanda la
+bozza al Writer con la sola remediation, attraverso `refinement_instruction`.
+Il budget è quello del validator, non del Critic: spendere una revisione su una
+lezione infattibile toglierebbe alla docente un tentativo per averne una
+*migliore*, che è un fallimento diverso.
+
+**Due errori miei, trovati dai test:**
+
+- il router confrontava il budget con `>=` su un contatore già incrementato,
+  quindi concedeva **una riscrittura in meno** di quante ne dichiarasse;
+- avevo scritto un test che pretendeva una sola violazione su una bozza che ne
+  produce legittimamente due — Kahoot in quell'aula manca sia del dispositivo
+  sia della connessione. Il codice aveva ragione, il test no.
+
+**Verificato:** 34 test nuovi, 524 in totale, ruff pulito. Restano le due
+`test_concurrency_limits` note su Windows.
+
+---
+
+### 2026-09-15 — Dipendenze di parsing ed export; il PDF diventa un file vero (PR 7)
+
+| Commit | Cosa |
+| --- | --- |
+| `ec917a6` | `python-docx`, `python-pptx`, `pypdfium2`, `pytesseract`, `filetype`, e `markdown-it-py` dichiarato. Tutte con licenza permissiva — il progetto è `Proprietary`. Lock compilato per Linux come l'originale: si muove esattamente di quei cinque più `xlsxwriter`, transitiva di `python-pptx` |
+| `f8150e1` | Il pulsante «PDF» apriva `/print` e lasciava tutto al dialogo di stampa del browser. Ora la lezione diventa `LessonDocumentV1`, poi `ExportIRV1` (§10.1–10.4), e il PDF è generato sul server con ReportLab. Più `format=outline`: la scaletta in testo con i minuti di ogni sezione e il totale confrontato con la durata |
+
+**Il font.** Noto Sans è incluso nel repo (licenza OFL), perché l'Helvetica di
+ReportLab copre poco oltre il set occidentale. Ma Noto Sans non ha frecce, «≤»,
+spunte né emoji, che il Writer usa: un glifo mancante stampa un quadratino. Ogni
+carattere è confrontato con la mappa del font: alcuni sono sostituiti
+(→ diventa «->»), gli altri tolti e registrati.
+
+**Provato su contenuto vero**, non solo su fixture: sei lezioni reali del DB di
+dev, 2–4 pagine, 11–29 ms ciascuna, tabelle comprese. I caratteri tolti sono solo
+emoji. Una lezione non dichiara la durata: l'adapter lo segnala, non la inventa.
+
+**Un test sbagliato, trovato subito.** Pensavo che fosse `_safe_href` a bloccare
+i link `javascript:`. In realtà `markdown-it` in modalità CommonMark non li crea
+proprio. Le difese sono due e il test ora verifica la garanzia — nulla diventa
+cliccabile — non il livello che la fornisce.
+
+`/print` resta nella card, rinominato «Stampa». **Verificato:** 50 test nuovi,
+574 in totale.
+
+---
 
 ### 2026-09-15 — Parsing e OCR, prima metà di PR 5 (`387034a`)
 
@@ -957,6 +1412,70 @@ messo i riferimenti non si perdono.
 rete, di cui uno controlla che il percorso di render la usi davvero — una
 protezione che nessuno invoca non protegge niente.
 
+### «Non vede gli articoli» — e invece aveva ragione lui
+
+Richiesta di seguito: «estrapola dal documento una lista di argomenti nuovi».
+Risposta buona, con un'eccezione: per due temi — lo spreco energetico dell'IA
+di Emma Holten e il voto in Sassonia-Anhalt — dice di avere **solo il titolo dal
+sommario** e non il contenuto. Angelo: «ovviamente ci sono gli articoli».
+
+Ci sono davvero: **Holten alle pagine 38-39, Sassonia-Anhalt alle 18-20.**
+Ma il log dice anche:
+
+```
+query='riesci ad estrapolare dal documento una lista di argomenti nuovi…'
+[private-rag] searched 1 version(s), 8 passage(s) kept from 1
+```
+
+**Otto passaggi su 280**, e fra quegli otto la copertina. Quindi aveva i titoli
+e nient'altro — e l'ha **detto**, invece di inventarsi il contenuto. Quello è
+esattamente il comportamento che vogliamo; il buco era a monte.
+
+**Riprodotto in laboratorio**, senza mettere un PDF da 13 MB nel repo:
+`indicazioni_nazionali` ha la stessa forma a misura di corpus — 68 pagine, un
+indice a p3, le discipline sparse dalla 19 alla 67. Due casi d'oro nuovi:
+
+| caso | recall@8 |
+| --- | ---: |
+| **panoramica** («quali discipline tratta») | **0.00** |
+| mirato («educazione fisica») | 1.00 |
+
+Cinque slot su otto se ne andavano in **due pagine**: l'indice e tre chunk della
+pagina 12.
+
+**Tre correzioni misurate, nessuna tenuta.** Le scrivo tutte perché sono le tre
+idee che verranno in mente anche al prossimo:
+
+| tentativo | esito |
+| --- | --- |
+| `top_k` da 8 a 24 | 0.00 → **0.17**. Tre volte i passaggi e tre volte il costo nel prompt, per una pagina su sei |
+| cap di 2 passaggi per pagina | **nessun cambiamento**. Il terzo chunk di p12 esce, ma entra un'altra pagina di apertura |
+| una ricerca per concetto, fusa con RRF | **peggiora tutto**: recall@3 0.86 → 0.79, boilerplate 0.04 → 0.10, ricerca 0.14s → 1.20s |
+
+La terza è quella su cui avrei scommesso, e la premessa era sbagliata: i termini
+di una richiesta di panoramica non sono «musica», «geografia», «matematica» ma
+quattro modi di dire **la stessa** meta-domanda. Spezzare un baricentro dà
+quattro baricentri.
+
+**Nessuna delle tre affrontava il problema.** Una pagina sulla musica non
+assomiglia a «quali discipline tratta questo documento»: assomiglia a una
+domanda sulla musica. L'indice è la risposta onestamente più pertinente a quella
+richiesta, e il sistema la trova. Nessun `k` e nessuna diversificazione
+attraversano uno scarto semantico.
+
+**Quello che serve è un secondo passaggio**, ed è lavoro dell'agente, non del
+ranking: leggere l'indice, ricavarne gli argomenti, e per ciascuno fare una
+ricerca mirata — che infatti funziona, 1.00 sul caso mirato. Il caso d'oro resta
+**committato e fallito**, così il giorno che lo costruiamo c'è con cosa
+misurarlo.
+
+*Intanto, per la docente:* chiedere «parlami dell'articolo sullo spreco
+energetico dell'IA» trova le pagine 38-39. È il caso mirato, e quello funziona.
+
+**Baseline aggiornata** (il corpus ora ha 3 documenti, 265 chunk, quindi i
+numeri non sono confrontabili con quelli di ieri): recall@3 0.86 · recall@8 0.93
+· MRR 0.81 · boilerplate@5 0.04 · ricerca mediana 0.14s.
+
 **Aperto:** il buco API ↔ RAG privato (piano in `Piano_RAG_Effimero_API.md`,
 passo 0 da fare comunque: `session_id` è scelto dal chiamante ed è anche la
 chiave dei materiali); la verifica confronta con i **passaggi recuperati**, non
@@ -986,430 +1505,68 @@ riesce a estrarre; `scripts/eval/benchmark_parsers.py` fa la stessa misura su
 una cartella, senza WebUI né database. La percentuale di `empty: true` è quanti
 PDF delle docenti sono scansionati, ed è il dato che dimensiona il lavoro di OCR.
 
-### Fase 0 — chiusa
-
-Niente. Le voci del gate della guida sono soddisfatte: Alembic operativo, upload
-legacy durevoli, CSRF e sanitizer attivi, zero accessi cross-user nei test, flag
-centralizzate, recovery del worker dimostrato.
-
-Resta fuori `document_ir`, che è nel DDL dell'Appendice A.2 ma non nell'obiettivo
-della PR 3: è l'output del parser e arriva con lui, in Fase 1. Aggiungerlo adesso
-avrebbe creato una tabella vuota senza nessuno che ci scrive.
-
-### Igiene — non blocca il gate, ma è noto
-
-| | Cosa | Perché prima o poi |
-| --- | --- | --- |
-| T13 | Retention dei checkpoint | ogni run effimero scrive `ephemeral-{uuid}` che nessuno rilegge e nessun percorso cancella. Verificato: niente sotto `scripts/ops/` |
-| T14 | Streaming su `stream_mode="messages"`, ritiro di `agent/graph/write_stream.py` | il bus è un `dict` globale, quindi per-processo. Non è rotto oggi perché la produzione gira a un worker: **è bloccante nel momento in cui si passa a due** |
-| — | `marked.min.js` è caricato senza versione | `<script src=".../npm/marked/marked.min.js">` prende sempre l'ultima. DOMPurify accanto è pinnato; questo no |
-| — | `/auth/logout` è una GET | un `<img src="/auth/logout">` disconnette la docente. Fastidio, non danno; per sistemarlo serve cambiare il link in navbar in un POST |
-| — | Il Critic non sa quando il retrieval è stato riusato | `retrieval_reused` è in stato, il prompt non lo legge: valuta il grounding come se le fonti fossero appena arrivate |
-| — | `force_retrieval` non ha un controllo in interfaccia | il campo di stato c'è, il grafo lo onora: manca la decisione UX (§6.4, decisione U2) |
-| — | Il planner classifica «traduci in inglese» come `lesson_creation` | il routing non ne dipende più, ma la classificazione resta sbagliata a monte |
-
----
-
-## Numerazione delle fasi — quale vale
-
-Tre documenti in `docs/product/` usano la parola «Fase» con tre significati
-diversi. Nessuno dei tre è sbagliato: descrivono assi di lavoro diversi. Ma
-«partiamo da Fase 0+1+2» significa tre cose a seconda di chi lo dice, e questo
-sì che è un problema.
-
-**Canonica è la numerazione della guida di Louis**
-(`Advanced_Input_and_Export_Architecture_v2-1_Angelo.md`, §5). Non perché sia
-migliore, ma perché è quella a cui sono agganciati i numeri di PR, i gate, il
-documento delle decisioni e ormai i commenti nel codice (`Fase 0 · PR 3`).
-Rinumerare costerebbe churn senza guadagnare chiarezza.
-
-| Fase | Nella guida (canonica) | Stato |
-| --- | --- | --- |
-| 0 | Fondazioni: migrazioni, storage, sicurezza, coda | chiusa |
-| 1 | Material pipeline in **shadow mode** | prossima |
-| 2 | Parsing, preview e private RAG | |
-| 3 | Export locale | |
-| 4 | Google account link e Slides | |
-| 5 | Classroom DRAFT | |
-| 6 | Revisione avanzata dei sorgenti | |
-
-### L'altro asse: la qualità dell'output dell'agente
-
-`WebUI_Improvement_Strategy.md` ha anch'esso «Fase 0–3», ma parla d'altro: i
-sette difetti D1–D7 dell'output dell'agente. Non è input/output, è *cosa scrive*
-il Writer. Per non collidere, d'ora in poi quelle vanno chiamate **Q0–Q3**
-(«qualità»), mai «Fase».
-
-| | In `WebUI_Improvement_Strategy.md` | Rapporto con la guida |
-| --- | --- | --- |
-| **Q0** | Harness record/replay | indipendente — abilita tutto il resto senza spendere token |
-| **Q1** | Fondamenta della fattibilità (D1 profilo mutilato, D2 etichette BES grezze, D3 validator, D4 ricerca web) | indipendente: nessuna sovrapposizione con la guida |
-| **Q2** | Risorse: qualità, persistenza, libreria (D5) | **si sovrappone** alla Fase 1–2. La persistenza dei media la risolve il material pipeline; la *qualità* della selezione no |
-| **Q3** | Documento strutturato a blocchi (D6) | **si sovrappone** alla Fase 3: `LessonDocumentV1 -> ExportIRV1` è la stessa cosa vista dall'altro lato |
-
-**D7 — «LangGraph usato al minimo» è in buona parte già fatto**, il 2026-09-08:
-compilazione unica, `input_schema`, reducer, `RetryPolicy`, retrieval
-condizionale. Va spuntato lì dentro invece di restare aperto.
-
-### Cosa NON perdere
-
-Q1 non è coperto da nessuna fase della guida, ed è la parte che tocca più da
-vicino la qualità percepita dalla docente: un profilo educativo reso per intero
-al Writer, e le etichette BES in italiano invece che come codici enum grezzi.
-La guida non lo cita perché parla di input e output, non di prompt. Va tenuto
-vivo qui.
-
-### Che cosa significa «Fase 0+1+2»
-
-Sotto la numerazione canonica: fondazioni (fatte), material pipeline in shadow
-mode, parsing e private RAG. **Non** include l'export locale, che è la Fase 3.
-Se l'intenzione della riunione era «arriviamo all'export», allora l'ambito è
-0+1+2+3 — ed è una domanda da porre a Louis in una riga, non da assumere.
-
----
-
-## In attesa di altri
-
-| Cosa | Da chi | Blocca |
-| --- | --- | --- |
-| `alembic stamp head` sul DB di produzione, prima del primo `upgrade` | team DEV | il primo deploy con migrazioni |
-| Variabili d'ambiente delle nuove flag | team DEV | l'attivazione, non il deploy |
-| Ricostruzione dell'immagine per il volume degli allegati | team DEV | il volume è già nel compose (`21dfd53`); aggiungerlo contro un'immagine precedente ricrea il caso root-owned |
-| ~~Ratifica di `bge-m3` via OpenRouter invece che locale~~ | — | **Chiuso il 2026-09-15.** Confermato via OpenRouter, con la policy **Zero Data Retention** attivata sull'account, e vale anche per i modelli di embedding. È la risposta alla preoccupazione della decisione 05 sui materiali con dati personali: il testo attraversa i provider ma non viene conservato. La dimensione resta 1024 |
-| Conferma che «Fase 0+1+2» include o esclude l'export | Louis | l'ambito, non il lavoro: vedi «Numerazione delle fasi» sopra. Una riga di risposta |
-
----
-
-## Registro
-
-Dal più vecchio al più recente. Solo ciò che è entrato nel branch.
-
-### 2026-09-08 — Baseline verificabile
-
-La CI era rossa e `pytest` non era installato: finché non è stato chiuso questo
-blocco, nessuna affermazione di verifica valeva niente.
-
-| Commit | Cosa |
-| --- | --- |
-| `ad52985` | chiusi i sei errori di lint aperti |
-| `f19449b` | ruff pinnato **esatto**: il formatter cambia le sue scelte di a-capo tra minori, quindi con `>=` la CI installava ogni mattina un formatter diverso e il check diventava rosso senza che nessuno toccasse il codice |
-| `f8fc611` | reformat di massa, isolato in un commit suo |
-| `b7ae51c` | quel commit escluso da `git blame` |
-| `2a371f7` | set di dipendenze di nuovo installabile |
-| `352df91` | primi test sulla topologia del grafo compilato: prima non ne esisteva nessuno, e le due funzioni dove vive tutta la logica di diramazione non erano esercitate da niente |
-
-### 2026-09-08 — Risanamento del grafo
-
-Quattro correzioni retroattive: nessuna cambia il comportamento osservabile,
-tutte rendono possibile ciò che viene dopo.
-
-| Commit | Cosa |
-| --- | --- |
-| `0fed375` | grafo compilato una volta per processo. Il service costruiva un orchestratore nuovo a ogni run, quindi la cache era sempre vuota e `compile()` girava per ogni lezione |
-| `e64480e` | `input_schema` e reducer ordine-indipendenti. `create_initial_state()` azzerava esplicitamente ogni campo di output: al secondo turno il retrieval del primo veniva cancellato prima che il grafo partisse, e **lo stato del checkpointer era funzionalmente inutilizzato** |
-| `f69a7aa` | timeout e retry espliciti sulle chiamate LLM. Il budget era quello di default dell'SDK — 600 secondi — quindi una chiamata appesa poteva tenere una lezione per mezz'ora mentre l'heartbeat la dichiarava sana |
-| `c5338dc` | retrieval condizionale: dal secondo turno il grafo può riusare il corpus invece di ricercare — ma non scattava mai, corretto il giorno dopo in `8e540e5` |
-
-### 2026-09-08 — Due difetti che erano in produzione
-
-| Commit | Cosa |
-| --- | --- |
-| `3ca2e0b` | il materiale caricato dalla docente non arrivava alla revisione: `revise()` non accettava il parametro. Dal punto di vista di chi usa il sistema, l'assistente si dimenticava il file appena il Critic chiedeva una modifica |
-| `21dfd53` | gli allegati si perdevano alla sostituzione del container: `docker-compose.prod.yml` non montava un volume per `data/webui/uploads` |
-
-### 2026-09-08 — Migrazioni (PR 0)
-
-| Commit | Cosa |
-| --- | --- |
-| `8648795` | schema WebUI sotto Alembic. Prima era `create_all` più `ALTER TABLE` a mano dietro un `if not sqlite: return`, quindi **in produzione su Postgres nessuna patch veniva applicata**. I DB esistenti si marcano, non si ricreano |
-| `ca0c124` | lock rigenerato perché la produzione riceva Alembic |
-| `43514d8` | changelog |
-
-### 2026-09-08 — CI
-
-| Commit | Cosa |
-| --- | --- |
-| `51dbcb5` | i test di integrazione non girano più su un runner che non ha Neo4j né le chiavi LLM |
-| `0d17c57` | un modulo di test non ne importa più un altro. Funzionava sotto `python -m pytest`, che mette la working directory su `sys.path`, e falliva sotto `pytest` nudo — che è quello che gira in CI |
-
-### 2026-09-09 — Il retrieval condizionale funziona, e la sicurezza WebUI parte
-
-| Commit | Cosa |
-| --- | --- |
-| `8e540e5` | il retrieval condizionale non scattava mai. Il planner veniva chiamato con la sola domanda e nessun thread, quindi «traduci la lezione in inglese» gli sembrava una richiesta nuova: restituiva i concetti di una lezione che nessuno aveva chiesto, e il router — che confrontava quei concetti col corpus — non ha mai scelto il riuso su un thread reale. Ora il planner riceve la conversazione e il corpus e risponde direttamente; il confronto sui concetti resta come fallback. Inoltre la chat lasciava appeso il turno riusato: il ciclo SSE scarta i nodi che non conosce, quindi `reuse` non emetteva nulla e la card del retriever filava all'infinito |
-| `e997574` | CSRF su `/webui` e `/auth`. Prima nessuno verificava da dove arrivasse una richiesta che cambia stato: con la sessione in un cookie, qualunque pagina aperta nel browser della docente poteva far cancellare una lezione o un allegato a suo nome. Token double-submit firmato sulla sessione, un middleware ASGI invece di una dipendenza per rotta, `/api/v1` non toccato |
-
-**Verificato prima del commit:** ruff pulito, 301 test passati, e uno smoke contro
-l'applicazione vera (non contro un'app di test) su tutti e quattro i percorsi —
-nuova lezione, login, register, DELETE htmx: 403 senza token, passano con.
-Restano rosse solo le due `test_concurrency_limits`, che falliscono su
-`aix/core/concurrency.py` — file non toccato — per la risoluzione del timer su
-Windows (`waited 0.0s`).
-
-### 2026-09-09 — Storage e modelli dei materiali (PR 2)
-
-| Commit | Cosa |
-| --- | --- |
-| `03748aa` | un upload era un nome di file dentro una lista JSON sulla riga della lezione, scritto con una `write()` normale su un percorso costruito da quel nome. Ora: `StorageBackend` con `LocalDurableStorage` per il pilot e uno scaffold `S3CompatibleStorage`, chiavi derivate da proprietario e digest — **mai** dal nome del file o dall'email — scrittura via file temporaneo, `fsync` e rename, e verifica del checksum su `put`, `get` e `delete`. Quattro tabelle secondo l'Appendice A.2: sostituire un file **aggiunge una versione** invece di sovrascriverla, così una lezione continua a risolvere il file da cui è stata scritta. Ogni metodo dei repository richiede `owner_id` come argomento keyword obbligatorio, anche le letture per chiave primaria |
-
-**Un difetto intercettato prima del commit.** L'autogenerate di Alembic aveva
-compilato il default booleano con il dialetto SQLite su cui girava, producendo
-`enabled BOOLEAN DEFAULT 1`. PostgreSQL lo rifiuta — *column is of type boolean
-but default expression is of type integer* — quindi la migrazione sarebbe
-passata in locale e fallita sul database di produzione. Trovato rendendo l'SQL
-offline per entrambi i dialetti prima di committare; ora `DEFAULT true` su
-Postgres e `DEFAULT 1` su SQLite.
-
-**Verificato:** upgrade, downgrade e di nuovo upgrade su SQLite; `alembic check`
-non rileva differenze fra modelli e migrazione; 56 test nuovi, 357 in totale.
-
-**Non collegato a nessuna rotta.** L'adapter shadow sull'endpoint di upload è la
-PR 4, e `AIX_MATERIALS_ENABLED` è spento di default: il percorso legacy resta
-l'unico che gira.
-
-### 2026-09-09 — La sicurezza WebUI è completa (PR 1)
-
-| Commit | Cosa |
-| --- | --- |
-| `d999e52` | **Sanitizzazione.** Il corpo della lezione è reso da Markdown e marcato `\| safe` in quattro template; python-markdown lascia passare l'HTML grezzo per scelta, e quel Markdown è scritto da un LLM, da un corpus, da ciò che digita la docente e dal testo estratto dai file che carica. Ora è filtrato contro una allowlist nell'unica funzione che produce quell'HTML. Lo stream del writer aveva lo stesso buco lato client, dove l'output di `marked` finisce in `innerHTML`: DOMPurify pinnato, e se uno dei due script non carica il riquadro degrada a testo semplice. **Errori.** Quattro percorsi mettevano `str(exc)` in un campo che la chat mostra — la query SQL fallita, l'host del database, i percorsi del container, l'URL chiamato. Ora il fallimento viene loggato con un codice incidente e alla docente arriva una frase che dice cosa fare, con quel codice. **IDOR.** Due utenti esercitano ogni rotta owner-scoped in entrambi i versi |
-
-**Il comportamento era già corretto, mancava il test.** Ho sondato tutte e dodici
-le rotte owner-scoped come utente sbagliato prima di scrivere gli assert: tutte
-404, nessuna perdita di contenuto. Il valore del test è che se un `WHERE` sparisce
-qualcuno se ne accorge — il sintomo non è un errore, è una docente che legge la
-lezione di un'altra. Ogni caso verifica anche il verso opposto, perché
-un'applicazione che desse 404 a tutti soddisfarebbe la prima metà.
-
-**Due difetti trovati mentre lavoravo:**
-
-- il mio primo test IDOR usava due client con `dependency_overrides`, che vive
-  sull'app e non sul client: il secondo fixture sovrascriveva il primo e «Bruno»
-  agiva da Anna. Tre test rossi che sembravano bug dell'app; ho verificato la
-  rotta profili a mano prima di concludere che era il test;
-- `logger.exception()` legge `sys.exc_info()`, quindi fuori da un blocco `except`
-  registra il codice incidente **senza** l'eccezione — perdendo esattamente ciò
-  che il codice serve a ritrovare. Ora l'eccezione è passata esplicitamente.
-
-**Sul lock:** aggiungere `nh3` ricompilando su Windows aveva tolto `uvloop`,
-`jeepney` e `secretstorage` e aggiunto `pywin32` — l'immagine di produzione è
-Linux. Ricompilato con `--python-platform x86_64-manylinux_2_36` come il lock
-originale: il diff è esattamente una riga.
-
-**Verificato:** 410 test passati, ruff pulito, e uno smoke sull'applicazione vera
-(CSRF ancora attivo, DOMPurify caricato, sanitizzazione prima di `innerHTML`).
-
-### 2026-09-09 — La coda di job durevole (PR 3)
-
-| Commit | Cosa |
-| --- | --- |
-| `a3ec87b` | `ingestion_job` più `JobDispatcher` e worker interno. Un job è una riga committata prima che qualunque lavoro cominci, quindi un riavvio a metà parsing perde il tentativo e non il lavoro. Il claim legge id candidati e poi fa un `UPDATE` condizionale: il lock di riga fa sì che esattamente un worker ottenga `rowcount 1` e gli altri passino oltre. `SKIP LOCKED` è usato **solo** su PostgreSQL e **solo** per risparmiare un round trip a chi perde — la correttezza non ci dipende, ed è questo che tiene in piedi SQLite. Al posto dell'heartbeat c'è un lease rinnovato a ogni step, perché un job è una sequenza di passi con una scrittura in mezzo, non una coroutine unica |
-
-**Perché un lease e non un heartbeat.** `agent_run` rinnova un heartbeat perché
-una run è una coroutine continua. Un job no: un worker che muore blocca il suo
-job per al massimo un lease, poi chiunque può prenderlo — con il tentativo già
-addebitato, così un job che uccide sistematicamente il suo worker si arrende
-invece di mangiare la coda.
-
-**Un bug di portabilità trovato dai test.** SQLite restituisce le colonne
-`DateTime(timezone=True)` senza tzinfo, e SQLAlchemy valuta la `WHERE` di un
-`UPDATE` anche in Python sulle righe già in identity map: lì un valore aware e
-uno naive si incontrano e sollevano. Ora tutto il modulo usa UTC naive come
-`agent_run`, ed è proprio la coerenza fra i due a evitare che ricapiti.
-
-**Verificato:** 25 test nuovi (le quattro condizioni di accettazione della guida
-hanno una sezione ciascuna), 435 in totale, ruff pulito, migrazione su e giù e su
-di nuovo con `alembic check` senza differenze.
-
-**Inerte per costruzione:** il worker non parte se `AIX_MATERIALS_ENABLED` è
-spento, e il handler predefinito **rifiuta** invece di marcare pronto un
-documento che nessuno ha processato — completarlo lascerebbe la docente ad
-aspettare contenuto che non arriverà mai.
-
----
-
-## Decisioni prese il 2026-09-09 (da ratificare con Louis)
-
-Angelo decide per andare avanti; Louis rivede a lavoro svolto.
-
-### Parser: `pypdf@1` oggi, e Tesseract per le scansioni — **non** Docling
-
-> **Corretto il 2026-09-14.** Il 9 settembre avevo consigliato Docling come
-> secondo profilo. Su questa VM è sbagliato, e la correzione è verificata, non
-> un ripensamento.
-
-`parser_profile_version` è una stringa e fa parte della chiave unica di
-`ingestion_job`: **un profilo nuovo è un job nuovo**, cioè un re-parse del
-corpus senza cancellare niente a mano. Lo schema è già costruito per cambiare
-parser dopo, quindi la scelta non blocca nulla.
-
-| Opzione | Valutazione |
-| --- | --- |
-| **`pypdf`** (oggi, `pypdf@1`) | Nessuna dipendenza nuova. Perde tabelle e ordine di lettura sui layout a due colonne, e su un PDF scansionato restituisce **stringa vuota** |
-| **Tesseract** via OCRmyPDF — *consigliato per le scansioni* | ~100 MB medi per pagina, p90 200–300 MB, con `--jobs 1` e downsample. È l'OCR locale che la guida stessa propone in §3.3, e mantiene vero il «parser e OCR locali» di §12.4 |
-| **Docling** | **Escluso da questa VM.** Picchi di 3–4 GB su un singolo PDF e `bad_alloc` anche su macchine da 16 GB (issue docling #2877, #2149). Con 4 GB condivisi fra Postgres, app e Caddy, un solo PDF scansionato abbatte il container e con lui la chat. Rientra in gioco solo a 8 GB |
-| **PyMuPDF** | **Scartato.** AGPL-3.0 oppure licenza commerciale Artifex, e `pyproject.toml` dichiara questo progetto `Proprietary` |
-| **Marker** | Qualità alta ma pensato per GPU; la VM non ne ha |
-
-Il momento giusto per misurare resta quando ci sono documenti veri:
-`scripts/eval/benchmark_parsers.py` esiste apposta.
-
-### Embedding: `bge-m3` via OpenRouter, 1024 dimensioni
-
-OpenRouter **ha** un endpoint `/embeddings` e serve `baai/bge-m3` — 1024
-dimensioni, multilingue, quindi adatto all'italiano. Le altre due BGE su
-OpenRouter (`bge-base-en-v1.5` 768, `bge-large-en-v1.5` 1024) sono **solo
-inglese**: sarebbero la scelta sbagliata per lezioni in italiano a prescindere
-dalla dimensione.
-
-Il repo chiama già OpenRouter per gli embedding dei media
-(`embedding_model = "openai/text-embedding-3-small"` con
-`base_url = https://openrouter.ai/api/v1`), quindi il client esiste già.
-
-**Quello che questa scelta cambia davvero.** La decisione 03 del 2026-09-08
-diceva «embedder **locale** per il corpus privato», e la ragione non era tecnica:
-il corpus è fatto dei materiali della docente, e la decisione 05 prevede
-un'etichetta per quelli che contengono dati personali di studenti. Passare da
-OpenRouter significa che quel testo esce dal perimetro e attraversa i provider a
-cui OpenRouter instrada (per `bge-m3`: Parasail e DeepInfra). Non è un blocco —
-è una scelta di rischio, e va presa sapendola invece che ereditandola.
-
-Due cose la rendono reversibile a costo quasi nullo:
-
-- **la dimensione è 1024 in entrambi i casi.** `bge-m3` locale e `bge-m3` via
-  OpenRouter sono lo stesso modello, quindi `vector(1024)` è giusto comunque e
-  la migrazione non aspetta questa decisione;
-- lo schema salva già `embedding_model` per chunk, quindi un cambio di hosting è
-  tracciabile. *(Caveat: provider diversi possono normalizzare o quantizzare in
-  modo leggermente diverso, quindi vettori prodotti altrove non sono garantiti
-  identici — un cambio di hosting va trattato come re-embedding, non come
-  configurazione.)*
-
-Mitigazione che costa una riga: OpenRouter espone controlli `data_collection`
-per provider nella richiesta. Vanno impostati espliciti prima del primo
-materiale reale, non dopo.
-
-### 2026-09-11 — L'upload alimenta la pipeline in ombra (PR 4)
-
-| Commit | Cosa |
-| --- | --- |
-| `50473c3` | `POST /webui/lesson/{id}/upload` continua a produrre lo stesso manifest, lo stesso estratto e lo stesso frammento htmx. Con la flag accesa memorizza **anche** i byte in modo durevole, registra materiale e prima versione, e li accoda. Tre chiavi opzionali finiscono nella voce di manifest perché una run in ombra sia ispezionabile dopo; il frammento non cambia — shadow mode che si vede non è shadow mode. Il worker parte nel lifespan con un `ExtractionHandler` che gira l'estrazione già in uso e registra **quanto bene è andata** invece di cosa ha prodotto |
-
-**Il vincolo che ha governato la PR:** «failure del worker non rompe la chat».
-Il lavoro shadow gira su una sessione propria, dopo il commit legacy, dietro
-funzioni che non possono sollevare. I test rompono lo storage e la coda
-*apposta* e verificano che la docente riceva comunque il suo file.
-
-**Due difetti trovati scrivendo i test:**
-
-- `session.refresh(lesson)` ricarica la colonna JSON dal database, quindi la
-  voce di manifest che la route aveva in mano diventava un dizionario orfano e
-  l'annotazione shadow scriveva nel vuoto. Ora la voce viene ritrovata per id
-  nella lista ricaricata;
-- `extract_text` **solleva** su un PDF corrotto. Nell'handler ora è catturato e
-  registrato come `unreadable: true`: quei byte non diventeranno leggibili al
-  terzo tentativo, e ritentare cinque volte spenderebbe uno slot su una
-  conclusione già nota.
-
-**Verificato:** 18 test nuovi, 453 in totale, ruff pulito. E contro
-l'applicazione vera: il DB di dev è migrato da solo a `48f042517314`, il worker
-scrive `[jobs] worker ... started` all'avvio e `stopped` in chiusura con
-teardown immediato, e con la flag spenta non parte.
-
----
-
-### 2026-09-14 — Il modello vede finalmente tutta l'aula (Q1 · 1.1)
-
-| Commit | Cosa |
-| --- | --- |
-| `628baaa` | Il Writer costruiva la sezione del profilo da **cinque campi**. Numero di studenti, dispositivi, LIM, WiFi, postazioni PC, mobilità degli arredi, caratteristiche della classe: raccolti dal form, salvati, mostrati nella sidebar, e **mai** nel prompt. Ecco perché una lezione chiedeva Kahoot dagli smartphone a una classe che dichiara di non averne: il modello non ignorava il vincolo, non l'aveva mai visto. Ora `profile_renderer` rende ogni campo con la sua etichetta e riscrive l'aula come **vincoli imperativi**. Gli stessi vincoli vanno anche al Planner, così il retrieval non si spende su attività che l'aula non può fare |
-
-**I codici BES non arrivano più grezzi.** Venivano uniti come `ADHD, DCGM, DLDS`
-e il modello li riespandeva a memoria: `DCGM` diventava disprassia invece di
-disabilità cognitiva media, `DLDS` un disturbo del linguaggio invece di uno
-studente che impara l'italiano. Le etichette italiane esistevano già in
-`educational_profile.py`; le usavano solo i template.
-
-**Una regola che vale la pena ricordare:** *ignoto non è no*. `has_lim=None`
-significa che la docente non ha risposto e non produce nessuna riga; solo un
-`False` esplicito diventa «non disponibile». Altrimenti un profilo compilato a
-metà vieterebbe metà dell'aula.
-
-**Anche:** `scripts/eval/benchmark_parsers.py`, che fa la misura del worker su
-una cartella di documenti — la metà «in batch» del piano, e lo strumento che
-trasforma il corpus in numeri appena arriva.
-
-**Verificato:** 41 test nuovi, 490 in totale, ruff pulito. Restano le due
-`test_concurrency_limits` note su Windows.
-
----
-
-### 2026-09-14 — «È fattibile» smette di essere un'opinione (Q1 · 1.3)
-
-| Commit | Cosa |
-| --- | --- |
-| `fb95e51` | Il Critic giudicava qualità pedagogica e fattibilità con la stessa rubrica 1–5: ecco perché una lezione che chiedeva Kahoot dagli smartphone a venticinque studenti senza dispositivi, in un'aula con i banchi fissi, tornava al 91%. Niente nella pipeline sapeva **contare**. Ora un nodo `validate` sta fra Writer e Critic: Python puro, nessuna chiamata al modello, sette regole che rispondono a domande numerabili |
-
-**La separazione è il punto.** Il Critic continua a giudicare se una lezione è
-*buona* — è soggettivo, e va bene che lo faccia un modello. Il validator decide
-se è *possibile* — è oggettivo, e non deve dipendere dall'umore di un LLM.
-
-**Le regole, e perché alcune non bloccano.** `duration_mismatch`, `byod_off`,
-`no_wifi`, `furniture_static` e `bes_label_drift` bloccano: si appoggiano a un
-fatto dichiarato nel profilo. `group_size` e `no_projection` sono solo
-avvertimenti, perché si appoggiano a euristiche sul testo — un falso positivo
-che riscrive in silenzio una lezione valida è peggio di una nota visibile.
-
-`bes_label_drift` è la **sentinella di regressione** del profile renderer: se
-qualcuno rimette i codici grezzi nel prompt, fallisce prima che se ne accorga
-una docente.
-
-**Il retry riusa il canale che c'era.** Una violazione bloccante rimanda la
-bozza al Writer con la sola remediation, attraverso `refinement_instruction`.
-Il budget è quello del validator, non del Critic: spendere una revisione su una
-lezione infattibile toglierebbe alla docente un tentativo per averne una
-*migliore*, che è un fallimento diverso.
-
-**Due errori miei, trovati dai test:**
-
-- il router confrontava il budget con `>=` su un contatore già incrementato,
-  quindi concedeva **una riscrittura in meno** di quante ne dichiarasse;
-- avevo scritto un test che pretendeva una sola violazione su una bozza che ne
-  produce legittimamente due — Kahoot in quell'aula manca sia del dispositivo
-  sia della connessione. Il codice aveva ragione, il test no.
-
-**Verificato:** 34 test nuovi, 524 in totale, ruff pulito. Restano le due
-`test_concurrency_limits` note su Windows.
-
----
-
-### 2026-09-15 — Dipendenze di parsing ed export; il PDF diventa un file vero (PR 7)
-
-| Commit | Cosa |
-| --- | --- |
-| `ec917a6` | `python-docx`, `python-pptx`, `pypdfium2`, `pytesseract`, `filetype`, e `markdown-it-py` dichiarato. Tutte con licenza permissiva — il progetto è `Proprietary`. Lock compilato per Linux come l'originale: si muove esattamente di quei cinque più `xlsxwriter`, transitiva di `python-pptx` |
-| `f8150e1` | Il pulsante «PDF» apriva `/print` e lasciava tutto al dialogo di stampa del browser. Ora la lezione diventa `LessonDocumentV1`, poi `ExportIRV1` (§10.1–10.4), e il PDF è generato sul server con ReportLab. Più `format=outline`: la scaletta in testo con i minuti di ogni sezione e il totale confrontato con la durata |
-
-**Il font.** Noto Sans è incluso nel repo (licenza OFL), perché l'Helvetica di
-ReportLab copre poco oltre il set occidentale. Ma Noto Sans non ha frecce, «≤»,
-spunte né emoji, che il Writer usa: un glifo mancante stampa un quadratino. Ogni
-carattere è confrontato con la mappa del font: alcuni sono sostituiti
-(→ diventa «->»), gli altri tolti e registrati.
-
-**Provato su contenuto vero**, non solo su fixture: sei lezioni reali del DB di
-dev, 2–4 pagine, 11–29 ms ciascuna, tabelle comprese. I caratteri tolti sono solo
-emoji. Una lezione non dichiara la durata: l'adapter lo segnala, non la inventa.
-
-**Un test sbagliato, trovato subito.** Pensavo che fosse `_safe_href` a bloccare
-i link `javascript:`. In realtà `markdown-it` in modalità CommonMark non li crea
-proprio. Le difese sono due e il test ora verifica la garanzia — nulla diventa
-cliccabile — non il livello che la fornisce.
-
-`/print` resta nella card, rinominato «Stampa». **Verificato:** 50 test nuovi,
-574 in totale.
-
----
-
-## Un difetto preesistente trovato il 2026-09-11, non toccato
+### 2026-09-23 — Il riuso del grafo nei turni di seguito, misurato
+
+Angelo vuole che dopo la prima risposta la conversazione vada avanti **senza
+rifare ogni volta la ricerca sul grafo**. Esisteva già dal 2026-09-09, dietro
+`AIX_CONDITIONAL_RETRIEVAL_ENABLED`, spenta di default e anche in locale: il
+turno di seguito del 2026-09-22 ha rifatto la ricerca e ha impiegato 101,8 s.
+
+Misurato con `scripts/eval/measure_followup_turns.py`: una conversazione vera di
+quattro turni sullo stesso thread, con la cronologia come la passa la WebUI,
+una volta con il riuso acceso e una spento.
+
+| turno | spento | acceso | di cui Writer |
+| --- | ---: | ---: | ---: |
+| 1 — «crea una lezione sulla fotosintesi» | 80,8 s | 80,0 s | 40–44 s |
+| 2 — «accorcia l'introduzione» | 67,8 s | **58,8 s** | 50–51 s |
+| 3 — «semplifica le consegne» | 68,7 s | **65,1 s** | 42–55 s |
+| 4 — «aggiungi la respirazione cellulare» | 71,5 s | 51,1 s | 31–45 s |
+
+**Il router decide bene in entrambe le direzioni.** Nei turni 2 e 3 riusa i 44
+nodi, motivandolo («modifica solo la struttura… non richiede nuove evidenze»);
+nel 4 cerca di nuovo, perché la respirazione cellulare è un argomento nuovo.
+Quel turno cerca in entrambi i giri: la differenza di 20 s è rumore del modello.
+
+**Ma il guadagno è piccolo, e va detto.** Sui turni di modifica il riuso toglie
+4–9 s su circa 65: dal secondo turno la ricerca costa 6–8 s, non i 24 del primo,
+perché la cache è calda. Il resto è il **Writer che riscrive la lezione intera**,
+il 65–85 % di ogni turno, con una variabilità fra un giro e l'altro (42–55 s)
+grande quanto il risparmio. Per rendere la conversazione davvero leggera la leva
+è lì: nei turni di modifica, far produrre al Writer solo le sezioni che cambiano.
+
+**Deciso:** default nel codice invariato (a flag spente il prodotto è quello di
+prima, §5.2), acceso nel `.env` locale, e documentato in `ENVIRONMENT.md` come da
+accendere nel pilota.
+
+### 2026-09-23 — Markdown grezzo nell'export, e un buco nella correzione di ieri (`d720814`)
+
+La lista di argomenti del 2026-09-22 è uscita dal PDF come un unico riquadro di
+Markdown grezzo: il Writer aveva avvolto tutta la risposta in un recinto
+` ```markdown `, copiato dal prompt della lista. Cinque dei sei prompt per
+intento mostrano il formato atteso dentro un recinto; la lezione dello stesso
+thread, scritta dal sesto, era pulita.
+
+Cercando dove correggere è venuto fuori che **la rete contro la nota doppia di
+ieri aveva un buco**: stava nel renderer della WebUI, che l'export salta per le
+lezioni senza citazioni private e **l'API pubblica salta sempre**. Un integratore
+riceveva il testo esattamente come l'aveva scritto il modello.
+
+Ora entrambe le regole — togliere un recinto che avvolge tutta la risposta,
+tenere una sola nota sulle fonti — stanno in `agent/validation/answer_shape.py`
+e girano in `write_node`, il solo punto da cui passano tutte le bozze e le
+revisioni, e da lì raggiungono WebUI, export e API. Girano anche al render, per
+le lezioni già salvate. Sono strette apposta: un esempio di codice Python dentro
+una lezione resta dov'è. I prompt ora chiedono di non recintare; quella è la
+richiesta, questa è la garanzia.
+
+**Verificato:** sulla risposta vera che l'ha fatto emergere, da due recinti a
+zero con la marcatura AI conservata; il test dell'export fallisce se si rimette
+il buco; 776 test unitari passati (i 2 noti su Windows).
+
+## Un difetto preesistente trovato il 2026-09-11 — chiuso
+
+*Chiuso nella PR 5: `_legacy_read` trasforma un PDF illeggibile in un `ValueError` con un messaggio in italiano, e la docente riceve un 422 leggibile invece di un 500. Il testo sotto resta come registro.*
 
 `extract_text` (`src/aix/webui/lessons/uploads.py:57`) solleva su un PDF
 corrotto o troncato, e `lesson_upload` cattura solo `ValueError`: un PDF rotto
