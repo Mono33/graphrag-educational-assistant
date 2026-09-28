@@ -90,6 +90,10 @@ class _Draft:
     #: machine's reading of an image to be quotable *as such* — a name or a date
     #: read by OCR must not be presented as certain.
     ocr: bool = False
+    #: The format of the document, from its first block: what a citation needs
+    #: to say "slide 3" rather than "p. 3", or to name a Word section. Metadata
+    #: only -- it changes no chunk boundary, so it needs no new CHUNKER_VERSION.
+    fmt: Optional[str] = None
 
     @property
     def text(self) -> str:
@@ -102,6 +106,8 @@ class _Draft:
     def add(self, block: IRBlock, text: str) -> None:
         self.parts.append(text)
         self.block_ids.append(block.block_id)
+        if self.fmt is None:
+            self.fmt = (block.source_locator or {}).get("format")
         if block.confidence < 1.0:
             self.ocr = True
         if block.page is not None and block.page not in self.pages:
@@ -186,6 +192,8 @@ class _Chunker:
             return
 
         locator: dict[str, Any] = {"block_ids": list(self.draft.block_ids)}
+        if self.draft.fmt:
+            locator["format"] = self.draft.fmt
         if self.draft.heading:
             locator["heading"] = self.draft.heading
         if self.draft.ocr:

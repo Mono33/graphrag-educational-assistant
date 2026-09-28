@@ -62,6 +62,44 @@ _MARKER = "[[material:"
 _ANY_MARKER = re.compile(r"\[\[material:[^\]]*\]\]")
 
 
+def drop_unknown_markers(draft: str, items: Optional[list[dict[str, Any]]]) -> str:
+    """Only the markers the Writer was handed survive; any other is removed.
+
+    Measured on 2026-09-21: the Writer only ever copies back markers it was
+    given. But a marker is plain text, and a teacher's document is plain text
+    too: a file carrying ``[[material:<someone else's id>#page=1]]`` in its body
+    hands the Writer a marker nobody retrieved. In the WebUI the renderer drops
+    it, because it knows which documents the lesson is bound to. The public API
+    renders without that list, so the marker became "(materiale allegato,
+    p. 1)" -- a citation to nothing -- and the support check, which judges only
+    the markers it knows, let it through (2026-09-25).
+
+    Not a judgement and not a model call, so it runs whether or not the
+    citation check is switched on.
+    """
+    if not draft or _MARKER not in draft:
+        return draft
+
+    known = {str(item.get("citation") or "") for item in items or []}
+    removed: list[str] = []
+
+    def _keep(match: re.Match) -> str:
+        if match.group(0) in known:
+            return match.group(0)
+        removed.append(match.group(0))
+        return ""
+
+    cleaned = _ANY_MARKER.sub(_keep, draft)
+    if not removed:
+        return draft
+    logger.warning(
+        "[citation-check] %d marker(s) the Writer was not given were removed: %s",
+        len(removed),
+        ", ".join(sorted(set(removed)))[:300],
+    )
+    return re.sub(r" +([.,;:])", r"\1", cleaned)
+
+
 def enabled() -> bool:
     """On by default — read the literal, not the shape of the expression.
 

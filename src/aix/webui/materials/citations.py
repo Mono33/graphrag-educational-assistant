@@ -27,6 +27,7 @@ from __future__ import annotations
 import logging
 import re
 import uuid
+from urllib.parse import unquote
 from typing import Any, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -45,12 +46,48 @@ GENERIC_LABEL = "materiale allegato"
 TOMBSTONE_LABEL = "materiale rimosso"
 
 
-def _page_of(anchor: Optional[str]) -> Optional[str]:
+#: The kinds of place a marker can name, and how a teacher reads each one.
+_PLACES = ("page", "slide", "section")
+
+
+def _place_of(anchor: Optional[str]) -> Optional[tuple[str, str]]:
+    """``("page", "7")``, ``("slide", "3")``, ``("section", "Storia")`` or None."""
     for part in (anchor or "").split("&"):
         key, _, value = part.partition("=")
-        if key == "page" and value.strip():
-            return value.strip()
+        if key in _PLACES and value.strip():
+            return key, unquote(value.strip())
     return None
+
+
+def _say(place: tuple[str, str]) -> str:
+    kind, value = place
+    if kind == "slide":
+        return f"slide {value}"
+    if kind == "section":
+        return f"§ {value}"
+    return f"p. {value}"
+
+
+def _say_all(places: list[tuple[str, str]]) -> str:
+    """One document's places, as the sources list prints them.
+
+    Grouped by kind, because nothing guarantees one kind per document: a PDF
+    passage with no page but a heading is cited by section, beside its pages.
+    """
+    parts = []
+    for kind in _PLACES:
+        values = [value for k, value in places if k == kind]
+        if not values:
+            continue
+        if kind == "section":
+            parts.append(", ".join(f"§ {value}" for value in values))  # order first cited
+            continue
+        numbers = sorted(values, key=lambda v: (not v.isdigit(), int(v) if v.isdigit() else 0, v))
+        if kind == "slide":
+            parts.append(f"slide {', '.join(numbers)}")
+        else:
+            parts.append(f"p. {numbers[0]}" if len(numbers) == 1 else f"pp. {', '.join(numbers)}")
+    return "; ".join(parts)
 
 
 def render_citations(text: str, labels: Optional[dict[str, str]] = None) -> str:
@@ -67,10 +104,10 @@ def render_citations(text: str, labels: Optional[dict[str, str]] = None) -> str:
         else:
             label = GENERIC_LABEL
 
-        page = _page_of(anchor)
+        place = _place_of(anchor)
         if label == TOMBSTONE_LABEL:
             return f"({label})"  # the page of a document nobody can open means nothing
-        return f"({label}, p. {page})" if page else f"({label})"
+        return f"({label}, {_say(place)})" if place else f"({label})"
 
     # Tidy the space a removed citation leaves behind mid-sentence.
     return re.sub(r" +([.,;:])", r"\1", CITATION_RE.sub(_replace, text))
@@ -100,7 +137,7 @@ def sources_block(text: str, labels: Optional[dict[str, str]] = None) -> str:
     if not text:
         return ""
 
-    pages: dict[str, list[str]] = {}
+    pages: dict[str, list[tuple[str, str]]] = {}
     for match in CITATION_RE.finditer(text):
         version_id, anchor = match.group(1).lower(), match.group(2)
         if labels is not None:
@@ -111,23 +148,17 @@ def sources_block(text: str, labels: Optional[dict[str, str]] = None) -> str:
             label = GENERIC_LABEL
 
         seen = pages.setdefault(label, [])
-        page = _page_of(anchor)
+        place = _place_of(anchor)
         # A tombstone has no page worth printing: nobody can open it.
-        if page and page not in seen and label != TOMBSTONE_LABEL:
-            seen.append(page)
+        if place and place not in seen and label != TOMBSTONE_LABEL:
+            seen.append(place)
 
     if not pages:
         return ""
 
     lines = [SOURCES_HEADING, ""]
     for label, found in pages.items():
-        numbers = sorted(found, key=lambda p: (not p.isdigit(), int(p) if p.isdigit() else 0, p))
-        if not numbers:
-            lines.append(f"- {label}")
-        elif len(numbers) == 1:
-            lines.append(f"- {label} — p. {numbers[0]}")
-        else:
-            lines.append(f"- {label} — pp. {', '.join(numbers)}")
+        lines.append(f"- {label} — {_say_all(found)}" if found else f"- {label}")
     return "\n".join(lines)
 
 

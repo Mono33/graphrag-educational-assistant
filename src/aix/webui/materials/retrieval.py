@@ -38,6 +38,7 @@ import logging
 import math
 import os
 import uuid
+from urllib.parse import quote
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
@@ -203,8 +204,21 @@ class MaterialContextItem:
         """The internal citation of §8.6. The renderer makes the link, not the model."""
         parts = [f"material:{self.source_id}"]
         anchor = []
-        if self.locator.get("page"):
-            anchor.append(f"page={self.locator['page']}")
+        # Where a teacher can find it, in the terms of the format. A deck is
+        # cited by slide: "p. 3" sent her to a page no slideshow has. A Word
+        # file has no pages to trust, so it is cited by the section heading
+        # the passage sat under -- the chunk already carried it, and the
+        # citation dropped it, leaving "(file.docx)" with nowhere to look. A
+        # photo is one image, and "p. 1" says nothing (2026-09-25).
+        page = self.locator.get("page")
+        fmt = self.locator.get("format")
+        heading = self.locator.get("heading")
+        if page and fmt == "pptx":
+            anchor.append(f"slide={page}")
+        elif page and fmt != "image":
+            anchor.append(f"page={page}")
+        elif not page and heading:
+            anchor.append("section=" + quote(str(heading)[:60], safe=""))
         block_ids = self.locator.get("block_ids") or []
         if block_ids:
             anchor.append(f"block={block_ids[0]}")

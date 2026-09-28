@@ -288,9 +288,32 @@ def parse_pptx(content: bytes, options: ParseOptions) -> DocumentIRV1:
             elif shape.shape_type is not None and "PICTURE" in str(shape.shape_type):
                 unsupported.add("image")
 
+        # The speaker notes. Teachers write the lesson there -- what to say,
+        # what the slide only hints at -- and the first version of this parser
+        # read the slides and skipped the notes entirely: on a deck built from
+        # the ministerial curriculum, 4 of 4 sentences that lived only in the
+        # notes were missing from the index (2026-09-25). They belong to their
+        # slide, so a citation of them points at the slide they annotate.
+        if slide.has_notes_slide and slide.notes_slide.notes_text_frame is not None:
+            notes = slide.notes_slide.notes_text_frame
+            for paragraph_index, paragraph in enumerate(notes.paragraphs):
+                blocks.add(
+                    "paragraph",
+                    "".join(run.text for run in paragraph.runs),
+                    {
+                        "format": "pptx",
+                        "slide_index": slide_index,
+                        "notes": True,
+                        "paragraph_index": paragraph_index,
+                    },
+                    page=slide_index,
+                )
+
     return DocumentIRV1(
         parser_name="pptx",
-        parser_version="1",
+        # 2: speaker notes are read. Decks uploaded under 1 carry no notes
+        # until they are ingested again.
+        parser_version="2",
         parser_profile_version=PARSER_PROFILE,
         source_sha256=sha,
         media_type=intake.PPTX,

@@ -33,9 +33,18 @@ cases:
   # inventing, which is right, and the gap was ours (2026-09-22).
   #
   # ``indicazioni_nazionali_dm254_2012.pdf`` is the same shape at a size that
-  # fits the corpus: 68 pages, an index on p3, and the subjects spread far apart
-  # — music at 19-21, English at 37-39, geography at 46, mathematics at 49-55,
-  # art at 60, physical education at 63, technology at 66-67.
+  # fits the corpus: 68 pages, an index on p3, and the subjects spread far apart.
+  # Each subject opens on a page of its own: Italian 28, history 41, geography
+  # 46, mathematics 49, science 54, music 58, art 60, physical education 63,
+  # technology 66.
+  #
+  # CORRECTED 2026-09-25. The first version expected pages 20, 38, 46, 51, 60,
+  # 63, calling 20 "music" -- it is about infant-school routines; music opens at
+  # 58 -- and taking 38 and 51 from inside a subject rather than where it opens.
+  # Found while building the format corpus from the same document, by reading
+  # each page's first line instead of trusting a keyword search for "MUSICA",
+  # which matches any page that mentions music. A label is a claim about the
+  # document, and this one was checked less carefully than the code.
   #
   # ``survey`` cases ask for breadth: the pages below are deliberately scattered,
   # so a ranking that returns eight neighbours of one good match scores badly
@@ -68,7 +77,7 @@ cases:
     query: "indicazioni nazionali · quali discipline tratta il documento · panoramica delle aree disciplinari · elenco degli insegnamenti"
     expect:
       - document: indicazioni_nazionali_dm254_2012.pdf
-        pages: [20, 38, 46, 51, 60, 63]
+        pages: [28, 41, 49, 58, 60, 63]
 
   - id: survey-un-argomento-solo-nell-indice
     query: "educazione fisica · obiettivi di apprendimento · competenze motorie"
