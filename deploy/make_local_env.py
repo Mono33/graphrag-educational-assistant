@@ -55,6 +55,10 @@ PILOT = {
     # 2000 left the writer with an empty answer once attachments were in the
     # prompt (2026-09-16); the error message itself recommends 8000.
     "AIX_WRITER_MAX_TOKENS": "8000",
+    # Tesseract kept 2 of 8 critical elements on a maths sheet, Gemini 8 of 8
+    # (2026-09-25); Tesseract stays in the image as the fallback. The model is
+    # vision_ocr.DEFAULT_MODEL unless AIX_OCR_MODEL says otherwise.
+    "AIX_OCR_BACKEND": "vision",
 }
 
 #: Taken from the developer's .env as well, because they are what the tests of

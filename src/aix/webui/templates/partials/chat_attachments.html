@@ -68,8 +68,21 @@
           have none and render as before. What the parser could not do is said
           on the chip, not discovered later in a lesson written from less.
         #}
-        {% set p = f.parse if f.parse is mapping else {} %}
+        {#
+          Whose reading of the file. In the pipeline, the worker's: it is the one
+          that ran OCR and fed the index. The upload request no longer runs OCR
+          when the private RAG is on, so its summary would call a scan "without
+          text". Until the worker has spoken the chip says only "in
+          preparazione". Outside the pipeline, the request's summary, as before.
+        #}
+        {% set st = states.get(f.material_version_id) %}
+        {% if f.material_version_id %}
+          {% set p = st.quality if (st and st.quality is mapping) else {} %}
+        {% else %}
+          {% set p = f.parse if f.parse is mapping else {} %}
+        {% endif %}
         {% set unread = p.unread_pages or 0 %}
+        {% set discarded = ((p.warnings or []) | join(" ")).count("ocr_discarded") %}
         {% set ocr = p.ocr_pages or 0 %}
         {% set low = "ocr_low_confidence" in ((p.warnings or []) | join(" ")) %}
         {#
@@ -87,10 +100,13 @@
           much of it went unread that the lesson will be written from a fraction
           of what the teacher attached.
         #}
-        {% set mostly_unread = unread and p.pages and (unread / p.pages) > 0.25 %}
-        {% set warn = p.empty or low or mostly_unread %}
-        {# The pipeline's own state, when we have it: preparing, ready, failed. #}
-        {% set st = states.get(f.material_version_id) %}
+        {#
+          Proportional, like the unread pages: one poster read badly in a
+          114-page magazine put a warning triangle on the whole document
+          (2026-09-25). The triangle is for a document mostly lost.
+        #}
+        {% set mostly_unread = p.pages and ((unread + discarded) / p.pages) > 0.25 %}
+        {% set warn = p.empty or mostly_unread %}
         {#
           Three states, and they cover everything: a file in the pipeline is
           failed, or usable, or still being prepared. «Still being prepared»
@@ -139,6 +155,11 @@
                   title="Testo letto automaticamente da immagini (OCR){% if p.ocr_mean_confidence %}, affidabilità media {{ (p.ocr_mean_confidence * 100) | round | int }}%{% endif %}. Può contenere errori.">
               OCR {{ ocr }} pag.{% if low %} · bassa qualità{% endif %}
             </span>
+          {% endif %}
+          {% if discarded %}
+            <span class="aix-attach-chip-sep">·</span>
+            <span class="aix-attach-chip-status"
+                  title="L'OCR ha letto {{ discarded }} {{ 'pagina' if discarded == 1 else 'pagine' }} con un'affidabilità troppo bassa: il testo era incerto al punto da non poter fare da fonte, quindi non è stato indicizzato. Di solito sono timbri, locandine o immagini con scritte decorative.">{{ discarded }} pag. illeggibili</span>
           {% endif %}
           {% if unread and not p.empty %}
             <span class="aix-attach-chip-sep">·</span>

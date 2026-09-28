@@ -12,8 +12,9 @@ it (``confidence``). A PDF page whose text layer yields fewer than
 OCR — which is the per-page decision the corpus showed was needed: the one real
 scan in it has text on its cover page and nowhere else.
 
-The parsers are synchronous and pure: they take bytes and return an IR, they
-make no network call and touch no database. The worker runs them in a thread.
+The parsers are synchronous: they take bytes and return an IR and touch no
+database. The one network call is OCR with ``AIX_OCR_BACKEND=vision``, which
+sends a page without text to a vision model. The worker runs them in a thread.
 """
 
 from __future__ import annotations
@@ -30,15 +31,16 @@ from typing import Optional
 from aix.webui.materials.parsing import intake
 from aix.webui.materials.parsing.ir import (
     LOW_CONFIDENCE,
+    ocr_index_min_confidence,
     DocumentIRV1,
     IRBlock,
     content_hash,
 )
 from aix.webui.materials.parsing.ocr import (
     DEFAULT_PAGE_TIMEOUT_S,
-    ocr_image,
+    ocr_available,
+    recognise,
     render_pdf_page,
-    tesseract_available,
 )
 
 logger = logging.getLogger(__name__)
@@ -122,7 +124,7 @@ def parse_pdf(content: bytes, options: ParseOptions) -> DocumentIRV1:
     if total > options.max_pages:
         warnings.append(f"page_limit:{options.max_pages}")
 
-    can_ocr = options.ocr_enabled and _flag("AIX_PARSE_OCR_ENABLED") and tesseract_available()
+    can_ocr = options.ocr_enabled and _flag("AIX_PARSE_OCR_ENABLED") and ocr_available()
 
     for index, page in enumerate(reader.pages[: options.max_pages]):
         number = index + 1
@@ -145,7 +147,7 @@ def parse_pdf(content: bytes, options: ParseOptions) -> DocumentIRV1:
         ocr_attempts += 1
 
         try:
-            result = ocr_image(render_pdf_page(content, index), timeout_s=options.page_timeout_s)
+            result = recognise(render_pdf_page(content, index), timeout_s=options.page_timeout_s)
         except Exception:  # noqa: BLE001 — one unreadable page must not lose the rest
             logger.info("[parsing] OCR failed on page %d", number, exc_info=True)
             warnings.append(f"ocr_failed:page={number}")
@@ -156,6 +158,12 @@ def parse_pdf(content: bytes, options: ParseOptions) -> DocumentIRV1:
             unread.append(number)
             continue
 
+        # Read, but not trusted: kept out of the index and said so. See
+        # ``OCR_INDEX_MIN_CONFIDENCE`` for where the floor comes from.
+        if result.confidence < ocr_index_min_confidence():
+            warnings.append(f"ocr_discarded:page={number}")
+            continue
+
         ocr_pages.append(number)
         if result.confidence < LOW_CONFIDENCE:
             warnings.append(f"ocr_low_confidence:page={number}")
@@ -163,7 +171,7 @@ def parse_pdf(content: bytes, options: ParseOptions) -> DocumentIRV1:
             blocks.add(
                 "paragraph",
                 paragraph,
-                {"format": "pdf", "page": number, "ocr": True},
+                {"format": "pdf", "page": number, "ocr": True, "ocr_engine": result.engine},
                 page=number,
                 confidence=result.confidence,
             )
@@ -173,7 +181,9 @@ def parse_pdf(content: bytes, options: ParseOptions) -> DocumentIRV1:
 
     return DocumentIRV1(
         parser_name="pdf",
-        parser_version="1",
+        # 2: OCR pages under the confidence floor are not indexed.
+        # 3: OCR may come from a vision model; the locator says which engine.
+        parser_version="3",
         parser_profile_version=PARSER_PROFILE,
         source_sha256=sha,
         media_type=intake.PDF,
@@ -362,10 +372,12 @@ def parse_image(content: bytes, options: ParseOptions, media_type: str) -> Docum
     ocr_pages: tuple[int, ...] = ()
     unread: tuple[int, ...] = ()
 
-    if options.ocr_enabled and _flag("AIX_PARSE_OCR_ENABLED") and tesseract_available():
+    if options.ocr_enabled and _flag("AIX_PARSE_OCR_ENABLED") and ocr_available():
         with Image.open(io.BytesIO(content)) as image:
-            result = ocr_image(image, timeout_s=options.page_timeout_s)
-        if result.text.strip():
+            result = recognise(image, timeout_s=options.page_timeout_s)
+        if result.text.strip() and result.confidence < ocr_index_min_confidence():
+            warnings.append("ocr_discarded:page=1")
+        elif result.text.strip():
             ocr_pages = (1,)
             if result.confidence < LOW_CONFIDENCE:
                 warnings.append("ocr_low_confidence:page=1")
@@ -373,7 +385,7 @@ def parse_image(content: bytes, options: ParseOptions, media_type: str) -> Docum
                 blocks.add(
                     "paragraph",
                     paragraph,
-                    {"format": "image", "page": 1, "ocr": True},
+                    {"format": "image", "page": 1, "ocr": True, "ocr_engine": result.engine},
                     page=1,
                     confidence=result.confidence,
                 )
@@ -385,7 +397,9 @@ def parse_image(content: bytes, options: ParseOptions, media_type: str) -> Docum
 
     return DocumentIRV1(
         parser_name="image",
-        parser_version="1",
+        # 2: an image read under the confidence floor is not indexed.
+        # 3: OCR may come from a vision model; the locator says which engine.
+        parser_version="3",
         parser_profile_version=PARSER_PROFILE,
         source_sha256=sha,
         media_type=media_type,

@@ -57,6 +57,10 @@ class MaterialState:
     #: Retrievable passages. Zero while the private RAG is off, which is why it
     #: is shown only when it is greater than zero.
     passages: int = 0
+    #: The worker's reading of the file: pages, OCR, unread and discarded pages.
+    #: The chip prefers it to the summary the upload request made, which has
+    #: no OCR when the private RAG is on.
+    quality: Optional[dict] = None
 
     @property
     def preparing(self) -> bool:
@@ -91,6 +95,7 @@ async def states_for_lesson(
             Material.display_name,
             MaterialVersion.status,
             func.coalesce(chunk_counts.c.passages, 0),
+            MaterialVersion.parse_quality,
         )
         .join(Material, Material.id == MaterialVersion.material_id)
         .join(
@@ -111,8 +116,9 @@ async def states_for_lesson(
             name=name,
             status=status,
             passages=int(passages or 0),
+            quality=quality if isinstance(quality, dict) else None,
         )
-        for version_id, name, status, passages in rows
+        for version_id, name, status, passages, quality in rows
     }
 
 

@@ -1,0 +1,40 @@
+# Real files for scripts/eval/check_ocr.py.
+#
+# The files live in data/eval/corpus/ocr/reali/ (git-ignored: some are
+# teachers' or pupils' material); only the expectations are versioned here.
+# A case whose file is missing is skipped, so this list can name what we still
+# need before we have it.
+#
+# Keys: must, must_any (list of alternative spellings), order (sequences that
+# must appear in that order), truth (full text, for recall), expect_no_text,
+# must_not_only (the page talks to the model), ticked ({label: true/false}).
+# Write `must` from the file itself, never from what an engine returned.
+
+# --- Already measured (2026-09-25/28) -------------------------------------
+
+invalsi_scheda.pdf:
+  # Uploaded by Angelo on 2026-09-25: a scanned INVALSI maths sheet.
+  # «437» is the page number and «1 cm» is printed as «1» over «cm»: both
+  # left out on purpose -- omitting them is not an error.
+  must: ["INVALSI DI MATEMATICA", "Indica la figura intera", "4 u, 5 d",
+         "Quale scrittura non rappresenta 45 decimi"]
+  must_any:
+    - ["1/10"]
+    - ["45/10"]
+    - ["□"]
+
+# --- Needed: real material a teacher uploads --------------------------------
+# Angelo to collect; photograph with a phone, as a teacher would.
+
+# quaderno_bambino.jpg:        a page of a pupil's exercise book, handwritten
+# appunti_docente.jpg:          a teacher's handwritten notes, cursive
+# lavagna.jpg:                  a whiteboard or LIM photographed from the desk
+# mappa_libro.jpg:              a concept map from a textbook
+# pagina_libro_riquadri.jpg:    a textbook page with sidebars, boxes, captions
+# scheda_fotocopiata.pdf:       a worksheet photocopied and scanned, with blanks
+# scheda_compilata.jpg:         the same worksheet filled in by hand, boxes ticked
+# libro_inglese.jpg:            a page of an English (or French) textbook
+# scienze_formule.jpg:          a science page with formulas and units
+# spartito.jpg:                 a music score: must not be turned into text
+# cartina.jpg:                  a map with place names
+# scansione_lunga.pdf:          30+ scanned pages, for time, cost and the page cap

@@ -79,10 +79,17 @@ class CachedEmbeddings:
     so nothing in the library needs to know this exists.
     """
 
-    def __init__(self, model: str, *, offline: bool) -> None:
+    def __init__(
+        self, model: str, *, offline: bool, dimensions: int | None = None, one_per_request: bool = False
+    ) -> None:
         self.model = model
         self.offline = offline
-        self.directory = CACHE_DIR / model.replace("/", "_")
+        #: Asked of models that can shorten their vectors (Matryoshka), so a
+        #: candidate is measured at the size the index actually stores.
+        self.dimensions = dimensions
+        self.one_per_request = one_per_request
+        suffix = f"@{dimensions}" if dimensions else ""
+        self.directory = CACHE_DIR / (model.replace("/", "_") + suffix)
         self.directory.mkdir(parents=True, exist_ok=True)
         self.hits = 0
         self.misses = 0
@@ -129,8 +136,22 @@ class CachedEmbeddings:
 
         if self._client is None:
             self._client = app_config.openai.get_async_client()
-        response = await self._client.embeddings.create(model=self.model, input=texts)
-        return [list(item.embedding) for item in sorted(response.data, key=lambda d: d.index)]
+        extra = {"dimensions": self.dimensions} if self.dimensions else {}
+        if not self.one_per_request:
+            response = await self._client.embeddings.create(model=self.model, input=texts, **extra)
+            return [list(item.embedding) for item in sorted(response.data, key=lambda d: d.index)]
+
+        # Some models reach a zero-data-retention endpoint only one input at a
+        # time: with ZDR enforced on the account, gemini-embedding-2's only
+        # batch-capable endpoint is excluded (2026-09-25). Concurrent singles.
+        gate = asyncio.Semaphore(8)
+
+        async def one(text: str) -> list[float]:
+            async with gate:
+                response = await self._client.embeddings.create(model=self.model, input=[text], **extra)
+                return list(response.data[0].embedding)
+
+        return list(await asyncio.gather(*(one(text) for text in texts)))
 
 
 # ---------------------------------------------------------------------------
@@ -397,7 +418,12 @@ async def main_async(args: argparse.Namespace) -> int:
 
     forbidden = _pairs(spec.get("forbid_always", []))
     corpus = REPO_ROOT / spec.get("corpus", "data/eval/corpus/rag")
-    embedder = CachedEmbeddings(embedding_model(), offline=args.offline)
+    embedder = CachedEmbeddings(
+        embedding_model(),
+        offline=args.offline,
+        dimensions=args.dimensions,
+        one_per_request=args.one_per_request,
+    )
 
     import tempfile
 
@@ -446,6 +472,12 @@ def main(argv: Optional[list[str]] = None) -> int:
         "--offline", action="store_true", help="cache only, never call the provider"
     )
     parser.add_argument("--check", action="store_true", help="exit 1 when below the thresholds")
+    parser.add_argument(
+        "--dimensions", type=int, help="ask the embedding model for vectors of this size"
+    )
+    parser.add_argument(
+        "--one-per-request", action="store_true", help="embed one text per request (for ZDR-only routes)"
+    )
     parser.add_argument("--verbose", "-v", action="store_true", help="list the passages found")
     parser.add_argument("--out", type=Path, help="write the report to a file")
     args = parser.parse_args(argv)

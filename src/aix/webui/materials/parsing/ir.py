@@ -28,6 +28,26 @@ IR_SCHEMA_VERSION = 1
 #: Below this mean confidence an OCR page is flagged ``ocr_low_confidence``.
 LOW_CONFIDENCE = 0.60
 
+#: Below this, an OCR page's text is not indexed at all: the OCR itself does not
+#: trust it, so it must not become a passage a lesson can cite.
+#:
+#: Measured on 2026-09-25 inside the production image, on two real documents.
+#: Every page under 70% was noise -- a library stamp read as «vee . oon UO) — Zz
+#: ——— 2044 102», a festival poster as «$$ eh = <3he \ AS a n» -- at 46-67%;
+#: every page of actual text, old scan or magazine, read at 80-95%. The floor
+#: sits in that gap. ``AIX_OCR_MIN_CONFIDENCE`` moves it.
+OCR_INDEX_MIN_CONFIDENCE = 0.70
+
+
+def ocr_index_min_confidence() -> float:
+    import os
+
+    raw = os.getenv("AIX_OCR_MIN_CONFIDENCE")
+    try:
+        return min(1.0, max(0.0, float(raw))) if raw else OCR_INDEX_MIN_CONFIDENCE
+    except ValueError:
+        return OCR_INDEX_MIN_CONFIDENCE
+
 BlockKind = Literal["heading", "paragraph", "list_item", "table", "slide_title"]
 
 

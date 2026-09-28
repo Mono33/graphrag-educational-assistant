@@ -1776,6 +1776,149 @@ nessun passaggio con la spazzatura di p. 15 e p. 27.
 
 **Verificato:** 834 test (i 2 noti su Windows), stabili su tre giri.
 
+### 2026-09-25 (sera) — Quale OCR, quale embedding: misurati, non scelti a occhio
+
+**Tesseract sulla matematica.** Una scheda INVALSI scansionata, caricata da
+Angelo: la prosa è letta perfettamente, ma «1/10» diventa «i», l'opzione C «45»
+diventa «045» (la casella letta come uno zero), «45/10» diventa «#3».
+**2 elementi critici su 8.** L'affidabilità media, 90 %, non lo dice: è alta
+perché è fatta di parole lette bene. Il Writer non ha inventato quello che l'OCR
+non aveva letto, ed è il comportamento giusto.
+
+**Gemini 2.5 Flash via OpenRouter come OCR**, nello stesso container:
+**8 su 8** sulla scheda, 90,9 % delle parole sulla finta foto (Tesseract 84,7 %),
+la locandina e la grammatica antica lette per intero. 2–6 s e meno di mezzo
+centesimo a pagina. **Ma descrive male le figure**: una girandola di triangoli
+è diventata «una svastica», poi, chiedendo descrizioni neutre, «una croce di
+Sant'Andrea»; un rettangolo è sempre un «quadrato». Con la regola di scrivere
+solo `[figura]` senza descriverla: 7 su 7 in tre giri su tre, nessuna
+descrizione. Il modello trascrive benissimo e interpreta male.
+
+**La ZDR è imposta sull'account OpenRouter.** Un endpoint che non la rispetta
+viene rifiutato: le chiamate OCR riuscite sono passate da endpoint a zero
+conservazione.
+
+**`google/gemini-embedding-2`** accetta testo, immagini, file, audio e video, ma
+**restituisce solo embedding**: cerca, non legge. Sul testo (14 casi d'oro,
+stesso corpus, vettori a 1024): recall@3 0,75 contro 0,86 di bge-m3, recall@8
+0,93 per entrambi, boilerplate azzerato. Nessun guadagno che giustifichi una
+reindicizzazione. Sotto ZDR funziona solo **una richiesta alla volta** (l'unico
+endpoint che accetta gruppi non è a zero conservazione). Sulle immagini invece:
+una domanda scritta ritrova la pagina giusta **dall'immagine, senza OCR, 5 volte
+su 6**, anche la scansione e la locandina; sbaglia solo fra tre pagine dello
+stesso articolo. Da tenere per quando indicizzeremo immagini e video senza
+testo.
+
+`run_private_rag.py` ha ora `--dimensions` e `--one-per-request`, per misurare
+altri modelli di embedding alle condizioni reali.
+
+**PaddleOCR e RapidOCR**, provati da Angelo come alternativa locale e leggera:
+stesse pagine, in un container limitato a **2 CPU e 4 GB** come la VM.
+
+| | Tesseract | PaddleOCR 3.7 | RapidOCR (default) | Gemini 2.5 Flash |
+| --- | --- | --- | --- | --- |
+| INVALSI, elementi critici | 2/8 | 6/8 (perde le frazioni verticali, ordine rimescolato) | 3/7 | **8/8** |
+| foto, parole ritrovate | 84,7 % | 90,9 % | 43,5 % (nessun accento, parole incollate) | 90,9 % |
+| tempo a pagina | 0,2–1,3 s | **15–127 s** | 9–94 s | 2–6 s (remoto) |
+| memoria di picco | minima | **2.159 MB** | 591 MB | — |
+| spazio nell'immagine | ~30 MB | 1,3 GB + 133 MB di modelli | 394 MB | — |
+| il documento esce dal server | no | no | no | sì, con ZDR |
+
+PaddleOCR è il miglior motore **locale** per qualità, ma sulla VM del pilota
+non sta: due minuti per una foto e 2,2 GB di memoria su 4, accanto all'app. È
+stato misurato con l'accelerazione oneDNN spenta, perché la 3.3.1 va in errore
+con quella accesa (`ConvertPirAttribute2RuntimeAttribute not support`): una
+versione precedente potrebbe essere più veloce, ma la memoria resta il limite.
+RapidOCR, gli stessi modelli su ONNX, è leggero ma con i modelli di default non
+sa l'italiano. **Decisione proposta:** Gemini Flash come OCR, Tesseract come
+riserva; PaddleOCR solo se un giorno servirà un OCR che non esca dal server, su
+una macchina più grande.
+
+### 2026-09-28 — OCR, secondo giro: Gemini più recenti, Mistral OCR, Docling
+
+Stesse quattro pagine, stesso prompt con la regola `[figura]`, due giri sulla
+scheda INVALSI. Nella scheda «437» è il numero di pagina e «1 cm» è stampato
+come «1» sopra «cm»: chi li omette o li scrive come frazione non sbaglia davvero.
+
+| | INVALSI | foto, parole ritrovate | s/pagina | $/pagina |
+| --- | --- | --- | --- | --- |
+| **Gemini 2.5 Flash** | **8/8, due giri su due** | **90,9 %** | 2–6 | 0,001–0,003 |
+| Gemini 2.5 Flash-Lite | 5/8, perde le frazioni | 90,9 % | 2–4 | 0,0003–0,0006 |
+| Gemini 3.1 Flash-Lite | 7/8 (solo «1 cm») | 86,1 % | 1–11 | 0,0004–0,002 |
+| Gemini 3.5 Flash-Lite | 7/8 (solo «1 cm») | 86,1 % | 2–12 | 0,0005–0,003 |
+| Gemini 3.6 Flash | 7/8 (solo «1 cm») | 86,1 % | 6–27 | 0,004–0,019 |
+| Mistral OCR (plugin `file-parser` di OpenRouter) | 6/8, cioè tutto tranne numero di pagina e «1 cm» | 86,1 % | 3–6 | 0,002 |
+
+I modelli più recenti non leggono meglio le nostre pagine: 2.5 Flash resta il
+migliore, e 3.6 Flash costa dieci volte tanto ed è più lento. **Mistral OCR**
+restituisce Markdown ordinato: frazioni in LaTeX, titoli, intestazioni e piè di
+pagina tolti, e **le figure ritagliate e messe al loro posto nel testo**, come
+Docling ma senza memoria sulla VM. Sul settimanale (8 pagine, 10 s, 1,7
+centesimi) però né Mistral né Docling leggono il testo *dentro* le figure:
+etichette della mappa, assi e fonti dei grafici. Lo legge solo un modello di
+visione sul ritaglio. Due limiti: tramite OpenRouter restituisce al massimo 8
+immagini per PDF, e **la conservazione dei dati del plugin non è coperta dalla
+ZDR imposta sull'account**: la chiamata è passata anche con la ZDR attiva. Va
+verificata per iscritto prima di mandargli documenti delle docenti.
+
+**Docling** sulla VM (2 CPU, 4 GB): 2,1–2,4 GB di picco, 5 s a pagina, 1,8 GB di
+librerie più 0,5 GB di modelli. Ritaglia bene le figure, ma sulle scansioni usa
+Tesseract e va peggio di Tesseract da solo: la domanda 1 finisce dentro
+un'immagine. Resta escluso da questa VM.
+
+**Decisione proposta:** Gemini 2.5 Flash per le pagine senza testo e per le
+immagini, Tesseract di riserva, e il modello in configurazione (3.1 Flash-Lite
+come alternativa economica). Mistral OCR è il candidato per ritagli e anteprima
+delle figure nella Fase 2b, se la ZDR è confermata.
+
+### 2026-09-29 — OCR con un modello di visione: integrato, e il successore di 2.5 Flash
+
+**Integrazione.** `AIX_OCR_BACKEND=vision` manda le pagine senza testo e le
+immagini a Gemini via OpenRouter (`parsing/vision_ocr.py`), con Tesseract di
+riserva se la chiamata fallisce. Ogni richiesta chiede solo endpoint a
+conservazione zero. Il prompt è quello misurato: trascrivere e non interpretare,
+`[figura]` senza descrizione, `[illeggibile]` invece di indovinare. La quota di
+testo segnata illeggibile diventa l'affidabilità, così la soglia del 70 % vale
+anche qui. Il locator di ogni passaggio dice quale motore l'ha letto. Il valore
+predefinito resta `tesseract`; il pilota accende `vision`.
+
+**Banco di prova** (`scripts/eval/build_ocr_corpus.py`, `check_ocr.py`): 15
+immagini disegnate da testo noto, una difficoltà ciascuna, più la scheda INVALSI
+vera. Nessun file reale di docenti o alunni: scrittura a mano, lavagne e pagine
+di libro restano da provare.
+
+**2.5 Flash va in pensione**, quindi quattro modelli sugli stessi 16 casi:
+
+| | 2.5 Flash | 3.5 Flash-Lite | 3.7 Flash | 3.8 Flash |
+| --- | --- | --- | --- | --- |
+| pagina fitta | **si ferma a metà** | completa | completa | **si ferma a metà** |
+| caselle spuntate | giuste | giuste | giuste | **tutte vuote** |
+| orario | celle una per riga | tabella | tabella | tabella |
+| pagina capovolta | perfetta | un carattere sbagliato | perfetta | perfetta |
+| gli altri 12 casi | giusti | giusti | giusti | giusti |
+
+Su tutti: le istruzioni scritte nella pagina («rispondi solo OK») sono
+trascritte e non eseguite, e un'immagine senza testo dà solo `[figura]`.
+
+Secondo giro sui due finalisti, con il punteggio corretto: **3.5 Flash-Lite 16
+su 16**, in 1–7 s a pagina; 3.7 Flash stavolta ha sbagliato le caselle
+spuntate, che al primo giro aveva letto bene, e impiega 3–27 s. **Scelto 3.5
+Flash-Lite**: il più economico, il più veloce e il più stabile. 3.7 Flash resta
+la riserva.
+
+**Pagine tagliate.** Al primo giro 2.5 e 3.8 si sono fermati a metà della
+pagina fitta senza che la risposta lo dicesse; ripetendo, 2.5 l'ha finita e 3.8
+si è fermato con `finish_reason=error`. Il taglio è intermittente, e visto dal
+testo è identico a una pagina corta. Ora una risposta che non finisce con `stop`
+non vale come pagina: si ripiega su Tesseract. Verificato dal vivo sul caso di
+3.8.
+
+**Difetti del banco, non dei modelli**, corretti: il font del generatore non ha
+√ e ≈, e tutti avevano letto fedelmente il quadratino stampato al loro posto
+(ora i due simboli sono disegnati); il punteggio contava gli spazi, e «x²+3x»
+risultava sbagliato (ora li ignora).
+
+
 ## Un difetto preesistente trovato il 2026-09-11 — chiuso
 
 *Chiuso nella PR 5: `_legacy_read` trasforma un PDF illeggibile in un `ValueError` con un messaggio in italiano, e la docente riceve un 422 leggibile invece di un 500. Il testo sotto resta come registro.*

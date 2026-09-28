@@ -1,5 +1,9 @@
 """OCR for pages without a usable text layer (§7.8), sized for a 4 GB VM.
 
+``recognise`` is the entry point. With ``AIX_OCR_BACKEND=vision`` a page goes to
+a vision model (``vision_ocr``) and Tesseract is the fallback; otherwise
+Tesseract alone, as below.
+
 Tesseract, called through ``pytesseract``, one page at a time:
 
 * **only where needed** — a page whose text layer already yields text is never
@@ -45,13 +49,47 @@ class OcrResult:
     #: Mean word confidence, 0–1. 0 when nothing was recognised.
     confidence: float
     words: int
+    #: ``tesseract`` or ``vision`` — which one read the page.
+    engine: str = "tesseract"
+
+
+def _ocr_switched_off() -> bool:
+    return os.getenv("AIX_OCR_ENABLED", "true").strip().lower() in ("0", "false", "no", "off")
 
 
 @lru_cache(maxsize=1)
 def tesseract_available() -> bool:
-    if os.getenv("AIX_OCR_ENABLED", "true").strip().lower() in ("0", "false", "no", "off"):
+    if _ocr_switched_off():
         return False
     return shutil.which(os.getenv("TESSERACT_CMD") or "tesseract") is not None
+
+
+def ocr_available() -> bool:
+    """Whether any engine can read a page: the vision model, Tesseract, or both."""
+    from aix.webui.materials.parsing.vision_ocr import vision_available
+
+    if _ocr_switched_off():
+        return False
+    return vision_available() or tesseract_available()
+
+
+def recognise(image: Any, *, timeout_s: int = DEFAULT_PAGE_TIMEOUT_S) -> OcrResult:
+    """Read one page with the configured engine, falling back to Tesseract.
+
+    ``AIX_OCR_BACKEND=vision`` sends the page to the vision model; if that call
+    fails — network, provider, a refused zero-retention route — the page is read
+    locally instead, so an outage costs quality, not the document.
+    """
+    from aix.webui.materials.parsing.vision_ocr import vision_available, vision_ocr_image
+
+    if vision_available():
+        try:
+            return vision_ocr_image(image, timeout_s=timeout_s)
+        except Exception:  # noqa: BLE001 — any failure falls back
+            if not tesseract_available():
+                raise
+            logger.warning("[parsing] vision OCR failed; reading the page with Tesseract", exc_info=True)
+    return ocr_image(image, timeout_s=timeout_s)
 
 
 def languages() -> str:

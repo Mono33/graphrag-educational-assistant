@@ -19,7 +19,12 @@ import uuid
 from pathlib import Path
 from typing import Any, Optional
 
-from aix.webui.materials.parsing import IntakeRejected, check_upload, parse_document
+from aix.webui.materials.parsing import (
+    IntakeRejected,
+    ParseOptions,
+    check_upload,
+    parse_document,
+)
 from aix.webui.materials.parsing import intake as intake_limits
 from aix.webui.materials.parsing.intake import ALLOWED
 from aix.webui.materials.parsing.parsers import FormatDisabled
@@ -146,8 +151,19 @@ def read_upload(content: bytes, filename: str) -> tuple[str, str, Optional[dict[
         return _legacy_read(content, filename)
 
     accepted = check_upload(filename, content)  # IntakeRejected is a ValueError
+
+    # One OCR, the worker's. With the private RAG on, this request's parse only
+    # produces a fallback excerpt nobody sends, and the worker parses the same
+    # bytes again for the index. Running OCR here too meant the teacher waited
+    # through it (about 12 s for a 114-page magazine) and the VM ran two OCRs at
+    # once -- this one outside the worker's one-at-a-time limit, which exists
+    # for the pilot's two CPUs (2026-09-25). With the RAG off the excerpt is
+    # the only way the document reaches the Writer, so there OCR stays.
+    from aix.webui.materials.embedding import private_rag_enabled
+
+    options = ParseOptions(ocr_enabled=not private_rag_enabled())
     try:
-        ir = parse_document(content, accepted.media_type)
+        ir = parse_document(content, accepted.media_type, options)
     except FormatDisabled as exc:
         raise ValueError("Questo tipo di file è momentaneamente disattivato.") from exc
     except Exception as exc:  # noqa: BLE001 — an unreadable file is the teacher's answer

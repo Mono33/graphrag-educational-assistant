@@ -253,11 +253,11 @@ def test_ocr_stops_at_its_own_page_cap(monkeypatch):
     from aix.webui.materials.parsing.ocr import OcrResult
 
     calls = []
-    monkeypatch.setattr(parsers, "tesseract_available", lambda: True)
+    monkeypatch.setattr(parsers, "ocr_available", lambda: True)
     monkeypatch.setattr(parsers, "render_pdf_page", lambda content, index: index)
     monkeypatch.setattr(
         parsers,
-        "ocr_image",
+        "recognise",
         lambda image, timeout_s: calls.append(image) or OcrResult(f"pagina {image}", 0.9, 2),
     )
     from pypdf import PdfReader, PdfWriter
