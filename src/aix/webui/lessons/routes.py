@@ -563,6 +563,19 @@ async def lesson_card_fragment(
         lesson.status,
         len(lesson.lesson_plan_md or ""),
     )
+
+    # The run's own verdict, as recorded with its answer. This card used to be
+    # handed ``{"approved": status == "complete", "revision_count": 0}``, so
+    # every finished lesson read "approvata dal critic · 0 revisioni" -- one the
+    # Critic had sent back twice and never approved included, while the log
+    # said ``approved=False revisions=2`` (2026-09-25). No record, no badge:
+    # never an invented one.
+    run_meta = await session.scalar(
+        select(LessonMessage.meta_json)
+        .where(LessonMessage.lesson_id == lesson.id, LessonMessage.role == "assistant")
+        .order_by(LessonMessage.turn_index.desc(), LessonMessage.created_at.desc())
+        .limit(1)
+    )
     return templates.TemplateResponse(
         request,
         "partials/chat_lesson_card.html",
@@ -572,7 +585,7 @@ async def lesson_card_fragment(
                 lesson.lesson_plan_md or "",
                 await labels_for_lesson_safe(session, lesson),
             ),
-            "meta": {"approved": lesson.status == "complete", "revision_count": 0},
+            "meta": run_meta if isinstance(run_meta, dict) else {},
         },
     )
 

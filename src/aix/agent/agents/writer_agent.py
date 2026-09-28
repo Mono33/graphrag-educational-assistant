@@ -14,6 +14,7 @@ from typing import Any, Optional
 
 from openai import AsyncOpenAI
 
+from aix.agent.prompts.today import today_note
 from aix.agent.agents.planner_agent import RetrievalPlan
 from aix.agent.agents.retriever_agent import RetrievalResult
 from aix.agent.prompts.profile_renderer import render_profile_section
@@ -476,6 +477,7 @@ class WriterAgent:
         # entire. The fallback is deliberate (§5.4 hybrid): when retrieval finds
         # nothing — still being indexed, or the flag is off — the teacher's
         # upload still reaches the Writer exactly as it did before.
+        user_prompt += today_note()
         user_prompt += teacher_material_appendix(
             material_context_items, teacher_provided_context, phase="write"
         )
@@ -728,6 +730,7 @@ class WriterAgent:
         # two ways. A revision that lost the material would quietly rewrite the
         # lesson away from the document it was grounded in — the defect fixed in
         # `3ca2e0b`, and the passages must not reintroduce it.
+        user_prompt += today_note()
         user_prompt += teacher_material_appendix(
             material_context_items, teacher_provided_context, phase="revise"
         )

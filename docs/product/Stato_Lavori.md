@@ -1733,6 +1733,49 @@ scansione pulita, 93,1 % sulla foto, 91,9 % sulla pagina scansionata vera della
 grammatica. Registrazione e accesso funzionano su HTTP locale (cookie non
 `Secure` solo nella prova).
 
+### 2026-09-25 (pomeriggio) — Analisi di una generazione vera nel container, e cosa ne è uscito
+
+Lezione sulla crisi migratoria dal settimanale, dominio neuro, nello stack di
+produzione locale: 170 s, due revisioni, `approved=False` nel log. Cinque
+problemi, tutti affrontati:
+
+1. **La card inventava l'approvazione** (`1159a52`). L'endpoint le passava
+   `approved = lezione completata, 0 revisioni`: ogni lezione finita risultava
+   «approvata dal critic». Ora legge il verdetto salvato con la risposta; senza
+   verdetto, nessun badge.
+2. **Due citazioni giuste tolte dal controllo.** La frase di Trump è a p. 40
+   parola per parola, il sondaggio YouGov a p. 44. Cause: le prove erano il
+   singolo passaggio del marcatore, mentre la docente apre la **pagina**; e la
+   regola sulle attività inventate scattava anche su un'attività costruita
+   attorno a una citazione vera. Ora il giudice vede tutti i passaggi recuperati
+   dello stesso luogo citato (pagina, slide, sezione), e una regola generale fa
+   giudicare il contenuto che l'attività prende dal documento. Casi d'oro
+   **11/12**, con il caso vero aggiunto; la regola porta quel caso da 2/3 a 3/3
+   su tre giudizi ripetuti.
+3. **Il Critic non sapeva la data** e trattava la crisi di Ceuta del 2026 come
+   «evento futuro». Writer e Critic ricevono ora la data di oggi, con la regola
+   di non aggiungere fatti recenti che le fonti non riportano (`0815fc7`).
+4. **La griglia del Critic finiva nella lezione**: una tabella in cui l'IA si
+   dava 5/5. Le istruzioni di revisione chiedono ora modifiche alla lezione, mai
+   punteggi o autovalutazioni, nella lingua della lezione. La soglia neuro più
+   severa (≥ 4,5) era invece voluta e resta: il REVISE a 4,0 e 4,2 era giusto.
+   *Da discutere con gli esperti:* la griglia penalizza la mancanza di
+   ripetizione distanziata, che una lezione singola non può avere.
+5. **Revisione singola**, decisa con Angelo. `AIX_MAX_REVISIONS` (default 1
+   documentato) non aveva mai contato: l'Orchestrator forzava 2.
+
+**OCR, tre modifiche approvate** (`78087a2`): un solo OCR, quello del worker
+(con il RAG privato acceso la richiesta di upload non lo fa più); le pagine
+lette sotto il **70 %** non entrano nell'indice — misurato nell'immagine su una
+scansione vera e sul settimanale: la spazzatura sta fra il 46 e il 67 %, il
+testo vero fra l'80 e il 95 %; la chip legge il riepilogo del worker e mostra
+«N pag. illeggibili», con il triangolo solo per un documento perso in gran
+parte. Rielaborato il settimanale nel container con lo script di
+reindicizzazione: OCR 7 pagine invece di 9, affidabilità media dall'82,5 all'88,8 %,
+nessun passaggio con la spazzatura di p. 15 e p. 27.
+
+**Verificato:** 834 test (i 2 noti su Windows), stabili su tre giri.
+
 ## Un difetto preesistente trovato il 2026-09-11 — chiuso
 
 *Chiuso nella PR 5: `_legacy_read` trasforma un PDF illeggibile in un `ValueError` con un messaggio in italiano, e la docente riceve un 422 leggibile invece di un 500. Il testo sotto resta come registro.*

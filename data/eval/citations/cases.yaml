@@ -190,6 +190,36 @@ cases:
       should be able to do, not how this teacher runs her lesson. The genre of
       the passage decides nothing — the claim does.
 
+  # ── An activity built around the document's own words ─────────────────
+  #
+  # From a real lesson (2026-09-25). The Writer, told to mark the sentence that
+  # carries content from the document, marked this one: it proposes an activity
+  # AND quotes the magazine. The judge, told that an invented activity is not
+  # supported, removed it -- and the quote is on page 40, word for word. The
+  # lesson kept the strongest claim it made, without its source.
+  #
+  # The pair to ministerial-objectives-for-an-invented-activity: there the
+  # activity carried nothing from the passage; here it carries a quotation.
+  - id: activity-built-on-a-real-quote
+    document: Internazionale1682.pdf
+    page: 40
+    claim: >-
+      Si mostra alla LIM la citazione con cui Trump descriveva i migranti come
+      «criminali malvagi e assetati di sangue», da confrontare nel corso della
+      lezione con i dati reali.
+    passage: >-
+      Pochi giorni prima del voto, al Madison square garden di New York migliaia
+      di suoi sostenitori avevano applaudito Trump mentre giurava che avrebbe
+      rastrellato i migranti (definendoli "criminali malvagi e assetati di
+      sangue") per poi "cacciarli a pedate dal nostro paese il più rapidamente
+      possibile". Oggi, a 18 mesi dall'inizio del suo secondo mandato, Trump
+      sta mantenendo la promessa.
+    verdict: supported
+    why: >-
+      The activity is the lesson's choice; the quotation it shows is the
+      document's, and the document has it. Judge what the sentence takes from
+      the source, not how it proposes to use it.
+
   # ── Apparatus of other kinds ────────────────────────────────────────────
   - id: bibliography-for-a-claim-about-warheads
     document: Cold-War.pdf

@@ -376,6 +376,25 @@ def reset_compiled_graph() -> None:
     _COMPILED_WITH_SAVER = None
 
 
+def default_max_revisions() -> int:
+    """How many times the Critic may send a draft back: ``AIX_MAX_REVISIONS``, default 1.
+
+    Read when a pipeline is built, not when this module is imported. The value
+    used to sit in a default argument, evaluated once at import; and the
+    Orchestrator above it hard-coded ``max_revisions=2`` in its own signature,
+    so the documented variable never counted at all.
+
+    One, not two, since 2026-09-25. A real run spent 63 s on a second draft to
+    move the Critic's score from 80% to 84%, was still not approved, and the
+    revision itself added a self-assessment table the teacher had no use for.
+    """
+    raw = os.getenv("AIX_MAX_REVISIONS")
+    try:
+        return max(0, int(raw)) if raw else 1
+    except ValueError:
+        return 1
+
+
 class LessonPlannerPipeline:
     """
     High-level interface for the lesson planner pipeline.
@@ -389,7 +408,7 @@ class LessonPlannerPipeline:
         self,
         domain: str = "neuro",
         language: str = "it",
-        max_revisions: int = int(os.getenv("AIX_MAX_REVISIONS", "1")),
+        max_revisions: Optional[int] = None,
     ):
         """
         Initialize the lesson planner pipeline.
@@ -401,7 +420,7 @@ class LessonPlannerPipeline:
         """
         self.domain = domain
         self.language = language
-        self.max_revisions = max_revisions
+        self.max_revisions = default_max_revisions() if max_revisions is None else max_revisions
         self._graph: Optional[Any] = None
 
     def _get_graph(self) -> Any:

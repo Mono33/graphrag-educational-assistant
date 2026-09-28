@@ -43,6 +43,7 @@ def _truncate_lesson_for_critic(text: str) -> str:
 
 from openai import AsyncOpenAI
 
+from aix.agent.prompts.today import today_note
 from aix.agent.agents.retriever_agent import RetrievalResult
 from aix.agent.prompts.critic_prompt import (
     get_critic_prompts,
@@ -279,6 +280,7 @@ class CriticAgent:
             )
 
         user_prompt += teacher_material_note(material_items)
+        user_prompt += today_note()
 
         try:
             # Change #1 — fast model for the Critic.

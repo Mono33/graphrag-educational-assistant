@@ -211,3 +211,31 @@ async def test_the_check_can_be_switched_off(monkeypatch):
 
     assert await drop_unsupported_citations(DRAFT, ITEMS, client=client) == DRAFT
     client.chat.completions.create.assert_not_awaited()
+
+
+async def test_the_judge_sees_the_whole_cited_page_not_just_the_marked_chunk():
+    """The teacher reads "p. 44", so the evidence is all of page 44.
+
+    From a real lesson (2026-09-25): the Writer attached the marker of one chunk
+    of page 44 to a poll printed in another chunk of page 44. Judged against its
+    own chunk, the citation was removed -- and the page it pointed to has the
+    poll. Two markers that differ only in their block are the same place.
+    """
+    uid = "4c37abf4-d86d-4a61-ad1f-782856081317"
+    regularisation = f"[[material:{uid}#page=44&block=a8bbc968c208e4a9]]"
+    poll = f"[[material:{uid}#page=44&block=3f8c2efcd9433261]]"
+    elsewhere = f"[[material:{uid}#page=40&block=c570087f4c4a53ba]]"
+    items = [
+        {"citation": regularisation, "text": "Percorsi di regolarizzazione per chi è arrivato da bambino."},
+        {"citation": poll, "text": "Sondaggio Economist e YouGov: consenso negativo, -13 punti."},
+        {"citation": elsewhere, "text": "Trump sta mantenendo la promessa delle espulsioni."},
+    ]
+    draft = f"Il sondaggio Economist/YouGov dà -13 punti {regularisation}."
+    client = _judge("supported")
+
+    await drop_unsupported_citations(draft, items, client=client)
+
+    prompt = client.chat.completions.create.await_args.kwargs["messages"][0]["content"]
+    assert "Economist e YouGov" in prompt, "the other chunk of the same page is evidence"
+    assert "regolarizzazione" in prompt
+    assert "promessa delle espulsioni" not in prompt, "page 40 is another place"

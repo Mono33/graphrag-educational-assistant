@@ -48,10 +48,12 @@ logger = logging.getLogger(__name__)
 #: Truman Doctrine, all of them on the page they pointed at (2026-09-21).
 #:
 #: A citation is removed on this evidence, so the evidence has to be the whole
-#: of it. 4 000 covers two full chunks — the chunker's ceiling is 450 tokens,
-#: about 1 600 characters — and the check is one call for the whole lesson, so
-#: eight markers at this size is a few thousand tokens, once.
-_PASSAGE_CHARS = 4000
+#: of it. The evidence is every retrieved chunk of the cited page, slide or
+#: section (see ``_place_of``), and the chunker's ceiling is 450 tokens, about
+#: 1 600 characters: 6 000 fits a page with three retrieved chunks. Each
+#: citation is judged in its own call, concurrently, so the size costs tokens,
+#: not wall-clock time.
+_PASSAGE_CHARS = 6000
 
 #: How much of the claim the judge is shown, when a line runs long.
 _CLAIM_CHARS = 600
@@ -159,6 +161,23 @@ def _claim_around(text: str, start: int, end: int) -> str:
     return " ".join(claim.split())[:_CLAIM_CHARS]
 
 
+def _place_of(marker: str) -> tuple[str, str]:
+    """The document and the place a marker sends the teacher to, without the block.
+
+    ``[[material:<id>#page=44&block=a8bb…]]`` and ``[[material:<id>#page=44&
+    block=3f8c…]]`` are two chunks of the same page, and the teacher reads them
+    both as "p. 44". Judging each marker against its own chunk alone removed a
+    correct citation: the Writer attached the marker of one chunk of page 44 to
+    a poll printed in another chunk of page 44, the check found no poll behind
+    that marker, and the teacher lost a citation to the page that has it
+    (2026-09-25). The evidence is what she will find where she is sent.
+    """
+    body = marker[len(_MARKER) : -2] if marker.startswith(_MARKER) else marker
+    source, _, anchor = body.partition("#")
+    place = sorted(part for part in anchor.split("&") if part and not part.startswith("block="))
+    return source.lower(), "&".join(place)
+
+
 def _occurrences(draft: str, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Every place a known marker appears, with the claim around it.
 
@@ -166,23 +185,29 @@ def _occurrences(draft: str, items: list[dict[str, Any]]) -> list[dict[str, Any]
     the draft: those are strings this system produced, so there is nothing to
     parse and nothing to get wrong.
 
-    **Several passages can share one marker**, because a citation anchors on the
-    page and the first block and a PDF page is usually one block. So the marker
-    is what is grouped on, and the judge sees every passage behind it: the claim
-    holds if any of them carries it. Grouping also keeps one position from being
-    cut twice — which, when a page had four chunks, deleted the text after the
-    marker along with it.
+    **The evidence is the cited place, not the cited chunk.** Every retrieved
+    passage of the same document and the same page, slide or section is shown
+    to the judge -- see :func:`_place_of` for the citation this used to lose.
+    Several chunks can also share one marker outright, because a citation
+    anchors on the page and the first block; grouping by marker position keeps
+    one position from being cut twice.
     """
-    passages: dict[str, list[str]] = {}
+    by_place: dict[tuple[str, str], list[str]] = {}
+    # A dict, not a set: judgements are made in the order the passages came,
+    # the same order on every run.
+    markers: dict[str, None] = {}
     for item in items or []:
         marker = str(item.get("citation") or "")
         text = str(item.get("text") or "").strip()
         if marker and text:
-            passages.setdefault(marker, []).append(text)
+            markers.setdefault(marker, None)
+            texts = by_place.setdefault(_place_of(marker), [])
+            if text not in texts:
+                texts.append(text)
 
     found: list[dict[str, Any]] = []
-    for marker, texts in passages.items():
-        joined = "\n\n".join(texts)[:_PASSAGE_CHARS]
+    for marker in markers:
+        joined = "\n\n".join(by_place[_place_of(marker)])[:_PASSAGE_CHARS]
         start = draft.find(marker)
         while start != -1:
             end = start + len(marker)
@@ -248,6 +273,12 @@ Due criteri, in quest'ordine:
    due parlano dello stesso argomento facendo cose diverse — la frase racconta
    un fatto e il passaggio si limita a chiedere di studiarlo, o viceversa —
    allora è "unsupported".
+
+   Una frase che propone un'attività **costruita su un contenuto del
+   documento** — mostrare una citazione, far leggere un dato, commentare un
+   fatto — si giudica su quel contenuto: se il passaggio lo contiene, è
+   "supported". L'attività in sé è una scelta di chi scrive la lezione e non va
+   cercata nel documento; conta che la citazione, il dato o il fatto ci siano.
 
 2. **Nominare un argomento non è affermarne qualcosa.** Un passaggio che cita un
    titolo, rimanda altrove, elenca voci o nomina un tema di sfuggita non

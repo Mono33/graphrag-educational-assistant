@@ -106,7 +106,7 @@ class AgentOrchestrator:
         self,
         domain: str = "neuro",
         language: str = "it",
-        max_revisions: int = 2,
+        max_revisions: Optional[int] = None,
         model: str = "gpt-4o",
     ):
         """
@@ -119,19 +119,22 @@ class AgentOrchestrator:
             language: Output language
                 - "it": Italian
                 - "en": English
-            max_revisions: Maximum revision cycles before auto-approve
+            max_revisions: Maximum revision cycles before auto-approve;
+                ``None`` means ``AIX_MAX_REVISIONS`` (default 1)
             model: OpenAI model for all agents
         """
         self.domain = domain
         self.language = language
-        self.max_revisions = max_revisions
+        from aix.agent.graph.lesson_planner_graph import default_max_revisions
+
+        self.max_revisions = default_max_revisions() if max_revisions is None else max_revisions
         self.model = model
 
         self._pipeline = None
 
         logger.info(
             f"[Orchestrator] Initialized for domain='{domain}', "
-            f"language='{language}', max_revisions={max_revisions}"
+            f"language='{language}', max_revisions={self.max_revisions}"
         )
 
     def get_pipeline(self):
@@ -289,7 +292,9 @@ def main():
     parser.add_argument(
         "--language", type=str, default="it", choices=["it", "en"], help="Output language"
     )
-    parser.add_argument("--max-revisions", type=int, default=2, help="Maximum revision cycles")
+    parser.add_argument(
+        "--max-revisions", type=int, default=None, help="Maximum revision cycles (default: AIX_MAX_REVISIONS)"
+    )
     parser.add_argument("--output", type=str, help="Output file path (optional)")
 
     args = parser.parse_args()
