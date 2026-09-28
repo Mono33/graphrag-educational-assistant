@@ -118,7 +118,13 @@ i tempi accettabili.
    rilasciare senza far sparire i documenti già caricati.
 5. **Casi d'oro delle citazioni da altri generi di documento.** Oggi vengono da
    tre documenti soli; servono file veri di generi diversi.
-6. **Il deploy del pilota**: vedi «In attesa di altri».
+6. **Il deploy del pilota**: vedi «In attesa di altri». Prima, decidere i valori
+   di `.env.prod.example` per il pilota (token del Writer, modello, flag) e
+   fare il passaggio a pgvector con il `REINDEX` del runbook (§4.1).
+7. **Pagina «Le mie risorse»** (richiesta di Angelo, 2026-09-25; coincide con
+   l'area A del PRD, «Le tue risorse»): i file caricati dalla docente, salvati
+   in automatico, e le risorse multimediali a cui ha messo il cuoricino nel
+   pannello laterale durante la generazione.
 
 ### Fase 0 — chiusa
 
@@ -1685,6 +1691,47 @@ Per provare in locale ciò che girerà sulla VM, la strada fedele è l'**immagin
 stessa**, con Docker Desktop (installato, oggi spento), non Tesseract su Windows.
 
 **Verificato:** 809 test unitari passati (i 2 noti su Windows).
+
+### 2026-09-25 — Prova generale del deploy in Docker: tre difetti trovati prima della VM
+
+Lo stack di produzione gira in locale (`deploy/docker-compose.local.yml`): **lo
+stesso compose della VM**, la stessa immagine costruita dallo stesso Dockerfile,
+lo stesso Postgres, la stessa disposizione dei volumi, e l'app che migra da sola
+il proprio database all'avvio, come sulla VM. Tolti solo Caddy, dominio e
+certificati; l'app risponde su `127.0.0.1:8766`. L'ambiente lo scrive
+`deploy/make_local_env.py`: la base è `.env.prod.example`, sopra i segreti del
+`.env` di sviluppo e le impostazioni del pilota, senza mai stampare un valore.
+
+**Tre difetti del deploy, trovati prima di arrivarci:**
+
+1. **Postgres senza pgvector.** `postgres:16-alpine` risponde `extension
+   "vector" is not available`: con le migrazioni automatiche all'avvio, l'app
+   non sarebbe mai partita. Dimostrato con due container affiancati e corretto
+   con `pgvector/pgvector:pg16`, anche nel compose di sviluppo. Sulla VM, che ha
+   già dati creati da Alpine, il passaggio richiede un `REINDEX` una tantum:
+   procedura scritta nel runbook (§4.1). In locale si è provato l'avvio da un
+   volume **nuovo**, non il passaggio su un volume esistente.
+2. **Volumi con i nomi scambiati.** Il 2026-09-16 avevo inserito `app_materials:`
+   fra `app_uploads:` e la sua riga `name:`: l'archivio dei materiali prendeva il
+   nome degli upload, e gli upload restavano con un nome di default. `main` non
+   ha nessuno dei due volumi, quindi nessun dato sulla VM è sotto il nome
+   sbagliato: corretto in sicurezza.
+3. **Il template di produzione non corrisponde a quanto provato.**
+   `.env.prod.example` ha `AIX_WRITER_MAX_TOKENS=2000` — il valore che il
+   2026-09-16 faceva uscire il Writer vuoto con gli allegati — il modello
+   `claude-sonnet-4-6` invece del `claude-sonnet-5` usato in queste settimane, e
+   le flag del pilota spente. **Da decidere con Louis**; la prova usa i valori
+   validati in sviluppo.
+
+**Risultati nel container:** app `healthy` con zero riavvii, le cinque
+migrazioni applicate su Postgres (compresa quella dei passaggi), `/api/v1/health`
+200 con il Neo4j di produzione, **Tesseract 5.3.0 con italiano e inglese**, RAG
+privato e riuso del grafo attivi, worker di ingestione partito. Sul corpus dei
+formati, con l'OCR vero dell'immagine: **14 sonde su 14** — Word, PowerPoint con
+le note, scansione e finta foto da telefono. Affidabilità dell'OCR: 95,3 % sulla
+scansione pulita, 93,1 % sulla foto, 91,9 % sulla pagina scansionata vera della
+grammatica. Registrazione e accesso funzionano su HTTP locale (cookie non
+`Secure` solo nella prova).
 
 ## Un difetto preesistente trovato il 2026-09-11 — chiuso
 

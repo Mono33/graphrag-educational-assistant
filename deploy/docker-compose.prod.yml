@@ -26,7 +26,14 @@
 services:
 
   postgres:
-    image: postgres:16-alpine
+    # pgvector, not the stock image. The private-material migration runs
+    # ``CREATE EXTENSION vector`` at startup (the app migrates itself), and on
+    # postgres:16-alpine that fails -- "extension vector is not available" --
+    # so the app never comes up. Found in the local rehearsal of 2026-09-25.
+    #
+    # Switching a VM whose data directory was created by the Alpine image is a
+    # one-time step with a REINDEX: see README.md, "Switching to pgvector".
+    image: pgvector/pgvector:pg16
     container_name: aix-postgres
     restart: unless-stopped
     environment:
@@ -129,9 +136,15 @@ volumes:
     name: aix-pg-data
   app_media_cache:
     name: aix-app-media-cache
+  # Each volume keeps its own name. The materials volume was once inserted
+  # between ``app_uploads:`` and that volume's ``name:`` line, which gave the
+  # uploads' name to the material store and left the uploads with a
+  # project-prefixed default -- caught in the rehearsal before any VM held data
+  # under the wrong name.
   app_uploads:
-  app_materials:
     name: aix-app-uploads
+  app_materials:
+    name: aix-app-materials
   caddy_data:
     name: aix-caddy-data
   caddy_config:

@@ -1,0 +1,54 @@
+# =====================================================================
+# Local rehearsal of the production stack
+# =====================================================================
+#
+# The production compose, unchanged, plus this override: same image (built
+# from the same Dockerfile, OCR included), same Postgres image, same volume
+# layout, same startup -- the app migrates its own database, exactly as on the
+# VM. Only what cannot exist on a laptop is taken away: Caddy, the domain and
+# its certificates.
+#
+# Why it exists: the first rehearsal, on 2026-09-25, found before any deploy
+# that Postgres had no pgvector (the app would not have started) and that two
+# volumes had swapped names. Anything that runs here runs on the VM.
+#
+# From deploy/:
+#
+#     python make_local_env.py            # writes .env.local (git-ignored)
+#     docker compose -p aix-local -f docker-compose.prod.yml -f docker-compose.local.yml \
+#         --env-file .env.local up -d --build
+#     # then http://127.0.0.1:8766/webui/
+#
+#     docker compose -p aix-local -f docker-compose.prod.yml -f docker-compose.local.yml \
+#         --env-file .env.local down        # stop; add -v to also drop the data
+# =====================================================================
+
+services:
+
+  caddy:
+    # Not started here: no public domain, no certificate to obtain.
+    profiles: ["tls"]
+
+  app:
+    ports:
+      # 8766, so it can run beside the development server on 8765.
+      # Bound to 127.0.0.1: nothing outside this machine reaches it.
+      - "127.0.0.1:8766:8765"
+    env_file:
+      - path: .env.local
+        required: true
+
+volumes:
+  # Names of their own, so a rehearsal never shares data with anything else.
+  pg_data:
+    name: aix-local-pg-data
+  app_media_cache:
+    name: aix-local-media-cache
+  app_uploads:
+    name: aix-local-uploads
+  app_materials:
+    name: aix-local-materials
+  caddy_data:
+    name: aix-local-caddy-data
+  caddy_config:
+    name: aix-local-caddy-config
