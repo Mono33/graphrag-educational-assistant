@@ -98,8 +98,12 @@ def main() -> int:
     env.update({key: dev[key] for key in taken})
     env.update(PILOT)
     env.update(LOCAL)
-    env["POSTGRES_PASSWORD"] = secrets.token_urlsafe(24)
-    env["WEBUI_AUTH_SECRET"] = secrets.token_urlsafe(48)
+    # Kept across runs: Postgres sets its password only when the volume is
+    # first created, so a new one would lock the app out of its own data, and a
+    # new auth secret would sign every teacher out.
+    previous = read(OUT) if OUT.exists() else {}
+    env["POSTGRES_PASSWORD"] = previous.get("POSTGRES_PASSWORD") or secrets.token_urlsafe(24)
+    env["WEBUI_AUTH_SECRET"] = previous.get("WEBUI_AUTH_SECRET") or secrets.token_urlsafe(48)
 
     placeholders = [k for k, v in env.items() if "replace-with" in v]
     OUT.write_text(

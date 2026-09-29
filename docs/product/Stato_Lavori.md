@@ -1913,6 +1913,39 @@ testo è identico a una pagina corta. Ora una risposta che non finisce con `stop
 non vale come pagina: si ripiega su Tesseract. Verificato dal vivo sul caso di
 3.8.
 
+**Nello stack Docker locale** (ricostruito lo stesso giorno, `AIX_OCR_BACKEND=vision`):
+la scheda INVALSI, letta dal container, esce in 5,4 s con motore `vision` e
+nessuna pagina persa. `make_local_env.py` rigenerava password di Postgres e
+segreto di sessione a ogni esecuzione: con un volume già esistente avrebbe
+chiuso fuori l'app dai suoi dati. Ora li conserva.
+
+**Su dataset pubblici** (`scripts/eval/check_ocr_datasets.py`), 50 pagine
+ciascuno. XFUND sono moduli italiani veri compilati a mano o a macchina con
+dati inventati; FUNSD sono moduli inglesi d'archivio, scansioni vecchie e
+sporche. Sono stati misurati tre dati:
+
+- *ritrovate*: parole dell'annotazione presenti nella trascrizione;
+- *inventate*: parole trascritte che l'annotazione non ha;
+- *coppie*: etichetta seguita dal suo valore, per esempio «Data di nascita» →
+  «12/07/1996».
+
+| | XFUND it: ritrovate / inventate / coppie / s | FUNSD: ritrovate / inventate / coppie / s |
+| --- | --- | --- |
+| Tesseract (container) | 95,6 % / 2,4 % / 63 % / 2,4 | 77,3 % / 15,1 % / 42 % / 0,6 |
+| **3.5 Flash-Lite** | **97,4 % / 0,7 % / 82 % / 5,0** | **97,5 % / 2,6 % / 87 % / 2,3** |
+| 3.7 Flash | 98,8 % / 0,9 % / 84 % / 14,5 | 97,9 % / 2,7 % / 87 % / 8,0 |
+
+Sulle scansioni sporche Tesseract perde un quarto delle parole. Sui moduli
+puliti legge quasi tutto, ma separa le etichette dai loro valori (63 % contro
+82 %). Le annotazioni di XFUND partono da un OCR e ne conservano qualche errore
+(«dintto», «lowrro»): il tetto raggiungibile non è 100 %.
+
+**Un punto debole di 3.5 Flash-Lite:** su 2 pagine di 50 ha saltato il testo
+piccolo di contorno. In una era la nota di copyright a piè di pagina, nell'altra
+l'intestazione con l'indirizzo dell'ente; il corpo del modulo c'era tutto.
+3.7 Flash li trascrive. In un libro di testo lo stesso difetto toccherebbe note
+e didascalie.
+
 **Difetti del banco, non dei modelli**, corretti: il font del generatore non ha
 √ e ≈, e tutti avevano letto fedelmente il quadratino stampato al loro posto
 (ora i due simboli sono disegnati); il punteggio contava gli spazi, e «x²+3x»
