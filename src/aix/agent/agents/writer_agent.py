@@ -19,6 +19,7 @@ from aix.agent.agents.planner_agent import RetrievalPlan
 from aix.agent.agents.retriever_agent import RetrievalResult
 from aix.agent.prompts.profile_renderer import render_profile_section
 from aix.agent.prompts.writer_prompt import (
+    WRITER_MATERIAL_MAPS_BLOCK,
     WRITER_MATERIAL_PASSAGES_APPENDIX,
     WRITER_REVISION_TEMPLATE,
     WRITER_TEACHER_UPLOADS_APPENDIX,
@@ -64,6 +65,13 @@ _WRITER_MIN_CONTENT_TOKENS = int(os.getenv("AIX_WRITER_MIN_CONTENT_TOKENS", "400
 #: enough to ground a lesson, far from the budget that produced zero output on
 #: 2026-09-16 when two whole attachments were pasted in.
 _MATERIAL_BUDGET_CHARS = int(os.getenv("AIX_PRIVATE_RAG_BUDGET_CHARS", "12000"))
+
+#: When the documents have maps, the passages come from two searches -- the
+#: request, and the parts of the document it points to -- and the documents are
+#: the primary source rather than an appendix: they get more room. The maps
+#: themselves are bounded apart, by ``_MAPS_BUDGET_CHARS``.
+_DOCUMENT_BUDGET_CHARS = int(os.getenv("AIX_PRIVATE_RAG_DOCUMENT_BUDGET_CHARS", "20000"))
+_MAPS_BUDGET_CHARS = 6000
 
 
 #: A document name is text the teacher chose, and it travels into a prompt.
@@ -131,6 +139,8 @@ def render_material_passages(
 
         for item in passages:
             header = str(item.get("citation")).strip()
+            if item.get("part"):
+                header += f" · parte: {_safe_label(item.get('part'))}"
             if item.get("ocr"):
                 header += " · testo letto con OCR"
             block = f"{header}\n«{str(item.get('text')).strip()}»"
@@ -142,11 +152,51 @@ def render_material_passages(
     return "\n\n".join(blocks)
 
 
+def render_document_maps(
+    maps: Optional[list[dict[str, Any]]], *, budget_chars: int = _MAPS_BUDGET_CHARS
+) -> str:
+    """The documents' maps as the Writer reads them: what each is about, its
+    themes, and its parts with their pages. Cut at the budget, part by part."""
+    if not maps:
+        return ""
+    lines: list[str] = []
+    used = 0
+    for number, document_map in enumerate(maps, start=1):
+        label = _safe_label(document_map.get("source_label")) or f"documento {number}"
+        head = [f"**{label}**"]
+        if document_map.get("summary"):
+            head.append(f"Di che cosa tratta: {document_map['summary']}")
+        if document_map.get("themes"):
+            head.append("Temi: " + ", ".join(str(t) for t in document_map["themes"]))
+        sections = document_map.get("sections") or []
+        if len(sections) > 1:
+            head.append("Parti:")
+        for line in head:
+            if used + len(line) > budget_chars:
+                return "\n".join(lines)
+            lines.append(line)
+            used += len(line)
+        if len(sections) <= 1:
+            continue
+        for section in sections:
+            pages = section.get("pages")
+            where = f" (pp. {pages[0]}–{pages[1]})" if pages and pages[0] != pages[1] else (
+                f" (p. {pages[0]})" if pages else ""
+            )
+            line = f"- {section.get('title', '')}{where}: {section.get('summary', '')}"
+            if used + len(line) > budget_chars:
+                return "\n".join(lines)
+            lines.append(line)
+            used += len(line)
+    return "\n".join(lines)
+
+
 def teacher_material_appendix(
     material_context_items: Optional[list[dict[str, Any]]],
     teacher_provided_context: Optional[str],
     *,
     phase: str,
+    material_maps: Optional[list[dict[str, Any]]] = None,
 ) -> str:
     """The teacher's material for the prompt: retrieved passages, or the upload.
 
@@ -156,15 +206,25 @@ def teacher_material_appendix(
     whole document — and telling those apart is the first thing to check when a
     lesson ignores its sources.
     """
-    passages = render_material_passages(material_context_items)
-    if passages:
+    maps = render_document_maps(material_maps)
+    passages = render_material_passages(
+        material_context_items,
+        budget_chars=_DOCUMENT_BUDGET_CHARS if maps else _MATERIAL_BUDGET_CHARS,
+    )
+    if passages or maps:
         logger.info(
-            "[WriterAgent] %s: %d retrieved passage(s), %d chars — the document is not pasted",
+            "[WriterAgent] %s: %d retrieved passage(s), %d chars, %d map(s) — the document"
+            " is not pasted",
             phase,
             passages.count("[[material:"),
             len(passages),
+            len(material_maps or []) if maps else 0,
         )
-        return WRITER_MATERIAL_PASSAGES_APPENDIX.format(material_passages=passages)
+        return WRITER_MATERIAL_PASSAGES_APPENDIX.format(
+            material_maps=WRITER_MATERIAL_MAPS_BLOCK.format(maps=maps) if maps else "",
+            material_passages=passages
+            or "(Nessun passaggio dei documenti è pertinente a questa richiesta.)",
+        )
 
     if teacher_provided_context and teacher_provided_context.strip():
         logger.info(
@@ -307,6 +367,7 @@ class WriterAgent:
         domain: str = "neuro",  # Phase B: Domain for extensions
         teacher_provided_context: Optional[str] = None,  # WebUI #6.6 P3: chat uploads
         material_context_items: Optional[list[dict[str, Any]]] = None,  # PR 6: §8.2
+        material_maps: Optional[list[dict[str, Any]]] = None,  # what the documents hold
         educational_profile: Optional[dict[str, Any]] = None,  # Teacher's lesson profile
         pedagogical_intent: Optional[str] = None,  # "{code}" or "{code}: {detail}"
         refinement_instruction: Optional[str] = None,  # SAM refinement instruction
@@ -479,7 +540,10 @@ class WriterAgent:
         # upload still reaches the Writer exactly as it did before.
         user_prompt += today_note()
         user_prompt += teacher_material_appendix(
-            material_context_items, teacher_provided_context, phase="write"
+            material_context_items,
+            teacher_provided_context,
+            phase="write",
+            material_maps=material_maps,
         )
 
         # NEW Phase 2: Append media context if available
@@ -694,6 +758,7 @@ class WriterAgent:
         intent: str = "lesson_creation",
         teacher_provided_context: Optional[str] = None,
         material_context_items: Optional[list[dict[str, Any]]] = None,
+        material_maps: Optional[list[dict[str, Any]]] = None,
     ) -> str:
         """
         Revise content based on critic feedback.
@@ -732,7 +797,10 @@ class WriterAgent:
         # `3ca2e0b`, and the passages must not reintroduce it.
         user_prompt += today_note()
         user_prompt += teacher_material_appendix(
-            material_context_items, teacher_provided_context, phase="revise"
+            material_context_items,
+            teacher_provided_context,
+            phase="revise",
+            material_maps=material_maps,
         )
 
         # Get intent-specific system prompt for consistent formatting

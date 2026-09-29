@@ -117,6 +117,26 @@ async def test_chunks_of_another_embedding_model_are_stale(session):
     assert "Altro-modello.pdf" in await _chosen(session)
 
 
+async def test_with_the_map_on_an_indexed_version_without_a_map_is_chosen(session, monkeypatch):
+    """Every document uploaded before the maps existed (2026-09-29)."""
+    from aix.webui.materials.document_map import MAP_VERSION
+    from aix.webui.materials.models import DocumentMap
+
+    monkeypatch.setenv("AIX_PRIVATE_RAG_ENABLED", "true")
+    unmapped, _ = await _version(session, "Libro.pdf")
+    await _chunk(session, unmapped)
+    mapped, _ = await _version(session, "Con-mappa.pdf")
+    await _chunk(session, mapped)
+    session.add(DocumentMap(owner_id=ANNA, material_version_id=mapped.id,
+                            map_version=MAP_VERSION, model="m", map_json={}))
+    await session.flush()
+
+    assert await _chosen(session) == {"Libro.pdf": "indicizzato ma senza mappa del documento"}
+
+    monkeypatch.setenv("AIX_DOCUMENT_MAP_ENABLED", "false")
+    assert await _chosen(session) == {}
+
+
 async def test_ready_with_no_chunks_is_the_case_the_first_run_found(session):
     await _version(session, "Pronto-vuoto.pdf", status="ready")
 

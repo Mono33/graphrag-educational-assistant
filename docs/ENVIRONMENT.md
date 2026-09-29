@@ -87,6 +87,9 @@ Tutte spente: §5.2 dice che a flag spente il prodotto è quello di prima.
 | `AIX_PRIVATE_EMBEDDING_DIMENSION` | `1024` | **Deve combaciare con la migrazione**: la colonna è `vector(1024)`. Cambiarlo è una migrazione più un re-embedding di tutto |
 | `AIX_PRIVATE_RAG_TOP_K` | `8` | Passaggi recuperati per richiesta |
 | `AIX_PRIVATE_RAG_BUDGET_CHARS` | `12000` | Quanto prompt spetta al materiale privato (§8.7) |
+| `AIX_PRIVATE_RAG_DOCUMENT_BUDGET_CHARS` | `20000` | Lo stesso quando i documenti hanno una mappa: i passaggi vengono da due ricerche (la richiesta e i capitoli a cui punta) e il documento è la fonte principale |
+| `AIX_DOCUMENT_MAP_ENABLED` | `true` | Al caricamento, una mappa di ogni documento: le sue parti (indice dei segnalibri, «Capitolo N», titoli o finestre di pagine) con una sintesi ciascuna e i temi del tutto. Il Writer la legge per sapere che cosa contiene il documento, e la ricerca la usa per entrare nel capitolo nominato o più vicino alla richiesta. Attiva solo con il RAG privato: **il testo esce dalla macchina** come per gli embedding, a conservazione zero. Un libro di 222 pagine: 7 parti in 4–10 s |
+| `AIX_DOCUMENT_MAP_MODEL` | `google/gemini-3.5-flash-lite` | Modello che scrive le sintesi delle parti |
 | `AIX_PRIVATE_RAG_HYBRID` | `true` | Fonde la ricerca per parole con quella vettoriale (§8.5). Spegnerla torna al solo vettoriale: serve a bisezionare una regressione, non è una configurazione da tenere — sui casi d'oro l'ibrida è migliore su tutte le misure |
 | `AIX_VALIDATOR_MAX_RETRIES` | `2` | Riscritture che il validatore può chiedere |
 | `AIX_CITATION_CHECK_ENABLED` | `true` | Verifica che il passaggio citato sostenga la frase, e toglie il riferimento quando non lo sostiene (la frase resta). Costa una chiamata al modello, e **solo** se la bozza contiene citazioni ai materiali privati |

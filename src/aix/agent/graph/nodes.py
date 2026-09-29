@@ -6,6 +6,7 @@ Nodes are the building blocks of the LangGraph state machine.
 """
 
 import asyncio
+import inspect
 import logging
 import os
 import re
@@ -587,9 +588,18 @@ async def retrieve_private_node(state: AgentState) -> dict[str, Any]:
         return {"current_step": "retrieve_complete"}
 
     query = _private_search_query(state)
+    # The teacher's own words as well, when the search takes them: the query
+    # above is the subject, and «approfondisci il capitolo 4» names a part of
+    # the document that the subject alone does not.
+    extra: dict[str, Any] = {}
+    try:
+        if "request" in inspect.signature(search).parameters:
+            extra["request"] = str(state.get("teacher_query") or "")
+    except (TypeError, ValueError):
+        pass
 
     try:
-        items = await search(query)
+        items = await search(query, **extra)
     except Exception as exc:  # noqa: BLE001 — the Knowledge Graph alone still writes a lesson
         # The reason goes in the warning itself. The first real test logged only
         # "search failed", with the cause at DEBUG, and a broken import looked
@@ -603,8 +613,27 @@ async def retrieve_private_node(state: AgentState) -> dict[str, Any]:
         logger.debug("[Node: PrivateMaterial] failure detail", exc_info=True)
         return {"current_step": "retrieve_complete"}
 
-    logger.info("[Node: PrivateMaterial] %d passage(s) from the teacher's material", len(items))
-    return {"material_context_items": items, "current_step": "retrieve_complete"}
+    # What the documents hold, part by part, when the search can say (the
+    # WebUI's can). Without it the Writer sees only the passages, and a
+    # 222-page book was eight fragments it knew nothing else about (2026-09-29).
+    maps: list[dict[str, Any]] = []
+    read_maps = getattr(search, "maps", None)
+    if read_maps is not None:
+        try:
+            maps = await read_maps()
+        except Exception as exc:  # noqa: BLE001 — the passages still stand
+            logger.warning("[Node: PrivateMaterial] maps not read (%s: %s)", type(exc).__name__, exc)
+
+    logger.info(
+        "[Node: PrivateMaterial] %d passage(s) and %d map(s) from the teacher's material",
+        len(items),
+        len(maps),
+    )
+    return {
+        "material_context_items": items,
+        "material_maps": maps,
+        "current_step": "retrieve_complete",
+    }
 
 
 async def write_node(state: AgentState) -> dict[str, Any]:
@@ -648,6 +677,7 @@ async def write_node(state: AgentState) -> dict[str, Any]:
                 # teacher had uploaded.
                 teacher_provided_context=state.get("teacher_provided_context"),
                 material_context_items=state.get("material_context_items"),
+                material_maps=state.get("material_maps"),
             )
         else:
             # Initial writing
@@ -700,6 +730,7 @@ async def write_node(state: AgentState) -> dict[str, Any]:
                     # any, the Writer uses them *instead* of the pasted
                     # document: that is the whole point of chunking it.
                     material_context_items=state.get("material_context_items"),
+                    material_maps=state.get("material_maps"),
                     educational_profile=state.get("educational_profile"),
                     pedagogical_intent=state.get("pedagogical_intent"),
                     refinement_instruction=state.get("refinement_instruction"),
@@ -765,6 +796,27 @@ async def write_node(state: AgentState) -> dict[str, Any]:
         return {"error": str(e), "current_step": "error"}
 
 
+#: Similarity above which a retrieved passage is taken to be about the request.
+#: Below it the documents may simply not concern this question, and a draft
+#: that leaves them out is right to.
+RELEVANT_PASSAGE_SCORE = 0.45
+
+DOCUMENTS_UNUSED_INSTRUCTION = (
+    "La docente ha allegato dei documenti e la risposta non ne usa né cita nessun "
+    "passaggio. Riscrivi la risposta costruendo i contenuti sui passaggi dei documenti, "
+    "con i loro marcatori, e usa la mappa dei documenti per scegliere che cosa proporre. "
+    "Se i documenti non riguardano davvero la richiesta, dillo in una riga."
+)
+
+
+def _ignores_the_documents(state: AgentState) -> bool:
+    """Relevant passages were handed over, and the draft cites none of them."""
+    items = state.get("material_context_items") or []
+    draft = state.get("lesson_plan_draft") or ""
+    relevant = any(float(i.get("score") or 0) >= RELEVANT_PASSAGE_SCORE for i in items)
+    return relevant and "[[material:" not in draft
+
+
 async def critique_node(state: AgentState) -> dict[str, Any]:
     """
     CRITIC NODE
@@ -817,14 +869,29 @@ async def critique_node(state: AgentState) -> dict[str, Any]:
             material_items=state.get("material_context_items") or [],
         )
 
+        approved = result.approved
+        revision_instructions = result.revision_instructions
+        if _ignores_the_documents(state) and state.get("revision_count", 0) < state.get(
+            "max_revisions", 1
+        ):
+            # Checked here, in code, and not left to the Critic's rubric: on
+            # 2026-09-29 a lesson with a 222-page book attached cited it zero
+            # times and was approved at 3.8 -- the rubric scores the teaching,
+            # and the teaching was fine. What the teacher asked for was the book.
+            logger.info("[Node: Critique] the draft cites none of the attached documents: revising")
+            approved = False
+            revision_instructions = (
+                (revision_instructions or "").rstrip() + "\n\n" + DOCUMENTS_UNUSED_INSTRUCTION
+            ).strip()
+
         updates = {
             "critique": result.summary,
             "critique_score": result.average_score,
-            "approved": result.approved,
+            "approved": approved,
             "current_step": "critique_complete",
         }
 
-        if result.approved:
+        if approved:
             updates["final_lesson_plan"] = state["lesson_plan_draft"]
             updates["final_metadata"] = {
                 "scores": result.scores,
@@ -832,7 +899,7 @@ async def critique_node(state: AgentState) -> dict[str, Any]:
                 "revision_count": state.get("revision_count", 0),
             }
         else:
-            updates["revision_instructions"] = result.revision_instructions
+            updates["revision_instructions"] = revision_instructions
             updates["revision_count"] = state.get("revision_count", 0) + 1
 
         return updates

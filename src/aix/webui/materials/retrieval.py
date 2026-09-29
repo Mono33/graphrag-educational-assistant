@@ -46,7 +46,7 @@ from sqlalchemy import text as sql_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aix.webui.materials.chunking import CHUNKER_VERSION
-from aix.webui.materials.embedding import embed_query
+from aix.webui.materials.embedding import embed_query, embed_texts
 from aix.webui.materials.lexical import bm25_scores, fuse, tokenize
 
 logger = logging.getLogger(__name__)
@@ -266,8 +266,13 @@ class PrivateMaterialRetriever:
         version_ids: list[uuid.UUID],
         limit: Optional[int] = None,
         client: Any = None,
+        ordinals: Optional[tuple[int, int]] = None,
     ) -> list[MaterialContextItem]:
         """The passages of ``version_ids`` closest to ``query``, best first.
+
+        ``ordinals`` keeps the search inside one stretch of passages -- a part
+        of a document, as its map records it -- so a request about chapter 4
+        can read chapter 4 instead of whatever resembles it elsewhere.
 
         Empty list when there is nothing to search or nothing to search *with*:
         no bound material, an empty query, or embeddings switched off. Never an
@@ -296,10 +301,12 @@ class PrivateMaterialRetriever:
         pool = wanted * CANDIDATE_FACTOR
         if self._session.bind.dialect.name == "postgresql":
             candidates = await self._search_in_the_database(
-                query, vector, owner_id, version_ids, pool
+                query, vector, owner_id, version_ids, pool, ordinals
             )
         else:
-            candidates = await self._search_in_python(query, vector, owner_id, version_ids, pool)
+            candidates = await self._search_in_python(
+                query, vector, owner_id, version_ids, pool, ordinals
+            )
         return share_between_documents(limit_per_document(candidates, pool), wanted)
 
     async def _search_in_the_database(
@@ -309,6 +316,7 @@ class PrivateMaterialRetriever:
         owner_id: uuid.UUID,
         version_ids: list[uuid.UUID],
         wanted: int,
+        ordinals: Optional[tuple[int, int]] = None,
     ) -> list[MaterialContextItem]:
         """pgvector, with the ownership in the same statement as the ordering.
 
@@ -318,12 +326,14 @@ class PrivateMaterialRetriever:
         clever join: each is a plain index scan the planner understands, and
         either half returning nothing is then simply a shorter list.
         """
-        rows = await self._rank_by_vector(vector, owner_id, version_ids, wanted)
+        rows = await self._rank_by_vector(vector, owner_id, version_ids, wanted, ordinals)
         if not hybrid_enabled():
             return [_row_item(row) for row in rows]
 
         by_id = {row.id: row for row in rows}
-        lexical = await self._rank_by_words(query, vector, owner_id, version_ids, wanted)
+        lexical = await self._rank_by_words(
+            query, vector, owner_id, version_ids, wanted, ordinals
+        )
         by_id.update({row.id: by_id.get(row.id, row) for row in lexical})
         order = fuse(
             [[row.id for row in rows], [row.id for row in lexical]],
@@ -337,6 +347,7 @@ class PrivateMaterialRetriever:
         owner_id: uuid.UUID,
         version_ids: list[uuid.UUID],
         wanted: int,
+        ordinals: Optional[tuple[int, int]] = None,
     ) -> list[Any]:
         statement = sql_text(
             """
@@ -346,7 +357,9 @@ class PrivateMaterialRetriever:
             WHERE owner_id = :owner_id
               AND material_version_id = ANY(:version_ids)
               AND status = 'active'
-              AND chunker_version = :chunker_version
+              AND chunker_version = :chunker_version"""
+            + _ORDINAL_RANGE_SQL * bool(ordinals)
+            + """
               -- §6.1.4: only material that is ready. A version still being
               -- indexed, one whose parse failed, or one tombstoned by a
               -- deletion, answers nothing.
@@ -367,6 +380,7 @@ class PrivateMaterialRetriever:
                 "version_ids": [str(v) for v in version_ids],
                 "chunker_version": CHUNKER_VERSION,
                 "wanted": wanted,
+                **_ordinal_params(ordinals),
             },
         )
         return list(rows)
@@ -378,6 +392,7 @@ class PrivateMaterialRetriever:
         owner_id: uuid.UUID,
         version_ids: list[uuid.UUID],
         wanted: int,
+        ordinals: Optional[tuple[int, int]] = None,
     ) -> list[Any]:
         """The same authorized set, ranked by PostgreSQL's Italian text search.
 
@@ -400,7 +415,9 @@ class PrivateMaterialRetriever:
             WHERE owner_id = :owner_id
               AND material_version_id = ANY(:version_ids)
               AND status = 'active'
-              AND chunker_version = :chunker_version
+              AND chunker_version = :chunker_version"""
+            + _ORDINAL_RANGE_SQL * bool(ordinals)
+            + """
               AND fts @@ to_tsquery('italian', :words)
               AND EXISTS (
                   SELECT 1 FROM material_version v
@@ -420,6 +437,7 @@ class PrivateMaterialRetriever:
                 "version_ids": [str(v) for v in version_ids],
                 "chunker_version": CHUNKER_VERSION,
                 "wanted": wanted,
+                **_ordinal_params(ordinals),
             },
         )
         return list(rows)
@@ -431,6 +449,7 @@ class PrivateMaterialRetriever:
         owner_id: uuid.UUID,
         version_ids: list[uuid.UUID],
         breadth: int,
+        ordinals: Optional[tuple[int, int]] = None,
     ) -> list[MaterialContextItem]:
         """SQLite: the same authorized set, ranked here instead of in the engine.
 
@@ -446,6 +465,8 @@ class PrivateMaterialRetriever:
         chunks = await ChunkRepository(self._session).list_for_versions(
             version_ids, owner_id=owner_id, chunker_version=CHUNKER_VERSION
         )
+        if ordinals:
+            chunks = [c for c in chunks if ordinals[0] <= c.ordinal <= ordinals[1]]
         scored = [
             (index, cosine(vector, list(chunk.embedding or [])))
             for index, chunk in enumerate(chunks)
@@ -499,21 +520,40 @@ def search_for_lesson(lesson_id: uuid.UUID, owner_id: uuid.UUID):
     the page rather than the search.
     """
 
-    async def _search(query: str) -> list[dict[str, Any]]:
-        from aix.webui.db import async_session_maker
-        from aix.webui.materials.citations import labels_for_lesson
+    async def _versions(session) -> list[uuid.UUID]:
         from aix.webui.materials.repository import BindingRepository
 
+        bindings = await BindingRepository(session).list_for_lesson(lesson_id, owner_id=owner_id)
+        return [b.selected_version_id for b in bindings]
+
+    async def _maps(session, version_ids) -> dict[uuid.UUID, dict[str, Any]]:
+        from aix.webui.materials.document_map import MAP_VERSION
+        from aix.webui.materials.repository import DocumentMapRepository
+
+        return await DocumentMapRepository(session).for_versions(
+            version_ids, owner_id=owner_id, map_version=MAP_VERSION
+        )
+
+    async def _search(query: str, request: str = "") -> list[dict[str, Any]]:
+        from aix.webui.db import async_session_maker
+        from aix.webui.materials.citations import labels_for_lesson
+
         async with async_session_maker() as session:
-            bindings = await BindingRepository(session).list_for_lesson(
-                lesson_id, owner_id=owner_id
-            )
-            version_ids = [b.selected_version_id for b in bindings]
+            version_ids = await _versions(session)
             if not version_ids:
                 return []
 
-            items = await PrivateMaterialRetriever(session).search(
-                query, owner_id=owner_id, version_ids=version_ids
+            retriever = PrivateMaterialRetriever(session)
+            items = await retriever.search(query, owner_id=owner_id, version_ids=version_ids)
+
+            # Second pass, into the parts of the documents the request is about.
+            # The first pass finds what *resembles* the request; for "a lesson
+            # on personal finance" out of a 222-page book that was 8 fragments
+            # from anywhere (2026-09-29). The map knows the chapters: the one
+            # the teacher names, or the ones whose summary is closest.
+            maps = await _maps(session, version_ids)
+            extra = await _passages_from_parts(
+                retriever, query, maps, items, owner_id, request=request
             )
             # The document's name, for the prompt. Same lookup the citations
             # use, so what the Writer is told matches what the teacher reads.
@@ -522,18 +562,141 @@ def search_for_lesson(lesson_id: uuid.UUID, owner_id: uuid.UUID):
             labels = await labels_for_lesson(session, lesson_id=lesson_id, owner_id=owner_id)
 
         logger.info(
-            "[private-rag] lesson=%s searched %d version(s), %d passage(s) kept from %d",
+            "[private-rag] lesson=%s searched %d version(s), %d passage(s) kept from %d"
+            " + %d from the parts the map points to",
             lesson_id,
             len(version_ids),
             len(items),
             len({item.source_id for item in items}),
+            len(extra),
         )
+        out = []
+        for item in items + extra:
+            entry = {**item.to_dict(), "source_label": labels.get(item.source_id.lower(), "")}
+            part = _part_of(maps, item)
+            if part:
+                entry["part"] = part
+            out.append(entry)
+        return out
+
+    async def _maps_for_prompt() -> list[dict[str, Any]]:
+        """The maps of this lesson's documents, as the Writer reads them."""
+        from aix.webui.db import async_session_maker
+        from aix.webui.materials.citations import labels_for_lesson
+
+        async with async_session_maker() as session:
+            version_ids = await _versions(session)
+            maps = await _maps(session, version_ids)
+            if not maps:
+                return []
+            labels = await labels_for_lesson(session, lesson_id=lesson_id, owner_id=owner_id)
         return [
-            {**item.to_dict(), "source_label": labels.get(item.source_id.lower(), "")}
-            for item in items
+            {
+                "source_id": str(version_id),
+                "source_label": labels.get(str(version_id).lower(), ""),
+                "summary": document_map.get("summary", ""),
+                "themes": document_map.get("themes", []),
+                "sections": [
+                    {k: s[k] for k in ("title", "pages", "summary") if k in s}
+                    for s in document_map.get("sections", [])
+                ],
+            }
+            for version_id, document_map in maps.items()
         ]
 
+    # Read by ``retrieve_private_node``: a search function that can also say
+    # what its documents contain.
+    _search.maps = _maps_for_prompt  # type: ignore[attr-defined]
     return _search
+
+
+#: How many parts the second pass reads, and how many passages from each.
+PARTS_PER_REQUEST = 2
+PASSAGES_PER_PART = 3
+
+
+async def _passages_from_parts(
+    retriever: "PrivateMaterialRetriever",
+    query: str,
+    maps: dict[uuid.UUID, dict[str, Any]],
+    found: list[MaterialContextItem],
+    owner_id: uuid.UUID,
+    *,
+    request: str = "",
+) -> list[MaterialContextItem]:
+    """Passages from the parts of the documents the request points to.
+
+    A part the teacher names («capitolo 4», or its title) comes first; otherwise
+    the parts whose summaries are closest to the request. Only documents with
+    three parts or more: a handout is searched whole by the first pass already.
+    """
+    from aix.webui.materials.document_map import named_parts
+
+    candidates: list[tuple[uuid.UUID, dict[str, Any]]] = []
+    semantic: list[tuple[uuid.UUID, dict[str, Any]]] = []
+    for version_id, document_map in maps.items():
+        sections = [s for s in document_map.get("sections", []) if s.get("ordinals")]
+        if len(sections) < 3:
+            continue
+        named = named_parts(f"{request} {query}", sections)
+        candidates += [(version_id, s) for s in named]
+        if not named:
+            semantic += [(version_id, s) for s in sections]
+
+    if semantic and len(candidates) < PARTS_PER_REQUEST:
+        try:
+            vectors = await embed_texts(
+                [query] + [f"{s['title']}. {s.get('summary', '')}" for _, s in semantic]
+            )
+            ranked = sorted(
+                zip(semantic, vectors[1:], strict=True),
+                key=lambda pair: cosine(vectors[0], pair[1]),
+                reverse=True,
+            )
+            candidates += [pair[0] for pair in ranked]
+        except Exception as exc:  # noqa: BLE001 — the first pass still stands
+            logger.warning("[private-rag] parts not ranked (%s)", exc)
+
+    seen = {item.text for item in found}
+    extra: list[MaterialContextItem] = []
+    for version_id, section in candidates[:PARTS_PER_REQUEST]:
+        first, last = section["ordinals"]
+        passages = await retriever.search(
+            query,
+            owner_id=owner_id,
+            version_ids=[version_id],
+            limit=PASSAGES_PER_PART,
+            ordinals=(first, last),
+        )
+        for item in passages:
+            if item.text not in seen:
+                seen.add(item.text)
+                extra.append(item)
+    return extra
+
+
+def _part_of(maps: dict[uuid.UUID, dict[str, Any]], item: MaterialContextItem) -> str:
+    """The title of the part a passage comes from, by its page."""
+    page = item.locator.get("page")
+    document_map = next(
+        (m for v, m in maps.items() if str(v).lower() == item.source_id.lower()), None
+    )
+    if not page or not document_map or len(document_map.get("sections", [])) < 2:
+        return ""
+    for section in document_map["sections"]:
+        pages = section.get("pages")
+        if pages and pages[0] <= page <= pages[1]:
+            return str(section.get("title", ""))
+    return ""
+
+
+#: Appended to a search statement when it is kept inside one part of a document.
+_ORDINAL_RANGE_SQL = """
+              AND ordinal BETWEEN :first_ordinal AND :last_ordinal"""
+
+
+def _ordinal_params(ordinals: Optional[tuple[int, int]]) -> dict[str, int]:
+    return {"first_ordinal": ordinals[0], "last_ordinal": ordinals[1]} if ordinals else {}
 
 
 def _second(pair: tuple[Any, float]) -> float:

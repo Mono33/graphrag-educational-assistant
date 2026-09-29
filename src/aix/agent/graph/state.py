@@ -257,6 +257,10 @@ class AgentState(TypedDict, total=False):
     # pedagogy, the other is one school's handout, and the Writer has to be able
     # to tell them apart. Every item is ``instruction_trust="data_only"``.
     material_context_items: Annotated[list[dict[str, Any]], merge_material_items]
+    # The maps of those documents (``aix.webui.materials.document_map``): what
+    # each one holds, part by part. Orientation for the Writer, never cited.
+    # Written only by ``retrieve_private_node``, so it needs no reducer.
+    material_maps: list[dict[str, Any]]
     # T6 — True when this turn skipped the retriever and reused the corpus a
     # previous turn fetched. Per-run, so it resets. Downstream readers use it to
     # say so in the UI; the Critic will need it too, to know it is grounding
@@ -442,6 +446,7 @@ class AgentInput(TypedDict, total=False):
     # the previous turn's passages would answer the new question with the old
     # evidence.
     material_context_items: list[dict[str, Any]]
+    material_maps: list[dict[str, Any]]
 
     final_lesson_plan: Optional[str]
     final_metadata: Optional[dict[str, Any]]
@@ -559,6 +564,7 @@ def create_initial_state(
         # than persisting like the Knowledge Graph corpus above: what the lesson
         # needs from a document depends on what this turn asks.
         material_context_items=[],
+        material_maps=[],
         # Writer (empty)
         lesson_plan_draft=None,
         lesson_plan_structured=None,

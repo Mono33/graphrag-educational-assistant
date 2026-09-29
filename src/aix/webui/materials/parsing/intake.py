@@ -53,10 +53,17 @@ def too_large_message() -> str:
     """What the teacher reads, derived from the limit actually in force."""
     return f"File troppo grande (massimo {MAX_BYTES // (1024 * 1024)} MB)."
 
-#: Reading a text layer is cheap, and the ministerial documents in the corpus run
-#: to 68 and 97 pages. What the VM cannot afford is OCR on hundreds of pages, and
-#: that is capped separately, per document, by ``ParseOptions.max_ocr_pages``.
-MAX_PAGES = 200
+#: Reading a text layer is cheap; what the VM cannot afford is OCR on hundreds of
+#: pages, and that is capped separately, per document, by
+#: ``ParseOptions.max_ocr_pages``.
+#:
+#: Was 200, sized on the ministerial documents in the corpus (68 and 97 pages).
+#: On 2026-09-29 three personal-finance books -- 222, 263 and 344 pages, all
+#: with a text layer -- were refused, and a teacher split one in two to attach
+#: it. A book is exactly the document worth attaching. The two halves of the
+#: 222-page one gave 297 passages and were indexed in a minute, so 1000 pages
+#: is ~1300 passages and a few minutes of the worker's time, in the background.
+MAX_PAGES = 1000
 MAX_PIXELS = 40_000_000
 MAX_ZIP_ENTRIES = 2_000
 MAX_ZIP_UNCOMPRESSED = 100 * 1024 * 1024

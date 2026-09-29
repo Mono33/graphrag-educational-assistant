@@ -119,7 +119,10 @@ class ExtractionHandler:
         # that said all was well. Completing last means a raise here leaves the
         # job leased and failing, so the worker retries it with backoff.
         if ir is not None:
-            await self._index_privately(job, ir)
+            chunks = await self._index_privately(job, ir)
+            # Before ``ready``, so the first lesson written from the document
+            # already knows what it holds. Never raises: see ``_map_privately``.
+            await self._map_privately(job, ir, chunks, content)
 
         await self._set_version_status(job, status)
         await self._complete(job, status)
@@ -133,8 +136,11 @@ class ExtractionHandler:
             )
         return None
 
-    async def _index_privately(self, job: IngestionJob, ir: DocumentIRV1) -> None:
+    async def _index_privately(self, job: IngestionJob, ir: DocumentIRV1) -> list:
         """Chunk the IR and embed it, so the material can be retrieved (§8.3–8.4).
+
+        Returns the chunks written (empty when nothing was indexed), which the
+        map uses to know which passages each part of the document spans.
 
         Off unless ``AIX_PRIVATE_RAG_ENABLED`` is on: with the flag down nothing
         is chunked, nothing is embedded, and no text leaves the machine.
@@ -153,12 +159,12 @@ class ExtractionHandler:
         from aix.webui.materials.repository import ChunkRepository
 
         if not private_rag_enabled():
-            return
+            return []
 
         chunks = chunk_document(ir)
         if not chunks:
             logger.info("[private-rag] job=%s produced no chunks", job.id)
-            return
+            return []
 
         vectors = await embed_texts([chunk.text for chunk in chunks])
 
@@ -178,6 +184,46 @@ class ExtractionHandler:
             written,
             CHUNKER_VERSION,
             embedding_model(),
+        )
+        return chunks
+
+    async def _map_privately(self, job: IngestionJob, ir: DocumentIRV1, chunks, content) -> None:
+        """Build and store the document's map (``document_map``).
+
+        Unlike the index, a failure here is logged and swallowed: without a map
+        the document is searched exactly as before, and failing the job over an
+        overview would take away the passages too.
+        """
+        import time
+
+        from aix.webui.materials.document_map import MAP_VERSION, build_map, map_enabled
+        from aix.webui.materials.repository import DocumentMapRepository
+
+        if not map_enabled() or not chunks:
+            return
+        started = time.monotonic()
+        try:
+            document_map = await build_map(ir, chunks=chunks, content=content)
+            if not document_map:
+                return
+            async with self._dispatcher.session_maker() as session:
+                await DocumentMapRepository(session).save(
+                    owner_id=job.owner_id,
+                    material_version_id=job.material_version_id,
+                    map_version=MAP_VERSION,
+                    model=document_map["model"],
+                    map_json=document_map,
+                )
+                await session.commit()
+        except Exception as exc:  # noqa: BLE001 — see the docstring
+            logger.warning("[document-map] job=%s no map (%s: %s)", job.id, type(exc).__name__, exc)
+            return
+        logger.info(
+            "[document-map] job=%s mapped %d part(s) by %s in %.1fs",
+            job.id,
+            len(document_map["sections"]),
+            document_map["structure"],
+            time.monotonic() - started,
         )
 
     async def _load(self, job: IngestionJob) -> tuple[bytes, str]:

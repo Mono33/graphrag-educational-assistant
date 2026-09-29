@@ -25,7 +25,9 @@ profile, so a second job for the same version would be refused anyway.
 Selection, any of:
 
 * ``stale`` (default) -- chunks from another chunker version or embedding
-  model, or a version marked ready with no chunks at all;
+  model, a version marked ready with no chunks at all, or -- with the document
+  map on -- an indexed version without a map of the current version (every
+  document uploaded before the maps existed, 2026-09-29);
 * ``--media-type`` -- every version of that type, e.g. PowerPoint decks for
   the speaker notes;
 * ``--all`` -- everything not deleted.
@@ -68,8 +70,9 @@ async def select_versions(session, *, media_type: str | None, everything: bool) 
     from sqlalchemy import case, func, or_, select
 
     from aix.webui.materials.chunking import CHUNKER_VERSION
+    from aix.webui.materials.document_map import MAP_VERSION, map_enabled
     from aix.webui.materials.embedding import embedding_model
-    from aix.webui.materials.models import Material, MaterialChunk, MaterialVersion
+    from aix.webui.materials.models import DocumentMap, Material, MaterialChunk, MaterialVersion
 
     model = embedding_model()
     outdated = or_(MaterialChunk.chunker_version != CHUNKER_VERSION, MaterialChunk.embedding_model != model)
@@ -93,6 +96,18 @@ async def select_versions(session, *, media_type: str | None, everything: bool) 
         )
     ).all()
 
+    mapped = set()
+    if map_enabled():
+        mapped = set(
+            (
+                await session.execute(
+                    select(DocumentMap.material_version_id).where(
+                        DocumentMap.map_version == MAP_VERSION
+                    )
+                )
+            ).scalars()
+        )
+
     chosen = []
     for version, name, chunks, stale in rows:
         chunks, stale = chunks or 0, stale or 0
@@ -106,6 +121,8 @@ async def select_versions(session, *, media_type: str | None, everything: bool) 
             reason = f"{stale} passaggi di un'altra versione di chunker o embedding"
         elif chunks == 0 and version.status in ("ready", "ready_with_warnings"):
             reason = "pronto ma senza passaggi"
+        elif map_enabled() and chunks and version.id not in mapped:
+            reason = "indicizzato ma senza mappa del documento"
         else:
             continue
         chosen.append((version, name, reason))

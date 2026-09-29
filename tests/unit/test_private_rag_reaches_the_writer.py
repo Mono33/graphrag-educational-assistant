@@ -195,7 +195,8 @@ async def test_the_passages_replace_the_pasted_document():
         teacher_provided_context="### guerra-fredda.pdf\n" + ("testo intero " * 500),
     )
 
-    assert "i passaggi pertinenti" in prompt
+    assert "### I passaggi" in prompt
+    assert "fonte\nprincipale dei contenuti" in prompt
     assert "A Yalta l'Europa" in prompt
     assert "testo intero testo intero" not in prompt, "the whole document is not pasted too"
 

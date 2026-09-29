@@ -1946,6 +1946,69 @@ l'intestazione con l'indirizzo dell'ente; il corpo del modulo c'era tutto.
 3.7 Flash li trascrive. In un libro di testo lo stesso difetto toccherebbe note
 e didascalie.
 
+**Libri interi.** Tre libri di finanza personale (222, 263 e 344 pagine, tutti
+con testo) sono stati rifiutati dal limite di 200 pagine, e Angelo ha dovuto
+dividerne uno in due. Il limite è salito a 1000: leggere il testo costa poco,
+mentre l'OCR resta limitato a 30 pagine per documento. Le due metà del libro da
+222 pagine hanno dato 297 passaggi, indicizzati in un minuto.
+
+### 2026-09-29 — Il documento come fonte principale: mappa e modalità «dal documento»
+
+**Il caso.** Angelo allega un libro di finanza di 222 pagine, diviso in due
+metà, e chiede una lezione sulla finanza personale. La ricerca fa il suo lavoro:
+restituisce gli 8 passaggi più simili alla frase, su 297. Il Writer, che del
+libro conosce solo quegli 8 frammenti, scrive la sua lezione solita dal
+Knowledge Graph e cita il libro **zero volte**. Il Critic la approva con 3,8.
+
+Le cause sono due:
+
+- il documento era un'appendice facoltativa («se non serve, non citarlo»);
+- nessuna ricerca per somiglianza può dire di che cosa parla un libro.
+
+**Mappa del documento** (`materials/document_map.py`, tabella `document_map`,
+migrazione `3b8e6d1f4a27`). Al caricamento il documento viene diviso in parti,
+cercando la struttura in quest'ordine:
+
+1. l'indice dei segnalibri del PDF;
+2. le righe «Capitolo N» / «Chapter N» nel testo (il libro diviso aveva perso i
+   segnalibri, ma non i capitoli);
+3. i titoli;
+4. finestre di pagine.
+
+Gemini 3.5 Flash-Lite scrive una sintesi per ogni parte e poi una del tutto,
+con i temi. La prima metà del libro diventa 7 capitoli in 4–10 s. Ogni parte
+registra le sue pagine e l'intervallo dei suoi passaggi indicizzati. Se la mappa
+fallisce, il documento resta indicizzato come prima.
+
+**Ricerca in due passate.**
+
+- La prima passata è la ricerca di sempre.
+- La seconda entra nelle parti a cui punta la richiesta: quella nominata
+  («capitolo 5», «cap. IV», il titolo), altrimenti le due con la sintesi più
+  vicina.
+- Ogni passaggio porta il nome della sua parte.
+- Verificato su Postgres nel container:
+  - «approfondisci il capitolo 5» → 4 passaggi dal capitolo 5;
+  - «una lezione su modern capitalism» → 7 dal capitolo 2;
+  - la richiesta generica sulla finanza personale → soprattutto il capitolo 10,
+    «Investing the Profits».
+- La richiesta della docente arriva alla ricerca solo per riconoscere i
+  capitoli nominati, perché la frase di ricerca del pianificatore li perdeva.
+
+**Writer.** I documenti allegati sono **la fonte principale dei contenuti**: il
+Knowledge Graph serve a come insegnarli, non al loro posto. Il Writer riceve:
+
+- la mappa, con l'avvertenza che non è una fonte citabile;
+- i passaggi, con 20 000 caratteri invece di 12 000.
+
+**Critic.** Se c'erano passaggi pertinenti (somiglianza ≥ 0,45) e la bozza non
+ne cita nessuno, la bozza torna indietro una volta, qualunque sia il punteggio
+del Critic. Il controllo è nel codice, non nella rubrica del Critic.
+
+**Documenti già caricati.** `reindex_materials.py` sceglie ora anche i documenti
+indicizzati senza mappa. Nel container: 4 su 4 rimappati. Uno ha avuto un 429
+del provider degli embedding ed è riuscito al tentativo successivo.
+
 **Difetti del banco, non dei modelli**, corretti: il font del generatore non ha
 √ e ≈, e tutti avevano letto fedelmente il quadratino stampato al loro posto
 (ora i due simboli sono disegnati); il punteggio contava gli spazi, e «x²+3x»

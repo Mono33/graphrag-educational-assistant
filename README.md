@@ -252,7 +252,7 @@ document the lesson did not use.
 | Accepted uploads, parser **on** | pdf, docx, pptx, txt, md/markdown, png, jpg/jpeg, webp, tif/tiff | `materials/parsing/intake.py` (`ALLOWED`) |
 | Accepted uploads, parser **off** | pdf, txt, md/markdown | `lessons/uploads.py` (`LEGACY_EXT`) |
 | Max file size | 10 MB | `MAX_FILE_BYTES` |
-| Max pages per PDF | 200 | `intake.MAX_PAGES` |
+| Max pages per PDF | 1000 | `intake.MAX_PAGES` |
 | Max files per lesson | 12 | `MAX_FILES_PER_LESSON` |
 | OCR | at most 30 text-less pages, rendered at 200 dpi | `ParseOptions.max_ocr_pages`, `ocr.PDF_RENDER_DPI` |
 | Chunking | `chunk@2` · 380 target tokens · 450 max · 12 % overlap | `materials/chunking.py` |

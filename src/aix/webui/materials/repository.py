@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from aix.webui.materials.models import (
     AssetBlob,
+    DocumentMap,
     LessonMaterialBinding,
     Material,
     MaterialChunk,
@@ -576,3 +577,57 @@ class MaterialService:
         return await self.blobs.create(
             owner_id=owner_id, stored=stored, verified_media_type=media_type
         )
+
+
+class DocumentMapRepository:
+    """The overviews of indexed versions (``document_map``), under their owner."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def save(
+        self,
+        *,
+        owner_id: uuid.UUID,
+        material_version_id: uuid.UUID,
+        map_version: str,
+        model: str,
+        map_json: dict[str, Any],
+    ) -> None:
+        """Insert or replace: a retried job finds the row its last attempt wrote."""
+        existing = (
+            await self._session.execute(
+                select(DocumentMap).where(
+                    DocumentMap.material_version_id == material_version_id,
+                    DocumentMap.map_version == map_version,
+                )
+            )
+        ).scalar_one_or_none()
+        if existing is None:
+            self._session.add(
+                DocumentMap(
+                    owner_id=owner_id,
+                    material_version_id=material_version_id,
+                    map_version=map_version,
+                    model=model,
+                    map_json=map_json,
+                )
+            )
+        else:
+            existing.model = model
+            existing.map_json = map_json
+
+    async def for_versions(
+        self, version_ids: list[uuid.UUID], *, owner_id: uuid.UUID, map_version: str
+    ) -> dict[uuid.UUID, dict[str, Any]]:
+        """``{version id: map}`` for the versions that have one. The owner is the query."""
+        if not version_ids:
+            return {}
+        rows = await self._session.execute(
+            select(DocumentMap).where(
+                DocumentMap.owner_id == owner_id,
+                DocumentMap.material_version_id.in_(version_ids),
+                DocumentMap.map_version == map_version,
+            )
+        )
+        return {row.material_version_id: row.map_json for row in rows.scalars()}

@@ -241,10 +241,19 @@ def test_a_pdf_protected_only_against_editing_is_accepted():
     assert "Indicazioni nazionali" in ir.text
 
 
-def test_a_pdf_over_the_page_limit_is_refused():
+def test_a_pdf_over_the_page_limit_is_refused(monkeypatch):
+    from aix.webui.materials.parsing import intake
+
+    monkeypatch.setattr(intake, "MAX_PAGES", 5)
     with pytest.raises(IntakeRejected) as refused:
-        check_upload("lungo.pdf", _digital_pdf(["p"] * 201))
+        check_upload("lungo.pdf", _digital_pdf(["p"] * 6))
     assert refused.value.code == "too_many_pages"
+
+
+def test_a_whole_book_is_accepted():
+    """Three personal-finance books of 222, 263 and 344 pages were refused at 200
+    (2026-09-29): a teacher had to split one in two to attach it."""
+    assert check_upload("libro.pdf", _digital_pdf(["p"] * 344)).page_count == 344
 
 
 def test_ocr_stops_at_its_own_page_cap(monkeypatch):

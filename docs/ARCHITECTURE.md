@@ -670,7 +670,7 @@ These are measured, not aspirational. State them to anyone planning a pilot.
 | Limit | Value | Source |
 | --- | --- | --- |
 | Bytes per file | **10 MB** | `intake.MAX_BYTES`, `uploads.MAX_FILE_BYTES` |
-| Pages per PDF | **200** | `intake.MAX_PAGES` |
+| Pages per PDF | **1000** | `intake.MAX_PAGES` |
 | Pixels per image | **40 Mpixel** | `intake.MAX_PIXELS` |
 | Files per lesson | **12** | `uploads.MAX_FILES_PER_LESSON` |
 | OCR pages per document | **30**, rendered at **200 dpi** | `ParseOptions.max_ocr_pages`, `ocr.PDF_RENDER_DPI` |
