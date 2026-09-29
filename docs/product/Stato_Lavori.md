@@ -2009,6 +2009,45 @@ del Critic. Il controllo è nel codice, non nella rubrica del Critic.
 indicizzati senza mappa. Nel container: 4 su 4 rimappati. Uno ha avuto un 429
 del provider degli embedding ed è riuscito al tentativo successivo.
 
+### 2026-09-29 (pomeriggio) — La prima prova in WebUI: tre difetti
+
+Angelo prova sul libro intero tre richieste: la lezione, i temi principali, il
+capitolo 4.
+
+**Temi principali.** 12 passaggi e 9 citazioni, di cui 1 tolta dal controllo:
+la domanda panoramica ora ha una risposta.
+
+**Capitolo 4.** 13 passaggi, 5 dei quali dal capitolo nominato. La bozza però
+non citava il libro: il controllo l'ha segnalata e la bozza è uscita lo stesso.
+
+**Le revisioni erano spente dal 25 settembre.** Il Critic conta il rifiuto
+prima che il router lo confronti con il massimo, e il confronto era `>=`: con
+`AIX_MAX_REVISIONS=N` le revisioni erano N−1. Portando il predefinito a 1,
+inteso come «una revisione», le abbiamo spente tutte. Nessuna bozza respinta da
+allora è stata riscritta; un test lo documentava come comportamento «as it
+stands». Ora il confronto è `>` e 1 vuol dire una revisione.
+
+**Il testo scritto si cancellava ogni 2 secondi mentre un documento veniva
+preparato.** Per sbloccare il pulsante Invia, il vassoio degli allegati
+sostituiva l'intero riquadro di scrittura, textarea compresa. Ora sostituisce
+solo il pulsante (`chat_send_button.html`).
+
+**La ricerca nel grafo è ora un interruttore della docente.** Nei turni
+successivi c'è un interruttore «Cerca nel Knowledge Graph».
+
+- Acceso (predefinito): decide il pianificatore, come prima.
+- Spento: il turno riusa ciò che la conversazione ha già trovato, senza una
+  nuova ricerca nel grafo e sul web. I documenti allegati vengono cercati
+  comunque.
+- La scelta resta sulla lezione per i turni successivi. Al primo turno non si
+  applica.
+- Usa l'override `force_retrieval` che il router aveva già e che nessuno
+  impostava.
+
+Il caso che l'ha chiesto: alla richiesta sul capitolo 4 il pianificatore aveva
+deciso di cercare di nuovo nel grafo, perché il capitolo era «contenuto non
+ancora recuperato». Dal libro, che si cerca a ogni turno.
+
 **Difetti del banco, non dei modelli**, corretti: il font del generatore non ha
 √ e ≈, e tutti avevano letto fedelmente il quadratino stampato al loro posto
 (ora i due simboli sono disegnati); il punteggio contava gli spazi, e «x²+3x»

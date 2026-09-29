@@ -1257,6 +1257,17 @@ def _extract_meta(final_state: dict[str, Any]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+def graph_search_override(graph_search: Optional[bool]) -> Optional[bool]:
+    """The teacher's Knowledge Graph switch as the router's ``force_retrieval``.
+
+    Off -> ``False``: the turn reuses the corpus the thread already holds
+    (``should_retrieve``). On, or never set -> ``None``: the planner decides, as
+    before -- switching the graph on does not force a search. The caller drops
+    it on a first turn, which has nothing to reuse.
+    """
+    return False if graph_search is False else None
+
+
 async def run_agent_stream(
     lesson: Any,
     session: AsyncSession,
@@ -1311,9 +1322,12 @@ async def run_agent_stream(
         # be passed as separate state params (not part of the profile itself).
         pedagogical_intent: str | None = None
         refinement_instruction: str | None = None
+        graph_search: bool | None = None
         if profile_dict:
             pedagogical_intent = profile_dict.get("pedagogical_intent")
             refinement_instruction = profile_dict.pop("__refinement__", None)
+            graph_search = profile_dict.pop("__graph_search__", None)
+        force_retrieval = graph_search_override(graph_search)
 
         # Use the persisted teacher_query if the user supplied one in the
         # form; otherwise synthesize from the profile and *write it back*
@@ -1415,6 +1429,8 @@ async def run_agent_stream(
             raw_user_turn=raw_query,
             pedagogical_intent=pedagogical_intent,
             refinement_instruction=refinement_instruction,
+            # A first turn has nothing to reuse, whatever the switch says.
+            force_retrieval=force_retrieval if conversation_history else None,
         )
 
         # CORE 2 #9.UX-5 hotfix — pre-seed final_state with initial_state so

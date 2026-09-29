@@ -458,6 +458,11 @@ async def test_once_ready_the_chip_says_so_and_the_send_button_returns(
     assert "in preparazione" in preparing.text
     assert "disabled" in preparing.text, "the send button waits with it"
     assert "attachments-fragment" in preparing.text, "and the tray asks again"
+    # The button alone travels out of band, never the textarea: swapping the
+    # whole input every two seconds wiped what the teacher was typing
+    # (2026-09-29).
+    assert 'id="chat-input-send"' in preparing.text
+    assert "<textarea" not in preparing.text
 
     await _drain(maker, tmp_path)
 
@@ -534,11 +539,7 @@ async def test_a_second_upload_does_not_freeze_the_first_one_s_tray(
     await _drain(maker, tmp_path)
 
     both = client.get(f"/webui/lesson/{LESSON}/attachments-fragment")
-    # The endpoint returns the tray *and* the chat input out of band, and the
-    # chat input includes the tray again — so every chip appears twice in this
-    # response. Count the first copy only.
-    tray = both.text.split('id="chat-input-wrapper"')[0]
-    assert tray.count("aix-attach-chip--ready") == 2, "both documents confirmed"
+    assert both.text.count("aix-attach-chip--ready") == 2, "both documents confirmed"
     assert "in preparazione" not in both.text
     assert "attachments-fragment" not in both.text, "and only then does it stop"
 

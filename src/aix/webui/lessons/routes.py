@@ -682,6 +682,22 @@ async def lesson_media_live(
 # ----------------------------------------------------------------------------
 
 
+
+def remember_graph_search(lesson: Lesson, form: Any) -> None:
+    """Keep the teacher's Knowledge Graph switch on the lesson, if the form had one.
+
+    Only the follow-up input shows the switch and sends ``graph_search_choice``;
+    an unticked checkbox sends nothing, which is why the marker is needed to
+    tell "switched off" from "not asked". Kept in the profile and left there, so
+    the switch renders as she last set it on the turns after.
+    """
+    if form.get("graph_search_choice") != "1":
+        return
+    profile = dict(lesson.educational_profile_json or {})
+    profile["__graph_search__"] = form.get("graph_search") == "on"
+    lesson.educational_profile_json = profile
+
+
 @router.get(
     "/lesson/{lesson_id}/attachments-fragment",
     response_class=HTMLResponse,
@@ -700,9 +716,11 @@ async def lesson_attachments_fragment(
     render the tray: one of them would have been forgotten, and a chip that
     lies about readiness is worse than a chip that says nothing.
 
-    The response also carries the chat input out of band, so the send button
-    unlocks by itself when the last document turns ready — the teacher never has
-    to guess whether it is safe to press Invia (decision U1).
+    The response also carries the send button out of band, so it unlocks by
+    itself when the last document turns ready — the teacher never has to guess
+    whether it is safe to press Invia (decision U1). The button, not the whole
+    chat input: swapping the input every two seconds wiped whatever the teacher
+    was typing while a document was prepared (2026-09-29).
     """
     if user is None:
         raise HTTPException(status_code=401)
@@ -722,17 +740,12 @@ async def lesson_attachments_fragment(
         "partials/chat_attachments.html",
         {"lesson": lesson, "material_states": states},
     )
-    chat_input = _render_partial(
+    send_button = _render_partial(
         request,
-        "partials/chat_input.html",
-        {
-            "lesson": lesson,
-            "material_states": states,
-            "materials_preparing": bool(preparing),
-            "_oob": True,
-        },
+        "partials/chat_send_button.html",
+        {"lesson": lesson, "materials_preparing": bool(preparing), "_send_oob": True},
     )
-    return HTMLResponse(content=tray + chat_input)
+    return HTMLResponse(content=tray + send_button)
 
 
 # ----------------------------------------------------------------------------
@@ -1350,6 +1363,15 @@ async def lesson_run(
         profile = dict(lesson.educational_profile_json or {})
         profile["__refinement__"] = refinement_instruction
         lesson.educational_profile_json = profile
+
+    # The teacher's switch for the Knowledge Graph search on a follow-up turn.
+    # Kept in the profile like ``__refinement__``, and *left there*: the switch
+    # renders in the state she last set, so turning the graph off once keeps it
+    # off for the turns after, until she turns it back on (2026-09-29: asked
+    # about a chapter of her book, the run searched the graph again anyway).
+    # Only a form that shows the switch carries ``graph_search_choice``; the
+    # first turn always searches.
+    remember_graph_search(lesson, form)
 
     # Backfill turn 1 from legacy fields if this is a follow-up on a
     # pre-#10.3 lesson. One-time, idempotent — guarded by a count probe

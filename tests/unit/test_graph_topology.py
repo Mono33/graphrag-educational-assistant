@@ -239,6 +239,11 @@ async def test_pipeline_and_orchestrator_expose_the_shared_graph(monkeypatch):
         ),
         (
             {"approved": False, "revision_count": 2, "max_revisions": 2},
+            "revise",
+            "the second of two permitted revisions (the count includes this rejection)",
+        ),
+        (
+            {"approved": False, "revision_count": 3, "max_revisions": 2},
             "finish",
             "ceiling reached — ship the draft rather than loop",
         ),
@@ -248,7 +253,7 @@ async def test_pipeline_and_orchestrator_expose_the_shared_graph(monkeypatch):
             "past the ceiling behaves like the ceiling",
         ),
         (
-            {"approved": False, "revision_count": 0, "max_revisions": 0},
+            {"approved": False, "revision_count": 1, "max_revisions": 0},
             "finish",
             "a zero budget disables the revision loop entirely",
         ),
@@ -390,8 +395,8 @@ async def test_end_to_end_approved_on_first_pass(monkeypatch):
 
 
 async def test_end_to_end_revision_loop_runs_then_stops_at_the_ceiling(monkeypatch):
-    # Rejected twice with max_revisions=2: one real revision, then the ceiling.
-    final, agents = await _run_graph(monkeypatch, critiques=[False, False], max_revisions=2)
+    # Rejected twice with max_revisions=1: one real revision, then the ceiling.
+    final, agents = await _run_graph(monkeypatch, critiques=[False, False], max_revisions=1)
 
     assert not final.get("error")
     assert final["approved"] is False
@@ -448,32 +453,21 @@ async def test_second_turn_reuses_the_first_turn_retrieval(monkeypatch):
     assert second["teacher_query"] == "riscrivila più corta"
 
 
-async def test_max_revisions_1_disables_the_revision_loop_entirely(monkeypatch):
-    """``max_revisions=N`` permits N-1 actual revisions, not N.
+async def test_max_revisions_is_the_number_of_revisions(monkeypatch):
+    """``max_revisions=N`` permits N revisions.
 
-    ``critique_node`` increments ``revision_count`` *before*
-    ``should_continue_to_revision`` compares it against the ceiling, so at
-    ``max_revisions=1`` the first rejection already trips ``count >= max`` and
-    the run finishes without the writer ever revising.
-
-    The off-by-one interacts with two different defaults, which is worth
-    recording because they disagree:
-
-      * ``LessonPlannerPipeline`` defaults to ``AIX_MAX_REVISIONS`` (1), which
-        by the arithmetic above allows no revision at all;
-      * ``AgentOrchestrator`` hard-codes ``max_revisions=2`` and passes it down
-        when it builds the Pipeline.
-
-    The WebUI and the public API both go through the Orchestrator, so they get
-    2 — one real revision — and ``AIX_MAX_REVISIONS`` never reaches them. It
-    only applies to code constructing a Pipeline directly.
-
-    The test documents the behaviour as it stands: change either default or the
-    comparison, and it fails loudly rather than drifting.
+    It permitted N-1 until 2026-09-29: ``critique_node`` counts the rejection
+    before ``should_continue_to_revision`` compares, and the comparison was
+    ``>=``. When the default became 1 on 2026-09-25 -- meant as "one revision" --
+    no draft was revised any more, and a test here documented it as the
+    behaviour "as it stands" instead of as the bug it was.
     """
-    final, agents = await _run_graph(monkeypatch, critiques=[False], max_revisions=1)
+    final, agents = await _run_graph(monkeypatch, critiques=[False, True], max_revisions=1)
+
+    assert final["approved"] is True
+    assert agents.writer.revise.await_count == 1, "max_revisions=1 is one revision"
+
+    final, agents = await _run_graph(monkeypatch, critiques=[False], max_revisions=0)
 
     assert final["approved"] is False
-    assert final["revision_count"] == 1
-    assert agents.critic.critique.await_count == 1
-    assert agents.writer.revise.await_count == 0, "no revision happens at max_revisions=1"
+    assert agents.writer.revise.await_count == 0, "max_revisions=0 is none"

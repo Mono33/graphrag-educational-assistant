@@ -44,6 +44,11 @@ def export_outline_enabled() -> bool:
     return _flag("AIX_EXPORT_OUTLINE_ENABLED", default=True)
 
 
+def conditional_retrieval_enabled() -> bool:
+    """A follow-up may skip the Knowledge Graph search: the toggle is shown only then."""
+    return _flag("AIX_CONDITIONAL_RETRIEVAL_ENABLED", default=False)
+
+
 def upload_accept_attribute() -> str:
     """What the file picker offers, which is what the server will accept."""
     from aix.webui.lessons.uploads import allowed_extensions
@@ -68,5 +73,6 @@ def register(templates) -> None:
     """Make the flags available to templates, next to ``csrf_token``."""
     templates.env.globals["upload_accept"] = upload_accept_attribute
     templates.env.globals["upload_hint"] = upload_hint
+    templates.env.globals["conditional_retrieval_enabled"] = conditional_retrieval_enabled
     templates.env.globals["export_pdf_enabled"] = export_pdf_enabled
     templates.env.globals["export_outline_enabled"] = export_outline_enabled

@@ -1004,10 +1004,16 @@ def should_continue_to_revision(state: AgentState) -> str:
         logger.info("[Router] Lesson plan approved, finishing...")
         return "finish"
 
+    # ``critique_node`` has already counted this rejection, so the count is the
+    # number of revisions asked for *including* the one being decided now. It
+    # was compared with ``>=``, which allowed max-1 revisions: when the default
+    # became 1 on 2026-09-25, meant as "one revision", it meant none, and every
+    # rejected draft since shipped unrevised (found 2026-09-29, when a draft
+    # that ignored the attached book was flagged and went out anyway).
     revision_count = state.get("revision_count", 0)
     max_revisions = state.get("max_revisions", 1)
 
-    if revision_count >= max_revisions:
+    if revision_count > max_revisions:
         logger.info("[Router] Max revisions reached, finishing...")
         return "finish"
 
