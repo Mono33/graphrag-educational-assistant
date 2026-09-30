@@ -682,7 +682,6 @@ async def lesson_media_live(
 # ----------------------------------------------------------------------------
 
 
-
 def remember_graph_search(lesson: Lesson, form: Any) -> None:
     """Keep the teacher's Knowledge Graph switch on the lesson, if the form had one.
 

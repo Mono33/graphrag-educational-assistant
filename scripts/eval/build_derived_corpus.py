@@ -143,7 +143,9 @@ def main() -> int:
         return 1
     OUT.mkdir(parents=True, exist_ok=True)
 
-    sections = {subject: sentences(page_text(CURRICULUM, number))[:8] for subject, number in SUBJECTS}
+    sections = {
+        subject: sentences(page_text(CURRICULUM, number))[:8] for subject, number in SUBJECTS
+    }
     manifest: dict[str, dict] = {}
 
     manifest["indicazioni_estratto.docx"] = {
@@ -161,7 +163,10 @@ def main() -> int:
     phone_photo(geography).save(buffer, format="JPEG", quality=55)
     (OUT / "geografia_foto.jpg").write_bytes(buffer.getvalue())
     geo_probe = probe(sentences(page_text(CURRICULUM, 46)))
-    for name, kind in (("geografia_scansione.png", "scansione pulita"), ("geografia_foto.jpg", "foto da telefono")):
+    for name, kind in (
+        ("geografia_scansione.png", "scansione pulita"),
+        ("geografia_foto.jpg", "foto da telefono"),
+    ):
         manifest[name] = {
             "source": f"{CURRICULUM.name}, pagina 46 ({kind})",
             "ocr": True,

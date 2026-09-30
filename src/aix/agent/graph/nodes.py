@@ -622,7 +622,9 @@ async def retrieve_private_node(state: AgentState) -> dict[str, Any]:
         try:
             maps = await read_maps()
         except Exception as exc:  # noqa: BLE001 — the passages still stand
-            logger.warning("[Node: PrivateMaterial] maps not read (%s: %s)", type(exc).__name__, exc)
+            logger.warning(
+                "[Node: PrivateMaterial] maps not read (%s: %s)", type(exc).__name__, exc
+            )
 
     logger.info(
         "[Node: PrivateMaterial] %d passage(s) and %d map(s) from the teacher's material",

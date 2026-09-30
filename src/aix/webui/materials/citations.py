@@ -27,8 +27,8 @@ from __future__ import annotations
 import logging
 import re
 import uuid
-from urllib.parse import unquote
 from typing import Any, Optional
+from urllib.parse import unquote
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -167,7 +167,7 @@ logger = logging.getLogger(__name__)
 # The Writer's output hygiene lives with the Writer; re-exported here for
 # the callers that learnt this address first.
 from aix.agent.validation.answer_shape import (  # noqa: E402
-    once_only_disclaimer,
+    once_only_disclaimer,  # noqa: F401 — re-exported
     tidy_answer,
 )
 

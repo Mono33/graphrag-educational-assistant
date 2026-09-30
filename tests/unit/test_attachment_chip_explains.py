@@ -37,8 +37,13 @@ def _render(parse: dict) -> str:
     return template.render(lesson=_Lesson(parse), material_states={})
 
 
-MAGAZINE = {"pages": 114, "unread_pages": 13, "ocr_pages": 0, "empty": False,
-            "warnings": ["ocr_unavailable"]}
+MAGAZINE = {
+    "pages": 114,
+    "unread_pages": 13,
+    "ocr_pages": 0,
+    "empty": False,
+    "warnings": ["ocr_unavailable"],
+}
 
 
 def test_the_chip_says_what_those_pages_are():

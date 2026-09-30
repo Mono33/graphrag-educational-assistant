@@ -114,7 +114,9 @@ def score(page: dict, text: str) -> dict:
     squashed_out, squashed_truth = "".join(out), "".join(page["words"])
     exact = truth & Counter(out)
     left = truth - exact
-    found = sum(exact.values()) + sum(n for t, n in left.items() if len(t) > 1 and t in squashed_out)
+    found = sum(exact.values()) + sum(
+        n for t, n in left.items() if len(t) > 1 and t in squashed_out
+    )
     invented = sum(1 for t in out if t not in truth and t not in squashed_truth)
     near = 0
     for question, answer in page["pairs"]:
@@ -150,7 +152,12 @@ def run(engine: str, label: str, pages: list[dict], dataset: str, workers: int) 
         try:
             text = transcribe(engine, page["image"])
         except Exception as exc:  # noqa: BLE001 — a failed page is a result
-            return page["name"], None, time.monotonic() - started, f"{type(exc).__name__}: {str(exc)[:80]}"
+            return (
+                page["name"],
+                None,
+                time.monotonic() - started,
+                f"{type(exc).__name__}: {str(exc)[:80]}",
+            )
         (out_dir / f"{page['name']}.txt").write_text(text, encoding="utf-8")
         return page["name"], score(page, text), time.monotonic() - started, ""
 
@@ -194,14 +201,20 @@ def main() -> int:
     runs = []
     for engine in [e for e in args.engines.split(",") if e]:
         if engine == "vision":
-            runs += [("vision", m) for m in (args.models.split(",") if args.models else [model()]) if m]
+            runs += [
+                ("vision", m) for m in (args.models.split(",") if args.models else [model()]) if m
+            ]
         elif engine == "tesseract" and not tesseract_available():
             print("(tesseract non installato: salto)")
         else:
             runs.append((engine, ""))
 
-    print(f"# {args.dataset}: {len(pages)} pagine, {sum(len(p['pairs']) for p in pages)} coppie etichetta→valore\n")
-    print("| motore | ritrovate (media) | peggiore | inventate | coppie vicine | s/pagina (mediana) | fallite |")
+    print(
+        f"# {args.dataset}: {len(pages)} pagine, {sum(len(p['pairs']) for p in pages)} coppie etichetta→valore\n"
+    )
+    print(
+        "| motore | ritrovate (media) | peggiore | inventate | coppie vicine | s/pagina (mediana) | fallite |"
+    )
     print("| --- | ---: | ---: | ---: | ---: | ---: | ---: |")
     summaries = []
     for engine, vision_model in runs:
@@ -216,7 +229,10 @@ def main() -> int:
             f"{r['invented'] * 100:.1f}% | {pairs} | {r['seconds']:.1f} | {len(r['failed'])} |"
         )
     for r in summaries:
-        print(f"\n{r['label']}: pagine peggiori " + ", ".join(f"{n} ({v * 100:.0f}%)" for n, v in r["worst"]))
+        print(
+            f"\n{r['label']}: pagine peggiori "
+            + ", ".join(f"{n} ({v * 100:.0f}%)" for n, v in r["worst"])
+        )
         for name, err in r["failed"]:
             print(f"  fallita {name}: {err}")
     print(f"\ntrascrizioni in {REPORTS.relative_to(REPO_ROOT)}")

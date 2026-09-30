@@ -88,7 +88,9 @@ def recognise(image: Any, *, timeout_s: int = DEFAULT_PAGE_TIMEOUT_S) -> OcrResu
         except Exception:  # noqa: BLE001 — any failure falls back
             if not tesseract_available():
                 raise
-            logger.warning("[parsing] vision OCR failed; reading the page with Tesseract", exc_info=True)
+            logger.warning(
+                "[parsing] vision OCR failed; reading the page with Tesseract", exc_info=True
+            )
     return ocr_image(image, timeout_s=timeout_s)
 
 

@@ -301,7 +301,7 @@ async def test_the_lesson_is_written_from_the_passages_not_the_pasted_document(
         updates = await retrieve_private_node(
             {
                 "session_id": session_id,
-                    "material_scope_id": session_id,
+                "material_scope_id": session_id,
                 "teacher_query": "crea una lezione basandoti sui documenti allegati",
                 "educational_profile": {"specific_topic": "guerra fredda"},
                 "subject_concepts": ["Conferenza di Yalta", "cortina di ferro"],
@@ -406,8 +406,11 @@ async def test_removing_an_attachment_removes_it_from_retrieval(client, maker, t
     material_source.register(session_id, search)
     try:
         updates = await retrieve_private_node(
-            {"session_id": session_id,
-                    "material_scope_id": session_id, "teacher_query": "guerra fredda"}
+            {
+                "session_id": session_id,
+                "material_scope_id": session_id,
+                "teacher_query": "guerra fredda",
+            }
         )
     finally:
         material_source.deregister(session_id)

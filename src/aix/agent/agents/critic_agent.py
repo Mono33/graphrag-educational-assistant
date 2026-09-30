@@ -43,12 +43,12 @@ def _truncate_lesson_for_critic(text: str) -> str:
 
 from openai import AsyncOpenAI
 
-from aix.agent.prompts.today import today_note
 from aix.agent.agents.retriever_agent import RetrievalResult
 from aix.agent.prompts.critic_prompt import (
     get_critic_prompts,
     is_lesson_intent,
 )
+from aix.agent.prompts.today import today_note
 from aix.core.concurrency import guarded_chat_completion
 from aix.core.config import config as app_config
 from aix.core.config import extract_response_content

@@ -47,7 +47,9 @@ def ocr_reads(monkeypatch):
         monkeypatch.setattr(
             parsers,
             "recognise",
-            lambda image, timeout_s: OcrResult(f"testo della pagina {image + 1}", confidences[image], 4),
+            lambda image, timeout_s: OcrResult(
+                f"testo della pagina {image + 1}", confidences[image], 4
+            ),
         )
 
     return install
@@ -156,16 +158,20 @@ def _chip(entry, states):
 
 
 MAGAZINE = {
-    "pages": 114, "ocr_pages": 9, "unread_pages": 4, "empty": False,
+    "pages": 114,
+    "ocr_pages": 9,
+    "unread_pages": 4,
+    "empty": False,
     "ocr_mean_confidence": 0.9,
     "warnings": ["ocr_discarded:page=15", "ocr_discarded:page=27"],
 }
 ENTRY = {
-    "id": "f1", "filename": "Internazionale1682.pdf", "size": 14_130_313,
+    "id": "f1",
+    "filename": "Internazionale1682.pdf",
+    "size": 14_130_313,
     "material_version_id": "v1",
     # What the request saw without OCR: thirteen image pages, no text.
-    "parse": {"pages": 114, "ocr_pages": 0, "unread_pages": 13, "empty": False,
-              "warnings": []},
+    "parse": {"pages": 114, "ocr_pages": 0, "unread_pages": 13, "empty": False, "warnings": []},
 }
 
 
@@ -191,8 +197,11 @@ def test_while_the_worker_is_still_reading_the_chip_makes_no_claim_about_pages()
 
 
 def test_outside_the_pipeline_the_requests_summary_is_still_used():
-    legacy = {"id": "f2", "filename": "vecchio.pdf", "size": 1000,
-              "parse": {"pages": 10, "ocr_pages": 2, "unread_pages": 0, "empty": False,
-                        "warnings": []}}
+    legacy = {
+        "id": "f2",
+        "filename": "vecchio.pdf",
+        "size": 1000,
+        "parse": {"pages": 10, "ocr_pages": 2, "unread_pages": 0, "empty": False, "warnings": []},
+    }
 
     assert "OCR 2 pag." in _chip(legacy, {})

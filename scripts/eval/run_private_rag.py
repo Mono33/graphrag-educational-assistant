@@ -80,7 +80,12 @@ class CachedEmbeddings:
     """
 
     def __init__(
-        self, model: str, *, offline: bool, dimensions: int | None = None, one_per_request: bool = False
+        self,
+        model: str,
+        *,
+        offline: bool,
+        dimensions: int | None = None,
+        one_per_request: bool = False,
     ) -> None:
         self.model = model
         self.offline = offline
@@ -148,7 +153,9 @@ class CachedEmbeddings:
 
         async def one(text: str) -> list[float]:
             async with gate:
-                response = await self._client.embeddings.create(model=self.model, input=[text], **extra)
+                response = await self._client.embeddings.create(
+                    model=self.model, input=[text], **extra
+                )
                 return list(response.data[0].embedding)
 
         return list(await asyncio.gather(*(one(text) for text in texts)))
@@ -476,7 +483,9 @@ def main(argv: Optional[list[str]] = None) -> int:
         "--dimensions", type=int, help="ask the embedding model for vectors of this size"
     )
     parser.add_argument(
-        "--one-per-request", action="store_true", help="embed one text per request (for ZDR-only routes)"
+        "--one-per-request",
+        action="store_true",
+        help="embed one text per request (for ZDR-only routes)",
     )
     parser.add_argument("--verbose", "-v", action="store_true", help="list the passages found")
     parser.add_argument("--out", type=Path, help="write the report to a file")

@@ -42,8 +42,14 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 TURNS = [
     ("first", "Crea una lezione di 50 minuti sulla fotosintesi per una classe seconda media."),
     ("reshape", "Accorcia l'introduzione a 5 minuti e aggiungi una domanda di verifica alla fine."),
-    ("reshape", "Riscrivi le consegne delle attività con frasi più brevi e un linguaggio più semplice."),
-    ("new subject", "Aggiungi una seconda parte sulla respirazione cellulare e sul ciclo di Krebs."),
+    (
+        "reshape",
+        "Riscrivi le consegne delle attività con frasi più brevi e un linguaggio più semplice.",
+    ),
+    (
+        "new subject",
+        "Aggiungi una seconda parte sulla respirazione cellulare e sul ciclo di Krebs.",
+    ),
 ]
 
 

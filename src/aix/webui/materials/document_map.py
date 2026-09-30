@@ -239,7 +239,10 @@ def _fold_small(blocks, parts: list[Part]) -> list[Part]:
         if carry is not None:
             part = Part(title=part.title, first=carry.first, last=part.last, source=part.source)
             carry = None
-        if _block_chars(blocks, part.first, part.last) < MIN_SECTION_CHARS and part is not parts[-1]:
+        if (
+            _block_chars(blocks, part.first, part.last) < MIN_SECTION_CHARS
+            and part is not parts[-1]
+        ):
             carry = part
             continue
         folded.append(part)
@@ -293,9 +296,7 @@ def _sample(blocks, part: Part, budget: int = SECTION_SAMPLE_CHARS) -> str:
     windows = 6
     size = budget // windows
     stride = (len(whole) - size) / (windows - 1)
-    return "\n[…]\n".join(
-        whole[int(k * stride) : int(k * stride) + size] for k in range(windows)
-    )
+    return "\n[…]\n".join(whole[int(k * stride) : int(k * stride) + size] for k in range(windows))
 
 
 # ---------------------------------------------------------------------------
@@ -351,7 +352,9 @@ def _clean_list(value: Any, limit: int = 6) -> list[str]:
     return [" ".join(str(v).split())[:80] for v in value if str(v).strip()][:limit]
 
 
-async def build_map(ir, *, chunks=None, content: Optional[bytes] = None, client=None) -> Optional[dict]:
+async def build_map(
+    ir, *, chunks=None, content: Optional[bytes] = None, client=None
+) -> Optional[dict]:
     """The map of one document, or ``None`` when there is nothing to map.
 
     ``chunks`` are the indexed passages (``chunk_document(ir)``): each part

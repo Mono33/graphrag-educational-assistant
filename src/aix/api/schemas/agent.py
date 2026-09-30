@@ -185,7 +185,7 @@ class AgentRunRequest(BaseModel):
                     "luminosa in energia chimica…'"
                 ),
             }
-        }
+        },
     )
 
 

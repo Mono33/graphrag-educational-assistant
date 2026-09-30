@@ -34,7 +34,6 @@ from typing import Optional
 from urllib.parse import urlsplit, urlunsplit
 
 from sqlalchemy import event
-
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,

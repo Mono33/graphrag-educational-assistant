@@ -12,8 +12,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from aix.webui.materials.parsing import parse_document
-from aix.webui.materials.parsing import ocr, vision_ocr
+from aix.webui.materials.parsing import ocr, parse_document, vision_ocr
 from aix.webui.materials.parsing.intake import PDF
 from aix.webui.materials.parsing.ocr import OcrResult
 
@@ -36,7 +35,9 @@ class _FakeClient:
         if self.error:
             raise self.error
         message = SimpleNamespace(content=self.reply)
-        return SimpleNamespace(choices=[SimpleNamespace(message=message, finish_reason=self.finish_reason)])
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=message, finish_reason=self.finish_reason)]
+        )
 
 
 @pytest.fixture
@@ -203,7 +204,9 @@ def test_an_empty_page_stays_unread(vision):
 
 def test_a_failed_call_falls_back_to_tesseract(vision, monkeypatch):
     vision(error=RuntimeError("no zero-retention endpoint"), tesseract=True)
-    monkeypatch.setattr(ocr, "ocr_image", lambda image, timeout_s: OcrResult("letto in locale", 0.9, 3))
+    monkeypatch.setattr(
+        ocr, "ocr_image", lambda image, timeout_s: OcrResult("letto in locale", 0.9, 3)
+    )
 
     result = ocr.recognise(_image(), timeout_s=45)
 
@@ -215,7 +218,9 @@ def test_a_failed_call_falls_back_to_tesseract(vision, monkeypatch):
 def test_a_transcription_that_stopped_early_is_not_taken_as_the_page(vision, monkeypatch, finish):
     """Two models stopped halfway down a dense page with no error (2026-09-29)."""
     vision("La storia generale a scuola. Occorre, dunque,", tesseract=True, finish_reason=finish)
-    monkeypatch.setattr(ocr, "ocr_image", lambda image, timeout_s: OcrResult("pagina intera", 0.9, 2))
+    monkeypatch.setattr(
+        ocr, "ocr_image", lambda image, timeout_s: OcrResult("pagina intera", 0.9, 2)
+    )
 
     result = ocr.recognise(_image(), timeout_s=45)
 

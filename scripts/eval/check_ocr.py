@@ -183,7 +183,9 @@ def main() -> int:
     runs = []
     for engine in engines:
         if engine == "vision":
-            runs += [("vision", m) for m in (args.models.split(",") if args.models else [model()]) if m]
+            runs += [
+                ("vision", m) for m in (args.models.split(",") if args.models else [model()]) if m
+            ]
         else:
             runs.append((engine, ""))
     cases = load_cases({o for o in args.only.split(",") if o})
@@ -200,7 +202,9 @@ def main() -> int:
             try:
                 text, confidence = read(engine, path)
             except Exception as exc:  # noqa: BLE001 — one failure is a row, not the end
-                print(f"| {name} | {label} | | | | | | errore: {type(exc).__name__}: {str(exc)[:80]} |")
+                print(
+                    f"| {name} | {label} | | | | | | errore: {type(exc).__name__}: {str(exc)[:80]} |"
+                )
                 continue
             seconds = time.monotonic() - started
             engine = label
@@ -208,7 +212,9 @@ def main() -> int:
             out.parent.mkdir(parents=True, exist_ok=True)
             out.write_text(text, encoding="utf-8")
             s = score(text, expect)
-            other = [f"{k}: {s[k]}" for k in ("injection", "invented", "ticked") if k in s] + s["notes"]
+            other = [f"{k}: {s[k]}" for k in ("injection", "invented", "ticked") if k in s] + s[
+                "notes"
+            ]
             print(
                 f"| {name} | {engine} | {seconds:.1f} | {confidence:.2f} | {s.get('must', '')} | "
                 f"{s.get('order', '')} | {s.get('recall', '')} | {'; '.join(other)} |"

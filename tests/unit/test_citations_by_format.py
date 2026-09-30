@@ -34,7 +34,11 @@ def _deck() -> bytes:
 
     deck = Presentation()
     for title, body, notes in [
-        ("Geografia", "La geografia studia i rapporti fra le società e il pianeta.", "Nota: partire da una mappa del quartiere."),
+        (
+            "Geografia",
+            "La geografia studia i rapporti fra le società e il pianeta.",
+            "Nota: partire da una mappa del quartiere.",
+        ),
         ("Storia", "La storia si apre al confronto fra fonti diverse.", ""),
     ]:
         slide = deck.slides.add_slide(deck.slide_layouts[1])
@@ -68,7 +72,9 @@ def _chunks(name: str, content: bytes):
 def _cite(chunk, name: str) -> tuple[str, str]:
     """The marker the Writer would copy, and what the teacher would read."""
     source = str(uuid.uuid4())
-    item = MaterialContextItem(source_id=source, text=chunk.text, score=1.0, locator=dict(chunk.locator))
+    item = MaterialContextItem(
+        source_id=source, text=chunk.text, score=1.0, locator=dict(chunk.locator)
+    )
     return item.citation, render_citations(item.citation, {source: name})
 
 

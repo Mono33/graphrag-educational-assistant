@@ -48,8 +48,7 @@ os.environ.setdefault("AIX_MCP_REQUIRE_AUTH", "1")
 # accounts were sitting in it on 2026-09-21.
 os.environ.setdefault(
     "WEBUI_DATABASE_URL",
-    "sqlite+aiosqlite:///"
-    + (pathlib.Path(tempfile.gettempdir()) / "aix_test_mcp.db").as_posix(),
+    "sqlite+aiosqlite:///" + (pathlib.Path(tempfile.gettempdir()) / "aix_test_mcp.db").as_posix(),
 )
 
 # Ensure ``src/`` is on sys.path even if pip-install -e wasn't run (CI safety).

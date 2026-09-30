@@ -57,7 +57,10 @@ def test_a_fence_without_a_language_is_packaging_too():
 
 def test_an_answer_cut_off_before_its_closing_fence_is_unwrapped():
     """Out of tokens mid-answer: the opening fence alone turns it all into code."""
-    assert unwrap_whole_answer_fence("```markdown\n# Titolo\n\nTesto tronc") == "# Titolo\n\nTesto tronc\n"
+    assert (
+        unwrap_whole_answer_fence("```markdown\n# Titolo\n\nTesto tronc")
+        == "# Titolo\n\nTesto tronc\n"
+    )
 
 
 @pytest.mark.parametrize(

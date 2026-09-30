@@ -38,9 +38,9 @@ import logging
 import math
 import os
 import uuid
-from urllib.parse import quote
 from dataclasses import dataclass, field
 from typing import Any, Optional
+from urllib.parse import quote
 
 from sqlalchemy import text as sql_text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -331,9 +331,7 @@ class PrivateMaterialRetriever:
             return [_row_item(row) for row in rows]
 
         by_id = {row.id: row for row in rows}
-        lexical = await self._rank_by_words(
-            query, vector, owner_id, version_ids, wanted, ordinals
-        )
+        lexical = await self._rank_by_words(query, vector, owner_id, version_ids, wanted, ordinals)
         by_id.update({row.id: by_id.get(row.id, row) for row in lexical})
         order = fuse(
             [[row.id for row in rows], [row.id for row in lexical]],
@@ -616,7 +614,7 @@ PASSAGES_PER_PART = 3
 
 
 async def _passages_from_parts(
-    retriever: "PrivateMaterialRetriever",
+    retriever: PrivateMaterialRetriever,
     query: str,
     maps: dict[uuid.UUID, dict[str, Any]],
     found: list[MaterialContextItem],

@@ -293,7 +293,10 @@ def main():
         "--language", type=str, default="it", choices=["it", "en"], help="Output language"
     )
     parser.add_argument(
-        "--max-revisions", type=int, default=None, help="Maximum revision cycles (default: AIX_MAX_REVISIONS)"
+        "--max-revisions",
+        type=int,
+        default=None,
+        help="Maximum revision cycles (default: AIX_MAX_REVISIONS)",
     )
     parser.add_argument("--output", type=str, help="Output file path (optional)")
 

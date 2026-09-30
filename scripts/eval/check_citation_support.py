@@ -88,6 +88,7 @@ def lexical_checker(claim: str, passage: str) -> tuple[str, str]:
 # Candidate 2 — ask the model
 # ---------------------------------------------------------------------------
 
+
 async def llm_checker(claim: str, passage: str) -> tuple[str, str]:
     """The judgement the pipeline actually makes, on one pair.
 
@@ -138,8 +139,10 @@ async def main_async(args: argparse.Namespace) -> int:
     false_alarms = [o for o in fine if o.got == "unsupported"]
 
     print(f"- **unsupported caught**: {len(caught)}/{len(should_flag)}")
-    print(f"- **false alarms**: {len(false_alarms)}/{len(fine)}"
-          f"{' — ' + ', '.join(o.case_id for o in false_alarms) if false_alarms else ''}")
+    print(
+        f"- **false alarms**: {len(false_alarms)}/{len(fine)}"
+        f"{' — ' + ', '.join(o.case_id for o in false_alarms) if false_alarms else ''}"
+    )
     print(f"- **correct overall**: {sum(o.correct for o in outcomes)}/{len(outcomes)}")
 
     if false_alarms:
@@ -149,7 +152,9 @@ async def main_async(args: argparse.Namespace) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--llm", action="store_true", help="ask the model instead of counting words")
+    parser.add_argument(
+        "--llm", action="store_true", help="ask the model instead of counting words"
+    )
     parser.add_argument("--verbose", "-v", action="store_true", help="one line per case")
     return asyncio.run(main_async(parser.parse_args()))
 

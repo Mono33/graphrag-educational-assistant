@@ -48,6 +48,7 @@ def ocr_index_min_confidence() -> float:
     except ValueError:
         return OCR_INDEX_MIN_CONFIDENCE
 
+
 BlockKind = Literal["heading", "paragraph", "list_item", "table", "slide_title"]
 
 

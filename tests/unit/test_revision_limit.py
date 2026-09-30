@@ -56,18 +56,29 @@ async def test_the_draft_written_at_the_limit_is_still_reviewed():
     from types import SimpleNamespace
     from unittest.mock import patch
 
-    from aix.agent.agents.critic_agent import CriticAgent
     from tests.unit.agent_doubles import _retrieval_result
 
+    from aix.agent.agents.critic_agent import CriticAgent
+
     calls = []
-    verdict = {"scores": {"structure": 3}, "average_score": 3.0, "decision": "REVISE",
-               "strengths": [], "weaknesses": ["x"], "revision_instructions": "y", "summary": "z"}
+    verdict = {
+        "scores": {"structure": 3},
+        "average_score": 3.0,
+        "decision": "REVISE",
+        "strengths": [],
+        "weaknesses": ["x"],
+        "revision_instructions": "y",
+        "summary": "z",
+    }
 
     async def _fake(_client, *, messages, **_kw):
         calls.append(messages)
         content = json.dumps(verdict)
-        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content),
-                                                        finish_reason="stop")])
+        return SimpleNamespace(
+            choices=[
+                SimpleNamespace(message=SimpleNamespace(content=content), finish_reason="stop")
+            ]
+        )
 
     retrieval = _retrieval_result()
     retrieval.to_context_string = lambda *args, **kwargs: "Contesto."
@@ -97,8 +108,15 @@ def test_the_critic_card_says_the_limit_only_when_no_revision_follows(revision_c
     html = (
         Environment(loader=FileSystemLoader("src/aix/webui/templates"))
         .get_template("partials/chat_critic_card.html")
-        .render(payload={"approved": False, "revision_count": revision_count, "max_revisions": 1,
-                         "score_pct": 80, "revision_instructions": "Usa i documenti."})
+        .render(
+            payload={
+                "approved": False,
+                "revision_count": revision_count,
+                "max_revisions": 1,
+                "score_pct": 80,
+                "revision_instructions": "Usa i documenti.",
+            }
+        )
     )
 
     assert ("Limite revisioni raggiunto" in html) is limit_shown

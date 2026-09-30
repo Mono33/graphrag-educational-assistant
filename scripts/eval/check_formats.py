@@ -67,7 +67,9 @@ def rendered_citation(chunk, name: str) -> str:
     from aix.webui.materials.retrieval import MaterialContextItem
 
     source = str(uuid.uuid4())
-    item = MaterialContextItem(source_id=source, text=chunk.text, score=1.0, locator=dict(chunk.locator))
+    item = MaterialContextItem(
+        source_id=source, text=chunk.text, score=1.0, locator=dict(chunk.locator)
+    )
     return render_citations(item.citation, {source: name})
 
 
@@ -80,7 +82,9 @@ def main() -> int:
     manifest = yaml.safe_load((CORPUS / "manifest.yaml").read_text(encoding="utf-8"))
 
     print("# Formati — dal file alla citazione\n")
-    print("| file | lettura | passaggi | sonda | trovata | posizione attesa | nel passaggio | la docente legge |")
+    print(
+        "| file | lettura | passaggi | sonda | trovata | posizione attesa | nel passaggio | la docente legge |"
+    )
     print("| --- | --- | ---: | --- | --- | --- | --- | --- |")
 
     failures = 0

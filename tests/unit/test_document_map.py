@@ -207,7 +207,9 @@ async def test_the_map_has_every_part_its_pages_and_its_passages():
 async def test_a_part_the_model_could_not_describe_does_not_lose_the_map():
     ir = _book()
 
-    document_map = await build_map(ir, chunks=chunk_document(ir), client=_FakeModel(fail_on="Chapter 3"))
+    document_map = await build_map(
+        ir, chunks=chunk_document(ir), client=_FakeModel(fail_on="Chapter 3")
+    )
 
     assert len(document_map["sections"]) == 6
     assert document_map["sections"][2]["summary"] == ""
@@ -242,7 +244,9 @@ PASSAGE = {
 def test_the_documents_are_the_primary_source_and_the_map_is_not_cited():
     from aix.agent.agents.writer_agent import teacher_material_appendix
 
-    appendix = teacher_material_appendix([PASSAGE], None, phase="write", material_maps=[MAP_FOR_PROMPT])
+    appendix = teacher_material_appendix(
+        [PASSAGE], None, phase="write", material_maps=[MAP_FOR_PROMPT]
+    )
 
     assert "Sono la fonte\nprincipale dei contenuti" in appendix
     assert "Chapter 2 — Modern Capitalism (pp. 29–46): Concorrenza." in appendix

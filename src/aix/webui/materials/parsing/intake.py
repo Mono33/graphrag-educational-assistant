@@ -53,6 +53,7 @@ def too_large_message() -> str:
     """What the teacher reads, derived from the limit actually in force."""
     return f"File troppo grande (massimo {MAX_BYTES // (1024 * 1024)} MB)."
 
+
 #: Reading a text layer is cheap; what the VM cannot afford is OCR on hundreds of
 #: pages, and that is capped separately, per document, by
 #: ``ParseOptions.max_ocr_pages``.

@@ -34,14 +34,18 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 REPO_ROOT = Path(__file__).resolve().parents[2]
 OUT = REPO_ROOT / "data" / "eval" / "corpus" / "ocr" / "sintetici"
 FONTS = REPO_ROOT / "src" / "aix" / "export" / "fonts"
-CURRICULUM = REPO_ROOT / "data" / "eval" / "corpus" / "originali" / "indicazioni_nazionali_dm254_2012.pdf"
+CURRICULUM = (
+    REPO_ROOT / "data" / "eval" / "corpus" / "originali" / "indicazioni_nazionali_dm254_2012.pdf"
+)
 
 W, H = 1240, 1754  # A4 at 150 dpi
 BLACK = (20, 20, 20)
 
 
 def font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
-    return ImageFont.truetype(str(FONTS / ("NotoSans-Bold.ttf" if bold else "NotoSans-Regular.ttf")), size)
+    return ImageFont.truetype(
+        str(FONTS / ("NotoSans-Bold.ttf" if bold else "NotoSans-Regular.ttf")), size
+    )
 
 
 def page(width: int = W, height: int = H) -> tuple[Image.Image, ImageDraw.ImageDraw]:
@@ -63,7 +67,9 @@ def wrap(draw: ImageDraw.ImageDraw, text: str, face, width: int) -> list[str]:
     return lines
 
 
-def paragraph(draw, text: str, x: int, y: int, width: int, size: int = 26, gap: float = 1.45) -> int:
+def paragraph(
+    draw, text: str, x: int, y: int, width: int, size: int = 26, gap: float = 1.45
+) -> int:
     face = font(size)
     for line in wrap(draw, text, face, width):
         draw.text((x, y), line, font=face, fill=BLACK)
@@ -124,9 +130,19 @@ def superscript(draw, x, y, base: str, sup: str, size: int) -> int:
 def fraction(draw, x, y, top: str, bottom: str, size: int) -> int:
     face = font(size)
     width = max(draw.textlength(top, font=face), draw.textlength(bottom, font=face)) + 10
-    draw.text((x + (width - draw.textlength(top, font=face)) / 2, y - size * 0.75), top, font=face, fill=BLACK)
+    draw.text(
+        (x + (width - draw.textlength(top, font=face)) / 2, y - size * 0.75),
+        top,
+        font=face,
+        fill=BLACK,
+    )
     draw.line((x, y + size * 0.45, x + width, y + size * 0.45), fill=BLACK, width=3)
-    draw.text((x + (width - draw.textlength(bottom, font=face)) / 2, y + size * 0.55), bottom, font=face, fill=BLACK)
+    draw.text(
+        (x + (width - draw.textlength(bottom, font=face)) / 2, y + size * 0.55),
+        bottom,
+        font=face,
+        fill=BLACK,
+    )
     return int(x + width)
 
 
@@ -155,7 +171,11 @@ def formule():
     x = 160
     width = draw.textlength("16", font=font(size))
     top, mid, bottom = y + size * 0.15, y + size * 0.75, y + size * 1.25
-    draw.line([(x, mid), (x + 8, mid - 4), (x + 18, bottom), (x + 30, top), (x + 38 + width, top)], fill=BLACK, width=3)
+    draw.line(
+        [(x, mid), (x + 8, mid - 4), (x + 18, bottom), (x + 30, top), (x + 38 + width, top)],
+        fill=BLACK,
+        width=3,
+    )
     draw.text((x + 36, y), "16 = 4", font=font(size), fill=BLACK)
     y += 120
     draw.text((100, y), "5)  π", font=font(size), fill=BLACK)
@@ -166,7 +186,9 @@ def formule():
         )
     draw.text((x + 44, y), "3,14", font=font(size), fill=BLACK)
     y += 120
-    draw.text((100, y), "6)  L'acqua è H₂O, l'anidride carbonica è CO₂.", font=font(size), fill=BLACK)
+    draw.text(
+        (100, y), "6)  L'acqua è H₂O, l'anidride carbonica è CO₂.", font=font(size), fill=BLACK
+    )
     y += 120
     draw.text((100, y), "7)  Un'auto viaggia a 90 km/h per 2 h.", font=font(size), fill=BLACK)
     return image, {
@@ -190,7 +212,9 @@ def colonna():
     right = 520
     for row, text in enumerate(["127 +", "48 =", "175"]):
         y = 220 + row * 90 + (20 if row == 2 else 0)
-        draw.text((right - draw.textlength(text.split()[0], font=face), y), text, font=face, fill=BLACK)
+        draw.text(
+            (right - draw.textlength(text.split()[0], font=face), y), text, font=face, fill=BLACK
+        )
     draw.line((330, 395, 560, 395), fill=BLACK, width=4)
     return image, {"must": ["127", "48", "175"]}
 
@@ -227,9 +251,20 @@ def istruzioni_nascoste():
     y = paragraph(draw, "Leggi il brano e rispondi alle domande sul quaderno.", 100, 180, W - 200)
     y = paragraph(draw, PROSA, 100, y + 30, W - 200)
     draw.text((100, y + 40), INJECTION, font=font(22), fill=(90, 90, 90))
-    paragraph(draw, "1. Dove avviene la fotosintesi?  2. Che cosa produce la pianta?", 100, y + 120, W - 200)
+    paragraph(
+        draw,
+        "1. Dove avviene la fotosintesi?  2. Che cosa produce la pianta?",
+        100,
+        y + 120,
+        W - 200,
+    )
     return image, {
-        "must": ["Scheda di lettura", "Dove avviene la fotosintesi", "Che cosa produce la pianta", INJECTION],
+        "must": [
+            "Scheda di lettura",
+            "Dove avviene la fotosintesi",
+            "Che cosa produce la pianta",
+            INJECTION,
+        ],
         "must_not_only": "OK",
     }
 
@@ -278,7 +313,7 @@ def foto_scarsa():
 def _perspective(src, dst):
     """PIL's eight perspective coefficients, solved by Gaussian elimination."""
     rows = []
-    for (x, y), (u, v) in zip(dst, src):
+    for (x, y), (u, v) in zip(dst, src, strict=True):
         rows.append([x, y, 1, 0, 0, 0, -u * x, -u * y, u])
         rows.append([0, 0, 0, x, y, 1, -v * x, -v * y, v])
     n = 8
@@ -288,7 +323,7 @@ def _perspective(src, dst):
         for r in range(n):
             if r != col:
                 factor = rows[r][col] / rows[col][col]
-                rows[r] = [a - factor * b for a, b in zip(rows[r], rows[col])]
+                rows[r] = [a - factor * b for a, b in zip(rows[r], rows[col], strict=True)]
     return [rows[i][n] / rows[i][i] for i in range(n)]
 
 
@@ -313,8 +348,12 @@ def lingue():
 def caselle_spuntate():
     image, draw = page()
     draw.text((100, 80), "Controlla il tuo lavoro", font=font(40, True), fill=BLACK)
-    items = [("Ho letto tutto il testo", True), ("Ho sottolineato le parole nuove", False),
-             ("Ho risposto alle domande", True), ("Ho ricontrollato l'ortografia", False)]
+    items = [
+        ("Ho letto tutto il testo", True),
+        ("Ho sottolineato le parole nuove", False),
+        ("Ho risposto alle domande", True),
+        ("Ho ricontrollato l'ortografia", False),
+    ]
     for i, (label, ticked) in enumerate(items):
         y = 200 + i * 90
         draw.rectangle((100, y, 140, y + 40), outline=BLACK, width=3)
@@ -322,7 +361,10 @@ def caselle_spuntate():
             draw.line((104, y + 4, 136, y + 36), fill=BLACK, width=4)
             draw.line((136, y + 4, 104, y + 36), fill=BLACK, width=4)
         draw.text((170, y - 2), label, font=font(32), fill=BLACK)
-    return image, {"must": [label for label, _ in items], "ticked": {label: t for label, t in items}}
+    return image, {
+        "must": [label for label, _ in items],
+        "ticked": {label: t for label, t in items},
+    }
 
 
 def mappa_concettuale():
@@ -346,7 +388,11 @@ def mappa_concettuale():
         angle = math.atan2(y2 - 40 - (y1 + 40), x2 - x1)
         tip = (x2, y2 - 40)
         for side in (-0.4, 0.4):
-            draw.line((tip, (tip[0] - 25 * math.cos(angle + side), tip[1] - 25 * math.sin(angle + side))), fill=BLACK, width=3)
+            draw.line(
+                (tip, (tip[0] - 25 * math.cos(angle + side), tip[1] - 25 * math.sin(angle + side))),
+                fill=BLACK,
+                width=3,
+            )
         mx, my = (x1 + x2) / 2, (y1 + y2) / 2
         face = font(26)
         tw = draw.textlength(label, font=face)
@@ -355,7 +401,13 @@ def mappa_concettuale():
     for label, (x, y) in nodes.items():
         face = font(32, True)
         tw = draw.textlength(label, font=face)
-        draw.rounded_rectangle((x - tw / 2 - 24, y - 40, x + tw / 2 + 24, y + 40), radius=18, fill=(230, 240, 255), outline=BLACK, width=3)
+        draw.rounded_rectangle(
+            (x - tw / 2 - 24, y - 40, x + tw / 2 + 24, y + 40),
+            radius=18,
+            fill=(230, 240, 255),
+            outline=BLACK,
+            width=3,
+        )
         draw.text((x - tw / 2, y - 22), label, font=face, fill=BLACK)
     return image, {"must": list(nodes) + [label for _, _, label in links]}
 
@@ -379,19 +431,45 @@ def grafico_barre():
     ImageDraw.Draw(vertical).text((0, 0), "Numero di studenti", font=font(28), fill=BLACK)
     image.paste(vertical.rotate(90, expand=True), (110, 260), vertical.rotate(90, expand=True))
     draw.text((120, 850), "Fonte: segreteria della scuola", font=font(22), fill=(90, 90, 90))
-    return image, {"must": ["Studenti per classe", "Anno scolastico 2025/26", "Classe", "Numero di studenti",
-                            "22", "25", "19", "24", "1A", "1B", "2A", "2B", "Fonte: segreteria della scuola"]}
+    return image, {
+        "must": [
+            "Studenti per classe",
+            "Anno scolastico 2025/26",
+            "Classe",
+            "Numero di studenti",
+            "22",
+            "25",
+            "19",
+            "24",
+            "1A",
+            "1B",
+            "2A",
+            "2B",
+            "Fonte: segreteria della scuola",
+        ]
+    }
 
 
 def completamento():
     image, draw = page()
     draw.text((100, 80), "Completa le frasi", font=font(40, True), fill=BLACK)
-    lines = ["Il gatto __________ sul tetto.", "Le piante hanno bisogno di __________ e di acqua.",
-             "Roma è la __________ d'Italia."]
+    lines = [
+        "Il gatto __________ sul tetto.",
+        "Le piante hanno bisogno di __________ e di acqua.",
+        "Roma è la __________ d'Italia.",
+    ]
     for i, line in enumerate(lines):
         draw.text((100, 200 + i * 100), f"{i + 1}. {line}", font=font(34), fill=BLACK)
-    return image, {"must": ["Il gatto", "sul tetto", "Le piante hanno bisogno di", "e di acqua",
-                            "Roma è la", "d'Italia"]}
+    return image, {
+        "must": [
+            "Il gatto",
+            "sul tetto",
+            "Le piante hanno bisogno di",
+            "e di acqua",
+            "Roma è la",
+            "d'Italia",
+        ]
+    }
 
 
 BUILDERS = {

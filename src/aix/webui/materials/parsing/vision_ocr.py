@@ -35,7 +35,10 @@ import logging
 import os
 import re
 from functools import lru_cache
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from aix.webui.materials.parsing.ocr import OcrResult
 
 logger = logging.getLogger(__name__)
 
@@ -128,24 +131,31 @@ def _confidence(text: str) -> tuple[float, int]:
     return round(_BEST_CONFIDENCE * readable, 3), words
 
 
-def vision_ocr_image(image: Any, *, timeout_s: float) -> "OcrResult":
+def vision_ocr_image(image: Any, *, timeout_s: float) -> OcrResult:
     """Transcribe one image. Raises on any failure; the caller decides what next."""
     from aix.webui.materials.parsing.ocr import OcrResult
 
-    response = _client().with_options(timeout=timeout_s).chat.completions.create(
-        model=model(),
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": PROMPT},
-                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{_png(image)}"}},
-                ],
-            }
-        ],
-        temperature=0,
-        max_tokens=MAX_OUTPUT_TOKENS,
-        extra_body={"provider": {"zdr": True, "data_collection": "deny"}},
+    response = (
+        _client()
+        .with_options(timeout=timeout_s)
+        .chat.completions.create(
+            model=model(),
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": PROMPT},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:image/png;base64,{_png(image)}"},
+                        },
+                    ],
+                }
+            ],
+            temperature=0,
+            max_tokens=MAX_OUTPUT_TOKENS,
+            extra_body={"provider": {"zdr": True, "data_collection": "deny"}},
+        )
     )
     choice = response.choices[0]
     finish = getattr(choice, "finish_reason", None)

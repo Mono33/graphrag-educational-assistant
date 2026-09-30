@@ -75,7 +75,9 @@ async def select_versions(session, *, media_type: str | None, everything: bool) 
     from aix.webui.materials.models import DocumentMap, Material, MaterialChunk, MaterialVersion
 
     model = embedding_model()
-    outdated = or_(MaterialChunk.chunker_version != CHUNKER_VERSION, MaterialChunk.embedding_model != model)
+    outdated = or_(
+        MaterialChunk.chunker_version != CHUNKER_VERSION, MaterialChunk.embedding_model != model
+    )
     stats = (
         select(
             MaterialChunk.material_version_id,
@@ -147,7 +149,9 @@ async def requeue(session, version) -> str:
 
     if job is None:
         owner = (
-            await session.execute(select(Material.owner_id).where(Material.id == version.material_id))
+            await session.execute(
+                select(Material.owner_id).where(Material.id == version.material_id)
+            )
         ).scalar_one()
         session.add(
             IngestionJob(
@@ -193,7 +197,9 @@ async def main_async(args: argparse.Namespace) -> int:
 
         if args.apply:
             await session.commit()
-            print("\nIl worker le riprenderà al prossimo giro; lo stato torna «pronto» a lavoro finito.")
+            print(
+                "\nIl worker le riprenderà al prossimo giro; lo stato torna «pronto» a lavoro finito."
+            )
         else:
             print("\nNessuna modifica. Aggiungi --apply per rimetterle in coda.")
     return 0

@@ -14,10 +14,10 @@ from typing import Any, Optional
 
 from openai import AsyncOpenAI
 
-from aix.agent.prompts.today import today_note
 from aix.agent.agents.planner_agent import RetrievalPlan
 from aix.agent.agents.retriever_agent import RetrievalResult
 from aix.agent.prompts.profile_renderer import render_profile_section
+from aix.agent.prompts.today import today_note
 from aix.agent.prompts.writer_prompt import (
     WRITER_MATERIAL_MAPS_BLOCK,
     WRITER_MATERIAL_PASSAGES_APPENDIX,
@@ -180,8 +180,10 @@ def render_document_maps(
             continue
         for section in sections:
             pages = section.get("pages")
-            where = f" (pp. {pages[0]}–{pages[1]})" if pages and pages[0] != pages[1] else (
-                f" (p. {pages[0]})" if pages else ""
+            where = (
+                f" (pp. {pages[0]}–{pages[1]})"
+                if pages and pages[0] != pages[1]
+                else (f" (p. {pages[0]})" if pages else "")
             )
             line = f"- {section.get('title', '')}{where}: {section.get('summary', '')}"
             if used + len(line) > budget_chars:

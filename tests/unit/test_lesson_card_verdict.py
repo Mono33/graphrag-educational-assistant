@@ -47,19 +47,44 @@ def client(tmp_path, monkeypatch):
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
         async with maker() as s:
-            s.add(User(id=ANNA, email="anna@scuola.it", hashed_password="x",
-                       is_active=True, is_superuser=False, is_verified=True))
+            s.add(
+                User(
+                    id=ANNA,
+                    email="anna@scuola.it",
+                    hashed_password="x",
+                    is_active=True,
+                    is_superuser=False,
+                    is_verified=True,
+                )
+            )
             for lesson_id in (REJECTED, APPROVED, UNRECORDED):
-                s.add(Lesson(id=lesson_id, owner_id=ANNA, domain="neuro", status="complete",
-                             title="Crisi migratoria", lesson_plan_md="# Lezione\n\nTesto."))
+                s.add(
+                    Lesson(
+                        id=lesson_id,
+                        owner_id=ANNA,
+                        domain="neuro",
+                        status="complete",
+                        title="Crisi migratoria",
+                        lesson_plan_md="# Lezione\n\nTesto.",
+                    )
+                )
             for lesson_id, meta in (
                 (REJECTED, {"approved": False, "revision_count": 2, "duration_seconds": 170.3}),
                 (APPROVED, {"approved": True, "revision_count": 1, "duration_seconds": 95.0}),
             ):
-                s.add(LessonMessage(lesson_id=lesson_id, role="user", content_md="crea",
-                                    turn_index=1))
-                s.add(LessonMessage(lesson_id=lesson_id, role="assistant", content_md="# Lezione",
-                                    turn_index=1, agent_kind="writer", meta_json=meta))
+                s.add(
+                    LessonMessage(lesson_id=lesson_id, role="user", content_md="crea", turn_index=1)
+                )
+                s.add(
+                    LessonMessage(
+                        lesson_id=lesson_id,
+                        role="assistant",
+                        content_md="# Lezione",
+                        turn_index=1,
+                        agent_kind="writer",
+                        meta_json=meta,
+                    )
+                )
             await s.commit()
 
     asyncio.run(_seed())
@@ -70,8 +95,12 @@ def client(tmp_path, monkeypatch):
 
     app.dependency_overrides[get_async_session] = _session
     app.dependency_overrides[optional_current_user] = lambda: User(
-        id=ANNA, email="anna@scuola.it", hashed_password="x",
-        is_active=True, is_superuser=False, is_verified=True,
+        id=ANNA,
+        email="anna@scuola.it",
+        hashed_password="x",
+        is_active=True,
+        is_superuser=False,
+        is_verified=True,
     )
     try:
         yield TestClient(app, follow_redirects=False)

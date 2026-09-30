@@ -226,7 +226,10 @@ async def test_the_judge_sees_the_whole_cited_page_not_just_the_marked_chunk():
     poll = f"[[material:{uid}#page=44&block=3f8c2efcd9433261]]"
     elsewhere = f"[[material:{uid}#page=40&block=c570087f4c4a53ba]]"
     items = [
-        {"citation": regularisation, "text": "Percorsi di regolarizzazione per chi è arrivato da bambino."},
+        {
+            "citation": regularisation,
+            "text": "Percorsi di regolarizzazione per chi è arrivato da bambino.",
+        },
         {"citation": poll, "text": "Sondaggio Economist e YouGov: consenso negativo, -13 punti."},
         {"citation": elsewhere, "text": "Trump sta mantenendo la promessa delle espulsioni."},
     ]

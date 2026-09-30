@@ -51,7 +51,9 @@ def test_the_error_slot_is_not_inside_the_tray():
 
 def test_the_error_slot_comes_before_the_tray_in_every_shell():
     slots = [m.start() for m in re.finditer('id="chat-upload-error"', CHAT_INPUT)]
-    trays = [m.start() for m in re.finditer(r'include "partials/chat_attachments\.html"', CHAT_INPUT)]
+    trays = [
+        m.start() for m in re.finditer(r'include "partials/chat_attachments\.html"', CHAT_INPUT)
+    ]
 
     assert len(slots) == len(trays) == 2
     assert all(slot < tray for slot, tray in zip(slots, trays, strict=True))
