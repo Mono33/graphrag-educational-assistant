@@ -100,7 +100,8 @@
           </div>
         {% endif %}
 
-        {% if not approved and rev_count >= max_rev %}
+        {# The count includes this rejection: at the limit a revision still follows. #}
+        {% if not approved and rev_count > max_rev %}
           <p class="aix-footnote-sm m-0">
             Limite revisioni raggiunto: l'ultima bozza viene presentata
             comunque come risultato finale.

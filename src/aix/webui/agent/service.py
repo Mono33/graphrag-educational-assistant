@@ -1591,7 +1591,9 @@ async def run_agent_stream(
                     approved = final_state.get("approved", False)
                     rev_count = int(final_state.get("revision_count", 0))
                     max_rev = int(final_state.get("max_revisions", 1))
-                    if (not approved) and rev_count < max_rev:
+                    # Same rule as ``should_continue_to_revision``: the count
+                    # already includes this rejection.
+                    if (not approved) and rev_count <= max_rev:
                         write_revision_idx += 1
                         yield StreamEvent(
                             kind="writer_pending",
@@ -1920,7 +1922,9 @@ async def stream_agent_events(
                     approved = final_state.get("approved", False)
                     rev_count = int(final_state.get("revision_count", 0))
                     max_rev = int(final_state.get("max_revisions", 1))
-                    if (not approved) and rev_count < max_rev:
+                    # Same rule as ``should_continue_to_revision``: the count
+                    # already includes this rejection.
+                    if (not approved) and rev_count <= max_rev:
                         write_revision_idx += 1
                         yield StreamEvent(
                             kind="writer_pending",

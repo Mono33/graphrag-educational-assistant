@@ -2048,6 +2048,33 @@ Il caso che l'ha chiesto: alla richiesta sul capitolo 4 il pianificatore aveva
 deciso di cercare di nuovo nel grafo, perché il capitolo era «contenuto non
 ancora recuperato». Dal libro, che si cerca a ogni turno.
 
+### 2026-09-30 — Slide e immagini: il flusso regge, le schede lo raccontavano male
+
+Angelo allega una presentazione sulla Guerra Fredda e una mappa del 1962 in
+WEBP, e chiede «una lezione coinvolgente sfruttando le immagini e le slide
+allegate».
+
+**Il flusso ha funzionato:**
+
+- la mappa è stata letta da Gemini e citata;
+- la prima bozza non citava nulla ed è stata rimandata indietro, anche se il
+  Critic l'aveva approvata con 4,0;
+- la revisione è uscita con 11 citazioni (slide 1, 2, 3, 4, 11, 12 e la mappa),
+  di cui 1 tolta perché non supportata.
+
+**Le schede lo raccontavano male.** Tre confronti usavano ancora il conteggio
+sbagliato di uno, corretto ieri nel router:
+
+- la scheda del Critic scriveva «Limite revisioni raggiunto: l'ultima bozza
+  viene presentata comunque» proprio mentre partiva la revisione;
+- il servizio non mostrava la scheda «sto scrivendo la bozza 2»;
+- il Critic, arrivato al limite, approvava la bozza finale **senza leggerla**,
+  con un 4,0 inventato.
+
+Ora la bozza finale viene valutata davvero, e il suo verdetto è quello
+mostrato. Costa una chiamata al Critic in più, circa 2–5 s, solo sulle lezioni
+riviste.
+
 **Difetti del banco, non dei modelli**, corretti: il font del generatore non ha
 √ e ≈, e tutti avevano letto fedelmente il quadratino stampato al loro posto
 (ora i due simboli sono disegnati); il punteggio contava gli spazi, e «x²+3x»

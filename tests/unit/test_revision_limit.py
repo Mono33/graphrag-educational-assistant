@@ -43,3 +43,62 @@ def test_a_bad_value_falls_back_to_something_sane(monkeypatch, raw):
     monkeypatch.setenv("AIX_MAX_REVISIONS", raw)
 
     assert default_max_revisions() in (0, 1)
+
+
+# ---------------------------------------------------------------------------
+# At the limit: the last draft is reviewed, and the cards say what happens
+# ---------------------------------------------------------------------------
+
+
+async def test_the_draft_written_at_the_limit_is_still_reviewed():
+    """It used to be approved unread, with an invented 4.0 (2026-09-30)."""
+    import json
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    from aix.agent.agents.critic_agent import CriticAgent
+    from tests.unit.agent_doubles import _retrieval_result
+
+    calls = []
+    verdict = {"scores": {"structure": 3}, "average_score": 3.0, "decision": "REVISE",
+               "strengths": [], "weaknesses": ["x"], "revision_instructions": "y", "summary": "z"}
+
+    async def _fake(_client, *, messages, **_kw):
+        calls.append(messages)
+        content = json.dumps(verdict)
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content),
+                                                        finish_reason="stop")])
+
+    retrieval = _retrieval_result()
+    retrieval.to_context_string = lambda *args, **kwargs: "Contesto."
+    with (
+        patch.object(CriticAgent, "_get_client", return_value=object()),
+        patch("aix.agent.agents.critic_agent.guarded_chat_completion", _fake),
+    ):
+        result = await CriticAgent().critique(
+            lesson_plan="# Bozza rivista",
+            teacher_query="Crea una lezione",
+            retrieval_result=retrieval,
+            revision_count=1,
+            max_revisions=1,
+        )
+
+    assert calls, "the model reads the revised draft"
+    assert result.approved is False, "and its verdict is the real one"
+
+
+@pytest.mark.parametrize(
+    "revision_count, limit_shown",
+    [(1, False), (2, True)],  # 1: the one permitted revision follows; 2: none left
+)
+def test_the_critic_card_says_the_limit_only_when_no_revision_follows(revision_count, limit_shown):
+    from jinja2 import Environment, FileSystemLoader
+
+    html = (
+        Environment(loader=FileSystemLoader("src/aix/webui/templates"))
+        .get_template("partials/chat_critic_card.html")
+        .render(payload={"approved": False, "revision_count": revision_count, "max_revisions": 1,
+                         "score_pct": 80, "revision_instructions": "Usa i documenti."})
+    )
+
+    assert ("Limite revisioni raggiunto" in html) is limit_shown

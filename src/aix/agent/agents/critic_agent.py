@@ -212,8 +212,10 @@ class CriticAgent:
             f"[CriticAgent] Reviewing {content_type} (revision {revision_count}/{max_revisions})..."
         )
 
-        # Auto-approve if max revisions reached
-        if revision_count >= max_revisions:
+        # ``revision_count`` is the number of revisions already made: at the limit
+        # the last draft is still reviewed, so its verdict is real; only past it
+        # (never reached by the graph) is it waved through.
+        if revision_count > max_revisions:
             logger.info("[CriticAgent] Max revisions reached, auto-approving")
             return CritiqueResult(
                 scores={"auto": 4},
