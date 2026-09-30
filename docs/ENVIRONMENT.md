@@ -95,6 +95,13 @@ Tutte spente: §5.2 dice che a flag spente il prodotto è quello di prima.
 | `AIX_CITATION_CHECK_ENABLED` | `true` | Verifica che il passaggio citato sostenga la frase, e toglie il riferimento quando non lo sostiene (la frase resta). Costa una chiamata al modello, e **solo** se la bozza contiene citazioni ai materiali privati |
 | `AIX_CITATION_CHECK_MODEL` | come `LLM_MODEL` | Modello diverso per quella verifica |
 
+### Tracciamento (Langfuse)
+
+| Variabile | Default | A cosa serve |
+| --- | --- | --- |
+| `AIX_TRACING_ENABLED` | `false` | Una traccia Langfuse per ogni turno (WebUI e API) e per ogni documento caricato. La traccia porta l'utente (l'id del docente, mai l'email), la sessione (la lezione) e i tag (dominio, `webui`/`api`/`ingestion`). Per ogni chiamata registra modello, token, costo reale di OpenRouter e tempi, più un intervallo per ogni nodo del grafo. Serve con `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` e `LANGFUSE_BASE_URL`, le stesse chiavi dei prompt. **Con il contenuto acceso, richieste, passaggi dei documenti e risposte arrivano a Langfuse** (cloud UE) |
+| `AIX_TRACING_CONTENT` | `full` | `none` tiene costi, token e tempi ma non invia testo |
+
 ## 4. WebUI, database, sicurezza
 
 | Variabile | Default | A cosa serve |

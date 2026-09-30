@@ -115,9 +115,10 @@ class OpenAIConfig:
             return 1
 
     def get_client(self):
-        """Return a configured OpenAI-compatible client (sync)"""
-        from openai import OpenAI
+        """Return a configured OpenAI-compatible client (sync), traced when tracing is on."""
+        from aix.core.tracing import openai_classes
 
+        OpenAI, _ = openai_classes()
         return OpenAI(
             api_key=self.api_key,
             base_url=self.base_url,
@@ -126,9 +127,10 @@ class OpenAIConfig:
         )
 
     def get_async_client(self):
-        """Return a configured OpenAI-compatible client (async)"""
-        from openai import AsyncOpenAI
+        """Return a configured OpenAI-compatible client (async), traced when tracing is on."""
+        from aix.core.tracing import openai_classes
 
+        _, AsyncOpenAI = openai_classes()
         return AsyncOpenAI(
             api_key=self.api_key,
             base_url=self.base_url,

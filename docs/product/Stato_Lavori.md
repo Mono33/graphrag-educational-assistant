@@ -2113,6 +2113,36 @@ questo turno». Anche i gruppi di passaggi portano il numero. «Il nuovo
 allegato», «il secondo documento» e «l'ultimo file» hanno ora un riferimento
 preciso nei turni successivi. Un allegato rimosso esce dall'elenco.
 
+**Tracciamento in Langfuse** (`core/tracing.py`, `AIX_TRACING_ENABLED`, acceso
+nel pilota). Una traccia per ogni turno della WebUI, per ogni turno dell'API e
+per ogni documento caricato. Ogni traccia porta:
+
+- l'utente: l'id del docente, mai l'email;
+- la sessione: la lezione;
+- i tag: `webui` / `api` / `ingestion` e il dominio;
+- turno, numero di allegati, esito del Critic e durata.
+
+**Chiamate ai modelli.** I client OpenAI di `core.config` diventano i wrapper di
+Langfuse: ogni chat ed embedding è una generation con modello, token e **costo
+reale di OpenRouter** (lo restituisce in ogni risposta, nessun listino da
+mantenere).
+
+**Nodi del grafo.** Un callback di LangChain dà a ogni nodo il suo intervallo
+di tempo.
+
+**Il client dei prompt** è lo stesso, per non avere due configurazioni in
+conflitto.
+
+**Prova dal vivo:** la traccia di prova su Langfuse cloud mostra utente,
+sessione, tag e ambiente, e per ogni chiamata token e costo (chat 4,3·10⁻⁶ $,
+embedding 3·10⁻⁸ $).
+
+**Privacy:** con il contenuto acceso, richieste, passaggi dei documenti e
+risposte arrivano a Langfuse (cloud UE). `AIX_TRACING_CONTENT=none` tiene solo
+costi, token e tempi. Da decidere con Louis per il pilota.
+
+Nessun turno può fallire per colpa di Langfuse: ogni chiamata è protetta.
+
 **Il lint della CI era rosso** (16 errori ruff, 36 file da formattare), in gran
 parte per i commit dell'ultima settimana: corretto in un commit solo di stile.
 

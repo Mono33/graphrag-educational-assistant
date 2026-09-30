@@ -1393,6 +1393,11 @@ async def run_agent_stream(
         from aix.agent.graph.checkpointer import thread_config
 
         run_config = thread_config(str(lesson.id))
+        from aix.core.tracing import graph_callbacks
+
+        # A span per graph node in Langfuse; empty when tracing is off.
+        if callbacks := graph_callbacks():
+            run_config["callbacks"] = callbacks
 
         teacher_ctx = _teacher_upload_context(lesson)
 
@@ -1498,6 +1503,26 @@ async def run_agent_stream(
             final_state.update(dict(_snapshot.values))
     except Exception:  # noqa: BLE001
         logger.debug("[webui.agent] no prior checkpoint to seed final_state from")
+
+    from aix.core.tracing import start_run
+
+    # One Langfuse trace for the turn: every model call inside it -- planner,
+    # retrieval, writer, critic, citation check -- is recorded under the teacher
+    # and the lesson, with its cost, tokens and time. A no-op when tracing is off.
+    trace = start_run(
+        "lesson.turn",
+        user_id=lesson.owner_id,
+        session_id=lesson.id,
+        tags=("webui", str(lesson.domain or "")),
+        metadata={
+            "turn": len(conversation_history) // 2 + 1,
+            "attachments": len(getattr(lesson, "uploaded_files_json", None) or []),
+            "intent": pedagogical_intent,
+        },
+        input=raw_query,
+    )
+    trace_output: Any = None
+    trace_error = ""
 
     _write_stream.register(str(lesson.id))
     try:
@@ -1622,8 +1647,8 @@ async def run_agent_stream(
         # once, here at finalization, so the stored plan, the persisted assistant
         # turn, every export, and the SSE ``done`` payload all carry it. Drafts
         # (writer events) intentionally stay unmarked. ``trace_id`` falls back to
-        # the lesson id until Langfuse run-tracing lands (#24).
-        lesson_plan_md = ensure_marking(lesson_plan_md, trace_id=str(lesson.id))
+        # the lesson id when tracing is off.
+        lesson_plan_md = ensure_marking(lesson_plan_md, trace_id=trace.trace_id or str(lesson.id))
 
         lesson.status = "complete"
         lesson.lesson_plan_md = lesson_plan_md
@@ -1646,6 +1671,7 @@ async def run_agent_stream(
             run_config["configurable"]["thread_id"],
         )
 
+        trace_output = lesson_plan_md
         yield StreamEvent(
             kind="done",
             lesson_plan_md=lesson_plan_md,
@@ -1653,6 +1679,7 @@ async def run_agent_stream(
         )
 
     except Exception as exc:  # noqa: BLE001
+        trace_error = type(exc).__name__
         logger.exception(
             "[webui.agent] run FAILED lesson_id=%s after %.1fs",
             lesson.id,
@@ -1681,6 +1708,15 @@ async def run_agent_stream(
         from aix.agent.graph import material_source
 
         material_source.deregister(str(lesson.id))
+        trace.end(
+            output=trace_output,
+            metadata={
+                "approved": final_state.get("approved"),
+                "revisions": final_state.get("revision_count"),
+                "seconds": round(time.monotonic() - started_at, 1),
+            },
+            error=trace_error or ("" if trace_output is not None else "interrupted"),
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -1717,6 +1753,7 @@ async def stream_agent_events(
     teacher_provided_context: Optional[str] = None,
     max_revisions: Optional[int] = None,
     material_scope_id: Optional[str] = None,
+    user_id: Optional[str] = None,
 ) -> AsyncIterator[StreamEvent]:
     """
     Run the LangGraph lesson-planner pipeline for an *ad-hoc* request and
@@ -1763,6 +1800,10 @@ async def stream_agent_events(
         graph = await pipeline.get_graph()
         effective_thread_id = session_id or f"ephemeral-{_uuid.uuid4()}"
         run_config = thread_config(effective_thread_id)
+        from aix.core.tracing import graph_callbacks
+
+        if callbacks := graph_callbacks():
+            run_config["callbacks"] = callbacks
 
         effective_max_revisions = (
             max_revisions if max_revisions is not None else pipeline.max_revisions
@@ -1829,6 +1870,20 @@ async def stream_agent_events(
             final_state.update(dict(_snapshot.values))
     except Exception:  # noqa: BLE001
         logger.debug("[api.agent] no prior checkpoint to seed final_state from")
+
+    from aix.core.tracing import start_run
+
+    # The platform's calls, traced like the WebUI's. No teacher id reaches this
+    # API yet; the session groups the turns of one conversation.
+    trace = start_run(
+        "api.turn",
+        user_id=user_id,
+        session_id=effective_thread_id,
+        tags=("api", domain),
+        input=query,
+    )
+    trace_output: Any = None
+    trace_error = ""
 
     try:
         async for chunk in graph.astream(
@@ -1964,6 +2019,7 @@ async def stream_agent_events(
             meta["revision_count"],
         )
 
+        trace_output = lesson_plan_md
         yield StreamEvent(
             kind="done",
             lesson_plan_md=lesson_plan_md,
@@ -1971,6 +2027,7 @@ async def stream_agent_events(
         )
 
     except Exception as exc:  # noqa: BLE001
+        trace_error = type(exc).__name__
         logger.exception(
             "[api.agent] run FAILED session_id=%s after %.1fs",
             session_id,
@@ -1982,3 +2039,13 @@ async def stream_agent_events(
         # exception with a code and returns a sentence that says what to do.
         short_msg = str(_report_failure(exc))
         yield StreamEvent(kind="error", error=short_msg)
+    finally:
+        trace.end(
+            output=trace_output,
+            metadata={
+                "approved": final_state.get("approved"),
+                "revisions": final_state.get("revision_count"),
+                "seconds": round(time.monotonic() - started_at, 1),
+            },
+            error=trace_error or ("" if trace_output is not None else "interrupted"),
+        )

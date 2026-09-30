@@ -59,6 +59,8 @@ PILOT = {
     # (2026-09-25); Tesseract stays in the image as the fallback. The model is
     # vision_ocr.DEFAULT_MODEL unless AIX_OCR_MODEL says otherwise.
     "AIX_OCR_BACKEND": "vision",
+    # Cost, time, tokens, input and output per teacher and lesson, in Langfuse.
+    "AIX_TRACING_ENABLED": "true",
 }
 
 #: Taken from the developer's .env as well, because they are what the tests of

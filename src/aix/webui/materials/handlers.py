@@ -86,7 +86,27 @@ class ExtractionHandler:
 
         Raising is how a failure is reported: the worker catches it, records a
         failed attempt with a code, and moves to the next job.
+
+        Traced in Langfuse under the teacher who uploaded the file: OCR, the
+        embeddings and the map are model calls with a cost.
         """
+        from aix.core.tracing import start_run
+
+        trace = start_run(
+            "material.ingestion",
+            user_id=job.owner_id,
+            tags=("ingestion",),
+            metadata={"material_version": job.material_version_id, "attempt": job.attempt_count},
+        )
+        try:
+            result = await self._process(job)
+        except Exception as exc:
+            trace.end(error=type(exc).__name__)
+            raise
+        trace.end()
+        return result
+
+    async def _process(self, job: IngestionJob) -> Optional[str]:
         content, media_type = await self._load(job)
 
         # In a thread: OCR is CPU-bound and seconds long, and the worker shares
