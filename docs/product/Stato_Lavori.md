@@ -2075,6 +2075,37 @@ Ora la bozza finale viene valutata davvero, e il suo verdetto è quello
 mostrato. Costa una chiamata al Critic in più, circa 2–5 s, solo sulle lezioni
 riviste.
 
+### 2026-09-30 — Le immagini dentro slide e Word vengono lette
+
+Una slide fatta di una mappa, di un grafico o di una foto con didascalie teneva
+il suo testo nell'immagine, e il parser la saltava segnandola come «non
+supportata». Ora ogni immagine incorporata passa per lo stesso OCR delle foto
+caricate (Gemini, con Tesseract di riserva).
+
+Regole:
+
+- le icone sotto i 120 px si saltano;
+- un'immagine ripetuta, come il logo su ogni slide, si legge una volta;
+- una foto senza testo (solo `[figura]`) non si indicizza e non genera avvisi;
+- valgono la stessa soglia del 70 % e lo stesso tetto di 30 immagini per
+  documento delle scansioni;
+- nel Word il testo dell'immagine va subito dopo il suo paragrafo;
+- nei PowerPoint si leggono anche le forme raggruppate, che prima si perdevano
+  del tutto, testo compreso.
+
+Sulla presentazione vera della Guerra Fredda (14 slide, 14 s):
+
+- slide 7, la foto di ricognizione di Cuba: «MRBM FIELD LAUNCH SITE / SAN
+  CRISTOBAL NO 1 / 14 OCTOBER 1962», «8 MISSILE TRAILERS»…;
+- slide 10, il cartello «ACHTUNG! SIE VERLASSEN…».
+
+Parser `pptx` alla versione 3 e `docx` alla 2. Per rileggere i file già
+caricati: `reindex_materials.py --media-type pptx --apply`, e lo stesso per
+`docx`.
+
+**Il lint della CI era rosso** (16 errori ruff, 36 file da formattare), in gran
+parte per i commit dell'ultima settimana: corretto in un commit solo di stile.
+
 **Difetti del banco, non dei modelli**, corretti: il font del generatore non ha
 √ e ≈, e tutti avevano letto fedelmente il quadratino stampato al loro posto
 (ora i due simboli sono disegnati); il punteggio contava gli spazi, e «x²+3x»

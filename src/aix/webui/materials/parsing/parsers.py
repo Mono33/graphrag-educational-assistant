@@ -31,10 +31,10 @@ from typing import Optional
 from aix.webui.materials.parsing import intake
 from aix.webui.materials.parsing.ir import (
     LOW_CONFIDENCE,
-    ocr_index_min_confidence,
     DocumentIRV1,
     IRBlock,
     content_hash,
+    ocr_index_min_confidence,
 )
 from aix.webui.materials.parsing.ocr import (
     DEFAULT_PAGE_TIMEOUT_S,
@@ -196,6 +196,97 @@ def parse_pdf(content: bytes, options: ParseOptions) -> DocumentIRV1:
 
 
 # ---------------------------------------------------------------------------
+# Images inside Word and PowerPoint files
+# ---------------------------------------------------------------------------
+
+#: Shorter than this on either side: an icon, a bullet, a divider. Nothing to read.
+MIN_EMBEDDED_SIDE_PX = 120
+
+#: Fewer words than this once ``[figura]``/``[illeggibile]`` are removed: a photo
+#: or a drawing without text. Not indexed, and not a warning either.
+MIN_EMBEDDED_WORDS = 3
+
+
+def _readable_words(text: str) -> int:
+    return len(re.findall(r"\w{2,}", re.sub(r"\[[^\]]*\]", " ", text or "")))
+
+
+class _EmbeddedImages:
+    """OCR of the pictures inside a Word file or a deck, under the document's OCR budget.
+
+    A slide that is a screenshot, a map or a chart holds its text in the picture,
+    and it was skipped. Each distinct picture is read once (a logo repeated on
+    every slide is read on the first), icons are skipped, and the same floor
+    and page cap as scanned PDFs apply.
+    """
+
+    def __init__(self, options: ParseOptions) -> None:
+        self.options = options
+        self.enabled = options.ocr_enabled and _flag("AIX_PARSE_OCR_ENABLED") and ocr_available()
+        self.seen: set[str] = set()
+        self.attempts = 0
+        self.pages: list[int] = []
+        self.warnings: list[str] = []
+
+    def read(self, blob: bytes, where: int):
+        """The picture's text as an ``OcrResult``, or ``None`` when there is none to index."""
+        if not self.enabled or not blob:
+            return None
+        digest = hashlib.sha1(blob).hexdigest()
+        if digest in self.seen:
+            return None
+        self.seen.add(digest)
+
+        from PIL import Image
+
+        try:
+            image = Image.open(io.BytesIO(blob))
+            image.load()
+        except Exception:  # noqa: BLE001 — WMF/EMF vectors and broken images carry no raster
+            return None
+        if min(image.size) < MIN_EMBEDDED_SIDE_PX:
+            return None
+
+        if self.attempts >= self.options.max_ocr_pages:
+            code = f"ocr_page_limit:{self.options.max_ocr_pages}"
+            if code not in self.warnings:
+                self.warnings.append(code)
+            return None
+        self.attempts += 1
+
+        try:
+            result = recognise(image.convert("RGB"), timeout_s=self.options.page_timeout_s)
+        except Exception:  # noqa: BLE001 — one unreadable picture must not lose the file
+            logger.info("[parsing] OCR failed on an embedded image (%d)", where, exc_info=True)
+            self.warnings.append(f"ocr_failed:page={where}")
+            return None
+
+        if _readable_words(result.text) < MIN_EMBEDDED_WORDS:
+            return None
+        if result.confidence < ocr_index_min_confidence():
+            self.warnings.append(f"ocr_discarded:page={where}")
+            return None
+        if result.confidence < LOW_CONFIDENCE:
+            self.warnings.append(f"ocr_low_confidence:page={where}")
+        if where not in self.pages:
+            self.pages.append(where)
+        return result
+
+
+def _add_image_text(blocks: _Blocks, result, locator: dict, *, page: Optional[int] = None) -> None:
+    for paragraph in _paragraphs(result.text) or [result.text]:
+        if not _readable_words(paragraph):
+            continue  # a lone ``[figura]`` marks where a drawing was, not text
+        blocks.add(
+            "paragraph",
+            paragraph,
+            {**locator, "image": True, "ocr": True, "ocr_engine": result.engine},
+            page=page,
+            confidence=result.confidence,
+        )
+
+
+# ---------------------------------------------------------------------------
 # DOCX
 # ---------------------------------------------------------------------------
 
@@ -209,6 +300,8 @@ def parse_docx(content: bytes, options: ParseOptions) -> DocumentIRV1:
     document = docx.Document(io.BytesIO(content))
     blocks = _Blocks(sha)
     unsupported: set[str] = set()
+    images = _EmbeddedImages(options)
+    image_number = 0
 
     # Walk the body in document order: paragraphs and tables interleave, and
     # python-docx's ``paragraphs`` and ``tables`` lists would lose that order.
@@ -220,8 +313,9 @@ def parse_docx(content: bytes, options: ParseOptions) -> DocumentIRV1:
             paragraph = Paragraph(element, document)
             style = (paragraph.style.name if paragraph.style is not None else "") or ""
             text = paragraph.text
-            if element.xpath(".//w:drawing") or element.xpath(".//w:pict"):
-                unsupported.add("image")
+            embedded = element.xpath(".//a:blip/@r:embed")
+            if not embedded and element.xpath(".//w:pict"):
+                unsupported.add("image")  # legacy VML pictures carry no blip to read
             heading = re.match(r"(?:Heading|Titolo)\s*(\d)", style, re.I)
             if heading:
                 blocks.add("heading", text, locator, level=int(heading.group(1)))
@@ -232,6 +326,15 @@ def parse_docx(content: bytes, options: ParseOptions) -> DocumentIRV1:
             else:
                 blocks.add("paragraph", text, locator)
 
+            # The pictures of this paragraph, read after its text, where they sit.
+            for rel_id in embedded:
+                part = document.part.related_parts.get(rel_id)
+                blob = getattr(part, "blob", None)
+                image_number += 1
+                result = images.read(blob, image_number)
+                if result is not None:
+                    _add_image_text(blocks, result, {**locator, "image_index": image_number})
+
         elif tag == "tbl":
             table = Table(element, document)
             rows = [[cell.text.strip() for cell in row.cells] for row in table.rows]
@@ -239,11 +342,13 @@ def parse_docx(content: bytes, options: ParseOptions) -> DocumentIRV1:
 
     return DocumentIRV1(
         parser_name="docx",
-        parser_version="1",
+        # 2: the text inside embedded pictures is read.
+        parser_version="2",
         parser_profile_version=PARSER_PROFILE,
         source_sha256=sha,
         media_type=intake.DOCX,
         blocks=tuple(blocks.items),
+        warnings=tuple(images.warnings),
         unsupported=tuple(sorted(unsupported)),
     )
 
@@ -260,6 +365,7 @@ def parse_pptx(content: bytes, options: ParseOptions) -> DocumentIRV1:
     presentation = Presentation(io.BytesIO(content))
     blocks = _Blocks(sha)
     unsupported: set[str] = set()
+    images = _EmbeddedImages(options)
 
     for slide_index, slide in enumerate(presentation.slides, start=1):
         title_shape = slide.shapes.title
@@ -271,7 +377,9 @@ def parse_pptx(content: bytes, options: ParseOptions) -> DocumentIRV1:
                 page=slide_index,
             )
 
-        for shape in slide.shapes:
+        # Grouped shapes are walked too: text and pictures inside a group were
+        # skipped entirely.
+        for shape in _leaf_shapes(slide.shapes):
             if title_shape is not None and shape.shape_id == title_shape.shape_id:
                 continue
             locator = {"format": "pptx", "slide_index": slide_index, "shape_id": shape.shape_id}
@@ -295,8 +403,10 @@ def parse_pptx(content: bytes, options: ParseOptions) -> DocumentIRV1:
                         {**locator, "paragraph_index": paragraph_index},
                         page=slide_index,
                     )
-            elif shape.shape_type is not None and "PICTURE" in str(shape.shape_type):
-                unsupported.add("image")
+            elif _picture_blob(shape) is not None:
+                result = images.read(_picture_blob(shape), slide_index)
+                if result is not None:
+                    _add_image_text(blocks, result, locator, page=slide_index)
 
         # The speaker notes. Teachers write the lesson there -- what to say,
         # what the slide only hints at -- and the first version of this parser
@@ -321,16 +431,35 @@ def parse_pptx(content: bytes, options: ParseOptions) -> DocumentIRV1:
 
     return DocumentIRV1(
         parser_name="pptx",
-        # 2: speaker notes are read. Decks uploaded under 1 carry no notes
-        # until they are ingested again.
-        parser_version="2",
+        # 2: speaker notes are read. 3: pictures and grouped shapes are read.
+        parser_version="3",
         parser_profile_version=PARSER_PROFILE,
         source_sha256=sha,
         media_type=intake.PPTX,
         blocks=tuple(blocks.items),
         page_count=len(presentation.slides),
+        ocr_pages=tuple(images.pages),
+        warnings=tuple(images.warnings),
         unsupported=tuple(sorted(unsupported)),
     )
+
+
+def _leaf_shapes(shapes):
+    """Every shape of a slide, descending into groups."""
+    for shape in shapes:
+        if getattr(shape, "shape_type", None) is not None and "GROUP" in str(shape.shape_type):
+            yield from _leaf_shapes(shape.shapes)
+        else:
+            yield shape
+
+
+def _picture_blob(shape) -> Optional[bytes]:
+    """The bytes of a picture or picture placeholder; ``None`` for anything else
+    (including a linked picture, whose bytes are not in the file)."""
+    try:
+        return shape.image.blob
+    except Exception:  # noqa: BLE001 — not a picture, or not embedded
+        return None
 
 
 # ---------------------------------------------------------------------------
