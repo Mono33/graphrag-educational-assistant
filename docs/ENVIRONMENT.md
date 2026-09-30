@@ -36,7 +36,7 @@ spegne. Una variabile assente o vuota vale il suo default.
 | `AIX_LLM_MAX_RETRIES` | `1` | Tentativi su errore transitorio |
 | `AIX_LLM_PROBE_ENABLED` | `true` | Sonda di connettività all'avvio |
 | `AIX_THINKING_EFFORT` | `low` | Sforzo di ragionamento sui modelli che lo espongono |
-| `AIX_CRITIC_MODEL` | come `LLM_MODEL` | Modello diverso per il Critic |
+| `AIX_CRITIC_MODEL` | `google/gemini-3.5-flash-lite` | Modello del Critic. Scelto il 2026-09-30 fra quattro Gemini (`scripts/eval/compare_role_models.py critic`): coglie più difetti di 2.5 Flash (5 su 9 contro 1), approva 6 lezioni buone su 8, è il più veloce e il più stabile |
 | `AIX_MAX_REVISIONS` | `1` | Giri di revisione Critic → Writer |
 
 ### Writer
@@ -177,7 +177,7 @@ paper, là del contenuto delle lezioni della docente. Regole diverse, dichiarate
 | --- | --- | --- |
 | `AIX_MCP_REQUIRE_AUTH` | `1` | Autenticazione sul server MCP |
 | `AIX_MCP_LOG_LEVEL` · `AIX_MCP_VERSION` | — | Diagnostica |
-| `TEXT2CYPHER_MODEL` | vedi `core/config.py` | Modello che genera il Cypher |
+| `TEXT2CYPHER_MODEL` | `google/gemini-3.1-flash-lite` | Modello che genera il Cypher. Scelto il 2026-09-30 (`compare_role_models.py text2cypher`): risultati su 16 domande su 16, query più ricche di 2.5 Flash. Se manca non si usa più `LLM_MODEL` |
 | `TEXT2CYPHER_DEFAULT_LIMIT` | vedi `core/config.py` | `LIMIT` di default nelle query generate |
 | `TEXT2CYPHER_MAX_QUERY_LENGTH` | vedi `core/config.py` | Lunghezza massima della query generata |
 | `TEXT2CYPHER_ENABLE_EXECUTION` | `false` | **Esegue** il Cypher generato |

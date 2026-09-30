@@ -254,7 +254,9 @@ class Text2CypherConfig:
     enable_query_validation: bool = True
     enable_query_execution: bool = True
     log_level: str = "INFO"
-    model: str = "google/gemini-2.0-flash"  # Fast model for Cypher generation and translation
+    #: Fast model for Cypher generation and translation. Chosen on 2026-09-30
+    #: (``compare_role_models.py text2cypher``): results on 16 of 16 queries.
+    model: str = "google/gemini-3.1-flash-lite"
 
 
 @dataclass
@@ -343,9 +345,9 @@ class Config:
             )
 
         self.text2cypher.log_level = os.getenv("LOG_LEVEL", self.text2cypher.log_level)
-        self.text2cypher.model = os.getenv("TEXT2CYPHER_MODEL") or os.getenv(
-            "LLM_MODEL", self.text2cypher.model
-        )
+        # Not LLM_MODEL as a fallback: the lesson writer's model is slow and
+        # costly for a one-line query.
+        self.text2cypher.model = os.getenv("TEXT2CYPHER_MODEL") or self.text2cypher.model
 
         # Embedding configuration
         self.embedding.mode = os.getenv("EMBEDDING_MODE", self.embedding.mode)

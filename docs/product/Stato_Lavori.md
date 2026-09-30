@@ -2166,10 +2166,44 @@ Fredda: due prime bozze con 6 e 9 citazioni, entrambi gli allegati citati,
 nota giusta. Il giro di revisione per le citazioni mancanti non dovrebbe più
 servire: circa 60 s in meno.
 
-**Da decidere: il modello del Critic.** Non ha un modello proprio e ripiega su
-`TEXT2CYPHER_MODEL` = `google/gemini-2.5-flash`, lo stesso che va in pensione
-(come text2cypher). Il Writer e il controllo delle citazioni usano
-`LLM_MODEL` = Claude Sonnet 5.
+**I modelli del Critic e di text2cypher** (`scripts/eval/compare_role_models.py`).
+Entrambi usavano `google/gemini-2.5-flash`, in pensione: il Critic non aveva un
+modello proprio e ripiegava su quello di text2cypher. Il confronto è fra quattro
+Gemini, tutti veloci.
+
+*Critic*: 8 lezioni vere e 9 guastate apposta (differenziazione tolta, minuti
+sbagliati, richiesta fuori tema), due giri per modello.
+
+| | lezioni buone approvate | difetti colti | verdetti instabili | s |
+| --- | ---: | ---: | ---: | ---: |
+| 2.5 Flash (oggi) | 7/8 | **1/9** | 3 | 3,1 |
+| 3.1 Flash-Lite | 4/8 | 7/9 | 0 | 2,9 |
+| **3.5 Flash-Lite** | 6/8 | 5/9 | 1 | **2,7** |
+| 3.7 Flash | 8/8 | 3/9 | 0 | 6,3 |
+
+2.5 Flash oggi non fa quasi da filtro: ha approvato perfino una lezione su un
+altro argomento. 3.1 Flash-Lite è il più severo, ma boccerebbe metà delle
+lezioni buone, cioè un giro di revisione in più su due. **Scelto 3.5
+Flash-Lite**: il più equilibrato e il più veloce, e lo stesso modello dell'OCR.
+
+**Limite trovato:** il Critic legge solo 3.000 caratteri della lezione (inizio
+e fine). Nessun modello ha visto i difetti messi nel mezzo della lezione 1.
+
+*text2cypher*: 16 domande del pianificatore, italiano e inglese, udl e neuro.
+
+- 3.1 Flash-Lite: risultati su 16 domande su 16, e query più ricche (per esempio
+  sulla memoria di lavoro cerca le pratiche didattiche che la riducono, dove
+  2.5 dà un solo nodo);
+- 3.5 Flash-Lite: 15 su 16, con una domanda UDL senza risultati;
+- 3.7 Flash: 3 su 16, in 8 s.
+
+**Scelto 3.1 Flash-Lite.** Se `TEXT2CYPHER_MODEL` manca non si ripiega più su
+`LLM_MODEL` (Claude Sonnet), lento e caro per una query di una riga. Il Writer
+e il controllo delle citazioni restano su Claude Sonnet 5.
+
+**Difetto di text2cypher, non dei modelli:** il secondo tentativo, quello «più
+tollerante» per le query senza risultati, scriveva `toLower("X"` senza chiudere
+la parentesi. Era sempre un errore di sintassi e non girava mai. Corretto.
 
 **Il lint della CI era rosso** (16 errori ruff, 36 file da formattare), in gran
 parte per i commit dell'ultima settimana: corretto in un commit solo di stile.

@@ -1538,11 +1538,17 @@ class Text2CypherPipeline:
 
                 # Make name matching more tolerant
                 widened_query = re.sub(r" s\.name IN \[", " toLower(s.name) IN [", widened_query)
+                # The literal is captured so the parenthesis closes: without it
+                # every widened query was a syntax error and this retry never ran.
                 widened_query = re.sub(
-                    r" s\.name = ", " toLower(s.name) CONTAINS toLower(", widened_query
+                    r" s\.name = (\"[^\"]*\"|'[^']*')",
+                    r" toLower(s.name) CONTAINS toLower(\1)",
+                    widened_query,
                 )
                 widened_query = re.sub(
-                    r" lr\.category = ", " toLower(lr.category) CONTAINS toLower(", widened_query
+                    r" lr\.category = (\"[^\"]*\"|'[^']*')",
+                    r" toLower(lr.category) CONTAINS toLower(\1)",
+                    widened_query,
                 )
 
                 # Only retry if the query actually changed

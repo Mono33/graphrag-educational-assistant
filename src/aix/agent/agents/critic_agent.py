@@ -11,15 +11,12 @@ import re
 from dataclasses import dataclass
 from typing import Optional
 
-# Fast, cheap model for the Critic — it only outputs ~300 tokens of structured
-# JSON; using the full LLM_MODEL is overkill and adds 25+ seconds of prefill.
-# Defaults to TEXT2CYPHER_MODEL (already google/gemini-2.5-flash in .env.example)
-# then falls back to LLM_MODEL so existing deployments stay unbroken.
-_CRITIC_MODEL: Optional[str] = (
-    os.getenv("AIX_CRITIC_MODEL")
-    or os.getenv("TEXT2CYPHER_MODEL")
-    or None  # None → build_completion_kwargs uses self.model (LLM_MODEL)
-)
+#: A fast model for the Critic: it writes ~300 tokens of JSON. Chosen on
+#: 2026-09-30 (``scripts/eval/compare_role_models.py critic``): on 8 real lessons
+#: and 9 broken on purpose, 3.5 Flash-Lite caught 5 defects to 2.5 Flash's 1,
+#: approved 6 of 8 good lessons, and was the fastest and the steadiest.
+DEFAULT_CRITIC_MODEL = "google/gemini-3.5-flash-lite"
+_CRITIC_MODEL: Optional[str] = os.getenv("AIX_CRITIC_MODEL") or DEFAULT_CRITIC_MODEL
 
 # Critic reads back the lesson it just received — truncate to avoid massive
 # prefill cost.  Strategy: keep head (objectives + first activities) AND tail
