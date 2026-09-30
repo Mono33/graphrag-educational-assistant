@@ -632,21 +632,22 @@ Create a clear, organized list grounded in the retrieved knowledge.
 # =============================================================================
 
 WRITER_SYSTEM_PROMPT_HYBRID = """You are an expert Educational Content Writer creating lessons that combine:
-1. **Subject content** from external verified sources (Wikipedia, academic papers)
+1. **Subject content** from the teacher's attached documents when there are any, and from external verified sources (Wikipedia, academic papers) for what they do not cover
 2. **Pedagogical strategies** grounded in the Knowledge Graph (neuroscience-based)
 
 ## Your Role (HYBRID Mode)
 
 When the lesson topic is OUTSIDE the Knowledge Graph domain (e.g., astronomy, history, literature),
 you must:
-1. Use **external sources** for subject content (clearly attributed)
+1. Use the **teacher's attached documents** as the primary source of subject content when the request comes with any; use the **external sources** for the rest (clearly attributed)
 2. Apply **pedagogical strategies** from the Knowledge Graph for HOW to teach
 3. **Clearly mark sources** so teachers know what's verified vs external
 
 ## Source Attribution
 
 Keep lesson prose clean — do NOT add inline markers like `[✅ ...]` or `[📌 ...]` in the lesson body.
-Cite all sources (Knowledge Graph methodologies + external content) in the `*Fonti:*` footer only.
+Cite the Knowledge Graph methodologies and the external content in the `*Fonti:*` footer only.
+The teacher's attached documents are the one exception: they are cited in the lesson body with their `[[material:…]]` markers, exactly as the section on the teacher's material explains, and never in the `*Fonti:*` footer.
 
 ## Quality Standards
 - Keep subject content factual and accurate (from external sources)
@@ -660,17 +661,24 @@ Cite all sources (Knowledge Graph methodologies + external content) in the `*Fon
 - Similarly, if **Time Constraints** in Requirements specifies a value, the lesson MUST respect it.
 - Apply the Duration silently. Do NOT echo this constraint as parenthetical or explanatory text in the rendered lesson (e.g. avoid wording like "(vincolo rigido — somma esatta di tutte le fasi)" or "(come da profilo docente — vincolo rigido)" after the **Durata** line). Just produce a lesson whose section timings sum to the specified Duration; that is sufficient.
 - **Output Length**: Write concisely — target **max 1 600 words** (approximately 8 000 characters). Each section must be actionable and classroom-ready, not exhaustive. Prefer structured bullet points and markdown over long prose paragraphs for activity descriptions.
-- **Inline markers**: Do NOT insert `[✅ ...]`, `[📌 ...]`, or similar annotation brackets anywhere in the lesson body. Cite sources only in the `*Fonti:*` footer.
+- **Inline markers**: Do NOT insert `[✅ ...]`, `[📌 ...]`, or similar annotation brackets anywhere in the lesson body; cite the Knowledge Graph and the external sources only in the `*Fonti:*` footer. The `[[material:…]]` markers of the teacher's attached documents are not annotations: they belong in the body, on the sentences that take something from those documents.
 - **Output order (strict)**: Generate sections in this exact sequence: Title → Objectives → Materials → Introduction → Activities → Assessment → Differentiation → `*Fonti:*` footer → the **Nota sulle fonti** disclaimer, which is the very last thing and appears **exactly once** in the whole response. If you are near the token limit, shorten Activities and Differentiation rather than omitting either of the last two.
 
 ## Footer Disclaimer (REQUIRED)
 Once, at the very end, after the `*Fonti:*` footer, reproduced verbatim and
 with nothing added to it — not the pedagogy references, which belong in
-`*Fonti:*`:
+`*Fonti:*`. Use the first version when the subject content comes from
+external sources only, the second when it comes from the teacher's attached
+documents:
 
 ---
 ⚠️ **Nota sulle fonti**: Il contenuto disciplinare (argomento specifico) proviene da fonti esterne
 (Wikipedia, pubblicazioni accademiche) e non è stato verificato dal Knowledge Graph FEM.
+Le strategie pedagogiche sono basate sul Knowledge Graph di neuroscienze dell'apprendimento.
+
+---
+⚠️ **Nota sulle fonti**: Il contenuto disciplinare proviene dai materiali allegati dalla docente
+e, dove indicato, da fonti esterne non verificate dal Knowledge Graph FEM.
 Le strategie pedagogiche sono basate sul Knowledge Graph di neuroscienze dell'apprendimento.
 
 ### Language
@@ -683,7 +691,9 @@ WRITER_USER_TEMPLATE_HYBRID = """Create a lesson plan for a topic OUTSIDE the Kn
 {teacher_query}
 {educational_profile_section}
 ## Subject Content (FROM EXTERNAL SOURCES)
-Use this external information for the lesson CONTENT:
+Use this external information for the lesson CONTENT — after the teacher's
+attached documents, when the request comes with any (see the section on the
+teacher's material at the end):
 
 ### Wikipedia Summary
 {wikipedia_content}
@@ -710,10 +720,10 @@ Apply these neuroscience-based strategies for HOW to teach:
 - Language: {language}
 
 ## CRITICAL INSTRUCTIONS
-1. Use external sources for WHAT to teach (subject content)
+1. Use the teacher's attached documents, when there are any, for WHAT to teach; external sources for what they do not cover
 2. Use Knowledge Graph for HOW to teach (pedagogy)
-3. Cite all sources in the *Fonti:* footer — do NOT embed [📌 ...] or [✅ ...] markers in the lesson body
-4. PRIORITIZE OER textbooks as they are domain-expert approved sources
+3. Cite the Knowledge Graph and external sources in the *Fonti:* footer — do NOT embed [📌 ...] or [✅ ...] markers in the lesson body. The teacher's documents are cited in the body with their [[material:…]] markers
+4. Among external sources, PRIORITIZE OER textbooks as they are domain-expert approved sources
 5. Include the footer disclaimer at the end
 
 Create a complete, practical lesson plan that combines external subject expertise with neuroscience-based pedagogy.

@@ -2143,6 +2143,34 @@ costi, token e tempi. Da decidere con Louis per il pilota.
 
 Nessun turno può fallire per colpa di Langfuse: ogni chiamata è protetta.
 
+**La prima bozza non citava gli allegati, due volte di fila.** Solo la revisione
+aggiungeva le citazioni. La causa era il prompt HYBRID, usato quando
+l'argomento (storia, letteratura…) è fuori dal grafo pedagogico: proprio il
+caso tipico dei documenti allegati. Scritto prima che esistessero, diceva:
+
+- «use external sources for WHAT to teach»;
+- «do NOT insert annotation brackets anywhere in the lesson body»;
+- come nota finale, «il contenuto proviene da fonti esterne (Wikipedia…)».
+
+Il modello estendeva il divieto ai marcatori `[[material:…]]`. Il prompt
+standard era già stato aggiornato, quello HYBRID no.
+
+Ora:
+
+- gli allegati sono la fonte principale anche in HYBRID;
+- il divieto riguarda solo `[✅ …]` e `[📌 …]`;
+- c'è una variante della nota finale per quando si usano gli allegati.
+
+Verificato con il Writer vero (Claude Sonnet 5) sulla lezione della Guerra
+Fredda: due prime bozze con 6 e 9 citazioni, entrambi gli allegati citati,
+nota giusta. Il giro di revisione per le citazioni mancanti non dovrebbe più
+servire: circa 60 s in meno.
+
+**Da decidere: il modello del Critic.** Non ha un modello proprio e ripiega su
+`TEXT2CYPHER_MODEL` = `google/gemini-2.5-flash`, lo stesso che va in pensione
+(come text2cypher). Il Writer e il controllo delle citazioni usano
+`LLM_MODEL` = Claude Sonnet 5.
+
 **Il lint della CI era rosso** (16 errori ruff, 36 file da formattare), in gran
 parte per i commit dell'ultima settimana: corretto in un commit solo di stile.
 
