@@ -130,8 +130,7 @@ def render_material_passages(
 
     for number, passages in enumerate(grouped.values(), start=1):
         if several:
-            label = _safe_label(passages[0].get("source_label")) or f"documento {number}"
-            heading = f"### {label}"
+            heading = "### " + _attachment_heading(passages[0], number, bold=False)
             if used + len(heading) > budget_chars:
                 break
             blocks.append(heading)
@@ -152,6 +151,19 @@ def render_material_passages(
     return "\n\n".join(blocks)
 
 
+def _attachment_heading(entry: dict[str, Any], number: int, *, bold: bool = True) -> str:
+    """«Allegato 2 · mappa.webp — aggiunto al turno 3, in questo turno»."""
+    label = _safe_label(entry.get("source_label")) or f"documento {number}"
+    position = entry.get("position") or entry.get("attachment")
+    name = f"Allegato {position} · {label}" if position else label
+    text = f"**{name}**" if bold else name
+    if entry.get("turn"):
+        text += f" — aggiunto al turno {entry['turn']}"
+        if entry.get("new"):
+            text += ", in questo turno"
+    return text
+
+
 def render_document_maps(
     maps: Optional[list[dict[str, Any]]], *, budget_chars: int = _MAPS_BUDGET_CHARS
 ) -> str:
@@ -162,8 +174,7 @@ def render_document_maps(
     lines: list[str] = []
     used = 0
     for number, document_map in enumerate(maps, start=1):
-        label = _safe_label(document_map.get("source_label")) or f"documento {number}"
-        head = [f"**{label}**"]
+        head = [_attachment_heading(document_map, number)]
         if document_map.get("summary"):
             head.append(f"Di che cosa tratta: {document_map['summary']}")
         if document_map.get("themes"):

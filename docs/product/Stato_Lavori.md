@@ -2103,6 +2103,16 @@ Parser `pptx` alla versione 3 e `docx` alla 2. Per rileggere i file già
 caricati: `reindex_materials.py --media-type pptx --apply`, e lo stesso per
 `docx`.
 
+**Ordine degli allegati.** Ogni allegato ha un numero, nell'ordine in cui la
+docente l'ha aggiunto, e il turno della conversazione in cui è arrivato. Si
+ricava dalla data del collegamento lezione–materiale e dai messaggi, quindi
+nessuna migrazione.
+
+Il Writer li vede così: «Allegato 3 · libro.pdf — aggiunto al turno 3, in
+questo turno». Anche i gruppi di passaggi portano il numero. «Il nuovo
+allegato», «il secondo documento» e «l'ultimo file» hanno ora un riferimento
+preciso nei turni successivi. Un allegato rimosso esce dall'elenco.
+
 **Il lint della CI era rosso** (16 errori ruff, 36 file da formattare), in gran
 parte per i commit dell'ultima settimana: corretto in un commit solo di stile.
 

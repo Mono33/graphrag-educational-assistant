@@ -94,11 +94,16 @@ Come usarli:
 """
 
 WRITER_MATERIAL_MAPS_BLOCK = """
-### Che cosa contengono (mappa dei documenti)
+### Gli allegati e che cosa contengono
 
-Una sintesi automatica di ciascun documento, parte per parte: serve a sapere
-che cosa contiene anche oltre i passaggi, per scegliere che cosa proporre e per
-indicare alla docente in quali capitoli e pagine approfondire. **Non è una
+Gli allegati sono numerati nell'ordine in cui la docente li ha aggiunti, con il
+turno della conversazione in cui sono arrivati: quando parla del «primo», del
+«secondo», dell'«ultimo» o del «nuovo» allegato intende quest'ordine, e un
+allegato «nuovo» è arrivato per la richiesta a cui stai rispondendo.
+
+Dove c'è, la sintesi automatica di ciascun documento, parte per parte, serve a
+sapere che cosa contiene anche oltre i passaggi, per scegliere che cosa proporre
+e per indicare alla docente in quali capitoli e pagine approfondire. **Non è una
 fonte**: non citarla con i marcatori e non riportarne le frasi come parole del
 documento — le affermazioni si citano dai passaggi.
 

@@ -558,6 +558,10 @@ def search_for_lesson(lesson_id: uuid.UUID, owner_id: uuid.UUID):
             # Without it the Writer sees only uuids and cannot tell two
             # documents apart — see ``render_material_passages`` (2026-09-21).
             labels = await labels_for_lesson(session, lesson_id=lesson_id, owner_id=owner_id)
+            order = {
+                a["source_id"]: a["position"]
+                for a in await attachments_for_lesson(session, lesson_id, owner_id)
+            }
 
         logger.info(
             "[private-rag] lesson=%s searched %d version(s), %d passage(s) kept from %d"
@@ -571,41 +575,96 @@ def search_for_lesson(lesson_id: uuid.UUID, owner_id: uuid.UUID):
         out = []
         for item in items + extra:
             entry = {**item.to_dict(), "source_label": labels.get(item.source_id.lower(), "")}
+            if item.source_id.lower() in order:
+                entry["attachment"] = order[item.source_id.lower()]
             part = _part_of(maps, item)
             if part:
                 entry["part"] = part
             out.append(entry)
         return out
 
-    async def _maps_for_prompt() -> list[dict[str, Any]]:
-        """The maps of this lesson's documents, as the Writer reads them."""
+    async def _overview() -> list[dict[str, Any]]:
+        """Every attachment in the order it was added, with its map when it has one."""
         from aix.webui.db import async_session_maker
-        from aix.webui.materials.citations import labels_for_lesson
 
         async with async_session_maker() as session:
-            version_ids = await _versions(session)
-            maps = await _maps(session, version_ids)
-            if not maps:
-                return []
-            labels = await labels_for_lesson(session, lesson_id=lesson_id, owner_id=owner_id)
-        return [
-            {
-                "source_id": str(version_id),
-                "source_label": labels.get(str(version_id).lower(), ""),
-                "summary": document_map.get("summary", ""),
-                "themes": document_map.get("themes", []),
-                "sections": [
-                    {k: s[k] for k in ("title", "pages", "summary") if k in s}
-                    for s in document_map.get("sections", [])
-                ],
-            }
-            for version_id, document_map in maps.items()
-        ]
+            attachments = await attachments_for_lesson(session, lesson_id, owner_id)
+            maps = await _maps(session, [uuid.UUID(a["source_id"]) for a in attachments])
+        by_id = {str(v).lower(): m for v, m in maps.items()}
+        overview = []
+        for attachment in attachments:
+            document_map = by_id.get(attachment["source_id"], {})
+            overview.append(
+                {
+                    **attachment,
+                    "summary": document_map.get("summary", ""),
+                    "themes": document_map.get("themes", []),
+                    "sections": [
+                        {k: s[k] for k in ("title", "pages", "summary") if k in s}
+                        for s in document_map.get("sections", [])
+                    ],
+                }
+            )
+        return overview
 
     # Read by ``retrieve_private_node``: a search function that can also say
-    # what its documents contain.
-    _search.maps = _maps_for_prompt  # type: ignore[attr-defined]
+    # which documents it searches, in what order, and what they contain.
+    _search.maps = _overview  # type: ignore[attr-defined]
     return _search
+
+
+async def attachments_for_lesson(
+    session: AsyncSession, lesson_id: uuid.UUID, owner_id: uuid.UUID
+) -> list[dict[str, Any]]:
+    """The lesson's attachments in the order the teacher added them.
+
+    ``position`` counts from 1; ``turn`` is the conversation turn it arrived in,
+    and ``new`` marks the ones added for the turn being answered, so «the last
+    file» or «the new document» can be resolved on a later turn.
+    """
+    from sqlalchemy import select
+
+    from aix.webui.lessons.models import LessonMessage
+    from aix.webui.materials.models import LessonMaterialBinding, Material
+
+    rows = (
+        await session.execute(
+            select(
+                LessonMaterialBinding.selected_version_id,
+                LessonMaterialBinding.created_at,
+                Material.display_name,
+            )
+            .join(Material, Material.id == LessonMaterialBinding.material_id)
+            .where(
+                LessonMaterialBinding.lesson_id == lesson_id,
+                LessonMaterialBinding.owner_id == owner_id,
+                LessonMaterialBinding.enabled.is_(True),
+            )
+            .order_by(LessonMaterialBinding.created_at, LessonMaterialBinding.material_id)
+        )
+    ).all()
+    turns = (
+        await session.execute(
+            select(LessonMessage.turn_index, LessonMessage.created_at).where(
+                LessonMessage.lesson_id == lesson_id, LessonMessage.role == "user"
+            )
+        )
+    ).all()
+    current = max((t for t, _ in turns), default=1)
+
+    attachments = []
+    for position, (version_id, attached_at, name) in enumerate(rows, start=1):
+        turn = max((t for t, at in turns if at and attached_at and at < attached_at), default=0) + 1
+        attachments.append(
+            {
+                "source_id": str(version_id).lower(),
+                "source_label": name,
+                "position": position,
+                "turn": turn,
+                "new": turn >= current and current > 1,
+            }
+        )
+    return attachments
 
 
 #: How many parts the second pass reads, and how many passages from each.
