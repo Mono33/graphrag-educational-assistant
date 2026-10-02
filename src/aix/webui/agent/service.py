@@ -1257,6 +1257,19 @@ def _extract_meta(final_state: dict[str, Any]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+def take_refinement(lesson: Any) -> Optional[str]:
+    """The chip's instruction for this turn, removed from the saved profile.
+
+    One turn only: taken from a copy, it stayed in the profile and was applied
+    again on every later turn. Committed with the run's RUNNING status.
+    """
+    profile = dict(lesson.educational_profile_json or {})
+    instruction = profile.pop("__refinement__", None)
+    if "__refinement__" in (lesson.educational_profile_json or {}):
+        lesson.educational_profile_json = profile
+    return instruction
+
+
 def graph_search_override(graph_search: Optional[bool]) -> Optional[bool]:
     """The teacher's Knowledge Graph switch as the router's ``force_retrieval``.
 
@@ -1325,8 +1338,9 @@ async def run_agent_stream(
         graph_search: bool | None = None
         if profile_dict:
             pedagogical_intent = profile_dict.get("pedagogical_intent")
-            refinement_instruction = profile_dict.pop("__refinement__", None)
+            profile_dict.pop("__refinement__", None)
             graph_search = profile_dict.pop("__graph_search__", None)
+        refinement_instruction = take_refinement(lesson)
         force_retrieval = graph_search_override(graph_search)
 
         # Use the persisted teacher_query if the user supplied one in the

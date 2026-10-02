@@ -916,6 +916,10 @@ async def critique_node(state: AgentState) -> dict[str, Any]:
         return {"error": str(e), "current_step": "error"}
 
 
+#: Separates the validator's fix from the teacher's refinement instruction.
+_REMEDIATION_MARK = "## Correzioni richieste dal controllo della classe"
+
+
 async def validate_node(state: AgentState) -> dict[str, Any]:
     """Check the draft against the classroom. Pure Python, no model call.
 
@@ -943,7 +947,14 @@ async def validate_node(state: AgentState) -> dict[str, Any]:
         # ``write_node`` already forwards to the Writer. A retry therefore needs
         # no new mechanism — and it carries only what is blocking, so the one
         # thing that must change is not buried under the fifteen that must not.
-        updates["refinement_instruction"] = report.remediation_prompt()
+        # Added to the teacher's own instruction, never in its place: a chip's
+        # «semplifica» must survive a retry for a timing fix. Earlier remediation
+        # is dropped, so retries do not stack.
+        teacher = (state.get("refinement_instruction") or "").split(_REMEDIATION_MARK)[0].rstrip()
+        remediation = f"{_REMEDIATION_MARK}\n{report.remediation_prompt()}"
+        updates["refinement_instruction"] = (
+            f"{teacher}\n\n{remediation}" if teacher else remediation
+        )
         updates["validation_attempts"] = (state.get("validation_attempts") or 0) + 1
         logger.info(
             "[Node: Validate] %d blocking violation(s): %s",

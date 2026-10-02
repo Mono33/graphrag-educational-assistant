@@ -2221,6 +2221,30 @@ parte per i commit dell'ultima settimana: corretto in un commit solo di stile.
 risultava sbagliato (ora li ignora).
 
 
+### 2026-10-02 — Turni successivi veloci, fase 0: la rifinitura vale un turno solo
+
+Piano in `docs/product/Piano_Turni_Veloci.md` (non versionato): dal secondo
+turno una sola chiamata in streaming che risponde o sostituisce una sezione,
+invece della catena completa da 50–70 s. Decisioni di Angelo: percorso veloce di
+default, Claude Sonnet 5 (`AIX_CHAT_MODEL`), modifiche applicate una alla volta
+con versioni e «Annulla».
+
+Prima di costruirlo, tre difetti dei chip di rifinitura, corretti:
+
+- **il chip si riapplicava a ogni turno successivo.** `__refinement__` era tolto
+  da una *copia* del profilo e restava salvato: dopo «Semplifica», ogni domanda
+  seguente semplificava di nuovo. Ora `take_refinement` lo toglie dal profilo
+  salvato;
+- **la chat mostrava la richiesta precedente** come turno della docente, perché
+  il chip non manda testo. Ora mostra il chip («Semplifica la lezione»);
+  `teacher_query` resta l'argomento, che serve al pianificatore;
+- **il validatore sostituiva l'istruzione della docente** con la propria
+  correzione. Ora la aggiunge sotto un titolo suo, e a un secondo tentativo
+  sostituisce solo la propria (nel pilota il validatore è spento).
+
+Test: `tests/unit/test_refinement_one_turn.py`. Suite: 947 passati, i 2 noti su
+Windows.
+
 ## Un difetto preesistente trovato il 2026-09-11 — chiuso
 
 *Chiuso nella PR 5: `_legacy_read` trasforma un PDF illeggibile in un `ValueError` con un messaggio in italiano, e la docente riceve un 422 leggibile invece di un 500. Il testo sotto resta come registro.*

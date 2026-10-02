@@ -682,6 +682,24 @@ async def lesson_media_live(
 # ----------------------------------------------------------------------------
 
 
+#: What the chat shows, and the Writer reads, for a refinement chip.
+_REFINEMENT_LABELS = {
+    "simplify": "Semplifica la lezione",
+    "deepen": "Approfondisci la lezione",
+    "more_activities": "Aggiungi attività interattive",
+    "adapt_class": "Adatta la lezione alla classe",
+    "custom": "Rifinisci la lezione",
+}
+
+
+def refinement_label(code: str, detail: Optional[str] = None) -> str:
+    """The teacher's turn for a chip: «Semplifica la lezione: più breve»."""
+    label = _REFINEMENT_LABELS.get(code, "Rifinisci la lezione")
+    if code == "custom" and detail:
+        return detail[:2000]
+    return f"{label}: {detail}"[:2000] if detail else label
+
+
 def remember_graph_search(lesson: Lesson, form: Any) -> None:
     """Keep the teacher's Knowledge Graph switch on the lesson, if the form had one.
 
@@ -1346,6 +1364,7 @@ async def lesson_run(
         if isinstance(refinement_detail_raw, str) and refinement_detail_raw.strip()
         else None
     )
+    chip_label: Optional[str] = None
     if refinement_code:
         _REFINEMENT_PROMPTS = {
             "simplify": "Reduce length by ~30%, simplify vocabulary, keep only essential concepts",
@@ -1362,6 +1381,10 @@ async def lesson_run(
         profile = dict(lesson.educational_profile_json or {})
         profile["__refinement__"] = refinement_instruction
         lesson.educational_profile_json = profile
+        # A chip sends no text: the chat shows the chip, not a repeat of the
+        # previous request. ``teacher_query`` stays the topic the planner needs.
+        if new_query is None:
+            chip_label = refinement_label(refinement_code, refinement_detail)
 
     # The teacher's switch for the Knowledge Graph search on a follow-up turn.
     # Kept in the profile like ``__refinement__``, and *left there*: the switch
@@ -1436,7 +1459,7 @@ async def lesson_run(
     # user just typed it); we fall back to lesson.teacher_query only as a
     # safety net for legacy buttons that POST with no body. The validation
     # above already guarantees at least one is non-empty.
-    user_msg_content = new_query or lesson.teacher_query
+    user_msg_content = new_query or chip_label or lesson.teacher_query
 
     # Phase 2 (intent_confirmed) is not a new user turn — the user message
     # was already persisted in phase 1. Skip to avoid a duplicate row that
