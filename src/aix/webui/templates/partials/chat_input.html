@@ -287,7 +287,19 @@
       and the web nothing -- the attached documents are still searched. The
       state is kept on the lesson, so off stays off for the turns after.
     #}
-    {% if conditional_retrieval_enabled() %}
+    {% if light_turns_enabled() and lesson.status == "complete" %}
+      {#
+        Light turns: a message is answered in a few seconds from the lesson,
+        the conversation and the documents, and the lesson does not change.
+        Ticked, the turn runs the whole chain with the Knowledge Graph and
+        writes a new lesson. One turn at a time: it is never ticked by default.
+      #}
+      <label class="aix-chat-graph-toggle"
+             title="Spuntato: rigenera la lezione intera, cercando anche nel Knowledge Graph (circa un minuto). Altrimenti la risposta arriva in pochi secondi e la lezione non cambia.">
+        <input type="checkbox" name="full_run" value="1">
+        <span>Lezione completa (con Knowledge Graph)</span>
+      </label>
+    {% elif conditional_retrieval_enabled() %}
       {% set graph_on = (lesson.educational_profile_json or {}).get("__graph_search__", True) %}
       <label class="aix-chat-graph-toggle"
              title="Spento: questo turno usa ciò che il Knowledge Graph ha già trovato e i tuoi documenti, senza una nuova ricerca nel grafo e sul web. Più rapido, e utile quando chiedi del documento allegato.">

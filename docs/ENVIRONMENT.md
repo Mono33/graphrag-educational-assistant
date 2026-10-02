@@ -39,6 +39,7 @@ gira sugli stessi casi del vecchio.
 | Ruolo | Variabile | Valore attuale | Predefinito nel codice | Come misurare un candidato |
 | --- | --- | --- | --- | --- |
 | Writer: scrive la lezione | `LLM_MODEL` | `anthropic/claude-sonnet-5` | `core/config.py` | `scripts/eval/measure_followup_turns.py` |
+| Risposte veloci nei turni successivi | `AIX_CHAT_MODEL` | vuoto = `LLM_MODEL` | `webui/agent/light.py` · `chat_model` | `scripts/eval/measure_light_turns.py` |
 | Critic: rivede la bozza | `AIX_CRITIC_MODEL` | `google/gemini-3.5-flash-lite` | `agent/agents/critic_agent.py` · `DEFAULT_CRITIC_MODEL` | `compare_role_models.py critic --models a,b` |
 | Domande al grafo e traduzione | `TEXT2CYPHER_MODEL` | `google/gemini-3.1-flash-lite` | `core/config.py` · `Text2CypherConfig.model` | `compare_role_models.py text2cypher --models a,b` |
 | OCR di scansioni e immagini | `AIX_OCR_MODEL` | `google/gemini-3.5-flash-lite` | `materials/parsing/vision_ocr.py` · `DEFAULT_MODEL` | `check_ocr.py` e `check_ocr_datasets.py --models a,b` |
@@ -84,6 +85,7 @@ Tutte spente: §5.2 dice che a flag spente il prodotto è quello di prima.
 | `AIX_PRIVATE_RAG_ENABLED` | `false` | Chunking, embedding e recupero dai documenti della docente. **Il testo esce dalla macchina** verso il provider di embedding |
 | `AIX_VALIDATOR_ENABLED` | `false` | Validatore dei vincoli d'aula fra Writer e Critic |
 | `AIX_CONDITIONAL_RETRIEVAL_ENABLED` | `false` | Un turno che non porta concetti nuovi riusa il corpus del thread. **Da accendere nel pilota.** Misurato il 2026-09-23 su quattro turni (`scripts/eval/measure_followup_turns.py`): il router riusa quando si riscrive e cerca quando arriva un argomento nuovo, e sui turni di modifica risparmia 4–9 s su ~65 — il resto è il Writer che riscrive la lezione intera |
+| `AIX_LIGHT_TURNS_ENABLED` | `false` | Dopo la prima lezione, un messaggio riceve una risposta in streaming in pochi secondi (lezione, conversazione e documenti, cercati di nuovo a ogni turno) e la lezione non cambia; una richiesta di lezione nuova mostra una scheda per passare alla generazione completa, che resta anche dietro la casella «Lezione completa». Acceso nel pilota (`deploy/make_local_env.py`). `AIX_CHAT_MAX_TOKENS` (default `3000`) limita la risposta |
 | `AIX_CORRECTIVE_RAG_ENABLED` | `false` | Nodo che giudica il recupero e riprova |
 | `AIX_CORRECTIVE_RAG_MAX_ATTEMPTS` | `2` | Quante volte può riprovare (limitata fra 1 e 4) |
 | `AIX_EXPORT_PDF_ENABLED` | `true` | Bottone PDF (server-side) |

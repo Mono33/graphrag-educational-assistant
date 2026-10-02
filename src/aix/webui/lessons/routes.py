@@ -109,6 +109,7 @@ from aix.core.concurrency import (
 )
 from aix.core.run_registry import get_run_registry, heartbeat_loop
 from aix.webui.agent import run_agent_stream
+from aix.webui.agent.light import LIGHT_KEY, run_light_turn, take_light_turn, wants_light_turn
 from aix.webui.auth.csrf import token_for as _csrf_token_for
 from aix.webui.auth.dependencies import optional_current_user
 from aix.webui.auth.models import User
@@ -564,6 +565,30 @@ async def lesson_card_fragment(
         len(lesson.lesson_plan_md or ""),
     )
 
+    # A light turn answered: show the answer, not the lesson again.
+    latest = (
+        await session.execute(
+            select(LessonMessage)
+            .where(LessonMessage.lesson_id == lesson.id)
+            .order_by(LessonMessage.turn_index.desc(), LessonMessage.created_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if latest is not None and latest.role == "assistant" and latest.agent_kind == "tutor":
+        return templates.TemplateResponse(
+            request,
+            "partials/chat_light_card.html",
+            {
+                "lesson": lesson,
+                "pending": False,
+                "turn": latest.turn_index,
+                "meta": latest.meta_json or {},
+                "answer_html": _markdown_to_html(
+                    latest.content_md or "", await labels_for_lesson_safe(session, lesson)
+                ),
+            },
+        )
+
     # The run's own verdict, as recorded with its answer. This card used to be
     # handed ``{"approved": status == "complete", "revision_count": 0}``, so
     # every finished lesson read "approvata dal critic · 0 revisioni" -- one the
@@ -572,7 +597,11 @@ async def lesson_card_fragment(
     # never an invented one.
     run_meta = await session.scalar(
         select(LessonMessage.meta_json)
-        .where(LessonMessage.lesson_id == lesson.id, LessonMessage.role == "assistant")
+        .where(
+            LessonMessage.lesson_id == lesson.id,
+            LessonMessage.role == "assistant",
+            func.coalesce(LessonMessage.agent_kind, "") != "tutor",
+        )
         .order_by(LessonMessage.turn_index.desc(), LessonMessage.created_at.desc())
         .limit(1)
     )
@@ -1213,6 +1242,9 @@ async def lesson_run(
     form = await request.form()
     query_raw = form.get("query")
     new_query = query_raw.strip() if isinstance(query_raw, str) and query_raw.strip() else None
+    # Decided before anything is written: a light turn answers about the lesson
+    # and leaves ``teacher_query`` -- the lesson's topic -- as it was.
+    light = wants_light_turn(lesson, form, has_query=new_query is not None)
 
     if new_query is not None:
         # Server-side validation mirroring the textarea ``minlength=3`` /
@@ -1229,7 +1261,8 @@ async def lesson_run(
             )
         if len(new_query) > 2000:
             new_query = new_query[:2000]
-        lesson.teacher_query = new_query
+        if not light:
+            lesson.teacher_query = new_query
 
     # Defensive: if the teacher posts /run without ever having set a
     # query (no first-turn submit, then somehow triggered Rigenera), bail
@@ -1394,6 +1427,15 @@ async def lesson_run(
     # Only a form that shows the switch carries ``graph_search_choice``; the
     # first turn always searches.
     remember_graph_search(lesson, form)
+    if light:
+        profile = dict(lesson.educational_profile_json or {})
+        profile[LIGHT_KEY] = {"answer_here": form.get("light_answer") == "1"}
+        lesson.educational_profile_json = profile
+    elif form.get("full_run") == "1":
+        # «Lezione completa»: the whole chain, with the Knowledge Graph.
+        profile = dict(lesson.educational_profile_json or {})
+        profile["__graph_search__"] = True
+        lesson.educational_profile_json = profile
 
     # Backfill turn 1 from legacy fields if this is a follow-up on a
     # pre-#10.3 lesson. One-time, idempotent — guarded by a count probe
@@ -1496,7 +1538,7 @@ async def lesson_run(
         "▶️  Lesson run accepted: id=%s owner=%s mode=%s turn=%s has_new_query=%s uploads=%s",
         lesson.id,
         user.id,
-        mode,
+        "light" if light else mode,
         new_turn_index,
         bool(new_query),
         len(lesson.uploaded_files_json or []),
@@ -2017,8 +2059,14 @@ async def lesson_stream(
         # other workers don't mistake it for a crashed/stale run. No-op on the
         # in-memory backend.
         _hb_task = asyncio.create_task(heartbeat_loop(_registry, lesson.id, _token))
+        light = take_light_turn(lesson)
+        events = (
+            run_light_turn(lesson, session, **light)
+            if light is not None
+            else run_agent_stream(lesson, session)
+        )
         try:
-            async for event in run_agent_stream(lesson, session):
+            async for event in events:
                 # Bail early if the client disconnected (closed tab,
                 # navigated away). The agent in run_agent_stream still
                 # progresses to a terminal state in the background; the
@@ -2611,6 +2659,41 @@ def _stream_event_to_sse(
             "data": error_card + oob_input,
         }
 
+    # ── Light turns ───────────────────────────────────────────────────
+    # The pending card carries ``id="lesson-card-loading"``: when the stream
+    # closes, chat_pane.html swaps it for /card-fragment, which renders the
+    # saved answer -- the same hand-over a full run uses. A hand-off or a
+    # failure removes it instead, so nothing is fetched.
+    if event.kind == "light_pending":
+        return {
+            "event": "card",
+            "data": _render_partial(
+                request,
+                "partials/chat_light_card.html",
+                {"lesson": lesson, "pending": True, "turn": (event.payload or {}).get("turn")},
+            ),
+        }
+
+    if event.kind in ("light_done", "light_escalate", "light_error"):
+        oob_input = _render_partial(
+            request, "partials/chat_input.html", {"lesson": lesson, "_oob": True}
+        )
+        if event.kind == "light_done":
+            return {"event": "final", "data": oob_input}
+        if event.kind == "light_escalate":
+            card = _render_partial(
+                request,
+                "partials/chat_light_escalate.html",
+                {"lesson": lesson, "query": (event.payload or {}).get("query", "")},
+            )
+        else:
+            card = _render_partial(
+                request,
+                "partials/chat_error.html",
+                {"lesson": lesson, "error": event.error or "Errore sconosciuto"},
+            )
+        return {"event": "error", "data": _replace_light_pending(card) + oob_input}
+
     # Unknown kind — log and skip rather than 500-ing the stream.
     logger.warning("[stream] unhandled StreamEvent.kind=%r", event.kind)
     return None
@@ -2732,6 +2815,15 @@ async def saved_profiles_delete(
 # Everything else is intentionally off — keep the surface small and the
 # output predictable for the prose-styling Tailwind classes in the template.
 _MARKDOWN_EXTENSIONS = ["fenced_code", "tables", "sane_lists"]
+
+
+def _replace_light_pending(card_html: str) -> str:
+    """``card_html`` in place of the light pending card, and the spinner gone."""
+    return (
+        '<div id="light-turn-end" hx-swap-oob="outerHTML:#lesson-card-loading">'
+        f"{card_html}</div>"
+        '<div id="chat-spinner" hx-swap-oob="outerHTML"></div>'
+    )
 
 
 def _markdown_to_html(text: str, labels: Optional[dict[str, str]] = None) -> str:

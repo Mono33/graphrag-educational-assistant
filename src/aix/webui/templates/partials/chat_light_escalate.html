@@ -1,0 +1,55 @@
+{#
+  The light path judged the request a new lesson: the teacher decides.
+
+  Both buttons send the request again -- the light turn took it back out of the
+  history -- one to the full chain with the Knowledge Graph, one to an answer
+  here.
+
+  Context: lesson, query (the teacher's request).
+#}
+<div class="aix-agent-shell">
+
+  <div class="aix-agent-avatar aix-agent-avatar--intent">
+    <wa-icon name="route"></wa-icon>
+  </div>
+
+  <div class="aix-agent-body">
+    <article class="aix-agent-card aix-agent-card--intent">
+
+      <header class="aix-agent-card-header">
+        <div>
+          <div class="aix-card-heading">Serve una lezione nuova?</div>
+          <div class="aix-fs-12 aix-color-tertiary aix-mt-2px">«{{ query | truncate(160) }}»</div>
+        </div>
+      </header>
+
+      <div class="aix-agent-card-body aix-col-6">
+        <p class="aix-fs-13 aix-color-secondary m-0">
+          Questa richiesta sembra chiedere una lezione nuova o una riscrittura della lezione.
+          La generazione completa cerca nel Knowledge Graph e richiede circa un minuto;
+          altrimenti rispondo qui, senza cambiare la lezione.
+        </p>
+        <div class="aix-irow-8">
+          <button type="button"
+                  class="aix-btn aix-btn-primary aix-btn-sm"
+                  hx-post="/webui/lesson/{{ lesson.id }}/run"
+                  hx-target="#chat-conversation"
+                  hx-swap="innerHTML"
+                  hx-vals='{{ {"query": query, "full_run": "1"} | tojson }}'>
+            Genera la lezione completa
+          </button>
+          <button type="button"
+                  class="aix-btn aix-btn-outline aix-btn-sm"
+                  hx-post="/webui/lesson/{{ lesson.id }}/run"
+                  hx-target="#chat-conversation"
+                  hx-swap="innerHTML"
+                  hx-vals='{{ {"query": query, "light_answer": "1"} | tojson }}'>
+            Rispondi qui
+          </button>
+        </div>
+      </div>
+
+    </article>
+  </div>
+
+</div>

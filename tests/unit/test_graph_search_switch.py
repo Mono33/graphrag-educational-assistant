@@ -31,12 +31,13 @@ class _Lesson:
         self.educational_profile_json = profile
 
 
-def _input(lesson, *, conditional=True):
+def _input(lesson, *, conditional=True, light=False):
     env = Environment(loader=FileSystemLoader(TEMPLATES))
     env.globals.update(
         upload_accept=lambda: ".pdf",
         upload_hint=lambda: "PDF",
         conditional_retrieval_enabled=lambda: conditional,
+        light_turns_enabled=lambda: light,
     )
     return env.get_template("partials/chat_input.html").render(lesson=lesson, material_states={})
 

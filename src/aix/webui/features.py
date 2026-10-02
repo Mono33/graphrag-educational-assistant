@@ -49,6 +49,12 @@ def conditional_retrieval_enabled() -> bool:
     return _flag("AIX_CONDITIONAL_RETRIEVAL_ENABLED", default=False)
 
 
+def light_turns_enabled() -> bool:
+    """After the first lesson, a turn is one streamed answer unless she asks for a
+    whole new lesson. Off by default; the pilot switches it on."""
+    return _flag("AIX_LIGHT_TURNS_ENABLED", default=False)
+
+
 def upload_accept_attribute() -> str:
     """What the file picker offers, which is what the server will accept."""
     from aix.webui.lessons.uploads import allowed_extensions
@@ -74,5 +80,6 @@ def register(templates) -> None:
     templates.env.globals["upload_accept"] = upload_accept_attribute
     templates.env.globals["upload_hint"] = upload_hint
     templates.env.globals["conditional_retrieval_enabled"] = conditional_retrieval_enabled
+    templates.env.globals["light_turns_enabled"] = light_turns_enabled
     templates.env.globals["export_pdf_enabled"] = export_pdf_enabled
     templates.env.globals["export_outline_enabled"] = export_outline_enabled

@@ -52,6 +52,7 @@ PILOT = {
     "AIX_MATERIALS_ENABLED": "true",
     "AIX_PRIVATE_RAG_ENABLED": "true",
     "AIX_CONDITIONAL_RETRIEVAL_ENABLED": "true",
+    "AIX_LIGHT_TURNS_ENABLED": "true",
     # 2000 left the writer with an empty answer once attachments were in the
     # prompt (2026-09-16); the error message itself recommends 8000.
     "AIX_WRITER_MAX_TOKENS": "8000",

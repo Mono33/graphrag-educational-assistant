@@ -2245,6 +2245,49 @@ Prima di costruirlo, tre difetti dei chip di rifinitura, corretti:
 Test: `tests/unit/test_refinement_one_turn.py`. Suite: 947 passati, i 2 noti su
 Windows.
 
+### 2026-10-02 — Turni successivi veloci, fase 1: risposte in chat in pochi secondi
+
+Dietro `AIX_LIGHT_TURNS_ENABLED` (spento nel codice, acceso nel pilota da
+`deploy/make_local_env.py`). Dopo la prima lezione un messaggio non passa più
+dalla catena completa: una sola chiamata in streaming
+(`src/aix/webui/agent/light.py`) a `AIX_CHAT_MODEL`, che se è vuota usa
+`LLM_MODEL` (Claude Sonnet 5).
+
+Che cosa legge il modello:
+
+- **la lezione intera** come documento di lavoro (la catena completa ne vede
+  ancora solo 2.000 caratteri, fino alla fase 2);
+- gli ultimi sei turni, con le lezioni ridotte a un rimando;
+- il profilo della classe e la data;
+- **i documenti allegati, cercati di nuovo a ogni turno**: un allegato
+  aggiunto a metà conversazione è subito disponibile. I passaggi e le mappe
+  sono resi come per il Writer, con le stesse regole sulle citazioni.
+
+Che cosa succede dopo:
+
+- **La lezione non cambia.** La risposta è un messaggio `tutor` dello stesso
+  turno, mostrato come card «Risposta · la lezione non è cambiata».
+  `teacher_query` resta l'argomento della lezione.
+- Sulla risposta girano gli stessi controlli di una risposta del Writer:
+  forma, marcatori sconosciuti, citazioni non sostenute. Niente Critic.
+  Langfuse traccia il turno come `lesson.light`.
+- **Una lezione nuova torna alla docente.** Se il modello capisce che la
+  richiesta è una lezione nuova, o una riscrittura della lezione, scrive
+  `<<<NUOVA_LEZIONE>>>`. Il marcatore non arriva mai in chat. Al suo posto
+  compare una scheda con due scelte: «Genera la lezione completa» (catena
+  completa, con il grafo) o «Rispondi qui».
+- **La catena completa resta** dietro la casella «Lezione completa (con
+  Knowledge Graph)», mai spuntata di default, e per i chip di rifinitura (che
+  passano al percorso veloce nella fase 3).
+
+Lo streaming riusa il bus dei token del Writer e la card finale di
+`/card-fragment`: nessun JavaScript nuovo. Rimandato alla fase 4: i risultati
+del grafo già nel checkpoint (la lezione li contiene già).
+
+**Da misurare nel container**: `python scripts/eval/measure_light_turns.py`
+(obiettivi: primo token sotto i 3 s, risposta intera sotto i 12 s). Test:
+`tests/unit/test_light_turns.py` (21). Suite: 968 passati, i 2 noti su Windows.
+
 ## Un difetto preesistente trovato il 2026-09-11 — chiuso
 
 *Chiuso nella PR 5: `_legacy_read` trasforma un PDF illeggibile in un `ValueError` con un messaggio in italiano, e la docente riceve un 422 leggibile invece di un 500. Il testo sotto resta come registro.*
