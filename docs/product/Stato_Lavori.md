@@ -2201,6 +2201,13 @@ e fine). Nessun modello ha visto i difetti messi nel mezzo della lezione 1.
 `LLM_MODEL` (Claude Sonnet), lento e caro per una query di una riga. Il Writer
 e il controllo delle citazioni restano su Claude Sonnet 5.
 
+**Un modello per ruolo, in chiaro.** `AIX_CRITIC_MODEL`, `TEXT2CYPHER_MODEL`,
+`AIX_OCR_MODEL`, `AIX_DOCUMENT_MAP_MODEL` e `AIX_CITATION_CHECK_MODEL` sono ora
+scritti in `.env.example` e `.env.prod.example` con il loro valore. In
+`docs/ENVIRONMENT.md` una tabella dà, per ogni ruolo, la variabile, il
+predefinito nel codice e lo script con cui misurare un candidato. Per cambiare
+modello basta cambiare la variabile e riavviare.
+
 **Difetto di text2cypher, non dei modelli:** il secondo tentativo, quello «più
 tollerante» per le query senza risultati, scriveva `toLower("X"` senza chiudere
 la parentesi. Era sempre un errore di sintassi e non girava mai. Corretto.

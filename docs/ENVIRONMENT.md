@@ -28,6 +28,28 @@ spegne. Una variabile assente o vuota vale il suo default.
 
 ## 2. Modello e chiamate LLM
 
+### Un modello per ruolo
+
+Tutti via OpenRouter. **Per cambiarne uno**, cambia la variabile (in `.env` in
+sviluppo, in `.env.prod` sulla VM) e riavvia l'app: non serve toccare il codice.
+Se la variabile è vuota o manca si usa il predefinito, che sta nel file indicato.
+Prima di cambiare, conviene misurare con lo script del ruolo: il nuovo modello
+gira sugli stessi casi del vecchio.
+
+| Ruolo | Variabile | Valore attuale | Predefinito nel codice | Come misurare un candidato |
+| --- | --- | --- | --- | --- |
+| Writer: scrive la lezione | `LLM_MODEL` | `anthropic/claude-sonnet-5` | `core/config.py` | `scripts/eval/measure_followup_turns.py` |
+| Critic: rivede la bozza | `AIX_CRITIC_MODEL` | `google/gemini-3.5-flash-lite` | `agent/agents/critic_agent.py` · `DEFAULT_CRITIC_MODEL` | `compare_role_models.py critic --models a,b` |
+| Domande al grafo e traduzione | `TEXT2CYPHER_MODEL` | `google/gemini-3.1-flash-lite` | `core/config.py` · `Text2CypherConfig.model` | `compare_role_models.py text2cypher --models a,b` |
+| OCR di scansioni e immagini | `AIX_OCR_MODEL` | `google/gemini-3.5-flash-lite` | `materials/parsing/vision_ocr.py` · `DEFAULT_MODEL` | `check_ocr.py` e `check_ocr_datasets.py --models a,b` |
+| Mappa dei documenti | `AIX_DOCUMENT_MAP_MODEL` | `google/gemini-3.5-flash-lite` | `materials/document_map.py` · `DEFAULT_MODEL` | — |
+| Verifica delle citazioni | `AIX_CITATION_CHECK_MODEL` | vuoto = `LLM_MODEL` | `agent/validation/citation_support.py` | `check_citation_support.py` |
+| Embedding dei documenti | `AIX_PRIVATE_EMBEDDING_MODEL` | `baai/bge-m3` | `materials/embedding.py` | `run_private_rag.py` (**cambiarlo richiede di reindicizzare tutto**) |
+
+I costi di ogni ruolo si vedono in Langfuse, per modello (sezione «Tracciamento»).
+
+### Chiamate
+
 | Variabile | Default | A cosa serve |
 | --- | --- | --- |
 | `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | Endpoint del provider |
