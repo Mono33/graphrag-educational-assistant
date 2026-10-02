@@ -75,6 +75,34 @@ def _client():
     return app_config.openai.get_async_client()
 
 
+#: Waits before each new try when the provider is busy. A 429 «engine overloaded»
+#: failed a 108-page magazine on 2026-10-02: the job then waited for its lease,
+#: parsed the whole PDF again and lost three minutes. A few seconds usually do.
+RETRY_DELAYS_S = (2.0, 5.0, 15.0)
+_TRANSIENT = {408, 409, 429, 500, 502, 503, 504}
+
+
+def _transient(exc: Exception) -> bool:
+    status = getattr(exc, "status_code", None)
+    if status is not None:
+        return status in _TRANSIENT
+    return type(exc).__name__ in ("APIConnectionError", "APITimeoutError")
+
+
+async def _create(client, model: str, batch: list[str]):
+    for delay in (*RETRY_DELAYS_S, None):
+        try:
+            return await client.embeddings.create(model=model, input=batch)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — provider errors are all the same here
+            if delay is None or not _transient(exc):
+                raise EmbeddingError(f"embedding request failed for {model}: {exc}") from exc
+            logger.info("[private-rag] embedding busy (%s), again in %.0fs", exc, delay)
+            await asyncio.sleep(delay)
+    raise AssertionError("unreachable")
+
+
 async def embed_texts(texts: list[str], *, client=None) -> list[list[float]]:
     """Embed the texts, in order, in batches. Raises ``EmbeddingError``.
 
@@ -93,12 +121,7 @@ async def embed_texts(texts: list[str], *, client=None) -> list[list[float]]:
     vectors: list[list[float]] = []
     for start in range(0, len(texts), BATCH_SIZE):
         batch = texts[start : start + BATCH_SIZE]
-        try:
-            response = await client.embeddings.create(model=model, input=batch)
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:  # noqa: BLE001 — provider errors are all the same here
-            raise EmbeddingError(f"embedding request failed for {model}: {exc}") from exc
+        response = await _create(client, model, batch)
 
         if len(response.data) != len(batch):
             raise EmbeddingError(

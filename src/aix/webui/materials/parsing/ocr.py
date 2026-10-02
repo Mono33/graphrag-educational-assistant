@@ -73,6 +73,20 @@ def ocr_available() -> bool:
     return vision_available() or tesseract_available()
 
 
+def ocr_concurrency() -> int:
+    """Pages read at once. A vision call is network time, so four by default;
+    Tesseract is CPU and memory on a 2 vCPU / 4 GB VM, so one."""
+    from aix.webui.materials.parsing.vision_ocr import vision_available
+
+    raw = os.getenv("AIX_OCR_CONCURRENCY")
+    try:
+        if raw:
+            return max(1, min(8, int(raw)))
+    except ValueError:
+        pass
+    return 4 if vision_available() else 1
+
+
 def recognise(image: Any, *, timeout_s: int = DEFAULT_PAGE_TIMEOUT_S) -> OcrResult:
     """Read one page with the configured engine, falling back to Tesseract.
 

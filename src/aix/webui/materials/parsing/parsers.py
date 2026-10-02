@@ -39,6 +39,7 @@ from aix.webui.materials.parsing.ir import (
 from aix.webui.materials.parsing.ocr import (
     DEFAULT_PAGE_TIMEOUT_S,
     ocr_available,
+    ocr_concurrency,
     recognise,
     render_pdf_page,
 )
@@ -106,6 +107,41 @@ def _paragraphs(text: str) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
+def _read_pdf_pages(content: bytes, indexes: list[int], timeout_s: int) -> dict:
+    """OCR of these pages, ``ocr_concurrency()`` at a time: index → result or error.
+
+    pdfium is not thread-safe, so pages are rendered here, one by one, and only
+    the reading runs in threads. A batch at a time keeps at most that many
+    rendered pages (~12 MB each at 200 dpi) in memory.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    def read(image):
+        try:
+            return recognise(image, timeout_s=timeout_s)
+        except Exception as exc:  # noqa: BLE001 — one unreadable page must not lose the rest
+            return exc
+
+    width = ocr_concurrency()
+    results: dict = {}
+    with ThreadPoolExecutor(max_workers=width) as pool:
+        for start in range(0, len(indexes), width):
+            batch = indexes[start : start + width]
+            images = []
+            for index in batch:
+                try:
+                    images.append(render_pdf_page(content, index))
+                except Exception as exc:  # noqa: BLE001
+                    images.append(exc)
+            futures = [
+                None if isinstance(image, Exception) else pool.submit(read, image)
+                for image in images
+            ]
+            for index, image, future in zip(batch, images, futures, strict=True):
+                results[index] = image if future is None else future.result()
+    return results
+
+
 def parse_pdf(content: bytes, options: ParseOptions) -> DocumentIRV1:
     from pypdf import PdfReader
 
@@ -126,35 +162,45 @@ def parse_pdf(content: bytes, options: ParseOptions) -> DocumentIRV1:
 
     can_ocr = options.ocr_enabled and _flag("AIX_PARSE_OCR_ENABLED") and ocr_available()
 
+    # Two passes: the text layer first, then the pages without one read
+    # together. Each page is a call to the vision model or a Tesseract run, and
+    # one at a time a magazine's 19 photo pages took 80 s (2026-10-02).
+    pages: list[tuple[int, str]] = []  # (page number, text layer) or "" for OCR
+    to_read: list[int] = []
     for index, page in enumerate(reader.pages[: options.max_pages]):
         number = index + 1
         text = page.extract_text() or ""
-
         if len(text.strip()) >= options.min_text_chars:
-            for paragraph in _paragraphs(text):
-                blocks.add("paragraph", paragraph, {"format": "pdf", "page": number}, page=number)
+            pages.append((number, text))
             continue
-
         if not can_ocr:
             unread.append(number)
             continue
-
         if ocr_attempts >= options.max_ocr_pages:
             if f"ocr_page_limit:{options.max_ocr_pages}" not in warnings:
                 warnings.append(f"ocr_page_limit:{options.max_ocr_pages}")
             unread.append(number)
             continue
         ocr_attempts += 1
+        to_read.append(index)
+        pages.append((number, ""))
 
-        try:
-            result = recognise(render_pdf_page(content, index), timeout_s=options.page_timeout_s)
-        except Exception:  # noqa: BLE001 — one unreadable page must not lose the rest
-            logger.info("[parsing] OCR failed on page %d", number, exc_info=True)
+    results = _read_pdf_pages(content, to_read, options.page_timeout_s)
+
+    for number, text in pages:
+        if text:
+            for paragraph in _paragraphs(text):
+                blocks.add("paragraph", paragraph, {"format": "pdf", "page": number}, page=number)
+            continue
+
+        result = results.get(number - 1)
+        if isinstance(result, Exception):
+            logger.info("[parsing] OCR failed on page %d", number, exc_info=result)
             warnings.append(f"ocr_failed:page={number}")
             unread.append(number)
             continue
 
-        if not result.text.strip():
+        if result is None or not result.text.strip():
             unread.append(number)
             continue
 
@@ -176,6 +222,7 @@ def parse_pdf(content: bytes, options: ParseOptions) -> DocumentIRV1:
                 confidence=result.confidence,
             )
 
+    unread.sort()
     if unread and not can_ocr:
         warnings.append("ocr_unavailable")
 

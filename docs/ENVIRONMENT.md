@@ -99,6 +99,7 @@ Tutte spente: §5.2 dice che a flag spente il prodotto è quello di prima.
 | `AIX_PARSE_OCR_ENABLED` | `true` | OCR sulle pagine senza testo |
 | `AIX_OCR_ENABLED` | `true` | Interruttore generale dell'OCR, per tutti i motori |
 | `AIX_OCR_BACKEND` | `tesseract` | `vision` manda le pagine senza testo e le immagini a un modello di visione via OpenRouter, con Tesseract di riserva se la chiamata fallisce o si ferma prima della fine della pagina. **Da accendere nel pilota.** Misurato su una scheda INVALSI: Tesseract 2 elementi critici su 8, Gemini 8 su 8, meno di mezzo centesimo a pagina. **La pagina esce dalla macchina**: ogni richiesta chiede solo endpoint a conservazione zero |
+| `AIX_OCR_CONCURRENCY` | `4` con `vision`, `1` con Tesseract | Pagine di un PDF lette insieme. Con il modello di visione è tempo di rete: le 19 pagine fotografiche di un numero di Internazionale passavano da circa 80 s una alla volta. Tesseract resta a una pagina per volta sulla VM da 4 GB |
 | `AIX_OCR_MODEL` | `google/gemini-3.5-flash-lite` | Modello per `vision`. Scelto il 2026-09-29 su 16 casi fra quattro modelli (`scripts/eval/check_ocr.py --models …`): il più economico, e pari o migliore di 2.5 Flash, che va in pensione. `google/gemini-3.7-flash` è la riserva misurata (più lenta, e in un giro su due ha sbagliato le caselle spuntate); 3.8 Flash le scrive sempre vuote |
 | `AIX_OCR_LANGUAGES` | `ita+eng` | Lingue di Tesseract |
 | `TESSERACT_CMD` | `tesseract` | Percorso del binario, se non è nel PATH (serve su Windows) |

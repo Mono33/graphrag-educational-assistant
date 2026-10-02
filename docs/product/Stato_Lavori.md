@@ -2288,6 +2288,49 @@ del grafo già nel checkpoint (la lezione li contiene già).
 (obiettivi: primo token sotto i 3 s, risposta intera sotto i 12 s). Test:
 `tests/unit/test_light_turns.py` (21). Suite: 968 passati, i 2 noti su Windows.
 
+### 2026-10-02 — Prova di Angelo: un PDF lento e degli screenshot mai citati
+
+Angelo ha provato le risposte veloci: funzionano, e la richiesta di una lezione
+nuova a metà conversazione mostra la scheda della generazione completa. Dalla
+stessa prova, due problemi, entrambi corretti.
+
+**Internazionale n. 1683 (108 pagine) ha impiegato 5 minuti.** Dai log:
+
+- le 19 pagine senza testo (foto, pubblicità) erano lette una alla volta dal
+  modello di visione: circa 80 s. Ora `AIX_OCR_CONCURRENCY` pagine insieme (4
+  con la visione, 1 con Tesseract). Il rendering resta in sequenza, perché
+  pdfium non è thread-safe;
+- l'embedding ha ricevuto un 429 «engine overloaded» e il job è fallito. Ora
+  `embed_texts` riprova sui 429/5xx dopo 2, 5 e 15 s;
+- **su Postgres il fallimento non veniva mai registrato.** `fail()`
+  confrontava in Python l'orario del lease, con fuso, con `_now()`, senza fuso,
+  e sollevava un'eccezione. Il job restava fermo fino alla scadenza del lease (2
+  minuti) e poi rifaceva il parsing da capo. Corretto e coperto da un test su
+  Postgres vero (`test_postgres_dialect.py`, 6 su 6).
+
+Stima per lo stesso PDF: circa 40 s invece di 5 minuti. Da misurare.
+
+**Quattro screenshot di un articolo non sono mai stati citati.** Gli screenshot
+erano pagine dello stesso articolo che il numero di Internazionale contiene
+(pp. 19–22): il Writer ne ha usato il contenuto ma ha citato il PDF. Ha anche
+scritto «non risultano nuovi screenshot disponibili». Le cause:
+
+- la mappa del PDF (17 parti) usava da sola tutti i 6.000 caratteri riservati
+  alle mappe. I quattro screenshot non comparivano nell'elenco degli allegati.
+  Ora ogni allegato è sempre elencato, e le parti si dividono lo spazio
+  rimasto;
+- i passaggi non dicevano «aggiunto in questo turno»: lo diceva solo la mappa.
+  Ora lo dice anche ogni passaggio, e i passaggi degli allegati di questo turno
+  vengono per primi;
+- il PDF prendeva 9 passaggi su 12. Ora ogni allegato arrivato in questo turno
+  porta almeno i suoi 2 passaggi migliori;
+- la ricerca usava ancora il tema della prima lezione salvato nel profilo
+  («crisi israelo-palestinese») per una lezione nuova sull'IA. Su un turno
+  successivo con concetti nuovi del pianificatore, il tema del profilo non
+  entra più nella ricerca.
+
+Test: `tests/unit/test_ingestion_speed_and_new_attachments.py` (11).
+
 ## Un difetto preesistente trovato il 2026-09-11 — chiuso
 
 *Chiuso nella PR 5: `_legacy_read` trasforma un PDF illeggibile in un `ValueError` con un messaggio in italiano, e la docente riceve un 422 leggibile invece di un 500. Il testo sotto resta come registro.*

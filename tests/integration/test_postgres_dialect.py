@@ -326,3 +326,53 @@ async def test_two_workers_never_claim_the_same_job_on_postgres(engine):
 
     assert first is not None
     assert second is None, "one job, one worker"
+
+
+async def test_a_failed_attempt_is_recorded_and_retried_on_postgres(engine):
+    """On Postgres the job's lease time comes back with a timezone and ``now`` has
+    none: comparing them in Python raised, so a failure was never recorded and
+    the job sat on its lease for two minutes before anyone tried again
+    (2026-10-02, a busy embedding provider on a 108-page magazine)."""
+    from aix.webui.auth.models import User
+    from aix.webui.materials.jobs import JobDispatcher
+    from aix.webui.materials.repository import MaterialService
+    from aix.webui.materials.storage import LocalDurableStorage
+
+    await _migrate(engine)
+    maker = async_sessionmaker(engine, expire_on_commit=False)
+    async with maker() as session:
+        session.add(
+            User(
+                id=ANNA,
+                email="anna@scuola.it",
+                hashed_password="x",
+                is_active=True,
+                is_superuser=False,
+                is_verified=True,
+            )
+        )
+        await session.commit()
+
+    import tempfile
+    from pathlib import Path
+
+    with tempfile.TemporaryDirectory() as tmp:
+        async with maker() as session:
+            service = MaterialService(session, LocalDurableStorage(Path(tmp)))
+            _material, version = await service.store_new_material(
+                b"Programma di classe",
+                owner_id=ANNA,
+                display_name="Programma",
+                media_type="text/plain",
+            )
+            await session.commit()
+
+    dispatcher = JobDispatcher(maker)
+    await dispatcher.enqueue(
+        owner_id=ANNA, material_version_id=version.id, parser_profile_version="ir@1"
+    )
+    job = await dispatcher.claim(owner="worker-a")
+
+    outcome = await dispatcher.fail(job.id, lease_owner="worker-a", error_code="embedding")
+
+    assert outcome == "pending"

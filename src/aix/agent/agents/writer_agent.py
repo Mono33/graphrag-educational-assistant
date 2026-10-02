@@ -121,7 +121,9 @@ def render_material_passages(
         return ""
 
     grouped: dict[str, list[dict[str, Any]]] = {}
-    for item in usable:
+    # What arrived with this request first: it is cut last when the budget runs
+    # out, and a long older document cannot crowd it out (2026-10-02).
+    for item in sorted(usable, key=lambda item: not item.get("new")):
         grouped.setdefault(str(item.get("source_id") or ""), []).append(item)
 
     several = len(grouped) > 1
@@ -168,27 +170,37 @@ def render_document_maps(
     maps: Optional[list[dict[str, Any]]], *, budget_chars: int = _MAPS_BUDGET_CHARS
 ) -> str:
     """The documents' maps as the Writer reads them: what each is about, its
-    themes, and its parts with their pages. Cut at the budget, part by part."""
+    themes, and its parts with their pages.
+
+    **Every attachment is listed**, its name and summary first; the parts share
+    what is left of the budget, document by document. Until 2026-10-02 the
+    budget was spent in order, and the 17 parts of a magazine used all of it:
+    the four screenshots attached after it were never named, and the Writer
+    wrote that no screenshots had arrived.
+    """
     if not maps:
         return ""
-    lines: list[str] = []
-    used = 0
+    heads: list[list[str]] = []
     for number, document_map in enumerate(maps, start=1):
         head = [_attachment_heading(document_map, number)]
         if document_map.get("summary"):
             head.append(f"Di che cosa tratta: {document_map['summary']}")
         if document_map.get("themes"):
             head.append("Temi: " + ", ".join(str(t) for t in document_map["themes"]))
+        heads.append(head)
+
+    with_parts = sum(1 for m in maps if len(m.get("sections") or []) > 1)
+    left = budget_chars - sum(len(line) for head in heads for line in head)
+    share = max(left, 0) // max(with_parts, 1)
+
+    lines: list[str] = []
+    for document_map, head in zip(maps, heads, strict=True):
+        lines.extend(head)
         sections = document_map.get("sections") or []
-        if len(sections) > 1:
-            head.append("Parti:")
-        for line in head:
-            if used + len(line) > budget_chars:
-                return "\n".join(lines)
-            lines.append(line)
-            used += len(line)
         if len(sections) <= 1:
             continue
+        lines.append("Parti:")
+        used = 0
         for section in sections:
             pages = section.get("pages")
             where = (
@@ -197,8 +209,9 @@ def render_document_maps(
                 else (f" (p. {pages[0]})" if pages else "")
             )
             line = f"- {section.get('title', '')}{where}: {section.get('summary', '')}"
-            if used + len(line) > budget_chars:
-                return "\n".join(lines)
+            if used + len(line) > share:
+                lines.append("- …")
+                break
             lines.append(line)
             used += len(line)
     return "\n".join(lines)

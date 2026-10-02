@@ -297,10 +297,15 @@ class JobDispatcher:
                     next_attempt_at=now + timedelta(seconds=backoff_for(job.attempt_count)),
                 )
 
+            # Not evaluated against the job loaded above: on Postgres it carries
+            # an aware ``lease_expires_at``, ``now`` is naive, and the comparison
+            # raised -- so a failure was never recorded and the job sat on its
+            # lease for two minutes before anyone tried again (2026-10-02).
             result = await session.execute(
                 update(IngestionJob)
                 .where(*self._held_by(job_id, lease_owner, now))
                 .values(**values)
+                .execution_options(synchronize_session=False)
             )
             await session.commit()
             if result.rowcount != 1:

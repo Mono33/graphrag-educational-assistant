@@ -558,25 +558,32 @@ def search_for_lesson(lesson_id: uuid.UUID, owner_id: uuid.UUID):
             # Without it the Writer sees only uuids and cannot tell two
             # documents apart — see ``render_material_passages`` (2026-09-21).
             labels = await labels_for_lesson(session, lesson_id=lesson_id, owner_id=owner_id)
-            order = {
-                a["source_id"]: a["position"]
+            attachments = {
+                a["source_id"]: a
                 for a in await attachments_for_lesson(session, lesson_id, owner_id)
             }
+            fresh = await _passages_from_new_attachments(
+                retriever, query, attachments, items + extra, owner_id
+            )
 
         logger.info(
             "[private-rag] lesson=%s searched %d version(s), %d passage(s) kept from %d"
-            " + %d from the parts the map points to",
+            " + %d from the parts the map points to + %d from the new attachments",
             lesson_id,
             len(version_ids),
             len(items),
             len({item.source_id for item in items}),
             len(extra),
+            len(fresh),
         )
         out = []
-        for item in items + extra:
+        for item in items + extra + fresh:
             entry = {**item.to_dict(), "source_label": labels.get(item.source_id.lower(), "")}
-            if item.source_id.lower() in order:
-                entry["attachment"] = order[item.source_id.lower()]
+            attachment = attachments.get(item.source_id.lower())
+            if attachment:
+                entry["attachment"] = attachment["position"]
+                entry["turn"] = attachment["turn"]
+                entry["new"] = attachment["new"]
             part = _part_of(maps, item)
             if part:
                 entry["part"] = part
@@ -665,6 +672,47 @@ async def attachments_for_lesson(
             }
         )
     return attachments
+
+
+#: Passages every attachment added for this turn is sure to bring.
+NEW_ATTACHMENT_PASSAGES = 2
+
+
+async def _passages_from_new_attachments(
+    retriever: PrivateMaterialRetriever,
+    query: str,
+    attachments: dict[str, dict[str, Any]],
+    found: list[MaterialContextItem],
+    owner_id: uuid.UUID,
+) -> list[MaterialContextItem]:
+    """The best passages of each document attached for this turn, if it has too few.
+
+    A document attached with the request is meant for it. On 2026-10-02 four
+    screenshots of an article arrived with «usa i nuovi screenshot», next to a
+    108-page magazine that held the same article: the magazine took 9 passages
+    of 12 and the lesson cited it alone.
+    """
+    counts: dict[str, int] = {}
+    for item in found:
+        counts[item.source_id.lower()] = counts.get(item.source_id.lower(), 0) + 1
+    seen = {item.citation for item in found}
+    added: list[MaterialContextItem] = []
+    for source_id, attachment in attachments.items():
+        missing = NEW_ATTACHMENT_PASSAGES - counts.get(source_id, 0)
+        if not attachment.get("new") or missing <= 0:
+            continue
+        best = await retriever.search(
+            query,
+            owner_id=owner_id,
+            version_ids=[uuid.UUID(source_id)],
+            limit=NEW_ATTACHMENT_PASSAGES,
+        )
+        for item in best:
+            if item.citation not in seen and missing > 0:
+                added.append(item)
+                seen.add(item.citation)
+                missing -= 1
+    return added
 
 
 #: How many parts the second pass reads, and how many passages from each.

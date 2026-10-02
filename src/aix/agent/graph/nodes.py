@@ -550,10 +550,16 @@ def _private_search_query(state: AgentState) -> str:
     from the Italian handout, and the best score rose from 0.61 to 0.67.
 
     The request is the fallback, for a turn where the Planner found no subject.
+
+    On a later turn the profile's topic is the *first* lesson's: with the
+    Planner's concepts for this turn it is left out. «crisi israelo-palestinese»
+    led the search for a new lesson on artificial intelligence (2026-10-02).
     """
     profile = state.get("educational_profile") or {}
     topic = str(profile.get("specific_topic") or "").strip() if isinstance(profile, dict) else ""
     concepts = [str(c).strip() for c in (state.get("subject_concepts") or []) if str(c).strip()]
+    if concepts and state.get("conversation_history"):
+        topic = ""
 
     terms = list(dict.fromkeys(([topic] if topic else []) + concepts[:8]))
     if terms:
