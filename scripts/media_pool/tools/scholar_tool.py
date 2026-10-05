@@ -68,7 +68,9 @@ def search_papers(query: str, max_results: int = 3) -> dict[str, Any]:
             timeout=15,
         )
         if resp.status_code == 429:
-            logger.warning("[scholar_tool] OpenAlex rate limit (429) — unexpected at this request rate")
+            logger.warning(
+                "[scholar_tool] OpenAlex rate limit (429) — unexpected at this request rate"
+            )
             return {"error": "Rate limited by OpenAlex", "results": [], "count": 0}
         resp.raise_for_status()
         works = resp.json().get("results", [])

@@ -58,8 +58,24 @@ dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
     "pytest-cov>=5.0",
-    "ruff>=0.4",
+    # Ruff is pinned EXACTLY, unlike the others. It is not just a linter here:
+    # CI runs `ruff format --check .`, and ruff's formatter changes line-break
+    # decisions between minor releases. With a floating `>=` specifier, CI
+    # installs whatever ruff shipped that morning, so the format check can turn
+    # red without a single line of project code changing. Bumping this pin is a
+    # deliberate act: it means running `ruff format .` and reviewing the diff.
+    "ruff==0.15.14",
     "mypy>=1.10",
+]
+
+# The SQLite checkpointer, for developers who want multi-turn memory without
+# running Postgres locally. Deliberately NOT part of [dev]: it is mutually
+# exclusive with langgraph-checkpoint-postgres in requirements.txt, because the
+# two pull incompatible majors of langgraph-checkpoint (see the note there).
+# Installing this on top of the base requirements will downgrade or conflict —
+# use it in a separate environment, not alongside the Postgres saver.
+sqlite-checkpointer = [
+    "langgraph-checkpoint-sqlite>=3.0,<4.0",
 ]
 
 [project.urls]
@@ -87,6 +103,10 @@ exclude = []
 # -----------------------------------------------------------------------------
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Without this, `from tests.unit...` resolves only under
+# `python -m pytest` (which puts the cwd on sys.path) and fails under a
+# bare `pytest` — which is what CI runs. Same behaviour either way.
+pythonpath = ["."]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
@@ -99,6 +119,10 @@ markers = [
     "integration: tests that hit external services (Neo4j, OpenRouter, LLM APIs)",
     "slow: tests taking more than ~1 second",
     "unit: pure unit tests with no external dependencies",
+    # One path, end to end, with only the provider boundary faked. Runs in CI —
+    # it needs no network — and exists because the unit suite cannot catch a
+    # defect in the very seam each unit test replaces with a double.
+    "e2e: the whole private-material path, real code, fake provider",
 ]
 asyncio_mode = "auto"
 
@@ -139,6 +163,12 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
+# Alembic writes these files, not us: `alembic revision --autogenerate` emits
+# its own import order and its own line lengths. Without this, every generated
+# migration would fail CI until someone hand-sorted it — which is a reliable way
+# to make people stop generating migrations.
+"alembic/versions/*.py" = ["I001", "E402", "E501", "UP035"]
+"alembic/env.py" = ["E402"]                  # model imports must follow the alembic bootstrap
 "tests/**/*.py" = ["F401", "F811"]          # allow unused-import / redefined-fixture in tests
 "apps/**/*.py" = ["E402"]                    # imports after sys.path manipulation (legacy; safe to allow)
 "scripts/**/*.py" = ["E402", "T20"]          # scripts are allowed to print

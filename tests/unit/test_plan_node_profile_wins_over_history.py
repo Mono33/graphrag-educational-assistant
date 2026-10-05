@@ -34,6 +34,7 @@ from aix.agent.graph.state import create_initial_state
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _build_state(
     *,
     raw_user_turn: Optional[str],
@@ -100,6 +101,7 @@ async def _run_plan_node(state, planner_extracted: Optional[str]) -> dict:
 # Sniffer (regex helper) sanity checks — cheap, pure-function tests
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.parametrize(
     "text, expected",
     [
@@ -141,6 +143,7 @@ def test_duration_sniffer_falls_back_to_teacher_query_when_raw_missing():
 # ---------------------------------------------------------------------------
 # The 5-row matrix from the user's spec
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_row1_profile_set_no_durations_anywhere():
@@ -237,6 +240,7 @@ async def test_row5_no_profile_current_turn_says_30_planner_wins():
 # ---------------------------------------------------------------------------
 # Backward-compat: callers that don't populate raw_user_turn
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_legacy_caller_no_raw_user_turn_first_turn_path():

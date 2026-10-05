@@ -3,6 +3,7 @@
 Usage: python scripts/diagnostic/inspect_lesson_profile.py <lesson_id>
        python scripts/diagnostic/inspect_lesson_profile.py        # dumps all lessons
 """
+
 from __future__ import annotations
 
 import json
@@ -39,9 +40,7 @@ def main() -> int:
             (sys.argv[1],),
         ).fetchall()
     else:
-        rows = conn.execute(
-            f"SELECT * FROM {table} ORDER BY rowid DESC LIMIT 10"
-        ).fetchall()
+        rows = conn.execute(f"SELECT * FROM {table} ORDER BY rowid DESC LIMIT 10").fetchall()
 
     if not rows:
         print("No lessons found.")
@@ -76,7 +75,13 @@ def main() -> int:
         print("room.title               :", room.get("title"))
         print("room.forniture_mobility  :", room.get("forniture_mobility"))
         print("room.own_device          :", room.get("own_device"))
-        print("room.has_lim/wifi/suite  :", room.get("has_lim"), room.get("has_wifi"), room.get("has_suite"), room.get("pc_station"))
+        print(
+            "room.has_lim/wifi/suite  :",
+            room.get("has_lim"),
+            room.get("has_wifi"),
+            room.get("has_suite"),
+            room.get("pc_station"),
+        )
         print("--- raw JSON ---")
         print(json.dumps(profile, indent=2, ensure_ascii=False))
 

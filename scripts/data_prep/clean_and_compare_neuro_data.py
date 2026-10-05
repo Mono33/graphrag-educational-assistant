@@ -25,9 +25,9 @@ from typing import Any
 import pandas as pd
 
 # Fix Windows console encoding for Unicode
-if sys.platform == 'win32':
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+if sys.platform == "win32":
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
 # ============================================================================
 # CONFIGURATION
@@ -61,7 +61,6 @@ RELATIONSHIP_CORRECTIONS = {
     "TRIGGERS_BOTTOM_UP": "TRIGGERS",
     "CANNOT GENERATE": "CANNOT_GENERATE",
     "FAILS TO GUIDE": "FAILS_TO_GUIDE",
-
     # Standardize verb forms
     "FACILITATE": "FACILITATES",
     "REINFORCE": "REINFORCES",
@@ -77,59 +76,59 @@ RELATIONSHIP_CORRECTIONS = {
 # HELPER FUNCTIONS
 # ============================================================================
 
+
 def normalize_concept_name(name: str) -> str:
     """Normalize concept name for comparison (lowercase, trimmed)"""
     if pd.isna(name):
         return ""
     return str(name).strip().lower()
 
+
 def generate_concept_id(name: str) -> str:
     """Generate semantic ID from concept name"""
     id_base = normalize_concept_name(name)
-    id_base = re.sub(r'[^\w\s-]', '', id_base)
-    id_base = id_base.replace(' ', '_').replace('-', '_')
-    id_base = re.sub(r'_+', '_', id_base)
-    id_base = id_base.strip('_')
+    id_base = re.sub(r"[^\w\s-]", "", id_base)
+    id_base = id_base.replace(" ", "_").replace("-", "_")
+    id_base = re.sub(r"_+", "_", id_base)
+    id_base = id_base.strip("_")
     return f"concept_{id_base}"
+
 
 def load_existing_kg(filepath: str) -> dict[str, Any]:
     """Load existing KG from JSON file"""
     print(f"📂 Loading existing KG from: {filepath}")
 
-    with open(filepath, encoding='utf-8') as f:
+    with open(filepath, encoding="utf-8") as f:
         data = json.load(f)
 
     # Extract concepts with their details
     concepts = {}
-    for node in data.get('nodes', []):
-        props = node.get('properties', {})
-        name = props.get('name', '')
+    for node in data.get("nodes", []):
+        props = node.get("properties", {})
+        name = props.get("name", "")
         name_lower = normalize_concept_name(name)
 
         if name_lower:
             concepts[name_lower] = {
-                'id': props.get('id', ''),
-                'name': name,
-                'label': node.get('label', ''),
-                'category': props.get('category', ''),
-                'description': props.get('description', ''),
+                "id": props.get("id", ""),
+                "name": name,
+                "label": node.get("label", ""),
+                "category": props.get("category", ""),
+                "description": props.get("description", ""),
             }
 
     # Extract relationships
     relationships = set()
-    for rel in data.get('relationships', []):
-        from_id = rel.get('from', '')
-        to_id = rel.get('to', '')
-        rel_type = rel.get('type', '')
+    for rel in data.get("relationships", []):
+        from_id = rel.get("from", "")
+        to_id = rel.get("to", "")
+        rel_type = rel.get("type", "")
         relationships.add((from_id, to_id, rel_type))
 
     print(f"   ✅ Loaded {len(concepts)} concepts, {len(relationships)} relationships")
 
-    return {
-        'concepts': concepts,
-        'relationships': relationships,
-        'raw': data
-    }
+    return {"concepts": concepts, "relationships": relationships, "raw": data}
+
 
 def load_new_excel(filepath: str) -> pd.DataFrame:
     """Load and initially clean the new Excel file"""
@@ -138,18 +137,27 @@ def load_new_excel(filepath: str) -> pd.DataFrame:
     df = pd.read_excel(filepath, sheet_name=0)
 
     # Keep only relevant columns
-    expected_cols = ['Category A', 'Concept A', 'Value A', 'Relationship',
-                     'Value B', 'Concept B', 'Category B', 'Description']
+    expected_cols = [
+        "Category A",
+        "Concept A",
+        "Value A",
+        "Relationship",
+        "Value B",
+        "Concept B",
+        "Category B",
+        "Description",
+    ]
 
     # Filter to only expected columns (ignore unnamed columns)
     df = df[[col for col in expected_cols if col in df.columns]]
 
     # Drop rows where essential columns are missing
-    df = df.dropna(subset=['Value A', 'Value B', 'Relationship'])
+    df = df.dropna(subset=["Value A", "Value B", "Relationship"])
 
     print(f"   ✅ Loaded {len(df)} rows (after removing empty rows)")
 
     return df
+
 
 def clean_relationship_types(df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, int]]:
     """Clean relationship type typos and return correction counts"""
@@ -168,9 +176,10 @@ def clean_relationship_types(df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, 
 
         return rel_type
 
-    df['Relationship'] = df['Relationship'].apply(fix_relationship)
+    df["Relationship"] = df["Relationship"].apply(fix_relationship)
 
     return df, dict(corrections_made)
+
 
 def clean_concept_names(df: pd.DataFrame) -> pd.DataFrame:
     """Standardize concept names (trim whitespace, etc.)"""
@@ -180,14 +189,15 @@ def clean_concept_names(df: pd.DataFrame) -> pd.DataFrame:
             return name
         return str(name).strip()
 
-    df['Value A'] = df['Value A'].apply(clean_name)
-    df['Value B'] = df['Value B'].apply(clean_name)
-    df['Concept A'] = df['Concept A'].apply(clean_name)
-    df['Concept B'] = df['Concept B'].apply(clean_name)
-    df['Category A'] = df['Category A'].apply(clean_name)
-    df['Category B'] = df['Category B'].apply(clean_name)
+    df["Value A"] = df["Value A"].apply(clean_name)
+    df["Value B"] = df["Value B"].apply(clean_name)
+    df["Concept A"] = df["Concept A"].apply(clean_name)
+    df["Concept B"] = df["Concept B"].apply(clean_name)
+    df["Category A"] = df["Category A"].apply(clean_name)
+    df["Category B"] = df["Category B"].apply(clean_name)
 
     return df
+
 
 def clean_categories(df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, int]]:
     """Standardize category names to match existing KG"""
@@ -206,10 +216,11 @@ def clean_categories(df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, int]]:
 
         return cat_str
 
-    df['Category A'] = df['Category A'].apply(fix_category)
-    df['Category B'] = df['Category B'].apply(fix_category)
+    df["Category A"] = df["Category A"].apply(fix_category)
+    df["Category B"] = df["Category B"].apply(fix_category)
 
     return df, dict(corrections_made)
+
 
 def extract_concepts_from_excel(df: pd.DataFrame) -> dict[str, dict]:
     """Extract unique concepts from cleaned Excel"""
@@ -217,40 +228,42 @@ def extract_concepts_from_excel(df: pd.DataFrame) -> dict[str, dict]:
 
     for _, row in df.iterrows():
         # Extract concept A
-        name_a = row['Value A']
+        name_a = row["Value A"]
         name_a_lower = normalize_concept_name(name_a)
         if name_a_lower and name_a_lower not in concepts:
             concepts[name_a_lower] = {
-                'name': name_a,
-                'concept': row.get('Concept A', ''),
-                'category': row.get('Category A', ''),
-                'description': row.get('Description', ''),
+                "name": name_a,
+                "concept": row.get("Concept A", ""),
+                "category": row.get("Category A", ""),
+                "description": row.get("Description", ""),
             }
 
         # Extract concept B
-        name_b = row['Value B']
+        name_b = row["Value B"]
         name_b_lower = normalize_concept_name(name_b)
         if name_b_lower and name_b_lower not in concepts:
             concepts[name_b_lower] = {
-                'name': name_b,
-                'concept': row.get('Concept B', ''),
-                'category': row.get('Category B', ''),
-                'description': row.get('Description', ''),
+                "name": name_b,
+                "concept": row.get("Concept B", ""),
+                "category": row.get("Category B", ""),
+                "description": row.get("Description", ""),
             }
 
     return concepts
+
 
 def extract_relationships_from_excel(df: pd.DataFrame) -> set[tuple[str, str, str]]:
     """Extract relationships from cleaned Excel"""
     relationships = set()
 
     for _, row in df.iterrows():
-        from_id = generate_concept_id(row['Value A'])
-        to_id = generate_concept_id(row['Value B'])
-        rel_type = str(row['Relationship']).strip().upper()
+        from_id = generate_concept_id(row["Value A"])
+        to_id = generate_concept_id(row["Value B"])
+        rel_type = str(row["Relationship"]).strip().upper()
         relationships.add((from_id, to_id, rel_type))
 
     return relationships
+
 
 def safe_str(val, max_len: int = None) -> str:
     """Safely convert value to string, handling NaN"""
@@ -260,6 +273,7 @@ def safe_str(val, max_len: int = None) -> str:
     if max_len:
         return s[:max_len]
     return s
+
 
 def compare_concepts(existing: dict, new: dict) -> dict[str, Any]:
     """Compare existing and new concepts"""
@@ -274,37 +288,42 @@ def compare_concepts(existing: dict, new: dict) -> dict[str, Any]:
     # Check for description changes in overlapping concepts
     description_changes = []
     for name in overlap:
-        old_desc = safe_str(existing[name].get('description', ''), 100)
-        new_desc = safe_str(new[name].get('description', ''), 100)
+        old_desc = safe_str(existing[name].get("description", ""), 100)
+        new_desc = safe_str(new[name].get("description", ""), 100)
 
         # Only flag if descriptions are meaningfully different
         if old_desc and new_desc and old_desc != new_desc:
-            description_changes.append({
-                'concept': new[name]['name'],
-                'old_description': old_desc,
-                'new_description': new_desc,
-            })
+            description_changes.append(
+                {
+                    "concept": new[name]["name"],
+                    "old_description": old_desc,
+                    "new_description": new_desc,
+                }
+            )
 
     # Check for category changes
     category_changes = []
     for name in overlap:
-        old_cat = safe_str(existing[name].get('category', ''))
-        new_cat = safe_str(new[name].get('category', ''))
+        old_cat = safe_str(existing[name].get("category", ""))
+        new_cat = safe_str(new[name].get("category", ""))
 
         if old_cat and new_cat and old_cat != new_cat:
-            category_changes.append({
-                'concept': new[name]['name'],
-                'old_category': old_cat,
-                'new_category': new_cat,
-            })
+            category_changes.append(
+                {
+                    "concept": new[name]["name"],
+                    "old_category": old_cat,
+                    "new_category": new_cat,
+                }
+            )
 
     return {
-        'truly_new': truly_new,
-        'overlap': overlap,
-        'only_in_old': only_in_old,
-        'description_changes': description_changes,
-        'category_changes': category_changes,
+        "truly_new": truly_new,
+        "overlap": overlap,
+        "only_in_old": only_in_old,
+        "description_changes": description_changes,
+        "category_changes": category_changes,
     }
+
 
 def compare_relationships(existing: set, new: set) -> dict[str, Any]:
     """Compare existing and new relationships"""
@@ -313,10 +332,11 @@ def compare_relationships(existing: set, new: set) -> dict[str, Any]:
     only_in_old = existing - new
 
     return {
-        'truly_new': truly_new,
-        'overlap': overlap,
-        'only_in_old': only_in_old,
+        "truly_new": truly_new,
+        "overlap": overlap,
+        "only_in_old": only_in_old,
     }
+
 
 def generate_report(
     corrections_made: dict[str, int],
@@ -324,7 +344,7 @@ def generate_report(
     relationship_comparison: dict[str, Any],
     new_concepts: dict[str, dict],
     existing_kg: dict[str, Any],
-    df_cleaned: pd.DataFrame
+    df_cleaned: pd.DataFrame,
 ) -> str:
     """Generate detailed comparison report in Markdown"""
 
@@ -367,13 +387,13 @@ def generate_report(
     report.append("## 🆕 New Concepts (Not in Current KG)\n")
     report.append(f"**Total: {len(concept_comparison['truly_new'])} new concepts**\n")
 
-    if concept_comparison['truly_new']:
+    if concept_comparison["truly_new"]:
         # Group by category/concept type
         new_by_type = defaultdict(list)
-        for name in concept_comparison['truly_new']:
+        for name in concept_comparison["truly_new"]:
             concept_data = new_concepts[name]
-            concept_type = concept_data.get('concept', 'Unknown')
-            new_by_type[concept_type].append(concept_data['name'])
+            concept_type = concept_data.get("concept", "Unknown")
+            new_by_type[concept_type].append(concept_data["name"])
 
         for concept_type, names in sorted(new_by_type.items()):
             report.append(f"\n### {concept_type} ({len(names)})")
@@ -386,16 +406,20 @@ def generate_report(
     report.append("\n---\n")
     report.append("## 📝 Description Changes (Existing Concepts)\n")
 
-    if concept_comparison['description_changes']:
-        report.append(f"**{len(concept_comparison['description_changes'])} concepts have different descriptions:**\n")
+    if concept_comparison["description_changes"]:
+        report.append(
+            f"**{len(concept_comparison['description_changes'])} concepts have different descriptions:**\n"
+        )
 
-        for i, change in enumerate(concept_comparison['description_changes'][:30], 1):
+        for i, change in enumerate(concept_comparison["description_changes"][:30], 1):
             report.append(f"\n### {i}. {change['concept']}")
             report.append(f"- **OLD:** {change['old_description']}...")
             report.append(f"- **NEW:** {change['new_description']}...")
 
-        if len(concept_comparison['description_changes']) > 30:
-            report.append(f"\n... and {len(concept_comparison['description_changes']) - 30} more changes")
+        if len(concept_comparison["description_changes"]) > 30:
+            report.append(
+                f"\n... and {len(concept_comparison['description_changes']) - 30} more changes"
+            )
     else:
         report.append("✅ No description changes detected.")
 
@@ -403,12 +427,16 @@ def generate_report(
     report.append("\n---\n")
     report.append("## 🏷️ Category Changes\n")
 
-    if concept_comparison['category_changes']:
-        report.append(f"**{len(concept_comparison['category_changes'])} concepts have different categories:**\n")
+    if concept_comparison["category_changes"]:
+        report.append(
+            f"**{len(concept_comparison['category_changes'])} concepts have different categories:**\n"
+        )
         report.append("| Concept | Old Category | New Category |")
         report.append("|---------|--------------|--------------|")
-        for change in concept_comparison['category_changes'][:30]:
-            report.append(f"| {change['concept']} | {change['old_category']} | {change['new_category']} |")
+        for change in concept_comparison["category_changes"][:30]:
+            report.append(
+                f"| {change['concept']} | {change['old_category']} | {change['new_category']} |"
+            )
     else:
         report.append("✅ No category changes detected.")
 
@@ -417,10 +445,10 @@ def generate_report(
     report.append("## 🔗 New Relationships\n")
     report.append(f"**Total: {len(relationship_comparison['truly_new'])} new relationships**\n")
 
-    if relationship_comparison['truly_new']:
+    if relationship_comparison["truly_new"]:
         # Count by type
         rel_type_counts = defaultdict(int)
-        for _from_id, _to_id, rel_type in relationship_comparison['truly_new']:
+        for _from_id, _to_id, rel_type in relationship_comparison["truly_new"]:
             rel_type_counts[rel_type] += 1
 
         report.append("### By Relationship Type\n")
@@ -433,14 +461,16 @@ def generate_report(
     report.append("\n---\n")
     report.append("## ⚠️ Concepts Only in Old KG (Not in New Excel)\n")
     report.append(f"**Total: {len(concept_comparison['only_in_old'])} concepts**\n")
-    report.append("*These concepts exist in Neo4j but are not in the new Excel. They will be preserved.*\n")
+    report.append(
+        "*These concepts exist in Neo4j but are not in the new Excel. They will be preserved.*\n"
+    )
 
-    if concept_comparison['only_in_old']:
-        sample = list(concept_comparison['only_in_old'])[:30]
+    if concept_comparison["only_in_old"]:
+        sample = list(concept_comparison["only_in_old"])[:30]
         for name in sorted(sample):
-            old_data = existing_kg['concepts'].get(name, {})
+            old_data = existing_kg["concepts"].get(name, {})
             report.append(f"- {old_data.get('name', name)}")
-        if len(concept_comparison['only_in_old']) > 30:
+        if len(concept_comparison["only_in_old"]) > 30:
             report.append(f"- ... and {len(concept_comparison['only_in_old']) - 30} more")
 
     # Recommendations
@@ -448,14 +478,20 @@ def generate_report(
     report.append("## 💡 Recommendations\n")
     report.append("1. **Review the cleaned Excel** (`KG_NEURO_CLEANED.xlsx`) before transformation")
     report.append("2. **Decide on description changes**: Keep old or use new descriptions?")
-    report.append("3. **Run transformation**: `python transform_team_data.py --team neuro --input NeuroData/KG_NEURO_CLEANED.xlsx`")
-    report.append("4. **Use incremental import** with `--domain neuro` (MERGE will handle duplicates)")
+    report.append(
+        "3. **Run transformation**: `python transform_team_data.py --team neuro --input NeuroData/KG_NEURO_CLEANED.xlsx`"
+    )
+    report.append(
+        "4. **Use incremental import** with `--domain neuro` (MERGE will handle duplicates)"
+    )
 
     return "\n".join(report)
+
 
 # ============================================================================
 # MAIN FUNCTION
 # ============================================================================
+
 
 def main():
     print("=" * 80)
@@ -506,7 +542,7 @@ def main():
     print("-" * 40)
 
     new_concepts = extract_concepts_from_excel(df_cleaned)
-    concept_comparison = compare_concepts(existing_kg['concepts'], new_concepts)
+    concept_comparison = compare_concepts(existing_kg["concepts"], new_concepts)
 
     print(f"   • Truly NEW concepts: {len(concept_comparison['truly_new'])}")
     print(f"   • Overlapping concepts: {len(concept_comparison['overlap'])}")
@@ -519,7 +555,7 @@ def main():
     print("-" * 40)
 
     new_relationships = extract_relationships_from_excel(df_cleaned)
-    relationship_comparison = compare_relationships(existing_kg['relationships'], new_relationships)
+    relationship_comparison = compare_relationships(existing_kg["relationships"], new_relationships)
 
     print(f"   • Truly NEW relationships: {len(relationship_comparison['truly_new'])}")
     print(f"   • Overlapping relationships: {len(relationship_comparison['overlap'])}")
@@ -529,7 +565,7 @@ def main():
     print("\n💾 STEP 6: Saving Cleaned Excel")
     print("-" * 40)
 
-    df_cleaned.to_excel(OUTPUT_CLEANED_EXCEL, index=False, sheet_name='Cleaned')
+    df_cleaned.to_excel(OUTPUT_CLEANED_EXCEL, index=False, sheet_name="Cleaned")
     print(f"   ✅ Saved: {OUTPUT_CLEANED_EXCEL}")
 
     # Step 7: Generate and save report
@@ -542,10 +578,10 @@ def main():
         relationship_comparison,
         new_concepts,
         existing_kg,
-        df_cleaned
+        df_cleaned,
     )
 
-    with open(OUTPUT_REPORT, 'w', encoding='utf-8') as f:
+    with open(OUTPUT_REPORT, "w", encoding="utf-8") as f:
         f.write(report)
 
     print(f"   ✅ Saved: {OUTPUT_REPORT}")
@@ -564,9 +600,9 @@ def main():
       └─ Detailed comparison report
 
 📊 Key Findings:
-   • {len(concept_comparison['truly_new'])} truly NEW concepts to add
-   • {len(relationship_comparison['truly_new'])} new relationships to add
-   • {len(concept_comparison['overlap'])} concepts already exist (will be skipped/merged)
+   • {len(concept_comparison["truly_new"])} truly NEW concepts to add
+   • {len(relationship_comparison["truly_new"])} new relationships to add
+   • {len(concept_comparison["overlap"])} concepts already exist (will be skipped/merged)
    • {sum(corrections_made.values())} total corrections applied
 
 🎯 Next Steps:
@@ -577,6 +613,7 @@ def main():
    4. Import to Neo4j (incremental - adds new, preserves old):
       python data_ingestion_neo4j.py --file NeuroData/kg_neuro_neo4j.json --domain neuro
     """)
+
 
 if __name__ == "__main__":
     main()

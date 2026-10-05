@@ -98,9 +98,7 @@ def main() -> None:
     )
     parser.add_argument("--host", default=os.getenv("AIX_HOST", "127.0.0.1"))
     parser.add_argument("--port", type=int, default=int(os.getenv("AIX_PORT", "8765")))
-    parser.add_argument(
-        "--log-level", default=os.getenv("AIX_LOG_LEVEL", "info")
-    )
+    parser.add_argument("--log-level", default=os.getenv("AIX_LOG_LEVEL", "info"))
     args = parser.parse_args()
 
     switched = _maybe_set_windows_selector_policy()
@@ -113,10 +111,7 @@ def main() -> None:
             "BEFORE uvicorn; psycopg async checkpointer can connect."
         )
     else:
-        print(
-            "[run_local] Non-Windows platform -> default event loop "
-            "(no policy change needed)."
-        )
+        print("[run_local] Non-Windows platform -> default event loop (no policy change needed).")
 
     config = uvicorn.Config(
         "aix.api.main:app",

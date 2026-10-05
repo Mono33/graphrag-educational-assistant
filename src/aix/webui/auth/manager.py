@@ -39,13 +39,70 @@ logger = logging.getLogger(__name__)
 # WARNING: this fallback must NEVER be used outside dev. In production the
 # env var WEBUI_AUTH_SECRET is required and must be a long random string.
 _DEV_FALLBACK_SECRET = "DEV_ONLY_aix_webui_change_me"
-_AUTH_SECRET = os.getenv("WEBUI_AUTH_SECRET", _DEV_FALLBACK_SECRET)
+
+
+def _secret_from_env(raw: Optional[str]) -> str:
+    """The secret, or the fallback when there is none worth the name.
+
+    Empty and placeholder values count as none. ``os.getenv(name, fallback)``
+    returned ``""`` for a line ``WEBUI_AUTH_SECRET=`` -- the way ``.env.example``
+    ships it -- so tokens were signed with an empty key, and the startup check
+    did not fire because the empty string is not the fallback (found by the
+    staging rehearsal, 2026-10-05). ``replace-with-…`` is the placeholder of
+    ``deploy/.env.prod.example``: a string published in this repository too.
+    """
+    value = (raw or "").strip()
+    if not value or value.startswith("replace-with-"):
+        return _DEV_FALLBACK_SECRET
+    return value
+
+
+_AUTH_SECRET = _secret_from_env(os.getenv("WEBUI_AUTH_SECRET"))
 
 if _AUTH_SECRET == _DEV_FALLBACK_SECRET:
     logger.warning(
         "⚠️  WEBUI_AUTH_SECRET not set — using dev fallback. "
         "Set a strong secret in .env before any non-local use."
     )
+
+
+#: Deployments that must never run on the fallback. Named explicitly rather
+#: than "anything that is not development": a machine with no ``ENVIRONMENT``
+#: at all is a laptop or a test run, and refusing to start there would teach
+#: people to set the variable to whatever makes the error go away.
+_DEPLOYED_ENVIRONMENTS = frozenset({"production", "prod", "staging", "pilot"})
+
+
+def using_dev_fallback_secret() -> bool:
+    """True when tokens are being signed with the constant in this file."""
+    return _AUTH_SECRET == _DEV_FALLBACK_SECRET
+
+
+def assert_secret_is_real() -> None:
+    """Refuse to serve a deployed environment with the fallback secret.
+
+    The secret signs session cookies, password-reset links, verification links
+    and the CSRF tokens. On the fallback, that signature is made with a string
+    published in this repository: anyone holding it can mint a token for any
+    account, including an administrator's, without a password.
+
+    Until now this was a warning, and a warning is something a deploy scrolls
+    past. It stays a warning where ``ENVIRONMENT`` is unset or development —
+    that is a laptop — and becomes a refusal where the environment declares
+    itself deployed.
+
+    Checked at startup rather than at import, so that importing this module in
+    a test or a CLI never depends on the environment.
+    """
+    environment = (os.getenv("ENVIRONMENT") or "").strip().lower()
+    if using_dev_fallback_secret() and environment in _DEPLOYED_ENVIRONMENTS:
+        raise RuntimeError(
+            f"WEBUI_AUTH_SECRET is not set and ENVIRONMENT={environment}. "
+            "Session cookies, reset links and CSRF tokens would be signed with "
+            "the development constant published in the repository. Generate one "
+            'with: python -c "import secrets; print(secrets.token_urlsafe(48))" '
+            "— note that setting it logs every teacher out once."
+        )
 
 
 class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):

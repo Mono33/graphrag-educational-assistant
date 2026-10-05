@@ -1,0 +1,28 @@
+{#
+  The chat input's send button, on its own so it can be swapped on its own.
+
+  While a document is being prepared the attachment tray polls itself every
+  two seconds and has to unlock this button when the last document turns
+  ready (decision U1). It used to do so by swapping the *whole* chat input out
+  of band -- textarea included -- so whatever the teacher was typing vanished
+  every two seconds until the document was ready (2026-09-29). Now the tray
+  swaps this button only, and the textarea is never touched.
+
+  Context:
+    lesson               Lesson ORM (draft → first request, else follow-up)
+    materials_preparing  bool: a bound document is still being prepared
+    _send_oob            bool, optional: mark for an out-of-band swap. Its own
+                         name, not ``_oob``: this partial is also included
+                         inside a chat input that is itself swapped out of
+                         band, and a nested OOB mark would swap it twice.
+#}
+<button type="submit"
+        id="chat-input-send"
+        class="aix-chat-input-send"
+        {% if _send_oob %}hx-swap-oob="outerHTML"{% endif %}
+        {% if materials_preparing %}disabled{% endif %}
+        title="{% if materials_preparing %}Attendo che i documenti allegati siano pronti{% elif lesson.status == 'draft' %}Invia la richiesta{% else %}Invia il messaggio{% endif %}"
+        aria-label="{% if lesson.status == 'draft' %}Invia messaggio e genera lezione{% else %}Invia messaggio di follow-up{% endif %}">
+  <wa-icon name="paper-plane" class="aix-fs-085"></wa-icon>
+  <span>{% if materials_preparing %}Preparazione…{% else %}Invia{% endif %}</span>
+</button>

@@ -18,8 +18,9 @@ import urllib.request
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--base", default="http://127.0.0.1:8765",
-                        help="API base URL (default: %(default)s)")
+    parser.add_argument(
+        "--base", default="http://127.0.0.1:8765", help="API base URL (default: %(default)s)"
+    )
     args = parser.parse_args()
 
     url = f"{args.base.rstrip('/')}/openapi.json"

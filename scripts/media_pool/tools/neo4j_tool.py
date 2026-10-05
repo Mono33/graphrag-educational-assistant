@@ -49,7 +49,10 @@ def run_query(cypher: str, limit_rows: int = 50) -> dict[str, Any]:
                 for key in record.keys():
                     value = record[key]
                     # Convert Neo4j types to plain Python
-                    if hasattr(value, "__class__") and value.__class__.__name__ in ("Node", "Relationship"):
+                    if hasattr(value, "__class__") and value.__class__.__name__ in (
+                        "Node",
+                        "Relationship",
+                    ):
                         row[key] = dict(value)
                     elif isinstance(value, (list, tuple)):
                         row[key] = list(value)

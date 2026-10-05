@@ -76,9 +76,7 @@ async def test_init_db_bootstraps_sqlite_and_is_idempotent(monkeypatch, tmp_path
 
         async with temp_engine.connect() as conn:
             rows = (
-                await conn.execute(
-                    text("SELECT name FROM sqlite_master WHERE type='table'")
-                )
+                await conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))
             ).all()
         table_names = {r[0] for r in rows}
         # Core webui tables must exist after bootstrap.

@@ -37,7 +37,14 @@ class Neo4jSchemaExtractor:
     """Extract schema information from Neo4j database"""
 
     def __init__(self, uri: str, user: str, password: str):
-        self.driver = GraphDatabase.driver(uri, auth=(user, password))
+        # Fail fast rather than hang: this driver is the one the whole hybrid
+        # retrieval chain uses, and a lesson asks the graph ten questions or
+        # more. See ``Neo4jConfig.driver_kwargs``.
+        from aix.core.config import config as _app_config
+
+        kwargs = dict(_app_config.neo4j.driver_kwargs())
+        kwargs["auth"] = (user, password)
+        self.driver = GraphDatabase.driver(uri, **kwargs)
 
     def close(self):
         """Close the Neo4j connection"""
@@ -1531,11 +1538,17 @@ class Text2CypherPipeline:
 
                 # Make name matching more tolerant
                 widened_query = re.sub(r" s\.name IN \[", " toLower(s.name) IN [", widened_query)
+                # The literal is captured so the parenthesis closes: without it
+                # every widened query was a syntax error and this retry never ran.
                 widened_query = re.sub(
-                    r" s\.name = ", " toLower(s.name) CONTAINS toLower(", widened_query
+                    r" s\.name = (\"[^\"]*\"|'[^']*')",
+                    r" toLower(s.name) CONTAINS toLower(\1)",
+                    widened_query,
                 )
                 widened_query = re.sub(
-                    r" lr\.category = ", " toLower(lr.category) CONTAINS toLower(", widened_query
+                    r" lr\.category = (\"[^\"]*\"|'[^']*')",
+                    r" toLower(lr.category) CONTAINS toLower(\1)",
+                    widened_query,
                 )
 
                 # Only retry if the query actually changed

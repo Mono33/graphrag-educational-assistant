@@ -47,10 +47,12 @@ def create_node(session, node: dict[str, Any]) -> bool:
     """
 
     try:
-        session.run(query,
-                   name=props.get("name", "Unknown"),
-                   domain=props.get("domain", "unknown"),
-                   props=props)
+        session.run(
+            query,
+            name=props.get("name", "Unknown"),
+            domain=props.get("domain", "unknown"),
+            props=props,
+        )
         return True
     except Exception as e:
         print(f"⚠️  Error creating node {props.get('name')}: {e}")
@@ -73,25 +75,35 @@ def create_relationship(session, rel: dict[str, Any]) -> bool:
     """
 
     try:
-        session.run(query,
-                   source_name=source["name"],
-                   source_domain=source.get("domain"),
-                   target_name=target["name"],
-                   target_domain=target.get("domain"),
-                   rel_props=rel_props)
+        session.run(
+            query,
+            source_name=source["name"],
+            source_domain=source.get("domain"),
+            target_name=target["name"],
+            target_domain=target.get("domain"),
+            rel_props=rel_props,
+        )
         return True
     except Exception as e:
-        print(f"⚠️  Error creating relationship {source['name']} -[{rel_type}]-> {target['name']}: {e}")
+        print(
+            f"⚠️  Error creating relationship {source['name']} -[{rel_type}]-> {target['name']}: {e}"
+        )
         return False
 
 
-def import_from_json(uri: str, user: str, password: str, input_file: str,
-                     clear: bool = False, clear_domain_name: str = None):
+def import_from_json(
+    uri: str,
+    user: str,
+    password: str,
+    input_file: str,
+    clear: bool = False,
+    clear_domain_name: str = None,
+):
     """Import graph data from JSON file"""
 
     # Load export file
     print(f"📂 Loading export file: {input_file}")
-    with open(input_file, encoding='utf-8') as f:
+    with open(input_file, encoding="utf-8") as f:
         data = json.load(f)
 
     metadata = data.get("metadata", {})
@@ -154,10 +166,8 @@ def main():
 
     args = parser.parse_args()
 
-    import_from_json(args.uri, args.user, args.password, args.input,
-                     args.clear, args.clear_domain)
+    import_from_json(args.uri, args.user, args.password, args.input, args.clear, args.clear_domain)
 
 
 if __name__ == "__main__":
     main()
-

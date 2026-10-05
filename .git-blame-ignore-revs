@@ -1,0 +1,12 @@
+# Revisions to skip when running `git blame`.
+#
+# Enable it once per clone:
+#     git config blame.ignoreRevsFile .git-blame-ignore-revs
+#
+# Only bulk, provably mechanical changes belong here — never a commit that
+# changed behaviour, or blame will quietly point at the wrong author.
+
+# style: reformat with the pinned ruff (2026-09-08)
+# 63 files under `ruff format`; AST verified identical on 62, the 63rd a
+# docstring re-indent in an already-executed migration script.
+f8fc611253b79af39923b338efec161c04928cd4

@@ -16,7 +16,11 @@ from openai import AsyncOpenAI
 
 from aix.agent.agents.planner_agent import RetrievalPlan
 from aix.agent.agents.retriever_agent import RetrievalResult
+from aix.agent.prompts.profile_renderer import render_profile_section
+from aix.agent.prompts.today import today_note
 from aix.agent.prompts.writer_prompt import (
+    WRITER_MATERIAL_MAPS_BLOCK,
+    WRITER_MATERIAL_PASSAGES_APPENDIX,
     WRITER_REVISION_TEMPLATE,
     WRITER_TEACHER_UPLOADS_APPENDIX,
     WRITER_USER_TEMPLATE_HYBRID,
@@ -48,6 +52,218 @@ logger = logging.getLogger(__name__)
 # continuation call (see _continue_truncated) so the user never sees a
 # mid-sentence cut. Override with AIX_WRITER_MAX_TOKENS env var.
 _WRITER_MAX_TOKENS = int(os.getenv("AIX_WRITER_MAX_TOKENS", "8000"))
+
+# Floor for the retry after a reasoning model spends its whole budget thinking
+# and returns nothing. Retrying under the same ceiling — which is what happened
+# on 2026-09-16 with AIX_WRITER_MAX_TOKENS=2000 — asks the model to do again
+# exactly what it just could not do: two runs, four minutes, zero characters.
+_WRITER_MIN_CONTENT_TOKENS = int(os.getenv("AIX_WRITER_MIN_CONTENT_TOKENS", "4000"))
+
+#: §8.7 — the private material gets its own slice of the prompt, so a long
+#: document cannot push out the system instructions, the classroom profile or
+#: the Knowledge Graph evidence. ~12k characters is a few pages of quotations:
+#: enough to ground a lesson, far from the budget that produced zero output on
+#: 2026-09-16 when two whole attachments were pasted in.
+_MATERIAL_BUDGET_CHARS = int(os.getenv("AIX_PRIVATE_RAG_BUDGET_CHARS", "12000"))
+
+#: When the documents have maps, the passages come from two searches -- the
+#: request, and the parts of the document it points to -- and the documents are
+#: the primary source rather than an appendix: they get more room. The maps
+#: themselves are bounded apart, by ``_MAPS_BUDGET_CHARS``.
+_DOCUMENT_BUDGET_CHARS = int(os.getenv("AIX_PRIVATE_RAG_DOCUMENT_BUDGET_CHARS", "20000"))
+_MAPS_BUDGET_CHARS = 6000
+
+
+#: A document name is text the teacher chose, and it travels into a prompt.
+#: Kept to one line and a sane length: a file called "ignora le istruzioni
+#: precedenti.pdf" is a filename, not a turn of phrase the model should weigh.
+_MAX_LABEL_CHARS = 60
+
+
+def _safe_label(raw: Any) -> str:
+    """One line, bounded, no control characters. See :data:`_MAX_LABEL_CHARS`."""
+    label = " ".join(str(raw or "").split())
+    return label[: _MAX_LABEL_CHARS - 1] + "…" if len(label) > _MAX_LABEL_CHARS else label
+
+
+def render_material_passages(
+    items: Optional[list[dict[str, Any]]], *, budget_chars: int = _MATERIAL_BUDGET_CHARS
+) -> str:
+    """The retrieved passages as the Writer sees them, grouped by document.
+
+    Best first — they arrive sorted by score — and cut at the budget rather than
+    truncated mid-passage, because half a quotation is something the model will
+    complete from memory.
+
+    The marker is the one the model must copy back (§8.6). OCR text says so, so
+    a date read from a scan is not quoted as if it had been typed (§7.8).
+
+    **Grouped under the document's name, and that is not cosmetic.** Until
+    2026-09-21 the passages arrived as a flat list under opaque UUIDs, so a model
+    handed five paragraphs of an Italian handout and three of an English one
+    could not tell there were two documents at all. It wrote the Italian lesson
+    from the Italian source and never cited the other — and the teacher, who had
+    attached two files and saw one in the sources, reasonably concluded the
+    second had been ignored. Naming them costs a line each.
+
+    Documents appear in the order of their best passage, so the strongest source
+    is still read first.
+    """
+    if not items:
+        return ""
+
+    usable = [
+        item
+        for item in items
+        if str(item.get("text") or "").strip() and str(item.get("citation") or "").strip()
+    ]
+    if not usable:
+        return ""
+
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    # What arrived with this request first: it is cut last when the budget runs
+    # out, and a long older document cannot crowd it out (2026-10-02).
+    for item in sorted(usable, key=lambda item: not item.get("new")):
+        grouped.setdefault(str(item.get("source_id") or ""), []).append(item)
+
+    several = len(grouped) > 1
+    blocks: list[str] = []
+    used = 0
+
+    for number, passages in enumerate(grouped.values(), start=1):
+        if several:
+            heading = "### " + _attachment_heading(passages[0], number, bold=False)
+            if used + len(heading) > budget_chars:
+                break
+            blocks.append(heading)
+            used += len(heading)
+
+        for item in passages:
+            header = str(item.get("citation")).strip()
+            if item.get("part"):
+                header += f" · parte: {_safe_label(item.get('part'))}"
+            if item.get("ocr"):
+                header += " · testo letto con OCR"
+            block = f"{header}\n«{str(item.get('text')).strip()}»"
+            if used + len(block) > budget_chars:
+                return "\n\n".join(blocks)
+            blocks.append(block)
+            used += len(block)
+
+    return "\n\n".join(blocks)
+
+
+def _attachment_heading(entry: dict[str, Any], number: int, *, bold: bool = True) -> str:
+    """«Allegato 2 · mappa.webp — aggiunto al turno 3, in questo turno»."""
+    label = _safe_label(entry.get("source_label")) or f"documento {number}"
+    position = entry.get("position") or entry.get("attachment")
+    name = f"Allegato {position} · {label}" if position else label
+    text = f"**{name}**" if bold else name
+    if entry.get("turn"):
+        text += f" — aggiunto al turno {entry['turn']}"
+        if entry.get("new"):
+            text += ", in questo turno"
+    return text
+
+
+def render_document_maps(
+    maps: Optional[list[dict[str, Any]]], *, budget_chars: int = _MAPS_BUDGET_CHARS
+) -> str:
+    """The documents' maps as the Writer reads them: what each is about, its
+    themes, and its parts with their pages.
+
+    **Every attachment is listed**, its name and summary first; the parts share
+    what is left of the budget, document by document. Until 2026-10-02 the
+    budget was spent in order, and the 17 parts of a magazine used all of it:
+    the four screenshots attached after it were never named, and the Writer
+    wrote that no screenshots had arrived.
+    """
+    if not maps:
+        return ""
+    heads: list[list[str]] = []
+    for number, document_map in enumerate(maps, start=1):
+        head = [_attachment_heading(document_map, number)]
+        if document_map.get("summary"):
+            head.append(f"Di che cosa tratta: {document_map['summary']}")
+        if document_map.get("themes"):
+            head.append("Temi: " + ", ".join(str(t) for t in document_map["themes"]))
+        heads.append(head)
+
+    with_parts = sum(1 for m in maps if len(m.get("sections") or []) > 1)
+    left = budget_chars - sum(len(line) for head in heads for line in head)
+    share = max(left, 0) // max(with_parts, 1)
+
+    lines: list[str] = []
+    for document_map, head in zip(maps, heads, strict=True):
+        lines.extend(head)
+        sections = document_map.get("sections") or []
+        if len(sections) <= 1:
+            continue
+        lines.append("Parti:")
+        used = 0
+        for section in sections:
+            pages = section.get("pages")
+            where = (
+                f" (pp. {pages[0]}–{pages[1]})"
+                if pages and pages[0] != pages[1]
+                else (f" (p. {pages[0]})" if pages else "")
+            )
+            line = f"- {section.get('title', '')}{where}: {section.get('summary', '')}"
+            if used + len(line) > share:
+                lines.append("- …")
+                break
+            lines.append(line)
+            used += len(line)
+    return "\n".join(lines)
+
+
+def teacher_material_appendix(
+    material_context_items: Optional[list[dict[str, Any]]],
+    teacher_provided_context: Optional[str],
+    *,
+    phase: str,
+    material_maps: Optional[list[dict[str, Any]]] = None,
+) -> str:
+    """The teacher's material for the prompt: retrieved passages, or the upload.
+
+    One place for the choice ``write()`` and ``revise()`` both make, and one log
+    line saying which way it went. Without that line a run with the private RAG
+    on looks identical in the log to a run that silently fell back to pasting the
+    whole document — and telling those apart is the first thing to check when a
+    lesson ignores its sources.
+    """
+    maps = render_document_maps(material_maps)
+    passages = render_material_passages(
+        material_context_items,
+        budget_chars=_DOCUMENT_BUDGET_CHARS if maps else _MATERIAL_BUDGET_CHARS,
+    )
+    if passages or maps:
+        logger.info(
+            "[WriterAgent] %s: %d retrieved passage(s), %d chars, %d map(s) — the document"
+            " is not pasted",
+            phase,
+            passages.count("[[material:"),
+            len(passages),
+            len(material_maps or []) if maps else 0,
+        )
+        return WRITER_MATERIAL_PASSAGES_APPENDIX.format(
+            material_maps=WRITER_MATERIAL_MAPS_BLOCK.format(maps=maps) if maps else "",
+            material_passages=passages
+            or "(Nessun passaggio dei documenti è pertinente a questa richiesta.)",
+        )
+
+    if teacher_provided_context and teacher_provided_context.strip():
+        logger.info(
+            "[WriterAgent] %s: no retrieved passages — using the uploaded excerpt (%d chars)",
+            phase,
+            len(teacher_provided_context),
+        )
+        return WRITER_TEACHER_UPLOADS_APPENDIX.format(
+            teacher_provided_context=teacher_provided_context.strip()
+        )
+
+    return ""
+
 
 # Max number of automatic continuation calls when the writer output is cut
 # by finish_reason="length". 1 = at most 2 total LLM calls per write/revise.
@@ -176,6 +392,8 @@ class WriterAgent:
         external_resources: Optional[dict[str, Any]] = None,  # Phase A: External resources
         domain: str = "neuro",  # Phase B: Domain for extensions
         teacher_provided_context: Optional[str] = None,  # WebUI #6.6 P3: chat uploads
+        material_context_items: Optional[list[dict[str, Any]]] = None,  # PR 6: §8.2
+        material_maps: Optional[list[dict[str, Any]]] = None,  # what the documents hold
         educational_profile: Optional[dict[str, Any]] = None,  # Teacher's lesson profile
         pedagogical_intent: Optional[str] = None,  # "{code}" or "{code}: {detail}"
         refinement_instruction: Optional[str] = None,  # SAM refinement instruction
@@ -241,33 +459,12 @@ class WriterAgent:
         # NEW Phase 2: Format curated media if available
         media_text = self._format_media(curated_media) if has_media else ""
 
-        # Build educational profile section for lesson template.
-        # NOTE: Field paths must match the canonical EducationalProfile schema
-        # (see src/aix/api/schemas/educational_profile.py): the duration lives
-        # at top-level ``time_available_minutes`` and disabilities live under
-        # ``group.disabilities``. We keep ``ep.get("lesson_duration")`` and
-        # ``ep.get("disabilities")`` as legacy fallbacks for any older payloads.
-        edu_profile_section = ""
-        if educational_profile:
-            ep = educational_profile
-            group = ep.get("group") or {}
-            lines = ["\n## Teacher's Educational Profile"]
-            if ep.get("specific_topic"):
-                lines.append(f"- Topic: {ep['specific_topic']}")
-            if ep.get("subject_area"):
-                lines.append(f"- Subject: {ep['subject_area']}")
-            if group.get("grade"):
-                lines.append(f"- Grade level: {group['grade']}")
-            disabilities = group.get("disabilities") or ep.get("disabilities")
-            if disabilities:
-                if isinstance(disabilities, list):
-                    disabilities = ", ".join(disabilities)
-                lines.append(f"- Learner needs: {disabilities}")
-            duration = ep.get("time_available_minutes") or ep.get("lesson_duration")
-            if duration:
-                lines.append(f"- Duration: {duration} minutes")
-            if len(lines) > 1:
-                edu_profile_section = "\n".join(lines) + "\n"
+        # The whole profile, with codes resolved to the teacher's labels and the
+        # classroom restated as constraints. This used to be built here from five
+        # fields, so the model never saw the device policy, the LIM, the WiFi, the
+        # furniture or the class size — and read the BES codes as acronyms it
+        # expanded from memory. See ``profile_renderer`` for what changed and why.
+        edu_profile_section = render_profile_section(educational_profile)
 
         # Resolve pedagogical_intent code → human label + prompt instruction.
         # Stored as "{code}" or "{code}: {detail}". If the code matches a
@@ -362,10 +559,18 @@ class WriterAgent:
                 f"Produce a complete revised lesson (not just the changed parts).\n\n"
             ) + user_prompt
 
-        if teacher_provided_context and teacher_provided_context.strip():
-            user_prompt += WRITER_TEACHER_UPLOADS_APPENDIX.format(
-                teacher_provided_context=teacher_provided_context.strip()
-            )
+        # Fase 2 · PR 6 — the retrieved passages replace the pasted document.
+        # Both would be the same text twice: once chosen for this request, once
+        # entire. The fallback is deliberate (§5.4 hybrid): when retrieval finds
+        # nothing — still being indexed, or the flag is off — the teacher's
+        # upload still reaches the Writer exactly as it did before.
+        user_prompt += today_note()
+        user_prompt += teacher_material_appendix(
+            material_context_items,
+            teacher_provided_context,
+            phase="write",
+            material_maps=material_maps,
+        )
 
         # NEW Phase 2: Append media context if available
         if media_text:
@@ -464,14 +669,17 @@ class WriterAgent:
                 # thinking and produced zero content. Retry once with thinking
                 # disabled so the model generates the lesson without CoT overhead.
                 if not content:
+                    retry_max_tokens = max(_WRITER_MAX_TOKENS, _WRITER_MIN_CONTENT_TOKENS)
                     logger.warning(
                         "[WriterAgent] Zero-content response after streaming "
-                        "(reasoning model likely exhausted token budget). "
-                        "Retrying with include_reasoning=False."
+                        "(reasoning model exhausted the %d-token budget). Retrying "
+                        "with include_reasoning=False and max_tokens=%d.",
+                        _WRITER_MAX_TOKENS,
+                        retry_max_tokens,
                     )
                     fallback_kwargs = app_config.openai.build_completion_kwargs(
                         temperature=0.7,
-                        max_tokens=_WRITER_MAX_TOKENS,
+                        max_tokens=retry_max_tokens,
                         include_reasoning=False,
                     )
                     content, last_finish_reason = await self._stream_completion(
@@ -574,6 +782,9 @@ class WriterAgent:
         revision_instructions: str,
         language: str = "it",
         intent: str = "lesson_creation",
+        teacher_provided_context: Optional[str] = None,
+        material_context_items: Optional[list[dict[str, Any]]] = None,
+        material_maps: Optional[list[dict[str, Any]]] = None,
     ) -> str:
         """
         Revise content based on critic feedback.
@@ -584,6 +795,13 @@ class WriterAgent:
             revision_instructions: Specific revision instructions
             language: Output language
             intent: Query intent for selecting the right system prompt
+            teacher_provided_context: The same uploaded-material appendix
+                ``write()`` receives. Without it a revision is produced from
+                the draft and the critique alone, so any constraint the
+                material carried — a syllabus, a class limitation, a passage
+                the lesson had to quote — silently stops applying the moment
+                the Critic asks for a change. Teachers experience that as the
+                assistant forgetting their file.
 
         Returns:
             Revised content
@@ -596,6 +814,19 @@ class WriterAgent:
             current_draft=current_draft,
             critique=critique,
             revision_instructions=revision_instructions,
+        )
+
+        # Same appendix ``write()`` uses, so both paths tell the model the same
+        # thing about the teacher's material rather than describing it twice in
+        # two ways. A revision that lost the material would quietly rewrite the
+        # lesson away from the document it was grounded in — the defect fixed in
+        # `3ca2e0b`, and the passages must not reintroduce it.
+        user_prompt += today_note()
+        user_prompt += teacher_material_appendix(
+            material_context_items,
+            teacher_provided_context,
+            phase="revise",
+            material_maps=material_maps,
         )
 
         # Get intent-specific system prompt for consistent formatting

@@ -1,0 +1,69 @@
+{#
+  A light turn's answer: while it is written, and once saved.
+
+  pending=True   streamed into by the writer-stream observer in _base.html
+                 (``data-writer-stream``, ``writer-stream-<id>``). Its id is
+                 ``lesson-card-loading``: when the stream closes chat_pane.html
+                 swaps it for /card-fragment, which renders this partial again
+                 with the saved, sanitised answer and its citations.
+  pending=False  the saved answer -- from /card-fragment and from the history.
+
+  Context: lesson, pending, turn, answer_html (saved), meta (saved).
+#}
+{% set lid = lesson.id | string %}
+{% set m = meta or {} %}
+
+<div {% if pending %}id="lesson-card-loading" data-writer-stream="{{ lid }}"{% endif %}
+     class="aix-agent-shell"
+     data-turn-index="{{ turn }}"
+     data-message-role="assistant">
+
+  <div class="aix-agent-avatar aix-agent-avatar--writer">
+    <wa-icon name="comments"></wa-icon>
+  </div>
+
+  <div class="aix-agent-body">
+    <article class="aix-agent-card aix-agent-card--writer">
+
+      <header class="aix-agent-card-header aix-agent-card-header--writer">
+        <div class="aix-agent-card-title">
+          <strong>Risposta</strong>
+          {% if turn %}<span class="aix-agent-card-role">· turno {{ turn }}</span>{% endif %}
+        </div>
+        {% if pending %}
+          <span class="aix-pill aix-pill-warning">
+            <wa-spinner class="aix-fs-xs"></wa-spinner>
+            sta scrivendo
+          </span>
+        {% else %}
+          <span class="aix-pill aix-pill-info" title="Contenuto generato dall'intelligenza artificiale">
+            <wa-icon name="sparkles" class="aix-fs-xs"></wa-icon>
+            Generato dall'IA
+          </span>
+        {% endif %}
+      </header>
+
+      <div class="aix-agent-card-body">
+        {% if pending %}
+          <div id="writer-stream-{{ lid }}" class="aix-prose writer-stream-prose" style="display:none;"></div>
+          <p id="writer-skeleton-{{ lid }}" class="aix-color-secondary aix-fs-12 m-0">
+            Leggo la lezione, la conversazione e i tuoi documenti…
+          </p>
+        {% else %}
+          <article class="lesson-prose">
+            {{ answer_html | safe }}
+          </article>
+        {% endif %}
+      </div>
+
+    </article>
+    <div class="aix-agent-footer-label">
+      <wa-icon name="bolt" class="aix-fs-sm"></wa-icon>
+      <span>
+        Risposta rapida · la lezione non è cambiata
+        {%- if m.get('seconds') is not none %} · {{ '%.0f' | format(m.seconds) }} s{% endif %}
+      </span>
+    </div>
+  </div>
+
+</div>

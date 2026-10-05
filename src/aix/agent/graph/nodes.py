@@ -5,10 +5,19 @@ Each node wraps an agent and handles state updates.
 Nodes are the building blocks of the LangGraph state machine.
 """
 
+import asyncio
+import inspect
 import logging
 import os
 import re
 from typing import Any
+
+from openai import (
+    APIConnectionError,
+    APITimeoutError,
+    InternalServerError,
+    RateLimitError,
+)
 
 from aix.agent.agents.critic_agent import CriticAgent
 from aix.agent.agents.planner_agent import PlannerAgent
@@ -82,6 +91,30 @@ def _sanitize(obj: Any) -> Any:
 
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Transient LLM failures
+# ---------------------------------------------------------------------------
+#
+# The LLM nodes catch everything and turn it into an error state, which is the
+# right default — a bad prompt or a malformed response should end the run
+# cleanly rather than crash it. But it also means nothing ever propagates, so
+# LangGraph's RetryPolicy would never fire: it only sees exceptions that leave
+# the node.
+#
+# These four are the ones worth another attempt, and they are re-raised so the
+# node-level RetryPolicy in ``lesson_planner_graph`` can act on them. The same
+# tuple is the policy's ``retry_on``, so the two cannot drift apart.
+#
+# The outer retry rebuilds the prompt rather than replaying the same HTTP
+# request, which is why it earns its place on top of the client's own retry
+# (see ``OpenAIConfig`` for how the total budget is split).
+TRANSIENT_LLM_ERRORS: tuple[type[Exception], ...] = (
+    RateLimitError,  # 429 — provider throttling
+    APITimeoutError,  # the request outlived AIX_LLM_TIMEOUT_S
+    APIConnectionError,  # DNS / TLS / socket
+    InternalServerError,  # 5xx from the provider
+)
 
 # Initialize agents (lazy loading).
 #
@@ -191,11 +224,31 @@ async def plan_node(state: AgentState) -> dict[str, Any]:
     seed_language = state.get("language", "it")
 
     try:
+        # T6: on a follow-up, the planner is also asked whether this turn needs
+        # a new search. It cannot answer that from the query alone — "traduci
+        # la lezione in inglese" only means something next to the lesson it
+        # refers to — so it gets the thread and the corpus with it. Only when
+        # the feature is on, so a run with the flag off sends the same prompt
+        # it always sent.
+        thread_context: dict[str, Any] = {}
+        if _conditional_retrieval_enabled() and (state.get("conversation_history") or []):
+            thread_context = {
+                "conversation_history": state.get("conversation_history"),
+                "existing_corpus": sorted(_corpus_names(state)),
+            }
+
         plan = await planner.plan(
             query=state["teacher_query"],
             domain=state.get("domain", "neuro"),
             language=seed_language,
             pedagogical_intent=state.get("pedagogical_intent"),
+            # Q1 · 1.1: the classroom constraints reach the Planner as well as the
+            # Writer, so retrieval is not spent on activities the room cannot run.
+            educational_profile=state.get("educational_profile"),
+            # The attachments, so concepts and queries come from the document
+            # rather than from the words "documento allegato".
+            teacher_materials=state.get("teacher_provided_context"),
+            **thread_context,
         )
 
         # Point (a): the Planner LLM is the canonical L1 language detector.
@@ -316,6 +369,7 @@ async def plan_node(state: AgentState) -> dict[str, Any]:
                 "response_language": plan.response_language,
                 "language_confidence": plan.language_confidence,
                 "language_overridden": language_overridden,
+                "retrieval_reason": plan.retrieval_reason,
             },
             "query_intent": plan.query_intent,
             "lesson_type": plan.lesson_type,
@@ -327,6 +381,9 @@ async def plan_node(state: AgentState) -> dict[str, Any]:
             "scope_confidence": plan.scope_confidence,
             "subject_concepts": plan.subject_concepts,
             "pedagogy_concepts": plan.pedagogy_concepts,
+            # None on a first turn and whenever the planner was not asked —
+            # which is exactly when should_retrieve falls back to concepts.
+            "requires_new_retrieval": plan.requires_new_retrieval,
             "current_step": "plan_complete",
         }
         # Only emit a language update when we're actually changing it —
@@ -336,6 +393,11 @@ async def plan_node(state: AgentState) -> dict[str, Any]:
             updates["language"] = effective_language
         return updates
 
+    except TRANSIENT_LLM_ERRORS:
+        # Re-raised so the node's RetryPolicy sees it. If the budget is
+        # spent it escapes to the caller, which reports a failed run —
+        # better than the empty 'done' an error state used to produce.
+        raise
     except Exception as e:
         logger.error(f"[Node: Plan] Error: {e}")
         return {"error": str(e), "current_step": "error"}
@@ -364,7 +426,7 @@ async def retrieve_node(state: AgentState) -> dict[str, Any]:
         # Reconstruct the plan
         from aix.agent.agents.planner_agent import RetrievalPlan
 
-        plan_data = state.get("plan", {})
+        plan_data = state.get("plan") or {}
         plan = RetrievalPlan(
             query_intent=plan_data.get("query_intent", "lesson_creation"),
             key_concepts=plan_data.get("key_concepts", []),
@@ -428,12 +490,158 @@ async def retrieve_node(state: AgentState) -> dict[str, Any]:
             "external_resources": _sanitize(result.external_resources)
             if result.external_resources
             else None,
+            # Nothing found? Then say *why* nothing was found. See
+            # ``_knowledge_graph_is_reachable``.
+            "kg_unreachable": (
+                not await _knowledge_graph_is_reachable() if not result.nodes else False
+            ),
             "current_step": "retrieve_complete",
         }
 
     except Exception as e:
         logger.error(f"[Node: Retrieve] Error: {e}")
         return {"error": str(e), "current_step": "error"}
+
+
+async def _knowledge_graph_is_reachable(timeout: float = 3.0) -> bool:
+    """Is the graph database answering? Asked only when the search found nothing.
+
+    Zero concepts has two causes that look identical in the result and could not
+    be more different to a teacher: the question is outside the Knowledge Graph —
+    normal, the graph holds pedagogy and the lesson is about the Cold War — or
+    the database did not answer. Until 2026-09-21 the card said «fuori ambito»
+    for both, blaming the teacher's question for an outage.
+
+    Cheap because it is conditional: the probe runs only when there is nothing
+    to show, never on the path where the search worked. A failure here means
+    "unreachable", including a timeout — a database too slow to answer inside
+    three seconds did not contribute to this lesson either.
+    """
+    try:
+        from neo4j import GraphDatabase
+
+        from aix.core.config import config as app_config
+
+        def _check() -> bool:
+            kwargs: dict[str, Any] = dict(app_config.neo4j.driver_kwargs())
+            kwargs["connection_timeout"] = timeout
+            driver = GraphDatabase.driver(app_config.neo4j.uri, **kwargs)
+            try:
+                driver.verify_connectivity()
+                return True
+            finally:
+                driver.close()
+
+        return await asyncio.wait_for(asyncio.to_thread(_check), timeout=timeout + 2)
+    except Exception as exc:  # noqa: BLE001 — every failure means the same thing
+        logger.warning("[Node: Retrieve] Knowledge Graph unreachable: %s", exc)
+        return False
+
+
+def _private_search_query(state: AgentState) -> str:
+    """What to search the teacher's documents for: the subject, not the request.
+
+    The teacher's words are an instruction — «crea una lezione sulla guerra
+    fredda basandoti sui documenti allegati» — and most of them describe the task,
+    not the content. Embedded as they are, they matched the English PDF's own
+    teaching boilerplate («quote particular passages…») better than its history.
+    Measured on the first real lesson (2026-09-16): with the lesson topic and the
+    Planner's subject concepts instead, the top three passages were all content
+    from the Italian handout, and the best score rose from 0.61 to 0.67.
+
+    The request is the fallback, for a turn where the Planner found no subject.
+
+    On a later turn the profile's topic is the *first* lesson's: with the
+    Planner's concepts for this turn it is left out. «crisi israelo-palestinese»
+    led the search for a new lesson on artificial intelligence (2026-10-02).
+    """
+    profile = state.get("educational_profile") or {}
+    topic = str(profile.get("specific_topic") or "").strip() if isinstance(profile, dict) else ""
+    concepts = [str(c).strip() for c in (state.get("subject_concepts") or []) if str(c).strip()]
+    if concepts and state.get("conversation_history"):
+        topic = ""
+
+    terms = list(dict.fromkeys(([topic] if topic else []) + concepts[:8]))
+    if terms:
+        return " · ".join(terms)
+    return str(state.get("teacher_query") or "").strip()
+
+
+async def retrieve_private_node(state: AgentState) -> dict[str, Any]:
+    """PRIVATE MATERIAL NODE — the teacher's own documents (§8.1, §8.5).
+
+    Runs beside ``retrieve`` in the same superstep, which is why
+    ``current_step`` and ``error`` carry reducers (§8.9).
+
+    It searches nothing on its own: the WebUI registers a search function for
+    this session (see ``material_source``), because the rows belong to the WebUI
+    and the authorization is the teacher's. An API or CLI run registers none, so
+    this node finds nothing and the lesson is written exactly as before.
+
+    A failure here is never the lesson's failure. If the private index is down
+    or the embedding provider refuses, the run continues on the Knowledge Graph
+    alone — a lesson without the handout is worth more than no lesson.
+    """
+    from aix.agent.graph import material_source
+
+    # The scope, and only the scope. ``session_id`` is LangGraph's thread id
+    # and, on the API, a string the caller chooses; reading it here — even as a
+    # fallback — would let a caller who sends the id of a lesson registered
+    # elsewhere in this process search that teacher's documents. Whoever
+    # registers a search function sets ``material_scope_id`` to the key it used.
+    search = material_source.get(state.get("material_scope_id"))
+    if search is None:
+        return {"current_step": "retrieve_complete"}
+
+    query = _private_search_query(state)
+    # The teacher's own words as well, when the search takes them: the query
+    # above is the subject, and «approfondisci il capitolo 4» names a part of
+    # the document that the subject alone does not.
+    extra: dict[str, Any] = {}
+    try:
+        if "request" in inspect.signature(search).parameters:
+            extra["request"] = str(state.get("teacher_query") or "")
+    except (TypeError, ValueError):
+        pass
+
+    try:
+        items = await search(query, **extra)
+    except Exception as exc:  # noqa: BLE001 — the Knowledge Graph alone still writes a lesson
+        # The reason goes in the warning itself. The first real test logged only
+        # "search failed", with the cause at DEBUG, and a broken import looked
+        # exactly like a provider outage until someone read the ingestion job's
+        # traceback instead.
+        logger.warning(
+            "[Node: PrivateMaterial] search failed (%s: %s), continuing without it",
+            type(exc).__name__,
+            exc,
+        )
+        logger.debug("[Node: PrivateMaterial] failure detail", exc_info=True)
+        return {"current_step": "retrieve_complete"}
+
+    # What the documents hold, part by part, when the search can say (the
+    # WebUI's can). Without it the Writer sees only the passages, and a
+    # 222-page book was eight fragments it knew nothing else about (2026-09-29).
+    maps: list[dict[str, Any]] = []
+    read_maps = getattr(search, "maps", None)
+    if read_maps is not None:
+        try:
+            maps = await read_maps()
+        except Exception as exc:  # noqa: BLE001 — the passages still stand
+            logger.warning(
+                "[Node: PrivateMaterial] maps not read (%s: %s)", type(exc).__name__, exc
+            )
+
+    logger.info(
+        "[Node: PrivateMaterial] %d passage(s) and %d map(s) from the teacher's material",
+        len(items),
+        len(maps),
+    )
+    return {
+        "material_context_items": items,
+        "material_maps": maps,
+        "current_step": "retrieve_complete",
+    }
 
 
 async def write_node(state: AgentState) -> dict[str, Any]:
@@ -460,7 +668,7 @@ async def write_node(state: AgentState) -> dict[str, Any]:
     writer = get_writer()
 
     try:
-        plan_data = state.get("plan", {})
+        plan_data = state.get("plan") or {}
         query_intent = plan_data.get("query_intent", state.get("query_intent", "lesson_creation"))
 
         # Check if this is a revision
@@ -472,6 +680,12 @@ async def write_node(state: AgentState) -> dict[str, Any]:
                 revision_instructions=state.get("revision_instructions", ""),
                 language=state.get("language", "it"),
                 intent=query_intent,
+                # Same field the initial write() gets. Omitting it here meant a
+                # Critic-triggered revision silently dropped whatever the
+                # teacher had uploaded.
+                teacher_provided_context=state.get("teacher_provided_context"),
+                material_context_items=state.get("material_context_items"),
+                material_maps=state.get("material_maps"),
             )
         else:
             # Initial writing
@@ -495,9 +709,9 @@ async def write_node(state: AgentState) -> dict[str, Any]:
             )
 
             retrieval_result = RetrievalResult(
-                nodes=state.get("retrieved_nodes", []),
-                relationships=state.get("retrieved_relationships", []),
-                recommendations=state.get("recommendations", []),
+                nodes=(state.get("retrieved_nodes") or []),
+                relationships=(state.get("retrieved_relationships") or []),
+                recommendations=(state.get("recommendations") or []),
                 confidence=state.get("retrieval_confidence", "MEDIUM"),
             )
 
@@ -520,6 +734,11 @@ async def write_node(state: AgentState) -> dict[str, Any]:
                     # NEW Phase B: Pass domain for extensions
                     domain=state.get("domain", "neuro"),
                     teacher_provided_context=state.get("teacher_provided_context"),
+                    # Fase 2 · PR 6 — the retrieved passages. When there are
+                    # any, the Writer uses them *instead* of the pasted
+                    # document: that is the whole point of chunking it.
+                    material_context_items=state.get("material_context_items"),
+                    material_maps=state.get("material_maps"),
                     educational_profile=state.get("educational_profile"),
                     pedagogical_intent=state.get("pedagogical_intent"),
                     refinement_instruction=state.get("refinement_instruction"),
@@ -535,11 +754,75 @@ async def write_node(state: AgentState) -> dict[str, Any]:
                 if _token_bus is not None:
                     _token_bus.put_nowait(None)
 
+        # An empty draft is a failed turn, and it has to say so. In a thread the
+        # checkpointer still holds the previous turn's ``final_lesson_plan``, so
+        # a silent empty write ends the run "complete" and saves the OLD lesson
+        # as the answer to the NEW request — which is what happened on
+        # 2026-09-16: the teacher asked to extend the lesson with a second
+        # document and got the same lesson back, with no error.
+        if not (lesson_plan or "").strip():
+            logger.error("[Node: Write] the model returned no text (token budget exhausted?)")
+            return {
+                "error": (
+                    "Il modello non ha prodotto testo: il budget di token per la scrittura "
+                    "è stato consumato dal ragionamento. Aumenta AIX_WRITER_MAX_TOKENS "
+                    "(consigliato 8000) e riprova."
+                ),
+                "current_step": "error",
+            }
+
+        # §8.6 — a citation the teacher cannot verify is worse than none. The
+        # markers are authentic, but one can end up on a sentence its passage
+        # does not support; those are removed here, and the sentence stays.
+        # Costs one call, and only when the draft carries private citations.
+        from aix.agent.validation.answer_shape import tidy_answer
+        from aix.agent.validation.citation_support import (
+            drop_unknown_markers,
+            drop_unsupported_citations,
+        )
+
+        # Every draft passes through here -- first version and revisions -- and
+        # from here it reaches the WebUI, the exports and the public API alike.
+        # Tidied first, so the citation check reads the answer and not its
+        # packaging. See ``answer_shape`` for why this is not the renderer's job.
+        lesson_plan = tidy_answer(lesson_plan)
+        lesson_plan = drop_unknown_markers(lesson_plan, state.get("material_context_items"))
+
+        lesson_plan = await drop_unsupported_citations(
+            lesson_plan, state.get("material_context_items")
+        )
+
         return {"lesson_plan_draft": lesson_plan, "current_step": "write_complete"}
 
+    except TRANSIENT_LLM_ERRORS:
+        # Re-raised so the node's RetryPolicy sees it. If the budget is
+        # spent it escapes to the caller, which reports a failed run —
+        # better than the empty 'done' an error state used to produce.
+        raise
     except Exception as e:
         logger.error(f"[Node: Write] Error: {e}")
         return {"error": str(e), "current_step": "error"}
+
+
+#: Similarity above which a retrieved passage is taken to be about the request.
+#: Below it the documents may simply not concern this question, and a draft
+#: that leaves them out is right to.
+RELEVANT_PASSAGE_SCORE = 0.45
+
+DOCUMENTS_UNUSED_INSTRUCTION = (
+    "La docente ha allegato dei documenti e la risposta non ne usa né cita nessun "
+    "passaggio. Riscrivi la risposta costruendo i contenuti sui passaggi dei documenti, "
+    "con i loro marcatori, e usa la mappa dei documenti per scegliere che cosa proporre. "
+    "Se i documenti non riguardano davvero la richiesta, dillo in una riga."
+)
+
+
+def _ignores_the_documents(state: AgentState) -> bool:
+    """Relevant passages were handed over, and the draft cites none of them."""
+    items = state.get("material_context_items") or []
+    draft = state.get("lesson_plan_draft") or ""
+    relevant = any(float(i.get("score") or 0) >= RELEVANT_PASSAGE_SCORE for i in items)
+    return relevant and "[[material:" not in draft
 
 
 async def critique_node(state: AgentState) -> dict[str, Any]:
@@ -563,7 +846,7 @@ async def critique_node(state: AgentState) -> dict[str, Any]:
         return {"error": "No content generated", "current_step": "error", "approved": False}
 
     # Get query intent for appropriate evaluation
-    plan_data = state.get("plan", {})
+    plan_data = state.get("plan") or {}
     query_intent = plan_data.get("query_intent", state.get("query_intent", "lesson_creation"))
 
     logger.info(f"[Node: Critique] Reviewing content (intent: {query_intent})...")
@@ -574,9 +857,9 @@ async def critique_node(state: AgentState) -> dict[str, Any]:
         from aix.agent.agents.retriever_agent import RetrievalResult
 
         retrieval_result = RetrievalResult(
-            nodes=state.get("retrieved_nodes", []),
-            relationships=state.get("retrieved_relationships", []),
-            recommendations=state.get("recommendations", []),
+            nodes=(state.get("retrieved_nodes") or []),
+            relationships=(state.get("retrieved_relationships") or []),
+            recommendations=(state.get("recommendations") or []),
             confidence=state.get("retrieval_confidence", "MEDIUM"),
         )
 
@@ -589,16 +872,34 @@ async def critique_node(state: AgentState) -> dict[str, Any]:
             domain=state.get("domain", "neuro"),
             language=state.get("language", "it"),
             query_intent=query_intent,
+            # §8.8 — the Critic is told the teacher's own documents exist and are
+            # `teacher_asserted`, or it marks a lesson built on them as ungrounded.
+            material_items=state.get("material_context_items") or [],
         )
+
+        approved = result.approved
+        revision_instructions = result.revision_instructions
+        if _ignores_the_documents(state) and state.get("revision_count", 0) < state.get(
+            "max_revisions", 1
+        ):
+            # Checked here, in code, and not left to the Critic's rubric: on
+            # 2026-09-29 a lesson with a 222-page book attached cited it zero
+            # times and was approved at 3.8 -- the rubric scores the teaching,
+            # and the teaching was fine. What the teacher asked for was the book.
+            logger.info("[Node: Critique] the draft cites none of the attached documents: revising")
+            approved = False
+            revision_instructions = (
+                (revision_instructions or "").rstrip() + "\n\n" + DOCUMENTS_UNUSED_INSTRUCTION
+            ).strip()
 
         updates = {
             "critique": result.summary,
             "critique_score": result.average_score,
-            "approved": result.approved,
+            "approved": approved,
             "current_step": "critique_complete",
         }
 
-        if result.approved:
+        if approved:
             updates["final_lesson_plan"] = state["lesson_plan_draft"]
             updates["final_metadata"] = {
                 "scores": result.scores,
@@ -606,14 +907,104 @@ async def critique_node(state: AgentState) -> dict[str, Any]:
                 "revision_count": state.get("revision_count", 0),
             }
         else:
-            updates["revision_instructions"] = result.revision_instructions
+            updates["revision_instructions"] = revision_instructions
             updates["revision_count"] = state.get("revision_count", 0) + 1
 
         return updates
 
+    except TRANSIENT_LLM_ERRORS:
+        # Re-raised so the node's RetryPolicy sees it. If the budget is
+        # spent it escapes to the caller, which reports a failed run —
+        # better than the empty 'done' an error state used to produce.
+        raise
     except Exception as e:
         logger.error(f"[Node: Critique] Error: {e}")
         return {"error": str(e), "current_step": "error"}
+
+
+#: Separates the validator's fix from the teacher's refinement instruction.
+_REMEDIATION_MARK = "## Correzioni richieste dal controllo della classe"
+
+
+async def validate_node(state: AgentState) -> dict[str, Any]:
+    """Check the draft against the classroom. Pure Python, no model call.
+
+    Runs between the Writer and the Critic so that an infeasible lesson is
+    caught before anything scores it. The Critic used to be the only judge, and
+    it rated pedagogical quality and practical feasibility with the same 1–5
+    rubric — which is how a lesson that four fifths of a class could not do came
+    back at 91%.
+    """
+    from aix.agent.validation import validate_lesson, validator_enabled
+
+    draft = state.get("lesson_plan_draft") or ""
+    if not validator_enabled() or not draft:
+        return {"validation_passed": True, "current_step": "write_complete"}
+
+    report = validate_lesson(draft, state.get("educational_profile"))
+    updates: dict[str, Any] = {
+        "validation_violations": report.as_dicts(),
+        "validation_passed": report.passed,
+        "current_step": "write_complete",
+    }
+
+    if report.blocking:
+        # The remediation goes through ``refinement_instruction``, which
+        # ``write_node`` already forwards to the Writer. A retry therefore needs
+        # no new mechanism — and it carries only what is blocking, so the one
+        # thing that must change is not buried under the fifteen that must not.
+        # Added to the teacher's own instruction, never in its place: a chip's
+        # «semplifica» must survive a retry for a timing fix. Earlier remediation
+        # is dropped, so retries do not stack.
+        teacher = (state.get("refinement_instruction") or "").split(_REMEDIATION_MARK)[0].rstrip()
+        remediation = f"{_REMEDIATION_MARK}\n{report.remediation_prompt()}"
+        updates["refinement_instruction"] = (
+            f"{teacher}\n\n{remediation}" if teacher else remediation
+        )
+        updates["validation_attempts"] = (state.get("validation_attempts") or 0) + 1
+        logger.info(
+            "[Node: Validate] %d blocking violation(s): %s",
+            len(report.blocking),
+            ", ".join(sorted({v.rule for v in report.blocking})),
+        )
+    else:
+        logger.info(
+            "[Node: Validate] feasible (%d warning(s))",
+            len(report.warnings),
+        )
+    return updates
+
+
+def should_retry_after_validation(state: AgentState) -> str:
+    """Conditional edge after the validator: rewrite, or hand over to the Critic.
+
+    Returns ``"rewrite"`` or ``"critique"``. The budget is the validator's own,
+    not the Critic's: spending a revision on an infeasible draft would leave the
+    teacher with fewer chances at a *better* lesson, which is a different thing.
+    """
+    from aix.agent.validation import max_retries
+
+    if state.get("error"):
+        return "critique"
+    if state.get("validation_passed", True):
+        return "critique"
+
+    # ``validation_attempts`` counts *failed validations*, and the node has
+    # already incremented it for this one. So after the first failure it reads 1
+    # while zero rewrites have happened yet: the rewrites done so far are
+    # ``attempts - 1``, and a budget of N rewrites is spent when attempts > N.
+    # Comparing with ``>=`` would quietly grant one fewer rewrite than the
+    # setting promises.
+    attempts = state.get("validation_attempts") or 0
+    if attempts > max_retries():
+        # Out of retries. The lesson goes on to the Critic with its violations
+        # recorded: the teacher is better served seeing them than waiting for a
+        # rewrite that the last two did not achieve.
+        logger.info("[Router] validator budget spent (%d) — continuing to critique", attempts)
+        return "critique"
+
+    logger.info("[Router] lesson not feasible — targeted rewrite %d", attempts)
+    return "rewrite"
 
 
 def should_continue_to_revision(state: AgentState) -> str:
@@ -632,15 +1023,175 @@ def should_continue_to_revision(state: AgentState) -> str:
         logger.info("[Router] Lesson plan approved, finishing...")
         return "finish"
 
+    # ``critique_node`` has already counted this rejection, so the count is the
+    # number of revisions asked for *including* the one being decided now. It
+    # was compared with ``>=``, which allowed max-1 revisions: when the default
+    # became 1 on 2026-09-25, meant as "one revision", it meant none, and every
+    # rejected draft since shipped unrevised (found 2026-09-29, when a draft
+    # that ignored the attached book was flagged and went out anyway).
     revision_count = state.get("revision_count", 0)
     max_revisions = state.get("max_revisions", 1)
 
-    if revision_count >= max_revisions:
+    if revision_count > max_revisions:
         logger.info("[Router] Max revisions reached, finishing...")
         return "finish"
 
     logger.info(f"[Router] Revision requested ({revision_count}/{max_revisions})")
     return "revise"
+
+
+# ---------------------------------------------------------------------------
+# T6 — Conditional retrieval: reuse the corpus when the turn adds nothing new
+# ---------------------------------------------------------------------------
+#
+# Most follow-ups do not need a second Knowledge Graph search. "riscrivila più
+# corta" and "adatta per ADHD" re-use the same evidence; only a turn that
+# introduces a concept the corpus does not cover needs to go back to Neo4j.
+#
+# The decision is the planner's, not a manual toggle, because the planner
+# already extracts ``key_concepts`` for the turn — comparing those against what
+# the thread holds is free. A toggle would put the burden on the teacher to
+# predict whether their own question introduces a new concept.
+#
+# This depends on the input schema from T4: without it the previous turn's
+# retrieval is nulled before the graph starts, so there would be nothing to
+# reuse. Gated by ``AIX_CONDITIONAL_RETRIEVAL_ENABLED``; with the flag off the
+# ``plan → retrieve`` edge stays unconditional and behaviour is unchanged.
+
+
+def _conditional_retrieval_enabled() -> bool:
+    return (os.getenv("AIX_CONDITIONAL_RETRIEVAL_ENABLED") or "true").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
+def _private_rag_enabled() -> bool:
+    """The same flag the WebUI reads, read here without importing that layer."""
+    return (os.getenv("AIX_PRIVATE_RAG_ENABLED") or "true").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
+def _corpus_names(state: AgentState) -> set[str]:
+    """Lower-cased names of everything the thread already retrieved."""
+    names: set[str] = set()
+    for item in (state.get("retrieved_nodes") or []) + (state.get("recommendations") or []):
+        if not isinstance(item, dict):
+            continue
+        label = item.get("name") or item.get("title")
+        if label:
+            names.add(str(label).strip().lower())
+    return names
+
+
+def _corpus_covers_this_turn(state: AgentState) -> bool:
+    """True when every concept the planner extracted is already in the corpus.
+
+    Matching is substring in both directions rather than equality: the planner
+    writes free text ("memoria di lavoro") while the graph stores node names
+    ("Memoria di Lavoro"), and Italian inflection makes exact comparison miss
+    far more often than a loose match over-matches. A false negative here only
+    costs a retrieval that was not strictly needed; a false positive answers
+    from evidence that does not cover the question, so the bias is deliberate.
+    """
+    concepts = [c.strip().lower() for c in (state.get("key_concepts") or []) if c and c.strip()]
+    if not concepts:
+        # The planner named nothing to look for, so there is nothing to add.
+        return True
+
+    corpus = _corpus_names(state)
+    if not corpus:
+        return False
+
+    return all(any(c in name or name in c for name in corpus) for c in concepts)
+
+
+def should_retrieve(state: AgentState) -> str:
+    """Conditional edge after the planner: search the graph, or reuse it.
+
+    Returns ``"retrieve"`` or ``"reuse"``. Criteria, in precedence order:
+
+    1. an upstream error — keep today's path, where every remaining node
+       no-ops its way to the end;
+    2. the feature flag, off by default;
+    3. the teacher's explicit override, which wins in both directions;
+    4. the first turn of a thread, which always searches;
+    5. an empty corpus, which leaves nothing to reuse;
+    6. the planner's own verdict, given the thread and the corpus it holds;
+    7. failing that, whether the planner's concepts are already covered.
+
+    Six is new; seven used to be the whole of it. Comparing concepts never
+    once chose reuse on a real thread: the planner was called with the
+    bare query and no thread, so asked to translate an existing lesson it read
+    the turn as a fresh request and emitted the concepts of a lesson nobody had
+    asked for — generic pedagogy in English, against a corpus of subject nodes
+    in Italian, which cannot match. The design always said the decision was the
+    planner's; it just was not being given anything to decide with. Now it is,
+    and the concept comparison stays only as the fallback for a turn where the
+    planner did not answer.
+    """
+    if state.get("error"):
+        return "retrieve"
+
+    if not _conditional_retrieval_enabled():
+        return "retrieve"
+
+    override = state.get("force_retrieval")
+    if override is True:
+        logger.info("[Router] retrieval forced by the teacher → retrieve")
+        return "retrieve"
+    if override is False:
+        logger.info("[Router] retrieval waived by the teacher → reuse")
+        return "reuse"
+
+    if not (state.get("conversation_history") or []):
+        return "retrieve"
+
+    if not state.get("retrieved_nodes"):
+        logger.info("[Router] no corpus on this thread yet → retrieve")
+        return "retrieve"
+
+    verdict = state.get("requires_new_retrieval")
+    if verdict is not None:
+        reason = (state.get("plan") or {}).get("retrieval_reason") or "no reason given"
+        logger.info(
+            "[Router] planner says requires_new_retrieval=%s (%s) → %s",
+            verdict,
+            reason,
+            "retrieve" if verdict else "reuse",
+        )
+        return "retrieve" if verdict else "reuse"
+
+    if _corpus_covers_this_turn(state):
+        logger.info(
+            "[Router] turn adds no new concepts (%s) → reusing the existing corpus",
+            state.get("key_concepts"),
+        )
+        return "reuse"
+
+    logger.info("[Router] turn introduces new concepts (%s) → retrieve", state.get("key_concepts"))
+    return "retrieve"
+
+
+async def reuse_retrieval_node(state: AgentState) -> dict[str, Any]:
+    """Mark the turn as reusing the thread's corpus, without touching Neo4j.
+
+    A node rather than a bare edge so the decision is visible: it shows up in
+    ``astream`` updates like every other stage, which is what lets the UI tell
+    the teacher the answer came from evidence already gathered.
+    """
+    logger.info(
+        "[Node: ReuseRetrieval] Skipping the Knowledge Graph search; "
+        "reusing %d node(s) from an earlier turn.",
+        len(state.get("retrieved_nodes") or []),
+    )
+    return {"retrieval_reused": True, "current_step": "retrieve_complete"}
 
 
 # ---------------------------------------------------------------------------

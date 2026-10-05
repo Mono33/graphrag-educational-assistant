@@ -58,7 +58,9 @@ def get_article(topic: str, language: str = "en") -> dict[str, Any]:
 
     canonical_url = data.get("content_urls", {}).get("desktop", {}).get("page", "")
     if not canonical_url:
-        canonical_url = f"https://{lang}.wikipedia.org/wiki/{data.get('title', topic).replace(' ', '_')}"
+        canonical_url = (
+            f"https://{lang}.wikipedia.org/wiki/{data.get('title', topic).replace(' ', '_')}"
+        )
 
     return {
         "found": True,

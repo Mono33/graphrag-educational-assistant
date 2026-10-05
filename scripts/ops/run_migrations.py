@@ -38,7 +38,11 @@ class MigrationRunner:
             name = file_path.name
 
             # Skip APOC-specific files if APOC not available
-            if not apoc_available and not name.endswith("_no_apoc.cypher") and not name.startswith("999_"):
+            if (
+                not apoc_available
+                and not name.endswith("_no_apoc.cypher")
+                and not name.startswith("999_")
+            ):
                 # Skip regular files that require APOC (like 003_merge_duplicates_by_slug.cypher)
                 if any(x in name for x in ["merge_duplicates", "split_multiconcept", "fix_labels"]):
                     print(f"   ⏭️  Skipping {name} (requires APOC)")
@@ -90,9 +94,9 @@ class MigrationRunner:
 
         # Split on semicolons and filter out comments/empty statements
         statements = []
-        for stmt in content.split(';'):
+        for stmt in content.split(";"):
             stmt = stmt.strip()
-            if stmt and not stmt.startswith('//'):
+            if stmt and not stmt.startswith("//"):
                 statements.append(stmt)
 
         # Execute each statement
@@ -123,7 +127,7 @@ class MigrationRunner:
             print(f"   📊 {record['label']}: {record['count']} nodes")
 
         # Check for orphaned nodes after structural changes
-        if migration_name in ['003_merge_duplicates_by_slug', '005_split_multiconcept_nodes']:
+        if migration_name in ["003_merge_duplicates_by_slug", "005_split_multiconcept_nodes"]:
             result = session.run("""
                 MATCH (n) WHERE NOT EXISTS { MATCH (n)--() }
                 RETURN count(n) as orphan_count
@@ -146,9 +150,18 @@ class MigrationRunner:
             with self.driver.session() as session:
                 # Test basic SEN -> Methodology queries
                 test_queries = [
-                    ("ADHD test", "MATCH (s:StudentWithSpecialNeeds {slug:'adhd'})-[:SUGGESTS]->(m) RETURN count(m) as count"),
-                    ("Autism test", "MATCH (s:StudentWithSpecialNeeds {slug:'autism-spectrum-disorder'})-[:SUGGESTS]->(m) RETURN count(m) as count"),
-                    ("Cognitive test", "MATCH (s:StudentWithSpecialNeeds {slug:'cognitive-disability'})-[:SUGGESTS]->(m) RETURN count(m) as count"),
+                    (
+                        "ADHD test",
+                        "MATCH (s:StudentWithSpecialNeeds {slug:'adhd'})-[:SUGGESTS]->(m) RETURN count(m) as count",
+                    ),
+                    (
+                        "Autism test",
+                        "MATCH (s:StudentWithSpecialNeeds {slug:'autism-spectrum-disorder'})-[:SUGGESTS]->(m) RETURN count(m) as count",
+                    ),
+                    (
+                        "Cognitive test",
+                        "MATCH (s:StudentWithSpecialNeeds {slug:'cognitive-disability'})-[:SUGGESTS]->(m) RETURN count(m) as count",
+                    ),
                 ]
 
                 success_count = 0
@@ -223,6 +236,7 @@ class MigrationRunner:
             print("💡 Consider restoring from backup")
             return False
 
+
 def main():
     # Use same configuration as your working scripts
     try:
@@ -262,6 +276,7 @@ def main():
         sys.exit(0 if success else 1)
     finally:
         runner.close()
+
 
 if __name__ == "__main__":
     main()

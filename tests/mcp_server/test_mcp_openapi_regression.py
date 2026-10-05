@@ -21,10 +21,7 @@ from pathlib import Path
 import pytest
 
 _BASELINE_PATH = (
-    Path(__file__).resolve().parents[2]
-    / "data"
-    / "diagnostic"
-    / "openapi_before_p20.txt"
+    Path(__file__).resolve().parents[2] / "data" / "diagnostic" / "openapi_before_p20.txt"
 )
 
 
@@ -48,10 +45,27 @@ def _baseline_routes() -> list[str]:
         for line in fh:
             parts = line.split()
             if len(parts) >= 2 and parts[0] in {
-                "GET", "POST", "PUT", "PATCH", "DELETE",
+                "GET",
+                "POST",
+                "PUT",
+                "PATCH",
+                "DELETE",
             }:
                 expected.append(f"{parts[0]} {parts[1]}")
     return expected
+
+
+#: Routes deliberately withdrawn since the baseline, each with the reason.
+#: The baseline file stays a factual record of what the surface was; this is
+#: where a considered removal is declared, so it is a decision in a diff rather
+#: than a line quietly edited out of the record.
+WITHDRAWN: dict[str, str] = {
+    "GET /auth/logout": (
+        "Logging out changes state; as a GET any third-party page could fire it "
+        "at a teacher mid-lesson. Now POST /auth/logout, under CSRF "
+        "(review of 2026-09-15)."
+    ),
+}
 
 
 def test_p20_strictly_additive(http_client):
@@ -63,7 +77,7 @@ def test_p20_strictly_additive(http_client):
     )
 
     live = _live_routes(http_client)
-    missing = sorted(set(expected) - live)
+    missing = sorted(set(expected) - live - WITHDRAWN.keys())
     assert not missing, (
         "Strictly-additive regression: routes present before CORE 5 #20 are "
         "now MISSING from the live spec. This is a backward-compat break.\n"

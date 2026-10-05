@@ -31,10 +31,7 @@ from aix.agent import AgentOrchestrator
 def setup_logging(verbose: bool = False):
     """Configure logging"""
     level = logging.DEBUG if verbose else logging.INFO
-    logging.basicConfig(
-        level=level,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
+    logging.basicConfig(level=level, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
 
 def print_header():
@@ -75,9 +72,9 @@ def print_result(result):
 
         # Offer to save
         save = input("\n💾 Save lesson plan to file? (y/n): ").strip().lower()
-        if save == 'y':
+        if save == "y":
             filename = f"lesson_plan_{asyncio.get_event_loop().time():.0f}.md"
-            with open(filename, 'w', encoding='utf-8') as f:
+            with open(filename, "w", encoding="utf-8") as f:
                 f.write(result.lesson_plan)
             print(f"✅ Saved to: {filename}")
 
@@ -85,11 +82,7 @@ def print_result(result):
 async def run_interactive(domain: str, language: str, max_revisions: int):
     """Run interactive testing loop"""
 
-    orchestrator = AgentOrchestrator(
-        domain=domain,
-        language=language,
-        max_revisions=max_revisions
-    )
+    orchestrator = AgentOrchestrator(domain=domain, language=language, max_revisions=max_revisions)
 
     print("🔧 Configuration:")
     print(f"   Domain: {domain}")
@@ -104,21 +97,19 @@ async def run_interactive(domain: str, language: str, max_revisions: int):
         if not query:
             continue
 
-        if query.lower() in ['quit', 'exit', 'q']:
+        if query.lower() in ["quit", "exit", "q"]:
             print("\n👋 Goodbye!")
             break
 
-        if query.lower() == 'help':
+        if query.lower() == "help":
             print_examples()
             continue
 
-        if query.lower() == 'switch':
+        if query.lower() == "switch":
             domain = input("New domain (neuro/udl): ").strip() or domain
             language = input("New language (it/en): ").strip() or language
             orchestrator = AgentOrchestrator(
-                domain=domain,
-                language=language,
-                max_revisions=max_revisions
+                domain=domain, language=language, max_revisions=max_revisions
             )
             print(f"✅ Switched to domain={domain}, language={language}")
             continue
@@ -150,7 +141,7 @@ def print_examples():
 
     for category, query in examples:
         print(f"\n🔹 {category}:")
-        print(f"   \"{query}\"")
+        print(f'   "{query}"')
 
     print("\n💡 Commands:")
     print("   'switch' - Change domain/language")
@@ -160,11 +151,7 @@ def print_examples():
 async def run_single_query(query: str, domain: str, language: str, max_revisions: int):
     """Run a single query (non-interactive mode)"""
 
-    orchestrator = AgentOrchestrator(
-        domain=domain,
-        language=language,
-        max_revisions=max_revisions
-    )
+    orchestrator = AgentOrchestrator(domain=domain, language=language, max_revisions=max_revisions)
 
     print(f"\n🔧 Configuration: domain={domain}, language={language}")
     print(f"📝 Query: {query}")
@@ -179,36 +166,28 @@ def main():
         description="Test the Agentic GraphRAG lesson planning pipeline"
     )
     parser.add_argument(
-        "--domain", "-d",
+        "--domain",
+        "-d",
         type=str,
         default="neuro",
         choices=["neuro", "udl"],
-        help="Knowledge domain (default: neuro)"
+        help="Knowledge domain (default: neuro)",
     )
     parser.add_argument(
-        "--language", "-l",
+        "--language",
+        "-l",
         type=str,
         default="it",
         choices=["it", "en"],
-        help="Output language (default: it)"
+        help="Output language (default: it)",
     )
     parser.add_argument(
-        "--max-revisions", "-r",
-        type=int,
-        default=2,
-        help="Maximum revision cycles (default: 2)"
+        "--max-revisions", "-r", type=int, default=2, help="Maximum revision cycles (default: 2)"
     )
     parser.add_argument(
-        "--query", "-q",
-        type=str,
-        default=None,
-        help="Single query to run (non-interactive mode)"
+        "--query", "-q", type=str, default=None, help="Single query to run (non-interactive mode)"
     )
-    parser.add_argument(
-        "--verbose", "-v",
-        action="store_true",
-        help="Enable verbose logging"
-    )
+    parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
 
     args = parser.parse_args()
 
@@ -217,21 +196,11 @@ def main():
 
     if args.query:
         # Non-interactive mode
-        asyncio.run(run_single_query(
-            args.query,
-            args.domain,
-            args.language,
-            args.max_revisions
-        ))
+        asyncio.run(run_single_query(args.query, args.domain, args.language, args.max_revisions))
     else:
         # Interactive mode
-        asyncio.run(run_interactive(
-            args.domain,
-            args.language,
-            args.max_revisions
-        ))
+        asyncio.run(run_interactive(args.domain, args.language, args.max_revisions))
 
 
 if __name__ == "__main__":
     main()
-

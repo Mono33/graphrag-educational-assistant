@@ -19,16 +19,153 @@
     lesson    Lesson ORM
 #}
 {% set files = lesson.uploaded_files_json or [] %}
-<div id="chat-attachments" class="px-1{% if files %} pb-2{% endif %}">
+{#
+  ``material_states`` is version id → state of the ingestion pipeline (§6.1),
+  supplied by ``/attachments-fragment``. Absent on the first render — the page
+  load and the upload response — and the tray then asks for it itself, below.
+#}
+{% set states = material_states if material_states is mapping else {} %}
+{#
+  Which files are still waiting for an answer. Asked of the *files*, not of the
+  states, and that is the whole point: a document uploaded a second ago has a
+  version id and no state yet, and the previous version of this condition —
+  «is anything in the states preparing?» — saw a snapshot with nothing pending,
+  stopped polling and never started again. On 2026-09-21 two PDFs uploaded a few
+  seconds apart left the second chip frozen with no badge at all, while the
+  document had in fact finished indexing three seconds later.
+
+  A file counts as pending until its state says it is usable or that it failed.
+  With the materials pipeline off there are no version ids, so nothing is
+  pending and the tray does not poll — which it used to do forever, because the
+  states were permanently empty.
+#}
+{% set pending = [] %}
+{% for f in files %}
+  {% set st = states.get(f.material_version_id) %}
+  {% if f.material_version_id and not (st and (st.usable or st.status in ("failed", "deleted"))) %}
+    {% set _ = pending.append(f.material_version_id) %}
+  {% endif %}
+{% endfor %}
+<div id="chat-attachments" class="px-1{% if files %} pb-2{% endif %}"
+     {#
+       While a document is being prepared the tray refreshes itself, and stops
+       once every attachment has reached a final answer: no timer left running
+       behind a finished lesson. The same response re-renders the chat input out
+       of band, so the send button unlocks without the teacher reloading.
+     #}
+     {% if pending %}
+     hx-get="/webui/lesson/{{ lesson.id }}/attachments-fragment"
+     hx-trigger="load delay:2s"
+     hx-target="this"
+     hx-swap="outerHTML"
+     {% endif %}>
   {% if files %}
     <div class="flex flex-wrap gap-1.5">
       {% for f in files %}
         {% set fid = f.id if f.id else loop.index0|string %}
-        <span class="aix-attach-chip">
-          <wa-icon name="file-lines" class="aix-fs-08 aix-color-secondary"></wa-icon>
+        {#
+          ``parse`` is on entries uploaded since Fase 2 · PR 5; older entries
+          have none and render as before. What the parser could not do is said
+          on the chip, not discovered later in a lesson written from less.
+        #}
+        {#
+          Whose reading of the file. In the pipeline, the worker's: it is the one
+          that ran OCR and fed the index. The upload request no longer runs OCR
+          when the private RAG is on, so its summary would call a scan "without
+          text". Until the worker has spoken the chip says only "in
+          preparazione". Outside the pipeline, the request's summary, as before.
+        #}
+        {% set st = states.get(f.material_version_id) %}
+        {% if f.material_version_id %}
+          {% set p = st.quality if (st and st.quality is mapping) else {} %}
+        {% else %}
+          {% set p = f.parse if f.parse is mapping else {} %}
+        {% endif %}
+        {% set unread = p.unread_pages or 0 %}
+        {% set discarded = ((p.warnings or []) | join(" ")).count("ocr_discarded") %}
+        {% set ocr = p.ocr_pages or 0 %}
+        {% set low = "ocr_low_confidence" in ((p.warnings or []) | join(" ")) %}
+        {#
+          Why those pages went unread, which is the part the teacher was left to
+          guess. A magazine issue reported «13 pag. non lette» and said nothing
+          else: they were the full-page adverts and photographs, and OCR had not
+          run because tesseract is not installed here — a fact the parser
+          records as ``ocr_unavailable`` and the chip was throwing away
+          (2026-09-22).
+        #}
+        {% set no_ocr = "ocr_unavailable" in ((p.warnings or []) | join(" ")) %}
+        {#
+          A few image pages in a long document are its photographs, not a
+          failure. Warn when the document is unusable or read badly, or when so
+          much of it went unread that the lesson will be written from a fraction
+          of what the teacher attached.
+        #}
+        {#
+          Proportional, like the unread pages: one poster read badly in a
+          114-page magazine put a warning triangle on the whole document
+          (2026-09-25). The triangle is for a document mostly lost.
+        #}
+        {% set mostly_unread = p.pages and ((unread + discarded) / p.pages) > 0.25 %}
+        {% set warn = p.empty or mostly_unread %}
+        {#
+          Three states, and they cover everything: a file in the pipeline is
+          failed, or usable, or still being prepared. «Still being prepared»
+          is the default on purpose — a state that has not arrived yet, or one
+          this template does not recognise, is work in progress, not silence.
+          A chip with no badge is what a teacher reads as «nothing happened to
+          my file», and on 2026-09-21 that is exactly what it meant to one.
+        #}
+        {% set failed = st and st.status in ("failed", "deleted") %}
+        {% set ready = st and st.usable %}
+        {% set preparing = f.material_version_id and not failed and not ready %}
+        <span class="aix-attach-chip
+                     {%- if warn or failed %} aix-attach-chip--warn
+                     {%- elif ready %} aix-attach-chip--ready{% endif %}">
+          <wa-icon name="{{ 'triangle-exclamation' if warn or failed else 'file-lines' }}" class="aix-fs-08 aix-color-secondary"></wa-icon>
           <span class="aix-attach-filename" title="{{ f.filename }}">{{ f.filename }}</span>
           <span class="aix-attach-chip-sep">·</span>
           <span class="aix-attach-chip-size">{{ ((f.size or 0) / 1024) | round(0, "floor") | int }} KB</span>
+          {% if preparing %}
+            <span class="aix-attach-chip-sep">·</span>
+            <span class="aix-attach-chip-status" title="Sto leggendo e indicizzando il documento. La generazione parte appena è pronto.">
+              <wa-spinner class="aix-fs-xs"></wa-spinner> in preparazione…
+            </span>
+          {% elif failed %}
+            <span class="aix-attach-chip-sep">·</span>
+            <span class="aix-attach-chip-status" title="Il documento non è stato indicizzato: la lezione verrà scritta senza di esso.">non indicizzato</span>
+          {% elif ready %}
+            {#
+              The reassurance this chip exists for: the document is in. The
+              passage count comes with it when there is one — with the private
+              RAG off nothing is indexed, and «pronto · 0 passaggi» would read
+              as a failure rather than as a feature being switched off.
+            #}
+            <span class="aix-attach-chip-sep">·</span>
+            <span class="aix-attach-chip-status aix-attach-chip-status--ready"
+                  title="{% if st.passages %}Documento indicizzato: {{ st.passages }} passaggi sono ricercabili e citabili in questa lezione.{% else %}Documento letto e allegato alla lezione.{% endif %}">
+              <wa-icon name="circle-check" class="aix-fs-xs"></wa-icon> pronto{% if st.passages %} · {{ st.passages }} passaggi{% endif %}
+            </span>
+          {% endif %}
+          {% if p.empty %}
+            <span class="aix-attach-chip-sep">·</span>
+            <span class="aix-attach-chip-status" title="Il documento non contiene testo leggibile: non verrà usato per la lezione.">nessun testo leggibile</span>
+          {% elif ocr %}
+            <span class="aix-attach-chip-sep">·</span>
+            <span class="aix-attach-chip-status"
+                  title="Testo letto automaticamente da immagini (OCR){% if p.ocr_mean_confidence %}, affidabilità media {{ (p.ocr_mean_confidence * 100) | round | int }}%{% endif %}. Può contenere errori.">
+              OCR {{ ocr }} pag.{% if low %} · bassa qualità{% endif %}
+            </span>
+          {% endif %}
+          {% if discarded %}
+            <span class="aix-attach-chip-sep">·</span>
+            <span class="aix-attach-chip-status"
+                  title="L'OCR ha letto {{ discarded }} {{ 'pagina' if discarded == 1 else 'pagine' }} con un'affidabilità troppo bassa: il testo era incerto al punto da non poter fare da fonte, quindi non è stato indicizzato. Di solito sono timbri, locandine o immagini con scritte decorative.">{{ discarded }} pag. illeggibili</span>
+          {% endif %}
+          {% if unread and not p.empty %}
+            <span class="aix-attach-chip-sep">·</span>
+            <span class="aix-attach-chip-status"
+                  title="{{ unread }} pagine su {{ p.pages or unread }} non contengono testo: di solito foto, illustrazioni o pubblicità a piena pagina{% if no_ocr %}. Su questo server l'OCR non è disponibile, quindi non è stato tentato di leggerle come immagini{% else %}, oppure scansioni che l'OCR non è riuscito a leggere{% endif %}. Il resto del documento è stato indicizzato normalmente.">{{ unread }} pag. senza testo</span>
+          {% endif %}
           {% if lesson.status != "running" %}
             <button type="button"
                     class="aix-attach-chip-remove"

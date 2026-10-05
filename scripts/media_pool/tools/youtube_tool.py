@@ -36,17 +36,39 @@ _LOCK = threading.Lock()
 
 TRUSTED_CHANNELS: dict[str, set[str]] = {
     "neuro": {
-        "ted", "ted-ed", "ted education", "kurzgesagt",
-        "scishow", "scishow psych", "crash course", "3blue1brown",
-        "mit opencourseware", "hhmi biointeractive", "noba project",
-        "sentis", "asap science", "the brain", "neuroscientifically",
-        "psychology today", "stanford", "harvard",
+        "ted",
+        "ted-ed",
+        "ted education",
+        "kurzgesagt",
+        "scishow",
+        "scishow psych",
+        "crash course",
+        "3blue1brown",
+        "mit opencourseware",
+        "hhmi biointeractive",
+        "noba project",
+        "sentis",
+        "asap science",
+        "the brain",
+        "neuroscientifically",
+        "psychology today",
+        "stanford",
+        "harvard",
     },
     "udl": {
-        "cast", "understood", "khan academy", "edutopia",
-        "iris center", "do-it uw", "national center on disability",
-        "pacer center", "vanderbilt", "kennedy center",
-        "special education", "inclusion", "accessibility",
+        "cast",
+        "understood",
+        "khan academy",
+        "edutopia",
+        "iris center",
+        "do-it uw",
+        "national center on disability",
+        "pacer center",
+        "vanderbilt",
+        "kennedy center",
+        "special education",
+        "inclusion",
+        "accessibility",
     },
 }
 
@@ -84,7 +106,9 @@ def _is_embeddable(video_id: str) -> bool:
         return False
 
 
-def search_videos(query: str, max_results: int = 3, domain: str = "", language: str = "en") -> dict[str, Any]:
+def search_videos(
+    query: str, max_results: int = 3, domain: str = "", language: str = "en"
+) -> dict[str, Any]:
     """
     Search YouTube for educational videos using yt-dlp (no API key required).
     Verifies embeddability via oEmbed before accepting each video.

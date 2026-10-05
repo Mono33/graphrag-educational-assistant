@@ -48,46 +48,62 @@ from pathlib import Path
 # Mapping table — order does not matter (each pattern is an exact module name)
 # -----------------------------------------------------------------------------
 ROOT_MAP: dict[str, str] = {
-    "config":                   "aix.core.config",
-    "graph_retriever":          "aix.retrieval.graph_retriever",
-    "context_builder":          "aix.retrieval.context_builder",
-    "text2cypher":              "aix.retrieval.text2cypher",
+    "config": "aix.core.config",
+    "graph_retriever": "aix.retrieval.graph_retriever",
+    "context_builder": "aix.retrieval.context_builder",
+    "text2cypher": "aix.retrieval.text2cypher",
     "multilingual_text2cypher": "aix.retrieval.multilingual_text2cypher",
-    "query_metrics":            "aix.retrieval.query_metrics",
-    "llm_chain":                "aix.generation.llm_chain",
-    "agent":                    "aix.agent",
-    "api":                      "aix.api",
-    "domains":                  "aix.domains",
+    "query_metrics": "aix.retrieval.query_metrics",
+    "llm_chain": "aix.generation.llm_chain",
+    "agent": "aix.agent",
+    "api": "aix.api",
+    "domains": "aix.domains",
 }
 
 # -----------------------------------------------------------------------------
 # Directories to scan (relative to repo root)
 # -----------------------------------------------------------------------------
 SCAN_DIRS: tuple[str, ...] = (
-    "src",       # the moved package tree (after R3)
-    "apps",      # streamlit + cli entry points
-    "scripts",   # ops / ingest / audit / data_prep / ml utilities
-    "tests",     # pytest tests (incl. integration)
+    "src",  # the moved package tree (after R3)
+    "apps",  # streamlit + cli entry points
+    "scripts",  # ops / ingest / audit / data_prep / ml utilities
+    "tests",  # pytest tests (incl. integration)
 )
 
 # Skip cache / venv / build artefacts
-SKIP_DIR_NAMES: frozenset[str] = frozenset({
-    "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache",
-    "venv", ".venv", "env", ".env",
-    "build", "dist", "node_modules", ".git",
-    "artifacts", "data", "logs", "neo4j_migrations", "archive",
-    ".devcontainer", ".github",
-    "_generate_report_template.py",
-})
+SKIP_DIR_NAMES: frozenset[str] = frozenset(
+    {
+        "__pycache__",
+        ".pytest_cache",
+        ".mypy_cache",
+        ".ruff_cache",
+        "venv",
+        ".venv",
+        "env",
+        ".env",
+        "build",
+        "dist",
+        "node_modules",
+        ".git",
+        "artifacts",
+        "data",
+        "logs",
+        "neo4j_migrations",
+        "archive",
+        ".devcontainer",
+        ".github",
+        "_generate_report_template.py",
+    }
+)
 
 
 def _build_patterns() -> list[tuple[re.Pattern[str], str]]:
     """Compile two regex patterns per old module:
 
-       - `from <old>(\\s|.|$)`        — anywhere on a line (any indentation)
-       - `^<indent>import <old>(\\s|.|$)`  — ONLY at start-of-line (after
-         optional indentation); never inside `from X import <name>` because
-         in that case `<name>` is an imported value, not a module name.
+    - `from <old>(\\s|.|$)`        — anywhere on a line (any indentation)
+    - `^<indent>import <old>(\\s|.|$)`  — ONLY at start-of-line (after
+      optional indentation); never inside `from X import <name>` because
+      in that case `<name>` is an imported value, not a module name.
     """
     patterns: list[tuple[re.Pattern[str], str]] = []
     for old, new in ROOT_MAP.items():
@@ -134,9 +150,7 @@ def _rewrite_text(text: str, patterns: list[tuple[re.Pattern[str], str]]) -> tup
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(
-        description="Phase 3C — rewrite imports for the src/aix/ layout."
-    )
+    ap = argparse.ArgumentParser(description="Phase 3C — rewrite imports for the src/aix/ layout.")
     ap.add_argument(
         "--dry-run",
         action="store_true",
@@ -148,7 +162,8 @@ def main() -> int:
         help="Repo root (defaults to current working directory).",
     )
     ap.add_argument(
-        "-v", "--verbose",
+        "-v",
+        "--verbose",
         action="store_true",
         help="Print per-file diff hunks (requires --dry-run for safety).",
     )

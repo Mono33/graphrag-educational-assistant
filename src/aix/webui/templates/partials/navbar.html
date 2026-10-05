@@ -80,7 +80,7 @@
       {% set initials = (user.display_name or user.email or 'U')[:1] | upper %}
       <wa-dropdown placement="bottom-end"
                    x-data
-                   @wa-select="if ($event.detail.item.value) { window.location.href = $event.detail.item.value }">
+                   @wa-select="const v = $event.detail.item.value; if (v === '#logout') { document.getElementById('logout-form').submit() } else if (v) { window.location.href = v }">
         <button slot="trigger" type="button" class="aix-nav-avatar">
           <span class="aix-nav-avatar-circle">{{ initials }}</span>
           <wa-icon name="chevron-down" class="aix-fs-11 aix-nav-chevron"></wa-icon>
@@ -99,11 +99,17 @@
           Nuova lezione
         </wa-dropdown-item>
         <wa-divider></wa-divider>
-        <wa-dropdown-item value="/auth/logout" variant="danger">
+        {# Logout is a POST: it changes state, so it cannot be a link that any
+           page could fire on the teacher's behalf. The dropdown submits this
+           form, which carries the CSRF token like every other form. #}
+        <wa-dropdown-item value="#logout" variant="danger">
           <wa-icon slot="icon" name="right-from-bracket"></wa-icon>
           Esci
         </wa-dropdown-item>
       </wa-dropdown>
+      <form id="logout-form" method="post" action="/auth/logout" class="hidden">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}" />
+      </form>
     {% else %}
       <a href="/auth/login" class="aix-btn aix-btn-outline aix-btn-sm aix-btn-nav-auth">
         Accedi

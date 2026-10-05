@@ -47,7 +47,8 @@
 services:
 
   postgres-dev:
-    image: postgres:16-alpine
+    # pgvector: the private-material migration needs the ``vector`` extension.
+    image: pgvector/pgvector:pg16
     container_name: aix-postgres-dev
     restart: unless-stopped
     environment:

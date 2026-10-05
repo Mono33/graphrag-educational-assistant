@@ -13,6 +13,17 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+def _float_env(name: str, default: float) -> float:
+    """A float from the environment, or the default when unset or unreadable."""
+    raw = os.getenv(name)
+    if not raw:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        return default
+
+
 @dataclass
 class Neo4jConfig:
     """Neo4j database configuration"""
@@ -22,6 +33,46 @@ class Neo4jConfig:
     password: str = ""
     database: str = "neo4j"
     encrypted: bool = True
+
+    def driver_kwargs(self) -> dict:
+        """Connection settings for every driver this process opens.
+
+        **Why these exist at all.** The driver's defaults wait up to 60 s for a
+        server that is not answering, and retry a failed transaction for 30 s
+        on top. A lesson asks the graph eleven questions, so on 2026-09-21 —
+        with the database reachable at the TCP and TLS level but silent at the
+        Bolt handshake — a single generation sat in the retrieval phase for
+        minutes, one full minute per question, while the teacher watched a
+        spinner. The private-material branch beside it had finished in one
+        second.
+
+        A database that has not answered in five seconds is not going to
+        rescue this lesson: better to degrade to what we have — the cached
+        embeddings, the teacher's own documents, the external sources — and
+        say so, which is what the retriever card now does.
+
+        ``encrypted`` is only passed when it is False: a ``bolt+s://`` or
+        ``neo4j+s://`` URI already carries the setting, and passing it again
+        makes the driver raise.
+        """
+        kwargs: dict = {
+            "auth": (self.user, self.password),
+            # TCP connect + handshake.
+            "connection_timeout": _float_env("AIX_NEO4J_CONNECT_TIMEOUT_S", 5.0),
+            # How long a failed transaction is retried before giving up.
+            "max_transaction_retry_time": _float_env("AIX_NEO4J_RETRY_TIME_S", 5.0),
+            # Waiting for a free connection from the pool.
+            "connection_acquisition_timeout": _float_env("AIX_NEO4J_ACQUIRE_TIMEOUT_S", 10.0),
+        }
+        if not self.encrypted:
+            kwargs["encrypted"] = self.encrypted
+        return kwargs
+
+    def get_driver(self):
+        """A driver configured to fail fast. See :meth:`driver_kwargs`."""
+        from neo4j import GraphDatabase
+
+        return GraphDatabase.driver(self.uri, **self.driver_kwargs())
 
 
 @dataclass
@@ -34,17 +85,58 @@ class OpenAIConfig:
     temperature: float = 0.1
     max_tokens: int = 500
 
-    def get_client(self):
-        """Return a configured OpenAI-compatible client (sync)"""
-        from openai import OpenAI
+    # ------------------------------------------------------------------
+    # Timeout and retry budget
+    # ------------------------------------------------------------------
+    #
+    # Both were left at the SDK defaults, which are wrong for an interactive
+    # request: a read timeout of 600s with max_retries=2 means one hung LLM
+    # call can hold a lesson for up to half an hour, while the run registry's
+    # heartbeat keeps reporting it healthy the whole time.
+    #
+    # These are set here so the whole budget is visible in one place. The agent
+    # graph adds a second, outer layer (RetryPolicy on the LLM nodes) which
+    # rebuilds the prompt rather than replaying the same request, so the client
+    # keeps only one retry: worst case per node is 2 client attempts x 2 node
+    # attempts = 4 calls, not the 9 that stacking three-and-three would give.
 
-        return OpenAI(api_key=self.api_key, base_url=self.base_url)
+    def _timeout_seconds(self) -> float:
+        raw = os.getenv("AIX_LLM_TIMEOUT_S", "120")
+        try:
+            return max(5.0, float(raw))
+        except ValueError:
+            return 120.0
+
+    def _max_retries(self) -> int:
+        raw = os.getenv("AIX_LLM_MAX_RETRIES", "1")
+        try:
+            return max(0, min(int(raw), 5))
+        except ValueError:
+            return 1
+
+    def get_client(self):
+        """Return a configured OpenAI-compatible client (sync), traced when tracing is on."""
+        from aix.core.tracing import openai_classes
+
+        OpenAI, _ = openai_classes()
+        return OpenAI(
+            api_key=self.api_key,
+            base_url=self.base_url,
+            timeout=self._timeout_seconds(),
+            max_retries=self._max_retries(),
+        )
 
     def get_async_client(self):
-        """Return a configured OpenAI-compatible client (async)"""
-        from openai import AsyncOpenAI
+        """Return a configured OpenAI-compatible client (async), traced when tracing is on."""
+        from aix.core.tracing import openai_classes
 
-        return AsyncOpenAI(api_key=self.api_key, base_url=self.base_url)
+        _, AsyncOpenAI = openai_classes()
+        return AsyncOpenAI(
+            api_key=self.api_key,
+            base_url=self.base_url,
+            timeout=self._timeout_seconds(),
+            max_retries=self._max_retries(),
+        )
 
     def is_reasoning_model(self) -> bool:
         """True for models that use internal chain-of-thought / thinking tokens.
@@ -162,7 +254,9 @@ class Text2CypherConfig:
     enable_query_validation: bool = True
     enable_query_execution: bool = True
     log_level: str = "INFO"
-    model: str = "google/gemini-2.0-flash"  # Fast model for Cypher generation and translation
+    #: Fast model for Cypher generation and translation. Chosen on 2026-09-30
+    #: (``compare_role_models.py text2cypher``): results on 16 of 16 queries.
+    model: str = "google/gemini-3.1-flash-lite"
 
 
 @dataclass
@@ -251,9 +345,9 @@ class Config:
             )
 
         self.text2cypher.log_level = os.getenv("LOG_LEVEL", self.text2cypher.log_level)
-        self.text2cypher.model = os.getenv("TEXT2CYPHER_MODEL") or os.getenv(
-            "LLM_MODEL", self.text2cypher.model
-        )
+        # Not LLM_MODEL as a fallback: the lesson writer's model is slow and
+        # costly for a one-line query.
+        self.text2cypher.model = os.getenv("TEXT2CYPHER_MODEL") or self.text2cypher.model
 
         # Embedding configuration
         self.embedding.mode = os.getenv("EMBEDDING_MODE", self.embedding.mode)

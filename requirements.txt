@@ -18,26 +18,67 @@ jinja2>=3.1.0
 sse-starlette>=2.1.0,<3.0
 
 # WebUI auth + persistence (CORE 2 #6.6 P1).
-# Async SQLAlchemy 2.x + aiosqlite for dev (SQLite at data/webui/webui.db).
-# Swap to asyncpg + Postgres in CORE 6 deploy — no model changes required.
+# Async SQLAlchemy 2.x, with both drivers: aiosqlite for the dev SQLite file
+# and asyncpg for Postgres, which is what WEBUI_DATABASE_URL points at in
+# deploy/docker-compose.prod.yml.
+#
+# asyncpg is listed here deliberately, and its absence was a real hazard:
+# requirements.lock.txt still carries it as "# via -r requirements.txt", so it
+# was a direct dependency once and was dropped from this file afterwards.
+# Production kept working only because the lock was not regenerated —
+# regenerating it would have silently removed the driver the application needs
+# to reach its own database, and the failure would have surfaced at startup on
+# the deploy after next.
 sqlalchemy[asyncio]>=2.0.25
 aiosqlite>=0.19.0
+asyncpg>=0.29,<1.0
 fastapi-users[sqlalchemy]>=14.0.0
+
+# Schema migrations for the WebUI database. Runs inside the image, so it has to
+# be a runtime dependency and not a dev extra: the production database is
+# migrated by the same container that serves the app.
+alembic>=1.13,<2.0
 
 # Markdown → HTML for the streamed lesson plan (CORE 2 #6.6 P2).
 # We render server-side so SSE 'done' events can drop ready-to-paint HTML
 # into the stream pane without a JS markdown parser. `extras` enables
 # fenced code, tables, GFM-style footnotes — useful for richer lesson plans.
 markdown>=3.5.0
+# HTML sanitiser for that rendered markdown (Fase 0 · PR 1). python-markdown
+# passes raw HTML through by design — it dropped safe_mode in 3.0 and its own
+# docs say to sanitise the output — and the lesson body is written by an LLM
+# from a corpus and from files the teacher uploads, so it is not trusted input.
+# nh3 rather than bleach: bleach is in maintenance mode and pulls html5lib,
+# nh3 is the maintained binding to ammonia and needs nothing else.
+nh3>=0.2.18
 # WebUI P3 — PDF text extraction for teacher uploads (explicit pin; also common transitive dep).
 pypdf>=5.0.0
+# Fase 2 · PR 5 — parsing and OCR, chosen to fit the pilot VM (2 vCPU, 4 GB,
+# shared with Postgres). Docling was measured out: 3–4 GB peaks on one PDF.
+# All five are permissively licensed, which matters because this project is
+# declared Proprietary — PyMuPDF (AGPL) was ruled out for exactly that reason.
+python-docx>=1.1.0       # DOCX structure: headings, lists, tables (MIT)
+python-pptx>=1.0.0       # PPTX slides and shapes (MIT)
+pypdfium2>=4.30.0        # renders PDF pages to images for OCR; wheel, no system deps (Apache-2.0/BSD-3)
+pytesseract>=0.3.10      # thin wrapper over the tesseract binary, installed by apt in the image (Apache-2.0)
+filetype>=1.2.0          # magic-byte sniffing, pure Python — no libmagic to install (MIT)
+# Fase 3 · PR 7 — the lesson Markdown as a token stream (headings, lists, tables,
+# links, in order), which is what the export adapter has to recognise. Already in
+# the lock as a transitive dependency; declared because the export now relies on
+# it directly, and a dependency nobody declared can disappear on an upgrade (MIT).
+markdown-it-py>=3.0.0
 
 # Core dependencies
 langchain>=1.0.0,<2.0.0
 langchain-openai>=1.0.0,<2.0.0
 langchain-community>=0.4.0,<1.0.0
 langchain-core>=1.0.0,<2.0.0
-openai>=2.0.0
+# Upper bound added when the lock was first regenerated: this was the only
+# dependency in the file without one, so `uv pip compile` walked it from 2.x to
+# 3.x — two majors past the version every test in this repository has ever run
+# against, across an SDK that every agent calls. Moving to 3.x is a deliberate
+# exercise with its own testing, not a side effect of adding a migration tool.
+openai>=2.0.0,<3.0.0
 neo4j>=5.0.0
 python-dotenv>=1.0.0
 
@@ -66,12 +107,27 @@ langgraph>=1.0.0,<2.0.0
 # LangGraph's backend-agnostic BaseCheckpointSaver protocol, so the agent graph
 # is identical across environments — only the saver class differs.
 #
-# SQLite (dev): using 3.x — 2.0.11 (last 2.x) calls aiosqlite Connection.is_alive()
-# which was removed in aiosqlite 0.20+.
-langgraph-checkpoint-sqlite>=3.0,<4.0
 # Postgres (prod): AsyncPostgresSaver + a psycopg_pool connection pool for
 # concurrent, multi-replica-safe, durable thread storage.
 langgraph-checkpoint-postgres>=2.0,<3.0
+#
+# The SQLite dev fallback is NOT here, and cannot be: the two savers pull
+# incompatible versions of their shared core, so declaring both makes this file
+# unsatisfiable and `pip install -e ".[dev]"` fails with ResolutionImpossible.
+#
+#     langgraph-checkpoint-postgres 2.x  -> langgraph-checkpoint <3
+#     langgraph-checkpoint-sqlite   3.x  -> langgraph-checkpoint >=3
+#
+# Nor can the sqlite pin simply move back to 2.x: 2.0.11 (the last 2.x) calls
+# aiosqlite Connection.is_alive(), removed in aiosqlite 0.20+.
+#
+# Postgres wins the base install because it is what production runs. Developers
+# who want the SQLite saver install the mutually-exclusive extra instead:
+#
+#     pip install -e ".[sqlite-checkpointer]"
+#
+# With neither installed, aix.agent.graph.checkpointer degrades to no
+# checkpointer at all — the graph still runs, single-turn.
 psycopg[binary,pool]>=3.1,<4.0
 
 # Error Monitoring (GlitchTip — Sentry-compatible)

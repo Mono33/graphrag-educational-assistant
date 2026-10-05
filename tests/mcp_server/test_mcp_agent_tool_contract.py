@@ -134,9 +134,7 @@ async def test_agent_run_lesson_plan_happy_path(mcp_client, monkeypatch):
         },
     )
 
-    payload = getattr(result, "structured_content", None) or getattr(
-        result, "data", None
-    )
+    payload = getattr(result, "structured_content", None) or getattr(result, "data", None)
     assert payload is not None, "agent.run_lesson_plan returned no structured payload"
 
     # Top-level shape — same contract as POST /api/v1/agent/run.

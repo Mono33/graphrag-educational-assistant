@@ -462,3 +462,16 @@ class HealthResponse(BaseModel):
     neo4j_connected: bool = Field(..., description="Neo4j connection status")
     version: str = Field(..., description="API version")
     domain_configs_loaded: list[str] = Field(..., description="Loaded domain configurations")
+    # The Dockerfile bakes the git SHA in as CODE_VERSION "for traceability",
+    # but nothing exposed it, so "which build is live?" could not be answered
+    # from outside the VM. That matters more now that a deploy can migrate the
+    # database: knowing which commit is running is the first question anyone
+    # asks when a schema looks wrong.
+    code_version: Optional[str] = Field(
+        None, description="Git SHA the running image was built from ('dev' for local builds)"
+    )
+    # Alembic revision the WebUI database is currently at, or None when the
+    # database is unreachable or has never been stamped.
+    db_revision: Optional[str] = Field(
+        None, description="Current Alembic revision of the WebUI database"
+    )

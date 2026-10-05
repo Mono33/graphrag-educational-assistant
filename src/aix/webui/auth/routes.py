@@ -8,7 +8,7 @@ pages, with the JWT delivered to the browser as an HttpOnly cookie:
     POST /auth/register   — create user, auto-login, redirect to ?next or /webui/
     GET  /auth/login      — render login form
     POST /auth/login      — authenticate, set cookie, redirect to ?next or /webui/
-    GET  /auth/logout     — clear cookie, redirect to /webui/
+    POST /auth/logout     — clear cookie, redirect to /webui/
 
 We deliberately do NOT mount the JSON ``/auth/jwt/login`` etc. routes from
 fastapi-users in P1 — see ``aix.webui.auth.__init__`` for rationale. The
@@ -42,6 +42,7 @@ from aix.webui.auth.backend import (
     cookie_transport,
     get_jwt_strategy,
 )
+from aix.webui.auth.csrf import token_for as _csrf_token_for
 from aix.webui.auth.dependencies import optional_current_user
 from aix.webui.auth.manager import UserManager, get_user_manager
 from aix.webui.auth.models import User
@@ -54,6 +55,13 @@ logger = logging.getLogger(__name__)
 _PACKAGE_DIR = Path(__file__).resolve().parents[1]  # …/src/aix/webui
 _TEMPLATES_DIR = _PACKAGE_DIR / "templates"
 templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
+
+# The webui keeps three Jinja environments over the same templates directory
+# (``aix.webui.routes``, ``aix.webui.lessons.routes``, ``aix.webui.auth.routes``),
+# so the CSRF global has to be registered on each of them. A global rather than
+# a per-route context entry: a page added without the token would fail its first
+# POST with a 403, and the author would find out in production.
+templates.env.globals["csrf_token"] = _csrf_token_for
 
 
 router = APIRouter(prefix="/auth", tags=["webui-auth"])
@@ -122,8 +130,7 @@ async def register_get(
         return RedirectResponse(_safe_next(next), status_code=303)
     return templates.TemplateResponse(
         request,
-
-            "pages/auth_register.html",
+        "pages/auth_register.html",
         {
             "title": "Registrazione · AixLearning",
             "phase": "P1 — Auth",
@@ -146,8 +153,7 @@ async def login_get(
         return RedirectResponse(_safe_next(next), status_code=303)
     return templates.TemplateResponse(
         request,
-
-            "pages/auth_login.html",
+        "pages/auth_login.html",
         {
             "title": "Accesso · AixLearning",
             "phase": "P1 — Auth",
@@ -191,8 +197,7 @@ async def register_post(
     except ValidationError as exc:
         return templates.TemplateResponse(
             request,
-
-                "pages/auth_register.html",
+            "pages/auth_register.html",
             {
                 "title": "Registrazione · AixLearning",
                 "phase": "P1 — Auth",
@@ -209,8 +214,7 @@ async def register_post(
     except UserAlreadyExists:
         return templates.TemplateResponse(
             request,
-
-                "pages/auth_register.html",
+            "pages/auth_register.html",
             {
                 "title": "Registrazione · AixLearning",
                 "phase": "P1 — Auth",
@@ -229,8 +233,7 @@ async def register_post(
         reason = getattr(exc, "reason", "Password non valida.")
         return templates.TemplateResponse(
             request,
-
-                "pages/auth_register.html",
+            "pages/auth_register.html",
             {
                 "title": "Registrazione · AixLearning",
                 "phase": "P1 — Auth",
@@ -274,8 +277,7 @@ async def login_post(
     if user is None or not user.is_active:
         return templates.TemplateResponse(
             request,
-
-                "pages/auth_login.html",
+            "pages/auth_login.html",
             {
                 "title": "Accesso · AixLearning",
                 "phase": "P1 — Auth",
@@ -296,11 +298,17 @@ async def login_post(
     return response
 
 
-@router.get("/logout", name="auth_logout_get")
+@router.post("/logout", name="auth_logout")
 async def logout(
     user: Optional[User] = Depends(optional_current_user),
 ) -> Response:
-    """Clear the auth cookie and bounce to the home page."""
+    """Clear the auth cookie and bounce to the home page.
+
+    POST, not GET (Louis, 2026-09-15). Logging out changes state, and a GET that
+    changes state can be fired by any page that gets an ``<img>`` in front of a
+    teacher — mid-lesson. As a POST under ``/auth`` it carries the CSRF token
+    like every other form here.
+    """
     response = RedirectResponse(url="/webui/", status_code=303)
     _clear_auth_cookie(response)
     if user is not None:

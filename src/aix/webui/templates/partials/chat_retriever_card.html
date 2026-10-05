@@ -91,20 +91,33 @@
 
       <header class="aix-agent-card-header aix-agent-card-header--retriever">
         <div class="aix-agent-card-title">
-          <strong>Ricerca nel Knowledge Graph</strong>
-          <span class="aix-agent-card-role">· {{ p.get('nodes_count', 0) }} concetti trovati</span>
+          {% if p.get('reused') %}
+            <strong>Contesto riutilizzato</strong>
+            <span class="aix-agent-card-role">· {{ p.get('nodes_count', 0) }} concetti già in conversazione</span>
+          {% else %}
+            <strong>Ricerca nel Knowledge Graph</strong>
+            <span class="aix-agent-card-role">· {{ p.get('nodes_count', 0) }} concetti trovati</span>
+          {% endif %}
         </div>
-        <span class="aix-arched-phase">Knowledge Retrieval</span>
+        <span class="aix-arched-phase">
+          {%- if p.get('reused') %}Context Reuse{% else %}Knowledge Retrieval{% endif -%}
+        </span>
       </header>
 
       <div class="aix-agent-card-body aix-col-12">
 
         {# Tool-call header: shows we explicitly hit GraphRAG #}
         <div class="aix-tool-pill">
-          <wa-icon name="wrench" class="aix-fs-08"></wa-icon>
-          <code>graphrag.search</code>
-          <span class="aix-color-border-medium">·</span>
-          <span>{{ p.get('retrieval_confidence') or 'medium' }} confidence</span>
+          {% if p.get('reused') %}
+            {# No tool was called this turn, so the card must not name one. #}
+            <wa-icon name="rotate-left" class="aix-fs-08"></wa-icon>
+            <span>nessuna query eseguita · contesto del turno precedente</span>
+          {% else %}
+            <wa-icon name="wrench" class="aix-fs-08"></wa-icon>
+            <code>graphrag.search</code>
+            <span class="aix-color-border-medium">·</span>
+            <span>{{ p.get('retrieval_confidence') or 'medium' }} confidence</span>
+          {% endif %}
         </div>
 
         {# Counts grid #}
@@ -133,7 +146,7 @@
         {% if p.get('top_concepts') %}
           <div>
             <div class="aix-section-label mb-1.5">
-              Concetti più rilevanti recuperati
+              Concetti più rilevanti {% if p.get('reused') %}in uso{% else %}recuperati{% endif %}
             </div>
             <div class="aix-chip-row">
               {% for c in p.top_concepts %}
@@ -170,7 +183,54 @@
            gate on ``payload.retrieval_grade`` (one with ``if``, the
            other with ``if not``), so exactly one renders per turn.
         #}
-        {% if (not p.get('retrieval_grade')) and p.get('coverage_tier') %}
+        {# ── T6 — Conditional retrieval ──────────────────────────────
+           This turn asked nothing new of the Knowledge Graph, so the coverage
+           banner below is suppressed: its copy ("Ricerca completata...") would
+           describe a search that did not happen. What the teacher needs here
+           is the opposite — why the search was skipped, and the reassurance
+           that the evidence under the lesson is the same as before.
+        #}
+        {% if p.get('reused') %}
+          <div class="aix-coverage-banner aix-coverage-banner--out-of-scope">
+            <span class="aix-coverage-banner-headline">
+              <span class="aix-dot aix-dot-info"></span>
+              <span>Nessuna nuova ricerca per questa richiesta</span>
+            </span>
+            <p class="aix-coverage-banner-body">
+              La richiesta lavora sulla lezione già prodotta, quindi il Knowledge
+              Graph non è stato interrogato di nuovo: valgono gli stessi
+              {{ p.get('nodes_count', 0) }} concetti e
+              {{ p.get('recommendations_count', 0) }} strategie del turno precedente.
+              {%- if p.get('reuse_reason') %}
+              <br><span class="aix-color-secondary">Motivo: {{ p.reuse_reason }}</span>
+              {%- endif %}
+            </p>
+          </div>
+        {% endif %}
+
+        {#
+          The graph database did not answer. Said plainly, because the banner
+          below would otherwise read «la tua domanda è fuori ambito» — blaming
+          the teacher's question for an outage. Set by the retrieve node, which
+          probes only when the search came back empty (2026-09-21).
+        #}
+        {% if p.get('kg_unreachable') and not p.get('reused') %}
+          <div class="aix-coverage-banner aix-coverage-banner--limited">
+            <span class="aix-coverage-banner-headline">
+              <span class="aix-dot aix-dot-warning"></span>
+              <span>Knowledge Graph non raggiungibile</span>
+            </span>
+            <p class="aix-coverage-banner-body">
+              La base di conoscenza pedagogica non ha risposto durante questa
+              generazione: la lezione è stata scritta <strong>senza</strong> di
+              essa, usando i documenti allegati e le fonti esterne. Non è un
+              problema della tua richiesta. Se il risultato ti sembra povero sul
+              piano didattico, rigenera più tardi o segnala il disservizio.
+            </p>
+          </div>
+        {% endif %}
+
+        {% if (not p.get('retrieval_grade')) and p.get('coverage_tier') and not p.get('reused') and not p.get('kg_unreachable') %}
           {% set _tier = p.get('coverage_tier') %}
           {% set _dom_short = p.get('domain_label_short') or 'il dominio attivo' %}
           {% set _dom_long  = p.get('domain_label_long')  or _dom_short %}
@@ -407,7 +467,9 @@
        state diffs render identically to pre-#9.UX-5. #}
     <div class="aix-agent-footer-label">
       <wa-icon name="diagram-project" class="aix-fs-sm"></wa-icon>
-      {% if p.get('domain_label_short') %}
+      {% if p.get('reused') %}
+        <span>Retriever · contesto riusato, nessuna interrogazione del grafo</span>
+      {% elif p.get('domain_label_short') %}
         <span>Fonte: Knowledge graph della didattica {{ p.domain_label_short }} + risorse multimediali curate</span>
       {% else %}
         <span>Retriever · GraphRAG + curated media</span>

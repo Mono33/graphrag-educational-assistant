@@ -75,6 +75,7 @@ def _load_rejected_ids(domain: str) -> set[str]:
         logger.warning("Could not load rejected IDs sidecar: %s", exc)
         return set()
 
+
 # =============================================================================
 # System prompt
 # =============================================================================
@@ -150,7 +151,7 @@ SAVE_TOOL_DEFINITION = {
 ALL_TOOLS = [
     neo4j_tool.TOOL_DEFINITION,
     youtube_tool.TOOL_DEFINITION,
-    youtube_tool.TOOL_DEFINITION_IT,   # Idea 2: Italian-language videos
+    youtube_tool.TOOL_DEFINITION_IT,  # Idea 2: Italian-language videos
     scholar_tool.TOOL_DEFINITION,
     wikipedia_tool.TOOL_DEFINITION,
     SAVE_TOOL_DEFINITION,
@@ -160,7 +161,14 @@ ALL_TOOLS = [
 # Tool dispatcher
 # =============================================================================
 
-def dispatch_tool(tool_name: str, tool_args: dict[str, Any], concept_name: str, pool_entries: dict, domain: str = "") -> str:
+
+def dispatch_tool(
+    tool_name: str,
+    tool_args: dict[str, Any],
+    concept_name: str,
+    pool_entries: dict,
+    domain: str = "",
+) -> str:
     """Execute a tool call and return the result as a JSON string."""
     try:
         if tool_name == "query_neo4j":
@@ -176,9 +184,7 @@ def dispatch_tool(tool_name: str, tool_args: dict[str, Any], concept_name: str, 
             result = scholar_tool.search_papers(tool_args["query"])
 
         elif tool_name == "search_wikipedia":
-            result = wikipedia_tool.get_article(
-                tool_args["topic"], tool_args.get("language", "en")
-            )
+            result = wikipedia_tool.get_article(tool_args["topic"], tool_args.get("language", "en"))
 
         elif tool_name == "save_to_pool":
             result = _handle_save(tool_args, pool_entries)
@@ -213,7 +219,10 @@ def _handle_save(args: dict[str, Any], pool_entries: dict) -> dict:
         # YouTube video IDs are always exactly 11 alphanumeric/dash/underscore characters.
         # Reject anything outside that range — it's a hallucinated or corrupted ID.
         if not (len(vid_id) == 11 and all(c.isalnum() or c in "-_" for c in vid_id)):
-            return {"saved": False, "reason": f"Invalid video_id '{vid_id}' — must be exactly 11 chars (YouTube format)"}
+            return {
+                "saved": False,
+                "reason": f"Invalid video_id '{vid_id}' — must be exactly 11 chars (YouTube format)",
+            }
         # Reject IDs that previously failed enrichment quality thresholds
         if vid_id in _REJECTED_VIDEO_IDS:
             return {
@@ -227,7 +236,10 @@ def _handle_save(args: dict[str, Any], pool_entries: dict) -> dict:
         # Skip duplicates already collected in this run for the same concept
         existing_ids = {v.get("video_id") for v in pool_entries.get(concept, {}).get("videos", [])}
         if vid_id in existing_ids:
-            return {"saved": False, "reason": f"video_id '{vid_id}' already saved for concept '{concept}'"}
+            return {
+                "saved": False,
+                "reason": f"video_id '{vid_id}' already saved for concept '{concept}'",
+            }
 
         # Always derive url/embed_url from video_id to prevent LLM typos
         data["url"] = f"https://youtu.be/{vid_id}"
@@ -246,7 +258,10 @@ def _handle_save(args: dict[str, Any], pool_entries: dict) -> dict:
         # DOIs must start with "10." followed by a registrant code and suffix.
         # Reject anything that doesn't match the basic pattern.
         if not doi.startswith("10.") or "/" not in doi or len(doi) < 8:
-            return {"saved": False, "reason": f"Invalid DOI '{doi}' — must start with '10.' and contain '/'"}
+            return {
+                "saved": False,
+                "reason": f"Invalid DOI '{doi}' — must start with '10.' and contain '/'",
+            }
         data["doi"] = doi
         # Always derive doi_url from doi
         data["doi_url"] = f"https://doi.org/{doi}"
@@ -275,6 +290,7 @@ def _handle_save(args: dict[str, Any], pool_entries: dict) -> dict:
 # =============================================================================
 # Agent loop (one concept at a time)
 # =============================================================================
+
 
 def run_agent_for_concept(
     client: OpenAI,
@@ -329,7 +345,9 @@ def run_agent_for_concept(
         messages.append(msg.model_dump(exclude_none=True))
 
         if choice.finish_reason == "stop":
-            logger.debug(f"  [agent] Finished for '{concept_name}' after {iteration + 1} iterations")
+            logger.debug(
+                f"  [agent] Finished for '{concept_name}' after {iteration + 1} iterations"
+            )
             break
 
         if not (msg.tool_calls):
@@ -345,7 +363,9 @@ def run_agent_for_concept(
                 tool_args = {}
 
             logger.debug(f"  [tool] {tool_name}({list(tool_args.keys())})")
-            result_str = dispatch_tool(tool_name, tool_args, concept_name, pool_entries, domain=domain)
+            result_str = dispatch_tool(
+                tool_name, tool_args, concept_name, pool_entries, domain=domain
+            )
 
             messages.append(
                 {
@@ -411,6 +431,7 @@ def _worker(
 # Concept list fetcher
 # =============================================================================
 
+
 def fetch_concept_list(domain: str) -> list[str]:
     """
     Fetch all concept names from Neo4j for the given domain.
@@ -436,14 +457,21 @@ def fetch_concept_list(domain: str) -> list[str]:
 # Main
 # =============================================================================
 
+
 def main():
     parser = argparse.ArgumentParser(description="Run the media pool LLM agent")
-    parser.add_argument("--domain", default="neuro", choices=["neuro", "udl"], help="KG domain to process")
+    parser.add_argument(
+        "--domain", default="neuro", choices=["neuro", "udl"], help="KG domain to process"
+    )
     parser.add_argument("--limit", type=int, default=0, help="Max concepts to process (0 = all)")
     parser.add_argument("--resume", action="store_true", help="Resume from existing checkpoint")
     parser.add_argument("--workers", type=int, default=1, help="Concurrent workers (default 1)")
-    parser.add_argument("--max-iter", type=int, default=MAX_ITERATIONS, help="Max tool call iterations per concept")
-    parser.add_argument("--concept", type=str, default=None, help="Process a single concept name (for testing)")
+    parser.add_argument(
+        "--max-iter", type=int, default=MAX_ITERATIONS, help="Max tool call iterations per concept"
+    )
+    parser.add_argument(
+        "--concept", type=str, default=None, help="Process a single concept name (for testing)"
+    )
     args = parser.parse_args()
 
     global _REJECTED_VIDEO_IDS
@@ -458,9 +486,13 @@ def main():
     checkpoint = load_checkpoint(checkpoint_path) if args.resume else {}
     if args.resume:
         existing_pool = load_pool(pool_path)
-        logger.info(f"Resuming: {len(existing_pool)} concepts in pool, {len(checkpoint)} checkpointed")
+        logger.info(
+            f"Resuming: {len(existing_pool)} concepts in pool, {len(checkpoint)} checkpointed"
+        )
 
-    logger.info(f"LM Studio: {LMSTUDIO_BASE_URL} | model: {LMSTUDIO_MODEL} | workers: {args.workers}")
+    logger.info(
+        f"LM Studio: {LMSTUDIO_BASE_URL} | model: {LMSTUDIO_MODEL} | workers: {args.workers}"
+    )
 
     # Get concept list
     if args.concept:
@@ -472,7 +504,9 @@ def main():
         concepts = concepts[: args.limit]
 
     pending = [c for c in concepts if c not in checkpoint]
-    logger.info(f"Concepts to process: {len(pending)} (skipping {len(concepts) - len(pending)} done)")
+    logger.info(
+        f"Concepts to process: {len(pending)} (skipping {len(concepts) - len(pending)} done)"
+    )
 
     if not pending:
         logger.info("All concepts already processed. Run with --resume to confirm pool state.")
@@ -489,7 +523,9 @@ def main():
         for i, concept_name in enumerate(pending, 1):
             logger.info(f"[{i}/{len(pending)}] Processing: {concept_name}")
             try:
-                n_saved = run_agent_for_concept(client, concept_name, args.domain, pool_entries, args.max_iter)
+                n_saved = run_agent_for_concept(
+                    client, concept_name, args.domain, pool_entries, args.max_iter
+                )
                 total_saved += n_saved
                 logger.info(f"  → {n_saved} entries saved")
             except Exception as e:

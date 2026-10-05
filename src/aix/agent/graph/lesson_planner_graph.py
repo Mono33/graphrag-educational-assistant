@@ -21,14 +21,19 @@ Both paths return the *same* runnable shape; the only difference is the
 presence of a checkpointer attached to the compiled graph.
 """
 
+import asyncio
 import logging
 import os
 from typing import Any, Optional
 
 from langgraph.graph import END, StateGraph
+from langgraph.types import RetryPolicy
 
 from aix.agent.graph.nodes import (
+    TRANSIENT_LLM_ERRORS,
+    _conditional_retrieval_enabled,
     _corrective_rag_enabled,
+    _private_rag_enabled,
     critique_node,
     # CORE 2 #9 — Corrective RAG (Retrieval Grading). Imported eagerly so
     # an import error fails fast even when the feature flag is off; the
@@ -36,13 +41,42 @@ from aix.agent.graph.nodes import (
     grade_retrieval_node,
     plan_node,
     retrieve_node,
+    retrieve_private_node,
+    reuse_retrieval_node,
     should_continue_to_revision,
+    should_retrieve,
+    should_retry_after_validation,
     should_retry_retrieval,
+    validate_node,
     write_node,
 )
-from aix.agent.graph.state import AgentState, create_initial_state
+from aix.agent.graph.state import AgentInput, AgentState, create_initial_state
 
 logger = logging.getLogger(__name__)
+
+
+# Outer half of the LLM retry budget; the inner half lives on the OpenAI client
+# (see ``OpenAIConfig``). Two attempts here on top of two there bounds a node at
+# four calls — where stacking the SDK's default three under a three-attempt
+# policy would have allowed nine, each able to run to the read timeout.
+#
+# It earns a place above the client's retry because it re-enters the node: the
+# prompt is rebuilt and the response re-parsed, rather than the same HTTP
+# request being replayed.
+#
+# ``retry_on`` is the same tuple the nodes re-raise, so the two cannot disagree
+# about what counts as transient. ``grade_retrieval`` is deliberately excluded:
+# it is an optional quality gate that already degrades to ``grade=relevant``
+# rather than failing a run, and retrying it would spend latency on a node
+# designed never to matter that much.
+LLM_RETRY_POLICY = RetryPolicy(
+    retry_on=TRANSIENT_LLM_ERRORS,
+    max_attempts=2,
+    initial_interval=1.0,
+    backoff_factor=2.0,
+    max_interval=10.0,
+    jitter=True,
+)
 
 
 def _build_workflow() -> StateGraph:
@@ -73,16 +107,68 @@ def _build_workflow() -> StateGraph:
       ``retrieval_warning=True`` so the lesson carries a low-confidence
       caveat instead of pretending nothing happened.
     """
-    workflow = StateGraph(AgentState)
+    # ``input_schema`` is what makes a turn's retrieval survive into the next
+    # one: LangGraph merges only the AgentInput keys and drops the rest, so the
+    # checkpointed retrieval corpus is no longer overwritten with nulls on
+    # every follow-up. See the partition note in ``state.py``.
+    workflow = StateGraph(AgentState, input_schema=AgentInput)
 
     # Always-on agent nodes (pre-#9 topology)
-    workflow.add_node("plan", plan_node)
+    workflow.add_node("plan", plan_node, retry_policy=LLM_RETRY_POLICY)
     workflow.add_node("retrieve", retrieve_node)
-    workflow.add_node("write", write_node)
-    workflow.add_node("critique", critique_node)
+    workflow.add_node("write", write_node, retry_policy=LLM_RETRY_POLICY)
+    # Q1 · 1.3 — deterministic feasibility, between the Writer and the Critic.
+    # Always in the topology, unlike the flagged nodes above: the node itself
+    # no-ops when AIX_VALIDATOR_ENABLED is off, so the graph has one shape
+    # instead of two and the environment cannot change what is wired to what.
+    # No retry policy: it makes no network call, so there is nothing to retry.
+    workflow.add_node("validate", validate_node)
+    workflow.add_node("critique", critique_node, retry_policy=LLM_RETRY_POLICY)
 
     workflow.set_entry_point("plan")
-    workflow.add_edge("plan", "retrieve")
+
+    if _conditional_retrieval_enabled():
+        # T6 — a follow-up that adds no new concepts reuses the corpus the
+        # thread already holds instead of searching Neo4j again:
+        #
+        #     plan ─┬─[new concepts | first turn]→ retrieve ─→ write
+        #           └─[nothing new]──────────────→ reuse ────→ write
+        #
+        # ``reuse`` is a node rather than a bare edge so the decision shows up
+        # in the stream like every other stage. Requires the input schema from
+        # the previous commit: without it the corpus is nulled before the graph
+        # starts, so there is never anything to reuse.
+        workflow.add_node("reuse", reuse_retrieval_node)
+        workflow.add_conditional_edges(
+            "plan",
+            should_retrieve,
+            {"retrieve": "retrieve", "reuse": "reuse"},
+        )
+        workflow.add_edge("reuse", "write")
+        logger.info(
+            "[LessonPlannerGraph] Conditional retrieval ENABLED — "
+            "follow-up turns may reuse the thread's corpus."
+        )
+    else:
+        # Default: unconditional, byte-identical to the pre-T6 topology.
+        workflow.add_edge("plan", "retrieve")
+
+    if _private_rag_enabled():
+        # Fase 2 · PR 6 — the second retriever, beside the first:
+        #
+        #     plan ─┬─→ retrieve ─────────→ write
+        #           └─→ retrieve_private ──┘
+        #
+        # Both branches write ``current_step``, which is what the reducers in
+        # ``state.py`` were added for (§8.9). ``write`` waits for both: it is a
+        # join, so a lesson is never written from half its evidence.
+        workflow.add_node("retrieve_private", retrieve_private_node)
+        workflow.add_edge("plan", "retrieve_private")
+        workflow.add_edge("retrieve_private", "write")
+        logger.info(
+            "[LessonPlannerGraph] Private material RAG ENABLED — "
+            "the teacher's own documents are retrieved beside the Knowledge Graph."
+        )
 
     if _corrective_rag_enabled():
         # CORE 2 #9 — Corrective RAG topology
@@ -109,7 +195,22 @@ def _build_workflow() -> StateGraph:
             "using direct retrieve → write edge."
         )
 
-    workflow.add_edge("write", "critique")
+    # write → validate → critique, with a targeted rewrite when the lesson is
+    # not feasible:
+    #
+    #     write ──→ validate ─┬─[feasible | budget spent]→ critique
+    #       ↑                 │
+    #       └──[blocking]─────┘
+    #
+    # The rewrite carries only the remediation, through the existing
+    # ``refinement_instruction`` channel, and spends the validator's own budget
+    # rather than the Critic's.
+    workflow.add_edge("write", "validate")
+    workflow.add_conditional_edges(
+        "validate",
+        should_retry_after_validation,
+        {"rewrite": "write", "critique": "critique"},
+    )
 
     # Add conditional edge for revision loop
     workflow.add_conditional_edges(
@@ -194,6 +295,106 @@ async def build_lesson_planner_graph_async() -> Any:
     return compiled
 
 
+# ---------------------------------------------------------------------------
+# Process-wide compiled-graph singleton
+# ---------------------------------------------------------------------------
+#
+# The graph depends only on the topology and the checkpointer — never on
+# ``domain`` / ``language`` / ``max_revisions``, which travel in AgentState.
+# So one compiled instance serves every request in the process.
+#
+# Before this existed, ``LessonPlannerPipeline`` cached on ``self._graph`` while
+# callers built a fresh ``AgentOrchestrator`` (and therefore a fresh Pipeline)
+# per run: the cache was always empty and ``compile()`` ran for every lesson.
+#
+# Invalidation is by saver identity rather than an explicit reset hook. The
+# compiled graph closes over the checkpointer it was built with, so if
+# ``close_checkpointer()`` tears that saver down and a later call initialises a
+# new one, a cached graph would be holding a dead saver. Comparing identity on
+# each call makes that self-healing without the checkpointer module needing to
+# know graphs exist.
+
+_COMPILED_GRAPH: Optional[Any] = None
+_COMPILED_WITH_SAVER: Optional[Any] = None
+_GRAPH_LOCK: asyncio.Lock = asyncio.Lock()
+
+
+async def get_compiled_graph() -> Any:
+    """Return the process-wide compiled graph, building it on first use.
+
+    Concurrent first-callers are serialised on ``_GRAPH_LOCK`` and the winner's
+    instance is shared, mirroring ``checkpointer.get_checkpointer()``.
+
+    Recompiles only when the live checkpointer is not the one the cached graph
+    was compiled against — normally never, and in tests whenever
+    ``close_checkpointer()`` has run in between.
+    """
+    global _COMPILED_GRAPH, _COMPILED_WITH_SAVER
+
+    from aix.agent.graph.checkpointer import get_checkpointer
+
+    saver = await get_checkpointer()
+
+    # Fast path: `is` rather than `==` — we care whether it is the same live
+    # object, not whether two savers look alike.
+    if _COMPILED_GRAPH is not None and _COMPILED_WITH_SAVER is saver:
+        return _COMPILED_GRAPH
+
+    async with _GRAPH_LOCK:
+        # Re-check inside the lock; another coroutine may have won the race.
+        if _COMPILED_GRAPH is not None and _COMPILED_WITH_SAVER is saver:
+            return _COMPILED_GRAPH
+
+        workflow = _build_workflow()
+        if saver is not None:
+            logger.info(
+                "[LessonPlannerGraph] Compiling process graph with %s checkpointer...",
+                type(saver).__name__,
+            )
+            compiled = workflow.compile(checkpointer=saver)
+        else:
+            logger.info(
+                "[LessonPlannerGraph] Compiling process graph without checkpointer (degraded)..."
+            )
+            compiled = workflow.compile()
+
+        _COMPILED_GRAPH = compiled
+        _COMPILED_WITH_SAVER = saver
+        logger.info("[LessonPlannerGraph] Graph compiled successfully (once per process)")
+        return compiled
+
+
+def reset_compiled_graph() -> None:
+    """Drop the cached graph so the next :func:`get_compiled_graph` rebuilds.
+
+    Needed by tests that change the topology through
+    ``AIX_CORRECTIVE_RAG_ENABLED``: the flag is read at build time, so a graph
+    cached under the old value would otherwise survive the change.
+    """
+    global _COMPILED_GRAPH, _COMPILED_WITH_SAVER
+    _COMPILED_GRAPH = None
+    _COMPILED_WITH_SAVER = None
+
+
+def default_max_revisions() -> int:
+    """How many times the Critic may send a draft back: ``AIX_MAX_REVISIONS``, default 1.
+
+    Read when a pipeline is built, not when this module is imported. The value
+    used to sit in a default argument, evaluated once at import; and the
+    Orchestrator above it hard-coded ``max_revisions=2`` in its own signature,
+    so the documented variable never counted at all.
+
+    One, not two, since 2026-09-25. A real run spent 63 s on a second draft to
+    move the Critic's score from 80% to 84%, was still not approved, and the
+    revision itself added a self-assessment table the teacher had no use for.
+    """
+    raw = os.getenv("AIX_MAX_REVISIONS")
+    try:
+        return max(0, int(raw)) if raw else 1
+    except ValueError:
+        return 1
+
+
 class LessonPlannerPipeline:
     """
     High-level interface for the lesson planner pipeline.
@@ -207,7 +408,7 @@ class LessonPlannerPipeline:
         self,
         domain: str = "neuro",
         language: str = "it",
-        max_revisions: int = int(os.getenv("AIX_MAX_REVISIONS", "1")),
+        max_revisions: Optional[int] = None,
     ):
         """
         Initialize the lesson planner pipeline.
@@ -219,7 +420,7 @@ class LessonPlannerPipeline:
         """
         self.domain = domain
         self.language = language
-        self.max_revisions = max_revisions
+        self.max_revisions = default_max_revisions() if max_revisions is None else max_revisions
         self._graph: Optional[Any] = None
 
     def _get_graph(self) -> Any:
@@ -235,20 +436,23 @@ class LessonPlannerPipeline:
             self._graph = build_lesson_planner_graph()
         return self._graph
 
-    async def _get_graph_async(self) -> Any:
-        """
-        Lazy initialisation of the compiled graph WITH the LangGraph
-        checkpointer attached when available (CORE 2 #10.2).
+    async def get_graph(self) -> Any:
+        """Return the compiled graph with the checkpointer attached.
 
-        Caches on ``self._graph`` like the sync sibling — first caller
-        wins; subsequent callers receive the same compiled instance.
-        Calling this on a pipeline whose ``self._graph`` was already
-        populated by ``_get_graph()`` will re-use the no-checkpointer
-        graph; in practice this only happens in tests.
+        Public because streaming callers need the graph itself rather than
+        :meth:`run`, which is atomic: the WebUI and the public API both drive
+        ``astream`` so they can emit per-node events. They used to reach through
+        ``_get_graph_async`` for it.
+
+        Delegates to the process-wide singleton, so the per-instance cache this
+        used to keep is gone — it never helped anyway, because callers build a
+        fresh Pipeline per run.
         """
-        if self._graph is None:
-            self._graph = await build_lesson_planner_graph_async()
-        return self._graph
+        return await get_compiled_graph()
+
+    async def _get_graph_async(self) -> Any:
+        """Deprecated alias for :meth:`get_graph`, kept for existing callers."""
+        return await self.get_graph()
 
     async def run(
         self,
@@ -296,7 +500,7 @@ class LessonPlannerPipeline:
         # Get compiled graph (with checkpointer when available — CORE 2 #10.2).
         # The async path is the canonical one; the sync ``_get_graph()`` is
         # kept as a backward-compat seam for legacy callers only.
-        graph = await self._get_graph_async()
+        graph = await self.get_graph()
 
         # When a checkpointer is attached we MUST pass a thread_id config,
         # otherwise LangGraph raises. Generate a per-invocation UUID when

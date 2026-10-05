@@ -311,9 +311,7 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="Clean UDL data")
-    parser.add_argument(
-        "--scan-only", action="store_true", help="Only scan, don't fix"
-    )
+    parser.add_argument("--scan-only", action="store_true", help="Only scan, don't fix")
     args = parser.parse_args()
 
     df = pd.read_excel(INPUT_FILE)

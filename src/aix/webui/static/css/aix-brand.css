@@ -1735,6 +1735,22 @@ body.aix-body {
   color: var(--aix-text-secondary);
 }
 
+/* The Knowledge Graph switch under a follow-up input. */
+.aix-chat-graph-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px 0;
+  font-size: 12px;
+  color: var(--aix-text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+.aix-chat-graph-toggle input[type="checkbox"] {
+  accent-color: var(--aix-accent, currentColor);
+  cursor: pointer;
+}
+
 /* -----------------------------------------------------------------------------
    Attachment chip (above the chat input)
    ----------------------------------------------------------------------------- */
@@ -1752,6 +1768,23 @@ body.aix-body {
 }
 .aix-attach-chip-sep { color: var(--aix-border-medium); }
 .aix-attach-chip-size { color: var(--aix-text-tertiary); }
+.aix-attach-chip-status { color: var(--aix-text-secondary); white-space: nowrap; }
+.aix-attach-chip--warn {
+  border-color: var(--aix-status-warning, #d97706);
+  background: var(--aix-status-warning-soft, #fef3c7);
+}
+.aix-chat-input-shell--drop {
+  border-color: var(--aix-status-success);
+  background: var(--aix-status-success-soft);
+}
+.aix-attach-chip--ready {
+  border-color: var(--aix-status-success);
+  background: var(--aix-status-success-soft);
+}
+.aix-attach-chip-status--ready {
+  color: var(--aix-status-success);
+  font-weight: 600;
+}
 .aix-attach-chip-remove {
   width: 18px;
   height: 18px;

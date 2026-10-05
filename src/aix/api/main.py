@@ -166,18 +166,20 @@ async def lifespan(app: FastAPI):
     logger.info("🚀 Starting GraphRAG Educational API...")
     logger.info(f"📦 Version: {__version__}")
 
+    # Before anything else: a deployed environment may not sign its tokens with
+    # the development constant. Raising here stops the container instead of
+    # serving sessions anyone could forge — on a laptop it stays a warning.
+    from aix.webui.auth.manager import assert_secret_is_real
+
+    assert_secret_is_real()
+
     # Test Neo4j connection
     try:
         from neo4j import GraphDatabase
 
         from aix.core.config import config
 
-        driver_kwargs = {
-            "auth": (config.neo4j.user, config.neo4j.password),
-        }
-        if not config.neo4j.encrypted:
-            driver_kwargs["encrypted"] = config.neo4j.encrypted
-        driver = GraphDatabase.driver(config.neo4j.uri, **driver_kwargs)
+        driver = GraphDatabase.driver(config.neo4j.uri, **config.neo4j.driver_kwargs())
         driver.verify_connectivity()
         driver.close()
         logger.info("✅ Neo4j connection verified")
@@ -272,12 +274,68 @@ async def lifespan(app: FastAPI):
                     exc,
                 )
 
+        # Compile the agent graph once, here, instead of on the first lesson.
+        # It depends only on the topology and the checkpointer, so one instance
+        # serves every request; warming it at startup also puts the "Graph
+        # compiled successfully" line in the boot log once, rather than on
+        # every run — which is what made the per-request rebuild invisible.
+        # Best-effort like the checks above: a failure must not stop the API
+        # from booting, and get_compiled_graph() retries on first use.
+        try:
+            from aix.agent.graph.lesson_planner_graph import get_compiled_graph
+
+            await get_compiled_graph()
+            logger.info("✅ Agent graph compiled and cached for this process")
+        except Exception as e:  # noqa: BLE001
+            logger.warning("⚠️ Agent graph warm-up failed (compiles on first run): %s", e)
+
+        # Fase 1 · PR 4 — the ingestion worker. Best-effort like everything
+        # above: a queue that will not start must not stop the API from
+        # serving, because with the flag off nothing depends on it and with the
+        # flag on the jobs are durable rows that the next boot will pick up.
+        #
+        # It gets the session *maker*, not a session: the worker outlives every
+        # request, and it renews a lease on its own schedule.
+        app.state.ingestion_worker = None
+        try:
+            from aix.webui.db import async_session_maker, schema_is_current
+            from aix.webui.materials.handlers import ExtractionHandler
+            from aix.webui.materials.jobs import JobDispatcher
+            from aix.webui.materials.storage import get_storage_backend
+            from aix.webui.materials.worker import start_ingestion_worker
+
+            # Its tables come with the migrations. Without them it would fail
+            # every few seconds, each failure an error report; say it once.
+            if not await schema_is_current():
+                logger.warning(
+                    "⚠️ Ingestion worker not started: the WebUI database is not at the "
+                    "latest migration (see the [db] lines above). Uploaded documents "
+                    "are not processed until it is."
+                )
+            else:
+                _dispatcher = JobDispatcher(async_session_maker)
+                app.state.ingestion_worker = start_ingestion_worker(
+                    _dispatcher, ExtractionHandler(_dispatcher, get_storage_backend())
+                )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("⚠️ Ingestion worker not started: %s", e)
+
         logger.info("✅ API ready to serve requests")
 
         yield  # Server is running
 
     # Shutdown
     logger.info("👋 Shutting down GraphRAG Educational API...")
+
+    # Ask the ingestion worker to finish the job in hand and stop. A no-op when
+    # it never started. Whatever it was holding stays a row with a lease that
+    # expires, so the next boot picks it up rather than losing it.
+    try:
+        from aix.webui.materials.worker import stop_ingestion_worker
+
+        await stop_ingestion_worker(getattr(app.state, "ingestion_worker", None))
+    except Exception as e:  # noqa: BLE001
+        logger.warning("⚠️ Ingestion worker shutdown failed: %s", e)
 
     # Phase B readiness — release the LangGraph checkpointer cleanly so the
     # Postgres connection pool (prod) / SQLite connection (dev) is torn down on
@@ -363,6 +421,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 logger.info("✅ CORS configured: origins=%s", _cors_origins)
+
+# Fase 0 · PR 1 — CSRF on the WebUI's mutating requests. Guards /webui and
+# /auth; /api/v1 is deliberately left out, because it is called by the DEV team
+# with its own credentials rather than with a browser cookie, so there is no
+# ambient authority there for a third-party page to borrow. Soft-loaded like
+# the routers below: a failure to import must not take the application down.
+try:
+    from aix.webui.auth.csrf import CSRFMiddleware
+
+    app.add_middleware(CSRFMiddleware)
+    logger.info("✅ CSRF protection active on /webui and /auth")
+except Exception as exc:  # noqa: BLE001
+    logger.warning("⚠️ CSRF middleware not loaded: %s", exc)
 
 # Include routers
 app.include_router(context_router, prefix="/api/v1")
@@ -510,11 +581,25 @@ async def health_check():
     except Exception:
         pass
 
+    # Which build is running, and which schema it is talking to. Both are
+    # best-effort: neither should ever turn a health check into a failure.
+    code_version = os.getenv("CODE_VERSION") or None
+
+    db_revision = None
+    try:
+        from aix.webui.db import current_db_revision
+
+        db_revision = await current_db_revision()
+    except Exception:  # noqa: BLE001
+        pass
+
     return HealthResponse(
         status="healthy" if neo4j_connected else "degraded",
         neo4j_connected=neo4j_connected,
         version=__version__,
         domain_configs_loaded=domain_configs,
+        code_version=code_version,
+        db_revision=db_revision,
     )
 
 

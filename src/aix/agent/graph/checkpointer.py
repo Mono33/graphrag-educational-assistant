@@ -206,9 +206,7 @@ def _prefer_ipv4_localhost_on_windows(url: str) -> str:
     netloc = f"{userinfo}127.0.0.1"
     if parts.port:
         netloc += f":{parts.port}"
-    rewritten = urlunsplit(
-        (parts.scheme, netloc, parts.path, parts.query, parts.fragment)
-    )
+    rewritten = urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
     logger.info(
         "[checkpointer] Windows detected -> rewrote Postgres host "
         "'localhost' to '127.0.0.1' to avoid the IPv6 (::1) connect stall "
@@ -313,9 +311,7 @@ async def _init_postgres(url: str) -> Optional[Any]:
         # Idempotent: CREATE TABLE IF NOT EXISTS for the 3 checkpoint tables.
         await saver.setup()
     except Exception as exc:  # noqa: BLE001 — surface any backend init failure
-        logger.exception(
-            "[checkpointer] failed to open AsyncPostgresSaver: %s", exc
-        )
+        logger.exception("[checkpointer] failed to open AsyncPostgresSaver: %s", exc)
         if pool is not None:
             try:
                 await pool.close()
@@ -372,17 +368,13 @@ async def _init_sqlite() -> Optional[Any]:
         # Idempotent: ensure the checkpoint tables exist before first write.
         await saver.setup()
     except Exception as exc:  # noqa: BLE001 — surface any backend init failure
-        logger.exception(
-            "[checkpointer] failed to open AsyncSqliteSaver at %s: %s", db_path, exc
-        )
+        logger.exception("[checkpointer] failed to open AsyncSqliteSaver at %s: %s", db_path, exc)
         return None
 
     _CONTEXT_MANAGER = cm
     _CHECKPOINTER = saver
     _BACKEND = "sqlite"
-    logger.info(
-        "[checkpointer] AsyncSqliteSaver ready at %s (multi-turn enabled)", db_path
-    )
+    logger.info("[checkpointer] AsyncSqliteSaver ready at %s (multi-turn enabled)", db_path)
     return _CHECKPOINTER
 
 

@@ -77,15 +77,15 @@ def export_relationships(session, domain: str = None) -> list[dict[str, Any]]:
             "source": {
                 "name": record["source_name"],
                 "domain": record["source_domain"],
-                "labels": record["source_labels"]
+                "labels": record["source_labels"],
             },
             "target": {
                 "name": record["target_name"],
                 "domain": record["target_domain"],
-                "labels": record["target_labels"]
+                "labels": record["target_labels"],
             },
             "type": record["rel_type"],
-            "properties": dict(record["rel_props"]) if record["rel_props"] else {}
+            "properties": dict(record["rel_props"]) if record["rel_props"] else {},
         }
         relationships.append(rel)
 
@@ -114,14 +114,14 @@ def export_to_json(uri: str, user: str, password: str, output_file: str, domain:
                     "source_uri": uri,
                     "domain_filter": domain,
                     "total_nodes": len(nodes),
-                    "total_relationships": len(relationships)
+                    "total_relationships": len(relationships),
                 },
                 "nodes": nodes,
-                "relationships": relationships
+                "relationships": relationships,
             }
 
             # Write to file
-            with open(output_file, 'w', encoding='utf-8') as f:
+            with open(output_file, "w", encoding="utf-8") as f:
                 json.dump(export_data, f, indent=2, ensure_ascii=False, default=str)
 
             print("\n✅ Export complete!")
@@ -148,4 +148,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

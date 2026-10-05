@@ -21,8 +21,8 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 load_dotenv()
 
-REQUIRED_CHECKS = []   # Neo4j + LM Studio — must all pass
-OPTIONAL_WARNS = []    # API keys — warn only, don't block
+REQUIRED_CHECKS = []  # Neo4j + LM Studio — must all pass
+OPTIONAL_WARNS = []  # API keys — warn only, don't block
 
 
 def check(name: str, ok: bool, detail: str = "", required: bool = True):
@@ -79,7 +79,11 @@ def check_lmstudio():
         models = [m["id"] for m in resp.json().get("data", [])]
         model_available = any(model in m or m in model for m in models)
         check("LM Studio reachable", True, f"{len(models)} models loaded")
-        check(f"Model '{model}' available", model_available, str(models) if not model_available else "")
+        check(
+            f"Model '{model}' available",
+            model_available,
+            str(models) if not model_available else "",
+        )
     except Exception as e:
         check("LM Studio reachable", False, str(e))
 
@@ -88,7 +92,12 @@ def check_youtube():
     print("\n[YouTube Data API]  (optional)")
     api_key = os.getenv("YOUTUBE_API_KEY")
     if not api_key:
-        check("YOUTUBE_API_KEY", False, "not set — add to .env to enable YouTube search", required=False)
+        check(
+            "YOUTUBE_API_KEY",
+            False,
+            "not set — add to .env to enable YouTube search",
+            required=False,
+        )
         return
     check("YOUTUBE_API_KEY", True, api_key[:8] + "...", required=False)
     try:
@@ -109,7 +118,9 @@ def check_semantic_scholar():
     if api_key:
         check("SEMANTIC_SCHOLAR_API_KEY", True, api_key[:8] + "... (1000 req/5min)", required=False)
     else:
-        check("SEMANTIC_SCHOLAR_API_KEY", True, "not set — free tier (100 req/5min)", required=False)
+        check(
+            "SEMANTIC_SCHOLAR_API_KEY", True, "not set — free tier (100 req/5min)", required=False
+        )
         # Skip the live test call to avoid burning free-tier quota during preflight
         print("  ℹ️        Skipping live API test (no key — preserving rate limit quota)")
         return
@@ -122,7 +133,9 @@ def check_semantic_scholar():
             timeout=10,
         )
         if resp.status_code == 429:
-            check("Semantic Scholar API call", False, "rate limited — wait and retry", required=False)
+            check(
+                "Semantic Scholar API call", False, "rate limited — wait and retry", required=False
+            )
         else:
             resp.raise_for_status()
             check("Semantic Scholar API call", True, required=False)
@@ -170,7 +183,9 @@ if __name__ == "__main__":
     opt_total = len(OPTIONAL_WARNS)
 
     print(f"\n{'=' * 55}")
-    print(f"  Required: {req_passed}/{req_total} passed   Optional: {opt_passed}/{opt_total} configured")
+    print(
+        f"  Required: {req_passed}/{req_total} passed   Optional: {opt_passed}/{opt_total} configured"
+    )
 
     if req_passed == req_total:
         if opt_passed == opt_total:
