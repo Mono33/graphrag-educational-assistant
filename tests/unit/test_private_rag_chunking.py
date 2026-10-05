@@ -234,15 +234,21 @@ def test_the_private_rag_is_on_unless_switched_off(monkeypatch):
     assert private_rag_enabled() is False
 
 
-def test_the_real_client_is_reachable():
+def test_the_real_client_is_reachable(monkeypatch):
     """The path every other test here skips by injecting a fake client.
 
     The first version imported ``aix.config.settings``, which does not exist.
     Nothing caught it, because nothing called ``_client()`` without a fake — the
     first real upload did, and both ingestion jobs and the search failed on it.
     No network here: building the client makes no request.
+
+    The key is a stand-in: the CI runner has none, and the OpenAI SDK refuses to
+    build a client without one -- the test is about the import path, not the
+    credentials.
     """
     from aix.webui.materials.embedding import _client
+
+    monkeypatch.setattr("aix.core.config.config.openai.api_key", "test-key")
 
     assert hasattr(_client(), "embeddings")
 
