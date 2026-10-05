@@ -39,7 +39,25 @@ logger = logging.getLogger(__name__)
 # WARNING: this fallback must NEVER be used outside dev. In production the
 # env var WEBUI_AUTH_SECRET is required and must be a long random string.
 _DEV_FALLBACK_SECRET = "DEV_ONLY_aix_webui_change_me"
-_AUTH_SECRET = os.getenv("WEBUI_AUTH_SECRET", _DEV_FALLBACK_SECRET)
+
+
+def _secret_from_env(raw: Optional[str]) -> str:
+    """The secret, or the fallback when there is none worth the name.
+
+    Empty and placeholder values count as none. ``os.getenv(name, fallback)``
+    returned ``""`` for a line ``WEBUI_AUTH_SECRET=`` -- the way ``.env.example``
+    ships it -- so tokens were signed with an empty key, and the startup check
+    did not fire because the empty string is not the fallback (found by the
+    staging rehearsal, 2026-10-05). ``replace-with-…`` is the placeholder of
+    ``deploy/.env.prod.example``: a string published in this repository too.
+    """
+    value = (raw or "").strip()
+    if not value or value.startswith("replace-with-"):
+        return _DEV_FALLBACK_SECRET
+    return value
+
+
+_AUTH_SECRET = _secret_from_env(os.getenv("WEBUI_AUTH_SECRET"))
 
 if _AUTH_SECRET == _DEV_FALLBACK_SECRET:
     logger.warning(

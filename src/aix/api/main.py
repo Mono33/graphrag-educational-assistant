@@ -298,16 +298,25 @@ async def lifespan(app: FastAPI):
         # request, and it renews a lease on its own schedule.
         app.state.ingestion_worker = None
         try:
-            from aix.webui.db import async_session_maker
+            from aix.webui.db import async_session_maker, schema_is_current
             from aix.webui.materials.handlers import ExtractionHandler
             from aix.webui.materials.jobs import JobDispatcher
             from aix.webui.materials.storage import get_storage_backend
             from aix.webui.materials.worker import start_ingestion_worker
 
-            _dispatcher = JobDispatcher(async_session_maker)
-            app.state.ingestion_worker = start_ingestion_worker(
-                _dispatcher, ExtractionHandler(_dispatcher, get_storage_backend())
-            )
+            # Its tables come with the migrations. Without them it would fail
+            # every few seconds, each failure an error report; say it once.
+            if not await schema_is_current():
+                logger.warning(
+                    "⚠️ Ingestion worker not started: the WebUI database is not at the "
+                    "latest migration (see the [db] lines above). Uploaded documents "
+                    "are not processed until it is."
+                )
+            else:
+                _dispatcher = JobDispatcher(async_session_maker)
+                app.state.ingestion_worker = start_ingestion_worker(
+                    _dispatcher, ExtractionHandler(_dispatcher, get_storage_backend())
+                )
         except Exception as e:  # noqa: BLE001
             logger.warning("⚠️ Ingestion worker not started: %s", e)
 

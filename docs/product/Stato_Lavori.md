@@ -2364,6 +2364,54 @@ Restano spenti, come negli env, il validatore e il corrective RAG. `false` nel
 
 Suite: 1000 passati circa, i 2 noti su Windows.
 
+### 2026-10-05 — Prova generale dell'aggiornamento di staging: regge, con due correzioni
+
+**Come funziona il deploy di staging.** Un push su `staging` fa costruire alla CI
+(`deploy-api.yaml`) il `Dockerfile` (target `api`) e pubblicare
+`…/graphrag-aixlearning:staging` sul registry Scaleway. Pull e riavvio sulla VM li
+fa il dev di AixLearning; le variabili le prepara Angelo nel repo di
+configurazione. L'immagine si aggiorna quindi da sola a ogni merge: va verificato
+l'ambiente in cui gira.
+
+`staging` (`a029b66`) è un antenato diretto di questo branch: merge senza
+conflitti.
+
+**La prova, in Docker locale, separata da `aix-local`.** Prima l'immagine di
+staging di oggi su Postgres, con un utente e una lezione; poi l'immagine nuova
+sullo stesso database, con `ENVIRONMENT=staging`. Esiti:
+
+- **con pgvector:** schema adottato (`stamp c8d88f37e59c`) e migrato a
+  `3b8e6d1f4a27`; dati intatti; login e lezioni OK; worker dei documenti
+  avviato; lezione via `/api/v1/agent/stream` con Basic Auth in 52,8 s;
+- **senza pgvector:** migrazione annullata, database com'era, API e WebUI
+  esistente OK, documenti non elaborati;
+- **segreto vuoto:** il container si ferma (exit 3) con il messaggio.
+
+**Due difetti trovati, corretti:**
+
+- senza pgvector il worker dei documenti, ora acceso di default, partiva comunque
+  e andava in errore ogni 3 secondi su `ingestion_job` (circa 1.200 segnalazioni
+  l'ora in GlitchTip). Ora parte solo se il database è all'ultima migrazione
+  (`db.schema_is_current()`), altrimenti lo dice una volta;
+- `os.getenv("WEBUI_AUTH_SECRET", fallback)` restituiva `""` per una riga
+  `WEBUI_AUTH_SECRET=` (com'è in `.env.example`): i token venivano firmati con
+  una chiave vuota e il controllo all'avvio non scattava. Ora un valore vuoto o
+  ancora `replace-with-…` conta come non impostato.
+
+**Per il team AixLearning** (`docs/product/Deploy_Staging_Checklist.md`, non
+versionata):
+
+- digest dell'immagine attuale e backup del database, prima del merge;
+- segreto vero;
+- **pgvector**, perché senza i documenti non vengono elaborati;
+- volumi `uploads` e `materials`;
+- avvertenza su `session_id`, che identifica la conversazione.
+
+Testo della PR: `docs/product/PR_Staging_Advanced_Input.md`.
+
+Test: `test_worker_needs_the_schema.py` (5), `test_auth_secret_is_required.py`
+(+6). Suite: 1004 passati, i 2 noti su Windows.
+
 ## Un difetto preesistente trovato il 2026-09-11 — chiuso
 
 *Chiuso nella PR 5: `_legacy_read` trasforma un PDF illeggibile in un `ValueError` con un messaggio in italiano, e la docente riceve un 422 leggibile invece di un 500. Il testo sotto resta come registro.*

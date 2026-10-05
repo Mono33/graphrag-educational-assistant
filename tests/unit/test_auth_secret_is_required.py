@@ -73,3 +73,21 @@ def test_a_real_secret_passes_everywhere(monkeypatch, with_a_real_secret):
 
     assert_secret_is_real()
     assert using_dev_fallback_secret() is False
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [None, "", "   ", "replace-with-strong-random-secret", "replace-with-anything"],
+)
+def test_an_empty_or_placeholder_secret_is_no_secret(raw):
+    """``WEBUI_AUTH_SECRET=`` used to sign every token with an empty key, and
+    the startup check let it through (staging rehearsal, 2026-10-05)."""
+    from aix.webui.auth.manager import _secret_from_env
+
+    assert _secret_from_env(raw) == _DEV_FALLBACK_SECRET
+
+
+def test_a_real_secret_is_kept_as_it_is():
+    from aix.webui.auth.manager import _secret_from_env
+
+    assert _secret_from_env("  k3y-long-and-random  ") == "k3y-long-and-random"

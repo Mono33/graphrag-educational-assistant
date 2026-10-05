@@ -368,6 +368,28 @@ async def current_db_revision() -> Optional[str]:
         return None
 
 
+def head_revision() -> str:
+    """The latest migration shipped in this image."""
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    return ScriptDirectory.from_config(Config(str(_REPO_ROOT / "alembic.ini"))).get_current_head()
+
+
+async def schema_is_current() -> bool:
+    """Whether the database is at the latest migration, which the material tables need.
+
+    False when the migration could not run -- a Postgres without pgvector, a
+    schema left untouched because it did not match the baseline. The rehearsal
+    of the staging upgrade (2026-10-05) found the ingestion worker started
+    anyway and failed every three seconds on a table that did not exist.
+    """
+    try:
+        return await current_db_revision() == head_revision()
+    except Exception:  # noqa: BLE001
+        return False
+
+
 async def init_db() -> None:
     """Bring the WebUI schema up to date, under migration control.
 
