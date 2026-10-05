@@ -43,7 +43,7 @@ Attività con schede cartacee.
 @pytest.fixture(autouse=True)
 def _clean(monkeypatch):
     monkeypatch.delenv("AIX_CORRECTIVE_RAG_ENABLED", raising=False)
-    monkeypatch.delenv("AIX_CONDITIONAL_RETRIEVAL_ENABLED", raising=False)
+    monkeypatch.setenv("AIX_CONDITIONAL_RETRIEVAL_ENABLED", "false")
     monkeypatch.setenv("AIX_VALIDATOR_ENABLED", "true")
     reset_compiled_graph()
     yield

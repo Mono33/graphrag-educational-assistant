@@ -437,8 +437,8 @@ async def test_the_loop_stops_when_asked(dispatcher):
 
 
 def test_nothing_starts_with_the_flag_off(dispatcher, monkeypatch):
-    """The default. Nothing claims, nothing parses, uploads work as they did."""
-    monkeypatch.delenv("AIX_MATERIALS_ENABLED", raising=False)
+    """Switched off: nothing claims, nothing parses, uploads work as they did."""
+    monkeypatch.setenv("AIX_MATERIALS_ENABLED", "false")
 
     assert start_ingestion_worker(dispatcher) is None
 

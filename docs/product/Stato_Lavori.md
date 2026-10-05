@@ -2331,6 +2331,39 @@ scritto «non risultano nuovi screenshot disponibili». Le cause:
 
 Test: `tests/unit/test_ingestion_speed_and_new_attachments.py` (11).
 
+### 2026-10-05 — Le funzioni del pilota sono accese di default
+
+Decisione di Angelo, in vista del deploy su staging: le flag attive nei suoi env
+diventano il default del codice. Il principio di prima («con le flag spente il
+prodotto è quello di prima») faceva sì che un deploy con una riga dimenticata
+servisse il prodotto vecchio senza che nessuno se ne accorgesse.
+
+Ora sono accese di default:
+
+- `AIX_UPLOAD_PARSER_ENABLED`, `AIX_MATERIALS_ENABLED`, `AIX_PRIVATE_RAG_ENABLED`;
+- `AIX_CONDITIONAL_RETRIEVAL_ENABLED`, `AIX_LIGHT_TURNS_ENABLED`;
+- `AIX_OCR_BACKEND=vision` (senza chiave OpenRouter resta Tesseract);
+- `AIX_TRACING_ENABLED` (senza chiavi Langfuse resta spento);
+- `AIX_MEDIA_LIVE_ENABLED`, `AIX_MEDIA_RERANK_ENABLED` (senza `YOUTUBE_API_KEY`
+  salta solo i video).
+
+Restano spenti, come negli env, il validatore e il corrective RAG. `false` nel
+`.env` spegne qualunque funzione.
+
+- **I test girano ancora con tutto spento:** `tests/conftest.py` imposta le flag
+  a spento invece di cancellarle, così ogni test continua a provare ciò che
+  provava. `tests/unit/test_feature_defaults.py` fissa i default nuovi in tutti i
+  punti in cui una flag è letta (alcune in due moduli).
+- **Conseguenze per un ambiente nuovo**, ora che non serve più accendere niente:
+  - su Postgres serve pgvector (RAG privato);
+  - servono i volumi `uploads` e `materials`, altrimenti gli allegati si perdono
+    a ogni ricreazione del container;
+  - il testo dei documenti va al provider di embedding (OpenRouter, ZDR).
+- **Documentazione aggiornata:** `docs/ENVIRONMENT.md`, `.env.example`,
+  `deploy/.env.prod.example`, `features.py`.
+
+Suite: 1000 passati circa, i 2 noti su Windows.
+
 ## Un difetto preesistente trovato il 2026-09-11 — chiuso
 
 *Chiuso nella PR 5: `_legacy_read` trasforma un PDF illeggibile in un `ValueError` con un messaggio in italiano, e la docente riceve un 422 leggibile invece di un 500. Il testo sotto resta come registro.*

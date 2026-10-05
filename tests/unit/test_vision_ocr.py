@@ -73,9 +73,18 @@ def _scan(pages: int = 1) -> bytes:
 # ---------------------------------------------------------------------------
 
 
-def test_tesseract_stays_the_default(monkeypatch):
-    """No network and no key needed unless someone asks for the vision model."""
+def test_the_vision_model_is_the_default(monkeypatch):
+    """Since 2026-10-05: the pilot's setting. Tesseract is the fallback."""
     monkeypatch.delenv("AIX_OCR_BACKEND", raising=False)
+    monkeypatch.setattr("aix.core.config.config.openai.api_key", "test-key")
+
+    assert vision_ocr.backend() == "vision"
+    assert vision_ocr.vision_available()
+
+
+def test_tesseract_when_asked_for(monkeypatch):
+    """No network and no key needed."""
+    monkeypatch.setenv("AIX_OCR_BACKEND", "tesseract")
     monkeypatch.setattr("aix.core.config.config.openai.api_key", "test-key")
 
     assert vision_ocr.backend() == "tesseract"

@@ -34,7 +34,7 @@ MATERIAL = "Programma di classe: si affronta solo la memoria di lavoro, non l'at
 @pytest.fixture(autouse=True)
 def _clean(monkeypatch):
     monkeypatch.delenv("AIX_CORRECTIVE_RAG_ENABLED", raising=False)
-    monkeypatch.delenv("AIX_CONDITIONAL_RETRIEVAL_ENABLED", raising=False)
+    monkeypatch.setenv("AIX_CONDITIONAL_RETRIEVAL_ENABLED", "false")
     reset_compiled_graph()
     yield
     reset_compiled_graph()

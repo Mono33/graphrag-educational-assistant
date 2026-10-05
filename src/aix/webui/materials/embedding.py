@@ -45,7 +45,7 @@ class EmbeddingError(RuntimeError):
 
 def private_rag_enabled() -> bool:
     """Off by default: with the flag down nothing is chunked, embedded or sent."""
-    return (os.getenv("AIX_PRIVATE_RAG_ENABLED") or "false").strip().lower() in (
+    return (os.getenv("AIX_PRIVATE_RAG_ENABLED") or "true").strip().lower() in (
         "1",
         "true",
         "yes",

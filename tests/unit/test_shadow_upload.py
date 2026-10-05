@@ -219,7 +219,7 @@ def _parser_on(monkeypatch):
 
 @pytest.fixture
 def _parser_off(monkeypatch):
-    monkeypatch.delenv("AIX_UPLOAD_PARSER_ENABLED", raising=False)
+    monkeypatch.setenv("AIX_UPLOAD_PARSER_ENABLED", "false")
 
 
 async def test_with_the_parser_off_only_the_old_formats_are_accepted(client, maker, _parser_off):
@@ -260,7 +260,7 @@ async def test_with_the_parser_off_a_corrupt_pdf_is_still_not_a_500(client, _par
 
 
 async def test_a_docx_upload_reaches_the_writer_as_text(client, maker, monkeypatch):
-    monkeypatch.delenv("AIX_MATERIALS_ENABLED", raising=False)
+    monkeypatch.setenv("AIX_MATERIALS_ENABLED", "false")
 
     response = _upload(client, "programma.docx", _docx(), DOCX_MIME)
 
@@ -336,7 +336,7 @@ async def test_ocr_text_is_flagged_to_the_writer():
 
 
 async def test_with_the_flag_off_nothing_shadow_happens(client, maker, monkeypatch):
-    monkeypatch.delenv("AIX_MATERIALS_ENABLED", raising=False)
+    monkeypatch.setenv("AIX_MATERIALS_ENABLED", "false")
 
     assert _upload(client).status_code == 200
 
@@ -345,7 +345,7 @@ async def test_with_the_flag_off_nothing_shadow_happens(client, maker, monkeypat
 
 
 async def test_with_the_flag_off_the_manifest_has_no_shadow_keys(client, maker, monkeypatch):
-    monkeypatch.delenv("AIX_MATERIALS_ENABLED", raising=False)
+    monkeypatch.setenv("AIX_MATERIALS_ENABLED", "false")
     _upload(client)
 
     entry = (await _manifest(maker))[0]

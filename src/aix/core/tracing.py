@@ -30,7 +30,7 @@ _OMITTED = "[contenuto non inviato: AIX_TRACING_CONTENT=none]"
 
 
 def tracing_enabled() -> bool:
-    flag = (os.getenv("AIX_TRACING_ENABLED") or "false").strip().lower()
+    flag = (os.getenv("AIX_TRACING_ENABLED") or "true").strip().lower()
     keys = os.getenv("LANGFUSE_PUBLIC_KEY") and os.getenv("LANGFUSE_SECRET_KEY")
     return flag in ("1", "true", "yes", "on") and bool(keys)
 

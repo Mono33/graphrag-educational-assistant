@@ -63,7 +63,7 @@ def _on(monkeypatch):
 
 @pytest.fixture
 def _off(monkeypatch):
-    monkeypatch.delenv("AIX_CONDITIONAL_RETRIEVAL_ENABLED", raising=False)
+    monkeypatch.setenv("AIX_CONDITIONAL_RETRIEVAL_ENABLED", "false")
 
 
 def _followup(**over):

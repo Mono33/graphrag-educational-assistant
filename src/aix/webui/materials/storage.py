@@ -85,7 +85,7 @@ class StoredObject:
 
 def materials_enabled() -> bool:
     """Whether the material pipeline is on. Off by default."""
-    return (os.getenv("AIX_MATERIALS_ENABLED") or "false").strip().lower() in (
+    return (os.getenv("AIX_MATERIALS_ENABLED") or "true").strip().lower() in (
         "1",
         "true",
         "yes",

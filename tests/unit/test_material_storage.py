@@ -267,9 +267,9 @@ def test_s3_without_its_configuration_raises(monkeypatch):
 
 @pytest.mark.parametrize(
     "value, expected",
-    [(None, False), ("false", False), ("", False), ("true", True), ("1", True), ("ON", True)],
+    [(None, True), ("", True), ("false", False), ("no", False), ("true", True), ("ON", True)],
 )
-def test_the_pipeline_is_off_by_default(value, expected, monkeypatch):
+def test_the_pipeline_is_on_by_default_and_off_when_asked(value, expected, monkeypatch):
     monkeypatch.delenv("AIX_MATERIALS_ENABLED", raising=False)
     if value is not None:
         monkeypatch.setenv("AIX_MATERIALS_ENABLED", value)

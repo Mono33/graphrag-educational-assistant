@@ -80,7 +80,7 @@ FEASIBLE = "# Lezione\n## Introduzione *(60 minuti)*\nAttività con schede carta
 @pytest.fixture
 def _validator(monkeypatch):
     monkeypatch.delenv("AIX_CORRECTIVE_RAG_ENABLED", raising=False)
-    monkeypatch.delenv("AIX_CONDITIONAL_RETRIEVAL_ENABLED", raising=False)
+    monkeypatch.setenv("AIX_CONDITIONAL_RETRIEVAL_ENABLED", "false")
     monkeypatch.setenv("AIX_VALIDATOR_ENABLED", "true")
     monkeypatch.setenv("AIX_VALIDATOR_MAX_RETRIES", "2")
     reset_compiled_graph()

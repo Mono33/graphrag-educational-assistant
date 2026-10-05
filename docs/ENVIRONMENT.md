@@ -76,16 +76,21 @@ I costi di ogni ruolo si vedono in Langfuse, per modello (sezione «Tracciamento
 
 ## 3. Funzioni dietro flag
 
-Tutte spente: §5.2 dice che a flag spente il prodotto è quello di prima.
+**Dal 2026-10-05 i default sono quelli del pilota**, per decisione di Angelo: le funzioni
+pronte sono accese, e `false` nel `.env` è il modo per spegnerne una. Prima valeva il
+contrario (§5.2: a flag spente il prodotto era quello di prima), e un deploy con una riga
+dimenticata serviva il prodotto vecchio senza che nessuno se ne accorgesse.
 
 | Variabile | Default | Cosa accende |
 | --- | --- | --- |
-| `AIX_UPLOAD_PARSER_ENABLED` | `false` | Parser nuovo sulla graffetta: DOCX, PPTX, immagini, magic bytes, OCR. Spenta: PDF, TXT, MD letti con pypdf |
-| `AIX_MATERIALS_ENABLED` | `false` | Storage durevole, tabelle `material*`, coda e worker di ingestione |
-| `AIX_PRIVATE_RAG_ENABLED` | `false` | Chunking, embedding e recupero dai documenti della docente. **Il testo esce dalla macchina** verso il provider di embedding |
+| `AIX_UPLOAD_PARSER_ENABLED` | `true` | Parser nuovo sulla graffetta: DOCX, PPTX, immagini, magic bytes, OCR. Spenta: PDF, TXT, MD letti con pypdf. Richiede i volumi `uploads` e `materials` per non perdere gli allegati a ogni ricreazione del container |
+| `AIX_MATERIALS_ENABLED` | `true` | Storage durevole, tabelle `material*`, coda e worker di ingestione |
+| `AIX_PRIVATE_RAG_ENABLED` | `true` | Chunking, embedding e recupero dai documenti della docente. **Il testo esce dalla macchina** verso il provider di embedding. Su Postgres richiede pgvector |
 | `AIX_VALIDATOR_ENABLED` | `false` | Validatore dei vincoli d'aula fra Writer e Critic |
-| `AIX_CONDITIONAL_RETRIEVAL_ENABLED` | `false` | Un turno che non porta concetti nuovi riusa il corpus del thread. **Da accendere nel pilota.** Misurato il 2026-09-23 su quattro turni (`scripts/eval/measure_followup_turns.py`): il router riusa quando si riscrive e cerca quando arriva un argomento nuovo, e sui turni di modifica risparmia 4–9 s su ~65 — il resto è il Writer che riscrive la lezione intera |
-| `AIX_LIGHT_TURNS_ENABLED` | `false` | Dopo la prima lezione, un messaggio riceve una risposta in streaming in pochi secondi (lezione, conversazione e documenti, cercati di nuovo a ogni turno) e la lezione non cambia; una richiesta di lezione nuova mostra una scheda per passare alla generazione completa, che resta anche dietro la casella «Lezione completa». Acceso nel pilota (`deploy/make_local_env.py`). `AIX_CHAT_MAX_TOKENS` (default `3000`) limita la risposta |
+| `AIX_CONDITIONAL_RETRIEVAL_ENABLED` | `true` | Un turno che non porta concetti nuovi riusa il corpus del thread. Misurato il 2026-09-23 su quattro turni (`scripts/eval/measure_followup_turns.py`): il router riusa quando si riscrive e cerca quando arriva un argomento nuovo, e sui turni di modifica risparmia 4–9 s su ~65 — il resto è il Writer che riscrive la lezione intera |
+| `AIX_LIGHT_TURNS_ENABLED` | `true` | Dopo la prima lezione, un messaggio riceve una risposta in streaming in pochi secondi (lezione, conversazione e documenti, cercati di nuovo a ogni turno) e la lezione non cambia; una richiesta di lezione nuova mostra una scheda per passare alla generazione completa, che resta anche dietro la casella «Lezione completa». `AIX_CHAT_MAX_TOKENS` (default `3000`) limita la risposta |
+| `AIX_MEDIA_LIVE_ENABLED` | `true` | Media cercati dal vivo (articoli, web; video solo con `YOUTUBE_API_KEY`) accanto a quelli curati |
+| `AIX_MEDIA_RERANK_ENABLED` | `true` | Riordino semantico dei media trovati dal vivo |
 | `AIX_CORRECTIVE_RAG_ENABLED` | `false` | Nodo che giudica il recupero e riprova |
 | `AIX_CORRECTIVE_RAG_MAX_ATTEMPTS` | `2` | Quante volte può riprovare (limitata fra 1 e 4) |
 | `AIX_EXPORT_PDF_ENABLED` | `true` | Bottone PDF (server-side) |
@@ -98,7 +103,7 @@ Tutte spente: §5.2 dice che a flag spente il prodotto è quello di prima.
 | `AIX_PARSE_PDF_ENABLED` · `AIX_PARSE_DOCX_ENABLED` · `AIX_PARSE_PPTX_ENABLED` · `AIX_PARSE_IMAGES_ENABLED` | `true` | Spegnere **un** formato che dà problemi senza spegnere gli altri |
 | `AIX_PARSE_OCR_ENABLED` | `true` | OCR sulle pagine senza testo |
 | `AIX_OCR_ENABLED` | `true` | Interruttore generale dell'OCR, per tutti i motori |
-| `AIX_OCR_BACKEND` | `tesseract` | `vision` manda le pagine senza testo e le immagini a un modello di visione via OpenRouter, con Tesseract di riserva se la chiamata fallisce o si ferma prima della fine della pagina. **Da accendere nel pilota.** Misurato su una scheda INVALSI: Tesseract 2 elementi critici su 8, Gemini 8 su 8, meno di mezzo centesimo a pagina. **La pagina esce dalla macchina**: ogni richiesta chiede solo endpoint a conservazione zero |
+| `AIX_OCR_BACKEND` | `vision` | `vision` manda le pagine senza testo e le immagini a un modello di visione via OpenRouter, con Tesseract di riserva se la chiamata fallisce o si ferma prima della fine della pagina. Misurato su una scheda INVALSI: Tesseract 2 elementi critici su 8, Gemini 8 su 8, meno di mezzo centesimo a pagina. **La pagina esce dalla macchina**: ogni richiesta chiede solo endpoint a conservazione zero |
 | `AIX_OCR_CONCURRENCY` | `4` con `vision`, `1` con Tesseract | Pagine di un PDF lette insieme. Con il modello di visione è tempo di rete: le 19 pagine fotografiche di un numero di Internazionale passavano da circa 80 s una alla volta. Tesseract resta a una pagina per volta sulla VM da 4 GB |
 | `AIX_OCR_MODEL` | `google/gemini-3.5-flash-lite` | Modello per `vision`. Scelto il 2026-09-29 su 16 casi fra quattro modelli (`scripts/eval/check_ocr.py --models …`): il più economico, e pari o migliore di 2.5 Flash, che va in pensione. `google/gemini-3.7-flash` è la riserva misurata (più lenta, e in un giro su due ha sbagliato le caselle spuntate); 3.8 Flash le scrive sempre vuote |
 | `AIX_OCR_LANGUAGES` | `ita+eng` | Lingue di Tesseract |
@@ -124,7 +129,7 @@ Tutte spente: §5.2 dice che a flag spente il prodotto è quello di prima.
 
 | Variabile | Default | A cosa serve |
 | --- | --- | --- |
-| `AIX_TRACING_ENABLED` | `false` | Una traccia Langfuse per ogni turno (WebUI e API) e per ogni documento caricato. La traccia porta l'utente (l'id del docente, mai l'email), la sessione (la lezione) e i tag (dominio, `webui`/`api`/`ingestion`). Per ogni chiamata registra modello, token, costo reale di OpenRouter e tempi, più un intervallo per ogni nodo del grafo. Serve con `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` e `LANGFUSE_BASE_URL`, le stesse chiavi dei prompt. **Con il contenuto acceso, richieste, passaggi dei documenti e risposte arrivano a Langfuse** (cloud UE) |
+| `AIX_TRACING_ENABLED` | `true` | Una traccia Langfuse per ogni turno (WebUI e API) e per ogni documento caricato. La traccia porta l'utente (l'id del docente, mai l'email), la sessione (la lezione) e i tag (dominio, `webui`/`api`/`ingestion`). Per ogni chiamata registra modello, token, costo reale di OpenRouter e tempi, più un intervallo per ogni nodo del grafo. Serve con `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` e `LANGFUSE_BASE_URL`, le stesse chiavi dei prompt. **Con il contenuto acceso, richieste, passaggi dei documenti e risposte arrivano a Langfuse** (cloud UE) |
 | `AIX_TRACING_CONTENT` | `full` | `none` tiene costi, token e tempi ma non invia testo |
 
 ## 4. WebUI, database, sicurezza

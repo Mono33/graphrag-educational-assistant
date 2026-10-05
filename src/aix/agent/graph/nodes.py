@@ -1060,7 +1060,7 @@ def should_continue_to_revision(state: AgentState) -> str:
 
 
 def _conditional_retrieval_enabled() -> bool:
-    return (os.getenv("AIX_CONDITIONAL_RETRIEVAL_ENABLED") or "false").strip().lower() in (
+    return (os.getenv("AIX_CONDITIONAL_RETRIEVAL_ENABLED") or "true").strip().lower() in (
         "1",
         "true",
         "yes",
@@ -1070,7 +1070,7 @@ def _conditional_retrieval_enabled() -> bool:
 
 def _private_rag_enabled() -> bool:
     """The same flag the WebUI reads, read here without importing that layer."""
-    return (os.getenv("AIX_PRIVATE_RAG_ENABLED") or "false").strip().lower() in (
+    return (os.getenv("AIX_PRIVATE_RAG_ENABLED") or "true").strip().lower() in (
         "1",
         "true",
         "yes",

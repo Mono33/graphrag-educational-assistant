@@ -44,23 +44,18 @@ SECRETS = (
     "YOUTUBE_API_KEY",
 )
 
-#: The pilot's configuration, as validated in development up to 2026-09-25.
-#: Where it differs from .env.prod.example, the example needs a decision -- see
-#: docs/product/Stato_Lavori.md.
+#: The pilot's configuration. Since 2026-10-05 it is also the code's default
+#: (parser, materials, private RAG, conditional retrieval, light turns, vision
+#: OCR, tracing, live media): written out anyway, so that a rehearsal stays the
+#: pilot even if a default changes again.
 PILOT = {
     "AIX_UPLOAD_PARSER_ENABLED": "true",
     "AIX_MATERIALS_ENABLED": "true",
     "AIX_PRIVATE_RAG_ENABLED": "true",
     "AIX_CONDITIONAL_RETRIEVAL_ENABLED": "true",
     "AIX_LIGHT_TURNS_ENABLED": "true",
-    # 2000 left the writer with an empty answer once attachments were in the
-    # prompt (2026-09-16); the error message itself recommends 8000.
     "AIX_WRITER_MAX_TOKENS": "8000",
-    # Tesseract kept 2 of 8 critical elements on a maths sheet, Gemini 8 of 8
-    # (2026-09-25); Tesseract stays in the image as the fallback. The model is
-    # vision_ocr.DEFAULT_MODEL unless AIX_OCR_MODEL says otherwise.
     "AIX_OCR_BACKEND": "vision",
-    # Cost, time, tokens, input and output per teacher and lesson, in Langfuse.
     "AIX_TRACING_ENABLED": "true",
 }
 

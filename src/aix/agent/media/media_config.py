@@ -104,7 +104,7 @@ class MediaConfig:
         namespace = (os.getenv("AIX_MEDIA_CACHE_NAMESPACE") or "aix:media:v1").strip()
 
         return cls(
-            live_enabled=_env_bool("AIX_MEDIA_LIVE_ENABLED", False),
+            live_enabled=_env_bool("AIX_MEDIA_LIVE_ENABLED", True),
             max_videos=_env_int("AIX_MEDIA_MAX_VIDEOS", 5),
             max_papers=_env_int("AIX_MEDIA_MAX_PAPERS", 3),
             max_web=_env_int("AIX_MEDIA_MAX_WEB", 6),
@@ -114,7 +114,7 @@ class MediaConfig:
             cache_dir=(os.getenv("AIX_MEDIA_CACHE_DIR") or "artifacts/media_cache").strip(),
             redis_url=redis_url,
             refresh_enabled=_env_bool("AIX_MEDIA_REFRESH_ENABLED", False),
-            rerank_enabled=_env_bool("AIX_MEDIA_RERANK_ENABLED", False),
+            rerank_enabled=_env_bool("AIX_MEDIA_RERANK_ENABLED", True),
             rerank_weight_semantic=_env_float("AIX_MEDIA_RERANK_W_SEMANTIC", 0.7),
             rerank_weight_quality=_env_float("AIX_MEDIA_RERANK_W_QUALITY", 0.3),
             youtube_api_key=os.getenv("YOUTUBE_API_KEY"),

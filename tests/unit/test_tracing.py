@@ -20,8 +20,21 @@ def _fresh(monkeypatch):
     getattr(tracing.get_langfuse, "cache_clear", lambda: None)()  # may still be patched
 
 
-def test_off_by_default(monkeypatch):
+def test_on_by_default_when_langfuse_is_configured(monkeypatch):
     monkeypatch.delenv("AIX_TRACING_ENABLED", raising=False)
+
+    assert tracing.tracing_enabled()
+
+
+def test_without_langfuse_keys_it_stays_off(monkeypatch):
+    monkeypatch.delenv("AIX_TRACING_ENABLED", raising=False)
+    monkeypatch.delenv("LANGFUSE_PUBLIC_KEY", raising=False)
+
+    assert not tracing.tracing_enabled()
+
+
+def test_off_when_switched_off(monkeypatch):
+    monkeypatch.setenv("AIX_TRACING_ENABLED", "false")
     import openai
 
     assert not tracing.tracing_enabled()

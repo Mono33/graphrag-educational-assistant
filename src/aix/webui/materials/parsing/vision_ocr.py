@@ -79,7 +79,7 @@ class IncompleteTranscription(RuntimeError):
 
 def backend() -> str:
     """``vision`` or ``tesseract`` (the default: it needs no network and no key)."""
-    return (os.getenv("AIX_OCR_BACKEND") or "tesseract").strip().lower()
+    return (os.getenv("AIX_OCR_BACKEND") or "vision").strip().lower()
 
 
 def model() -> str:
