@@ -2412,6 +2412,39 @@ Testo della PR: `docs/product/PR_Staging_Advanced_Input.md`.
 Test: `test_worker_needs_the_schema.py` (5), `test_auth_secret_is_required.py`
 (+6). Suite: 1004 passati, i 2 noti su Windows.
 
+### 2026-10-05 — Staging passa a Postgres con pgvector, senza perdere i dati
+
+Dal file env di staging (cloud infra) è emerso che l'app deployata non ha
+`WEBUI_DATABASE_URL`: la WebUI usa SQLite dentro il container. Decisione di
+Angelo: con questo aggiornamento staging passa a Postgres con pgvector, e i
+dati di oggi si portano dietro.
+
+- **`scripts/ops/migrate_sqlite_to_postgres.py`:** copia `user`,
+  `saved_profile`, `lesson` e `lesson_message` dal vecchio `webui.db` a
+  Postgres.
+  - Rifiuta di partire se Postgres non ha ancora lo schema: si avvia prima la
+    nuova immagine, che lo crea.
+  - Salta le righe già presenti, quindi si può rieseguire.
+  - Le date di SQLite, salvate senza fuso, diventano UTC.
+- **Provato come lo farà il dev:**
+  - immagine di staging di oggi su SQLite, con un utente, un profilo, una
+    lezione e due messaggi;
+  - `docker cp` del file fuori dal container;
+  - nuova immagine su `pgvector/pgvector:pg16`, schema creato all'avvio;
+  - script: 5 righe copiate, 0 alla seconda esecuzione;
+  - login con la vecchia password, lezione, conversazione e profilo presenti.
+- **Test CI:** `test_the_real_client_is_reachable` falliva su GitHub, perché
+  il runner non ha una chiave e il nuovo SDK OpenAI non crea il client senza.
+  Corretto con una chiave finta (`714111c`); la CI riprodotta in Docker su
+  Python 3.11 passa (1006).
+- **Checklist per il dev** riscritta come procedura passo passo
+  (`docs/product/Deploy_Staging_Checklist.md`, non versionata): file SQLite
+  fuori, `.env` con gli URL di Postgres, servizio pgvector e volumi nel
+  compose, avvio, migrazione, verifiche, tabella dei sintomi.
+
+Test: `test_migrate_sqlite_to_postgres.py` (2) e un test su Postgres reale in
+`test_postgres_dialect.py` (7 su 7).
+
 ## Un difetto preesistente trovato il 2026-09-11 — chiuso
 
 *Chiuso nella PR 5: `_legacy_read` trasforma un PDF illeggibile in un `ValueError` con un messaggio in italiano, e la docente riceve un 422 leggibile invece di un 500. Il testo sotto resta come registro.*
