@@ -376,3 +376,61 @@ async def test_a_failed_attempt_is_recorded_and_retried_on_postgres(engine):
     outcome = await dispatcher.fail(job.id, lease_owner="worker-a", error_code="embedding")
 
     assert outcome == "pending"
+
+
+async def test_the_webui_data_moves_from_sqlite_to_postgres(engine, tmp_path):
+    """``scripts/ops/migrate_sqlite_to_postgres.py``: what staging ran on SQLite
+    until October 2026 is carried over, and a second run copies nothing."""
+    import importlib.util
+    from datetime import datetime
+    from pathlib import Path
+
+    from sqlalchemy import select
+
+    from aix.webui.auth.models import User
+    from aix.webui.db import Base
+    from aix.webui.lessons.models import Lesson, LessonMessage
+
+    spec = importlib.util.spec_from_file_location(
+        "migrate_sqlite_to_postgres", Path("scripts/ops/migrate_sqlite_to_postgres.py")
+    )
+    script = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(script)
+
+    sqlite_path = tmp_path / "webui.db"
+    old = create_async_engine(f"sqlite+aiosqlite:///{sqlite_path.as_posix()}")
+    async with old.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    lesson_id = uuid.uuid4()
+    async with async_sessionmaker(old)() as s:
+        s.add(
+            User(
+                id=ANNA,
+                email="anna@scuola.it",
+                hashed_password="x",
+                is_active=True,
+                is_superuser=False,
+                is_verified=True,
+            )
+        )
+        s.add(
+            Lesson(
+                id=lesson_id, owner_id=ANNA, domain="udl", status="complete", lesson_plan_md="# L"
+            )
+        )
+        s.add(LessonMessage(lesson_id=lesson_id, role="user", content_md="crea", turn_index=1))
+        await s.commit()
+    await old.dispose()
+
+    await _migrate(engine)
+    target_url = engine.url.render_as_string(hide_password=False)
+
+    assert await script.migrate(sqlite_path, target_url, apply=True) == 0
+    assert await script.migrate(sqlite_path, target_url, apply=True) == 0  # nothing twice
+
+    async with async_sessionmaker(engine)() as s:
+        lessons = (await s.execute(select(Lesson))).scalars().all()
+        messages = (await s.execute(select(LessonMessage))).scalars().all()
+    assert [lesson.id for lesson in lessons] == [lesson_id]
+    assert len(messages) == 1
+    assert isinstance(lessons[0].created_at, datetime) and lessons[0].created_at.tzinfo
