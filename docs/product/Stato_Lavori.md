@@ -2512,6 +2512,33 @@ illeggibile; mediana sotto ~5 s. Il riferimento (Sonnet) non è la verità: i
 disaccordi sono elencati per essere letti a mano. Poi una settimana in ombra su
 staging prima di spegnere Sonnet.
 
+**Prima misura del planner economico (2026-10-06, 30 richieste, senza grafo, modelli
+crudi, riferimento Sonnet): non supera le soglie, resta spento.**
+
+| modello | lingua | intento | scope | fuori tema colti | falsi allarmi | non leggibili | mediana |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Sonnet (riferimento) | 30/30 | 30/30 | 30/30 | 5/5 | 0 | 0 | 6,0 s |
+| gemini-3.5-flash-lite | 25/30 | 27/30 | 27/30 | **2/5** | 0 | 4 | 1,4 s |
+| gemini-3.1-flash-lite | 26/30 | 27/30 | 28/30 | 4/5 | 0 | 1 | 1,9 s |
+
+- 3.5 lascia passare come «in tema» una domanda sui mondiali di calcio e una
+  poesia sul mare: inaccettabile. 3.1 sbaglia solo l'equazione di secondo grado
+  (`partial_scope` invece di `out_of_scope`, discutibile).
+- Su 3 richieste in inglese 3.1 risponde in italiano (lingua `HIGH`, quindi la
+  rete di sicurezza non la ripara): perdita visibile alla docente.
+- «Non leggibili»: il piano è «troncato» entro il budget di `AIX_PLANNER_MAX_TOKENS`
+  (4000); la rete li ripara. Rimandati da rete: 3.5 6/30, 3.1 2/30.
+- Con la rete, il risparmio atteso è minore dell'85% teorico: 3.5 rimanderebbe
+  ~1/3 dei piani a Sonnet (~-50%), 3.1 ~1/10 (~-70%).
+- La sovrapposizione dei concetti (27–34%) misura poco: sono stringhe, la
+  formulazione cambia. Conta quella del grafo (`--retrieval`, serve Neo4j),
+  non ancora misurata.
+- La mediana di Sonnet qui è 6 s, non i 19 s delle tracce: quelle includono
+  carico, coda e ragionamento.
+
+Prossimi passi possibili: un modello di fascia media (Haiku), la lingua rilevata
+da codice invece che dal modello, `--retrieval` nel container.
+
 Da fare: cache del prefisso della lezione leggera, solo se la misura la
 giustifica. Jev (modello di decisione di TypeSafe) è fuori per ora.
 
