@@ -2493,6 +2493,35 @@ Fatto:
 Stima del risparmio dell'intero piano: 22–31% dei $4,63 (cache di Cypher e del
 giudice, planner su un modello più economico), da riconfermare dopo ogni passo.
 
+**Misura prima/dopo sui turni reali (2026-10-06).** Gli stessi turni presi dalle
+tracce (57 chiamate Cypher in 6 turni da 10 domande in parallelo; 49 coppie del
+giudice in 6 turni), rigiocati attraverso il codice vero con i flag spenti e accesi,
+ogni modalità partendo a freddo; il costo è quello fatturato da OpenRouter. Neo4j
+sostituito da uno stub (la validazione e la query non contano per il costo).
+
+| | vecchio | nuovo | risparmio |
+| --- | ---: | ---: | ---: |
+| Cypher, solo prefisso in cache | $0,2919 | $0,1179 | -60% |
+| Cypher, prefisso + risposte ricordate (15 su 57 ripetute) | $0,2919 | $0,0706 | -76% |
+| Giudice delle citazioni, 49 chiamate | $0,2463 | $0,1324 | -46% |
+
+- Per turno: Cypher $0,049 → $0,012; giudice ~$0,041 → ~$0,022. Insieme circa
+  -$0,056 su una `lesson.turn` da ~$0,25, cioè **~20%** nei turni con citazioni.
+  Il baseline Cypher qui aveva già un po' di cache implicita (20% dei token): in
+  produzione era 0, quindi il risparmio vero è leggermente più alto.
+- Qualità del giudice: due run identiche senza cache differiscono in 3 verdetti
+  su 49 (il modello non è deterministico nemmeno a temperatura 0); con la cache,
+  2–5. Nessun effetto misurabile. Il verdetto ricordato rende anzi stabile la
+  stessa coppia.
+- Latenza: turno Cypher uguale (1,7 s contro 1,9 s); turno del giudice +1–1,3 s
+  (la prima chiamata parte da sola a scrivere la cache).
+- Quanto vive la cache di Gemini: -90% entro ~5 minuti, -56% fino a 11 minuti,
+  scaduta a 16. Una burst fredda di 10 chiamate in parallelo risparmia comunque
+  il 56%. Nessun sovrapprezzo di scrittura.
+- Un falso allarme del mio test: 5 chiamate su 49 fallivano con «Connection
+  error» perché il banco di prova riusava lo stesso client fra più `asyncio.run`;
+  con un solo event loop, come nell'app, 0 fallimenti su 49 in entrambi i percorsi.
+
 **Il planner su un modello economico — pronto, spento di default.** Il piano è una
 classificazione (lingua, intento, scope) più un'estrazione (concetti, query);
 su Sonnet costa $0,035 e 19 s a chiamata. Con `AIX_PLANNER_MODEL` impostato il
