@@ -2445,6 +2445,47 @@ dati di oggi si portano dietro.
 Test: `test_migrate_sqlite_to_postgres.py` (2) e un test su Postgres reale in
 `test_postgres_dialect.py` (7 su 7).
 
+### 2026-10-06 — Costi: dove vanno, e il primo risparmio (cache del prompt)
+
+Analisi delle tracce Langfuse (141 tracce, 665 generazioni, $4,63, quasi tutte
+prove generali e staging, non traffico reale delle docenti):
+
+- **Dove vanno i soldi:** Writer e revisione ~$2,0, giudice delle citazioni
+  $0,68, text2cypher $0,59, lezione leggera $0,63, planner $0,49. Una
+  `lesson.turn` costa $0,17–0,31, una `lesson.light` $0,02–0,05.
+- **Nessuna cache attiva:** `input_cached_tokens` = 0 su tutte le chiamate.
+- **text2cypher** manda ogni volta lo schema (101k caratteri per udl, 127k per
+  neuro, ~22–27k token) e fa ~10 chiamate a turno con prefisso identico al 100%.
+- **Il planner** impiega in media **19 secondi** a chiamata (mediana 18, max 35).
+
+Misurato su OpenRouter il 2026-10-06 (script usa e getta, pochi centesimi):
+
+- Sonnet 5 (Bedrock): con `cache_control` una lettura costa il 12% della
+  chiamata normale ($0,0014 contro $0,0116).
+- Gemini flash-lite: la cache implicita **non scatta** (0 token in cache su un
+  prefisso identico di 21,9k token). Con il segno esplicito: -90%
+  ($0,0055 → $0,00057), su 3.1 e su 3.5.
+
+Fatto:
+
+- `src/aix/core/prompt_cache.py`: segna la parte stabile del prompt (testo
+  invariato, solo diviso in blocchi). Solo `anthropic/` e `google/`; spenta con
+  `AIX_PROMPT_CACHE_ENABLED=false`.
+- Applicata allo schema di text2cypher (`Text2CypherConverter.convert`).
+  Verificata con una chiamata vera attraverso LangChain: 21.875 di 21.882 token
+  letti dalla cache; con il flag spento, 0.
+
+Stima del risparmio dell'intero piano: 22–31% dei $4,63 (cache di Cypher e del
+giudice, planner su un modello più economico), da riconfermare dopo ogni passo.
+
+Da fare, nell'ordine: cache dei risultati di text2cypher e dei verdetti del
+giudice; planner su modello economico dietro `AIX_PLANNER_MODEL`, con ripiego su
+Sonnet e confronto offline (`scripts/eval/compare_role_models.py` esiste già).
+Jev (modello di decisione di TypeSafe) è fuori per ora.
+
+Test: `test_prompt_cache.py` (10) e `AIX_PROMPT_CACHE_ENABLED` in
+`test_feature_defaults.py`.
+
 ## Un difetto preesistente trovato il 2026-09-11 — chiuso
 
 *Chiuso nella PR 5: `_legacy_read` trasforma un PDF illeggibile in un `ValueError` con un messaggio in italiano, e la docente riceve un 422 leggibile invece di un 500. Il testo sotto resta come registro.*

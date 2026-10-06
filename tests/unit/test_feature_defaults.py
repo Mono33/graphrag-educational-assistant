@@ -13,7 +13,7 @@ import pytest
 from aix.agent.graph import nodes
 from aix.agent.media.media_config import MediaConfig
 from aix.agent.validation import validator
-from aix.core import tracing
+from aix.core import prompt_cache, tracing
 from aix.webui import features
 from aix.webui.materials import embedding, storage
 from aix.webui.materials.parsing import vision_ocr
@@ -31,6 +31,7 @@ ON_BY_DEFAULT = {
     "AIX_LIGHT_TURNS_ENABLED": [features.light_turns_enabled],
     "AIX_MEDIA_LIVE_ENABLED": [lambda: MediaConfig.from_env().live_enabled],
     "AIX_MEDIA_RERANK_ENABLED": [lambda: MediaConfig.from_env().rerank_enabled],
+    "AIX_PROMPT_CACHE_ENABLED": [prompt_cache.enabled],
 }
 
 
