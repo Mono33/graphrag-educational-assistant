@@ -2493,14 +2493,32 @@ Fatto:
 Stima del risparmio dell'intero piano: 22–31% dei $4,63 (cache di Cypher e del
 giudice, planner su un modello più economico), da riconfermare dopo ogni passo.
 
-Da fare: planner su modello economico dietro `AIX_PLANNER_MODEL`, con ripiego su
-Sonnet e confronto offline (`scripts/eval/compare_role_models.py` esiste già);
-cache del prefisso della lezione leggera, solo se la misura la giustifica. Jev
-(modello di decisione di TypeSafe) è fuori per ora.
+**Il planner su un modello economico — pronto, spento di default.** Il piano è una
+classificazione (lingua, intento, scope) più un'estrazione (concetti, query);
+su Sonnet costa $0,035 e 19 s a chiamata. Con `AIX_PLANNER_MODEL` impostato il
+piano lo chiede prima al modello economico, e **un piano che non sa dare o di cui
+non è sicuro** (JSON illeggibile, errore, intento o lingua `LOW`, lingua non
+supportata, scope sotto il 50%) **viene richiesto al modello del Writer**
+(`AIX_PLANNER_ESCALATE`, acceso; nel log `event=planner_escalation`). Vuoto, il
+comportamento è quello di sempre. Il campo `reasoning` resta: compare nella
+scheda Planner.
+
+Prima di accenderlo: `python scripts/eval/compare_role_models.py planner
+--retrieval --models default,<candidato>` (il ruolo `planner` è nuovo: 30
+richieste, italiano per primo, con domande fuori tema). Soglie proposte, da
+confermare: accordo ≥ 95% su lingua, intento e scope; **tutte** le domande fuori
+tema colte; sovrapposizione di ciò che restituisce il grafo ≥ 85%; nessun piano
+illeggibile; mediana sotto ~5 s. Il riferimento (Sonnet) non è la verità: i
+disaccordi sono elencati per essere letti a mano. Poi una settimana in ombra su
+staging prima di spegnere Sonnet.
+
+Da fare: cache del prefisso della lezione leggera, solo se la misura la
+giustifica. Jev (modello di decisione di TypeSafe) è fuori per ora.
 
 Test: `test_prompt_cache.py` (10), `test_result_cache.py` (10),
-`test_citation_support_cache.py` (6), `test_text2cypher_result_cache.py` (9) e i
-due flag in `test_feature_defaults.py`. L'intera suite unit: 1009 passano; due
+`test_citation_support_cache.py` (6), `test_text2cypher_result_cache.py` (9),
+`test_planner_model.py` (13) e i flag in `test_feature_defaults.py`. L'intera
+suite unit: 1022 passano; due
 test di `test_concurrency_limits.py` falliscono anche su HEAD pulito e non c'entrano.
 
 ## Un difetto preesistente trovato il 2026-09-11 — chiuso

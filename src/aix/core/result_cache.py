@@ -22,7 +22,8 @@ import json
 import logging
 import os
 import re
-from typing import Any, Awaitable, Callable, Optional
+from collections.abc import Awaitable, Callable
+from typing import Any, Optional
 
 from aix.agent.media.media_cache import MediaCache
 from aix.agent.media.media_config import MediaConfig

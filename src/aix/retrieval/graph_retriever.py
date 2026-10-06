@@ -2628,7 +2628,9 @@ _CYPHER_CACHE_VERSION = "1"
 def _worth_keeping(result: dict) -> bool:
     """A valid query that ran without error. A failure is not an answer to remember."""
     meta = result.get("metadata") or {}
-    return bool(meta.get("is_valid")) and not meta.get("error") and not result.get("execution_error")
+    return (
+        bool(meta.get("is_valid")) and not meta.get("error") and not result.get("execution_error")
+    )
 
 
 def _cypher_ttl(result: dict) -> int:

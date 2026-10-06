@@ -104,7 +104,9 @@ def cacheable(
         return messages
 
 
-def cacheable_lc(messages: list[Any], *, model: Optional[str], ttl: Optional[str] = None) -> list[Any]:
+def cacheable_lc(
+    messages: list[Any], *, model: Optional[str], ttl: Optional[str] = None
+) -> list[Any]:
     """The same for LangChain messages: each ``SystemMessage`` becomes a marked block."""
     if not enabled() or not supports(model):
         return messages
@@ -114,9 +116,7 @@ def cacheable_lc(messages: list[Any], *, model: Optional[str], ttl: Optional[str
         out: list[Any] = []
         for message in messages:
             if isinstance(message, SystemMessage) and isinstance(message.content, str):
-                out.append(
-                    SystemMessage(content=[_block(message.content, cache=True, ttl=ttl)])
-                )
+                out.append(SystemMessage(content=[_block(message.content, cache=True, ttl=ttl)]))
             else:
                 out.append(message)
         return out

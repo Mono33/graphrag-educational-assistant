@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import pytest
 
+from aix.agent.agents import planner_agent
 from aix.agent.graph import nodes
 from aix.agent.media.media_config import MediaConfig
 from aix.agent.validation import validator
@@ -33,6 +34,7 @@ ON_BY_DEFAULT = {
     "AIX_MEDIA_RERANK_ENABLED": [lambda: MediaConfig.from_env().rerank_enabled],
     "AIX_PROMPT_CACHE_ENABLED": [prompt_cache.enabled],
     "AIX_RESULT_CACHE_ENABLED": [result_cache.enabled],
+    "AIX_PLANNER_ESCALATE": [planner_agent.escalate_enabled],
 }
 
 

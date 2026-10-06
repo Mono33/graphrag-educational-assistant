@@ -64,6 +64,8 @@ I costi di ogni ruolo si vedono in Langfuse, per modello (sezione «Tracciamento
 | `AIX_KG_VERSION` | — | Etichetta dei dati nel grafo, parte della chiave. **Cambiala dopo ogni ingestione** (`scripts/ingest/`): il grafo non memorizza una versione, e senza questo una risposta in cache sopravvive al cambio dei dati fino a 24 ore |
 | `AIX_THINKING_EFFORT` | `low` | Sforzo di ragionamento sui modelli che lo espongono |
 | `AIX_CRITIC_MODEL` | `google/gemini-3.5-flash-lite` | Modello del Critic. Scelto il 2026-09-30 fra quattro Gemini (`scripts/eval/compare_role_models.py critic`): coglie più difetti di 2.5 Flash (5 su 9 contro 1), approva 6 lezioni buone su 8, è il più veloce e il più stabile |
+| `AIX_PLANNER_MODEL` | vuoto | Modello del Planner. Vuoto = lo stesso del Writer (`LLM_MODEL`), cioè il comportamento di oggi. Il piano è una classificazione (lingua, intento, scope) più un'estrazione (concetti, query), non scrittura: su Sonnet impiega in media 19 s e costa $0,035 a chiamata (tracce del 2026-10-06). **Non attivarlo senza** `scripts/eval/compare_role_models.py planner --retrieval` (soglie nel registro di `Stato_Lavori.md`) |
+| `AIX_PLANNER_ESCALATE` | `true` | Con `AIX_PLANNER_MODEL` impostato, un piano che il modello economico non sa dare (JSON illeggibile, errore) o di cui non è sicuro (intento o lingua `LOW`, lingua non supportata, scope sotto il 50%) viene richiesto al modello del Writer. Il risparmio non costa un piano peggiore. Nel log: `event=planner_escalation` |
 | `AIX_MAX_REVISIONS` | `1` | Giri di revisione Critic → Writer |
 
 ### Writer

@@ -43,9 +43,7 @@ def test_the_input_is_never_changed_in_place():
 
 
 def test_the_user_message_is_split_after_the_stable_prefix():
-    out = prompt_cache.cacheable(
-        _plain(), model=SONNET, stable_user_prefix="PREFISSO stabile."
-    )
+    out = prompt_cache.cacheable(_plain(), model=SONNET, stable_user_prefix="PREFISSO stabile.")
 
     head, tail = out[1]["content"]
     assert head["cache_control"] == {"type": "ephemeral"}

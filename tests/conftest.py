@@ -41,6 +41,9 @@ FEATURE_FLAGS_OFF = {
     "AIX_MEDIA_RERANK_ENABLED": "false",
     "AIX_PROMPT_CACHE_ENABLED": "false",
     "AIX_RESULT_CACHE_ENABLED": "false",
+    # Not a flag but a switch of the same kind: a cheaper planner on a laptop's
+    # .env must not change what the suite plans with. Empty is today's behavior.
+    "AIX_PLANNER_MODEL": "",
 }
 
 #: On by default since before 2026-10-05, and tested at their default.
