@@ -40,6 +40,7 @@ FEATURE_FLAGS_OFF = {
     "AIX_MEDIA_LIVE_ENABLED": "false",
     "AIX_MEDIA_RERANK_ENABLED": "false",
     "AIX_PROMPT_CACHE_ENABLED": "false",
+    "AIX_RESULT_CACHE_ENABLED": "false",
 }
 
 #: On by default since before 2026-10-05, and tested at their default.

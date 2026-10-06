@@ -13,7 +13,7 @@ import pytest
 from aix.agent.graph import nodes
 from aix.agent.media.media_config import MediaConfig
 from aix.agent.validation import validator
-from aix.core import prompt_cache, tracing
+from aix.core import prompt_cache, result_cache, tracing
 from aix.webui import features
 from aix.webui.materials import embedding, storage
 from aix.webui.materials.parsing import vision_ocr
@@ -32,6 +32,7 @@ ON_BY_DEFAULT = {
     "AIX_MEDIA_LIVE_ENABLED": [lambda: MediaConfig.from_env().live_enabled],
     "AIX_MEDIA_RERANK_ENABLED": [lambda: MediaConfig.from_env().rerank_enabled],
     "AIX_PROMPT_CACHE_ENABLED": [prompt_cache.enabled],
+    "AIX_RESULT_CACHE_ENABLED": [result_cache.enabled],
 }
 
 

@@ -59,6 +59,9 @@ I costi di ogni ruolo si vedono in Langfuse, per modello (sezione «Tracciamento
 | `AIX_LLM_MAX_RETRIES` | `1` | Tentativi su errore transitorio |
 | `AIX_LLM_PROBE_ENABLED` | `true` | Sonda di connettività all'avvio |
 | `AIX_PROMPT_CACHE_ENABLED` | `true` | Segna la parte stabile del prompt (lo schema di text2cypher, ~100k caratteri, identico a ogni chiamata) perché il provider la faccia pagare un decimo alle ripetizioni. Solo per i modelli `anthropic/` e `google/`; il testo non cambia. Misurato il 2026-10-06: su Gemini senza il segno non si risparmia nulla (0 token in cache), con il segno -90% |
+| `AIX_RESULT_CACHE_ENABLED` | `true` | Ricorda le risposte che dipendono solo dai loro ingressi: la risposta del grafo a una domanda (le parole chiave tornano di turno in turno, 32 su 100 erano ripetute) e il verdetto del giudice delle citazioni su una coppia frase–passaggio. Un errore non viene mai ricordato. Usa il backend della cache dei media (`AIX_MEDIA_CACHE_BACKEND`), con nomi propri |
+| `AIX_RESULT_CACHE_TTL_S` | `86400` | Quanto vive una risposta del grafo (una vuota, un sesto); il verdetto del giudice vive 7 giorni |
+| `AIX_KG_VERSION` | — | Etichetta dei dati nel grafo, parte della chiave. **Cambiala dopo ogni ingestione** (`scripts/ingest/`): il grafo non memorizza una versione, e senza questo una risposta in cache sopravvive al cambio dei dati fino a 24 ore |
 | `AIX_THINKING_EFFORT` | `low` | Sforzo di ragionamento sui modelli che lo espongono |
 | `AIX_CRITIC_MODEL` | `google/gemini-3.5-flash-lite` | Modello del Critic. Scelto il 2026-09-30 fra quattro Gemini (`scripts/eval/compare_role_models.py critic`): coglie più difetti di 2.5 Flash (5 su 9 contro 1), approva 6 lezioni buone su 8, è il più veloce e il più stabile |
 | `AIX_MAX_REVISIONS` | `1` | Giri di revisione Critic → Writer |

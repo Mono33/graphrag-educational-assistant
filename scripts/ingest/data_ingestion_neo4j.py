@@ -372,6 +372,10 @@ Examples:
         log_both("✅ IMPORT COMPLETED SUCCESSFULLY!")
         log_both("=" * 80)
         log_both(f"📄 Log saved to: {log_filename}")
+        log_both(
+            "\n🔁 Il grafo è cambiato: aggiorna AIX_KG_VERSION nel .env e riavvia l'app, "
+            "altrimenti le risposte del grafo in cache (24 h) restano quelle di prima."
+        )
 
     except Exception as e:
         log_both(f"\n❌ Error during import: {e}")

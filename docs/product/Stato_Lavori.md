@@ -2475,16 +2475,33 @@ Fatto:
   Verificata con una chiamata vera attraverso LangChain: 21.875 di 21.882 token
   letti dalla cache; con il flag spento, 0.
 
+- **Il giudice delle citazioni** (`citation_support.py`): le istruzioni (1.266
+  token, uguali in ogni chiamata) sono un blocco segnato, la coppia frase–passaggio
+  no; il testo concatenato è identico al prompt misurato sui casi d'oro. Da 3
+  citazioni in su la prima parte da sola a scrivere la cache (in parallelo ogni
+  chiamata pagherebbe la scrittura, +26%, e nessuna la lettura). Misurato: una
+  chiamata con la cache costa $0,0004 invece di $0,0026 (-85%).
+- **Cache dei risultati** (`src/aix/core/result_cache.py`, sopra `MediaCache`,
+  nomi propri `aix:t2c:v1` e `aix:cite:v1`): la risposta del grafo a una domanda
+  (chiave: domanda normalizzata, dominio, `AIX_KG_VERSION`, modello, versione;
+  24 h, una risposta vuota un sesto) e il verdetto del giudice (7 giorni).
+  Mai in cache un errore, una query non valida, un verdetto di ripiego («tenuta
+  perché la chiamata è fallita»), né un valore non JSON.
+- **Dopo ogni ingestione del grafo cambia `AIX_KG_VERSION`**: il grafo non
+  memorizza una versione. `data_ingestion_neo4j.py` lo ricorda a fine corsa.
+
 Stima del risparmio dell'intero piano: 22–31% dei $4,63 (cache di Cypher e del
 giudice, planner su un modello più economico), da riconfermare dopo ogni passo.
 
-Da fare, nell'ordine: cache dei risultati di text2cypher e dei verdetti del
-giudice; planner su modello economico dietro `AIX_PLANNER_MODEL`, con ripiego su
-Sonnet e confronto offline (`scripts/eval/compare_role_models.py` esiste già).
-Jev (modello di decisione di TypeSafe) è fuori per ora.
+Da fare: planner su modello economico dietro `AIX_PLANNER_MODEL`, con ripiego su
+Sonnet e confronto offline (`scripts/eval/compare_role_models.py` esiste già);
+cache del prefisso della lezione leggera, solo se la misura la giustifica. Jev
+(modello di decisione di TypeSafe) è fuori per ora.
 
-Test: `test_prompt_cache.py` (10) e `AIX_PROMPT_CACHE_ENABLED` in
-`test_feature_defaults.py`.
+Test: `test_prompt_cache.py` (10), `test_result_cache.py` (10),
+`test_citation_support_cache.py` (6), `test_text2cypher_result_cache.py` (9) e i
+due flag in `test_feature_defaults.py`. L'intera suite unit: 1009 passano; due
+test di `test_concurrency_limits.py` falliscono anche su HEAD pulito e non c'entrano.
 
 ## Un difetto preesistente trovato il 2026-09-11 — chiuso
 

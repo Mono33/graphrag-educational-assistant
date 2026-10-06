@@ -31,6 +31,8 @@ import numpy as np
 from neo4j import Driver, GraphDatabase
 from sklearn.metrics.pairwise import cosine_similarity
 
+from aix.core import result_cache
+
 # Import config for embedding settings
 from aix.core.config import config as app_config
 
@@ -2619,6 +2621,22 @@ class HybridGraphRetriever:
             return []
 
 
+#: Bump when the Cypher prompt, the repairs or the fallbacks change what a question returns.
+_CYPHER_CACHE_VERSION = "1"
+
+
+def _worth_keeping(result: dict) -> bool:
+    """A valid query that ran without error. A failure is not an answer to remember."""
+    meta = result.get("metadata") or {}
+    return bool(meta.get("is_valid")) and not meta.get("error") and not result.get("execution_error")
+
+
+def _cypher_ttl(result: dict) -> int:
+    """An empty answer may be a gap in the graph that the next ingest fills: shorter life."""
+    ttl = result_cache.ttl_seconds()
+    return ttl if result.get("results") else max(60, ttl // 6)
+
+
 # Integration helper for your existing pipeline
 class EnhancedMultilingualText2Cypher:
     """Enhanced version that includes hybrid retrieval"""
@@ -2653,8 +2671,25 @@ class EnhancedMultilingualText2Cypher:
         # Step 1: Text2Cypher (now with domain support)
         # Fix 4: run the synchronous LLM + Cypher execution in a thread so the event
         # loop stays free for concurrent asyncio.gather() calls in the retriever.
-        cypher_result = await asyncio.to_thread(
-            self.text2cypher.process_query, query, domain=domain, execute=True
+        #
+        # A lesson asks the graph short keywords that come back turn after turn
+        # ("ADHD", "dislessia"), and the answer depends only on the question, the
+        # domain, the graph and the model. So it is remembered (see result_cache):
+        # a repeat skips the translation, the Cypher generation and the Neo4j query.
+        cypher_result = await result_cache.remember(
+            "aix:t2c:v1",
+            (
+                result_cache.normalize(query),
+                domain,
+                result_cache.kg_version(),
+                os.getenv("TEXT2CYPHER_MODEL") or "",
+                _CYPHER_CACHE_VERSION,
+            ),
+            lambda: asyncio.to_thread(
+                self.text2cypher.process_query, query, domain=domain, execute=True
+            ),
+            keep=_worth_keeping,
+            ttl=_cypher_ttl,
         )
 
         # Step 2: Hybrid Retrieval (new functionality)

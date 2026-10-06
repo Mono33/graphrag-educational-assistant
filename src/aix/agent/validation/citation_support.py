@@ -32,10 +32,13 @@ teacher cannot tell the difference between "the model chose not to cite" and
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import os
 import re
 from typing import Any, Optional
+
+from aix.core import prompt_cache, result_cache
 
 logger = logging.getLogger(__name__)
 
@@ -316,6 +319,17 @@ FRASE: {claim}
 
 PASSAGGIO: {passage}"""
 
+#: Everything before the pair: identical in every call, so it is what the provider caches.
+_STATIC = _PROMPT.split("FRASE: {claim}", 1)[0]
+
+#: A change to the prompt must not be answered from the verdicts of the old one.
+_PROMPT_VERSION = hashlib.sha256(_PROMPT.encode("utf-8")).hexdigest()[:12]
+
+_VERDICT_TTL_S = 7 * 86_400
+
+#: From this many citations, the first is sent alone to write the provider's cache.
+_WARM_FROM = 3
+
 
 async def judge(pairs: list[dict[str, Any]], client: Any) -> list[str]:
     """One verdict per (claim, passage), in order. One call each, all at once.
@@ -337,36 +351,70 @@ async def judge(pairs: list[dict[str, Any]], client: Any) -> list[str]:
     """
     if not pairs:
         return []
-    return list(await asyncio.gather(*(_judge_one(pair, client) for pair in pairs)))
+    if len(pairs) >= _WARM_FROM and prompt_cache.enabled() and prompt_cache.supports(_model()):
+        # The ~1.3k tokens of instructions are the same in every call, and a
+        # provider can only read a cache a finished call has written: sent all
+        # at once, every call would pay the write and none the read. So the first
+        # goes alone, and the rest read what it left.
+        first = await _verdict(pairs[0], client, mark=True)
+        rest = await asyncio.gather(*(_verdict(pair, client, mark=True) for pair in pairs[1:]))
+        return [first, *rest]
+    return list(await asyncio.gather(*(_verdict(pair, client, mark=False) for pair in pairs)))
+
+
+def _model() -> str:
+    from aix.core.config import config as app_config
+
+    return os.getenv("AIX_CITATION_CHECK_MODEL") or app_config.openai.model
+
+
+async def _verdict(pair: dict[str, Any], client: Any, *, mark: bool) -> str:
+    """The verdict on one pair, remembered: temperature 0, so the same pair says the same.
+
+    Only a real answer is kept. A call that failed is not a verdict, and
+    remembering «keep it» would make one network hiccup last a day.
+    """
+    answer = await result_cache.remember(
+        "aix:cite:v1",
+        (_model(), _PROMPT_VERSION, pair["claim"], pair["passage"]),
+        lambda: _ask(pair, client, mark=mark),
+        keep=lambda verdict: verdict is not None,
+        ttl=lambda _: _VERDICT_TTL_S,
+    )
+    return answer or "supported"
 
 
 async def _judge_one(pair: dict[str, Any], client: Any) -> str:
     """One citation. Anything that goes wrong means «keep it» — see the module docstring."""
-    from aix.core.config import config as app_config
+    return (await _ask(pair, client, mark=False)) or "supported"
+
+
+async def _ask(pair: dict[str, Any], client: Any, *, mark: bool) -> Optional[str]:
+    """The model's verdict, or ``None`` when there is none to give."""
+    prompt = _PROMPT.format(claim=pair["claim"], passage=pair["passage"])
+    messages = [{"role": "user", "content": prompt}]
+    model = _model()
+    if mark:
+        messages = prompt_cache.cacheable(messages, model=model, stable_user_prefix=_STATIC)
 
     try:
         response = await client.chat.completions.create(
-            model=os.getenv("AIX_CITATION_CHECK_MODEL") or app_config.openai.model,
-            messages=[
-                {
-                    "role": "user",
-                    "content": _PROMPT.format(claim=pair["claim"], passage=pair["passage"]),
-                }
-            ],
+            model=model,
+            messages=messages,
             max_tokens=2000,
             temperature=0,
         )
         answer = (response.choices[0].message.content or "").strip().lower()
     except Exception as exc:  # noqa: BLE001 — fail open, per citation
         logger.warning("[citation-check] one citation could not be judged (%s) — keeping it", exc)
-        return "supported"
+        return None
 
     if "unsupported" in answer:
         return "unsupported"
     if "supported" in answer:
         return "supported"
     logger.warning("[citation-check] unreadable verdict %r — keeping the citation", answer[:60])
-    return "supported"
+    return None
 
 
 async def drop_unsupported_citations(
