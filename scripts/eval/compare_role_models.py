@@ -39,6 +39,9 @@ Usage (in the app container)::
         --models default,google/gemini-3.5-flash-lite,google/gemini-3.1-flash-lite
     python scripts/eval/compare_role_models.py text2cypher \\
         --models google/gemini-2.5-flash,google/gemini-3.5-flash-lite
+    # the same model twice: how much it differs from itself (the noise floor)
+    python scripts/eval/compare_role_models.py text2cypher \\
+        --models google/gemini-3.1-flash-lite,google/gemini-3.1-flash-lite
 """
 
 from __future__ import annotations
@@ -272,6 +275,23 @@ QUERIES = [
     ("udl", "lavoro di gruppo e collaborazione"),
 ]
 
+#: As the graph received them from real lessons (Langfuse, 2026-09-30 → 10-07):
+#: short, often a bare keyword or a subject outside the graph.
+REAL_QUERIES = [
+    ("udl", "ADHD"),
+    ("neuro", "ADHD"),
+    ("udl", "DLDS"),
+    ("neuro", "DOP"),
+    ("neuro", "guerra fredda"),
+    ("udl", "storia e geografia"),
+    ("udl", "crisi israelo-palestinese"),
+    ("udl", "intelligenza artificiale"),
+    ("udl", "authentic task design for practical application"),
+    ("neuro", "no-device classroom attention activities"),
+    ("neuro", "attention span and fatigue in students"),
+    ("neuro", "selective attention mechanisms"),
+]
+
 
 def _names(records) -> set[str]:
     names: set[str] = set()
@@ -296,17 +316,24 @@ def run_text2cypher(models: list[str]) -> None:
     from aix.core.config import config
     from aix.retrieval.multilingual_text2cypher import MultilingualText2Cypher
 
-    print(f"# text2cypher — {len(QUERIES)} domande, udl e neuro, italiano e inglese\n")
+    queries = QUERIES + REAL_QUERIES
+    print(
+        f"# text2cypher — {len(queries)} domande, udl e neuro, italiano e inglese "
+        f"({len(REAL_QUERIES)} prese da lezioni vere)\n"
+    )
     found: dict[str, list[set[str]]] = {}
     rows = []
     for model in models:
         config.text2cypher.model = model
+        # The same model twice measures its own noise: a candidate is only worse
+        # than the reference if it overlaps less than the reference with itself.
+        label = model if model not in found else f"{model} (ripetuto)"
         pipeline = MultilingualText2Cypher()
         ok = with_results = 0
         seconds = []
         names = []
         try:
-            for domain, query in QUERIES:
+            for domain, query in queries:
                 started = time.monotonic()
                 try:
                     result = pipeline.process_query(query, domain=domain, execute=True)
@@ -318,8 +345,8 @@ def run_text2cypher(models: list[str]) -> None:
                 names.append(_names(result.get("results")))
         finally:
             pipeline.close()
-        found[model] = names
-        rows.append((model, ok, with_results, statistics.median(seconds)))
+        found[label] = names
+        rows.append((label, ok, with_results, statistics.median(seconds)))
 
     reference = found[models[0]]
     print(
@@ -332,7 +359,7 @@ def run_text2cypher(models: list[str]) -> None:
         ]
         overlap = statistics.mean(overlaps) if overlaps else 0
         print(
-            f"| {model.split('/')[-1]} | {ok}/{len(QUERIES)} | {with_results}/{len(QUERIES)} | "
+            f"| {model.split('/')[-1]} | {ok}/{len(queries)} | {with_results}/{len(queries)} | "
             f"{overlap * 100:.0f}% | {median:.1f} |"
         )
 

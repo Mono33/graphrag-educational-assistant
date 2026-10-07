@@ -2606,8 +2606,47 @@ Prossimo: controllo di qualità su lezioni vere rigiocate da Langfuse, Sonnet 5 
 d'oro, lettura alla cieca di Angelo). Poi lo schema Cypher compatto: il 70% dei
 due prompt di dominio (101k e 127k caratteri) sono righe `Example:` ripetitive.
 
-Test: `test_reasoning_kwargs.py` (17). Suite unit: 1038 passano; le due di
+Test: `test_reasoning_kwargs.py` (15). Suite unit: 1038 passano; le due di
 `test_concurrency_limits.py` falliscono anche su HEAD pulito.
+
+**Controllo di qualità su chiamate vere** (`scripts/eval/replay_sonnet_settings.py`:
+22 chiamate Sonnet rigiocate da Langfuse con i loro messaggi, 4 configurazioni):
+
+| | Writer | Revisione | Leggera | Planner |
+| --- | --- | --- | --- | --- |
+| Sonnet 5 · come oggi | $0,070 · 53 s · Critic 4,67 | $0,088 · 63 s · 4,30 | $0,040 · 1 risposta **vuota** | $0,035 · 20 s |
+| Sonnet 5 · low | $0,042 · 27 s · 4,26 | $0,062 · 38 s · 3,73 | $0,040 | $0,024 · 9 s · 29/30 |
+| Sonnet 5.5 · come oggi | $0,077 · 44 s · 4,33 | $0,104 · 47 s · 4,40 · 1 troncata | $0,039 · 1 troncata | $0,029 · 8 s · 28/30 |
+| Sonnet 5.5 · low | $0,048 · 22 s · 3,87 | $0,070 · 23 s · 4,40 | $0,035 | $0,026 · 6 s · 29/30 |
+
+- Certo: `low` costa 30–40% in meno e dimezza i tempi, senza troncamenti né
+  citazioni inventate; il planner concorda con quello di oggi. Con il default,
+  una lezione leggera ha speso tutti i 3000 token a ragionare e ha risposto vuoto.
+- Giudice delle citazioni: 11/12 sui casi d'oro in tutte e quattro.
+- Non deciso: la qualità delle lezioni. Il Critic dà a `low` voti più bassi su
+  Sonnet 5 (4,26 contro 4,67; revisione 3,73 contro 4,30), ma su 3 lezioni per
+  tipo e con voti da 2,6 a 5,0 nella stessa configurazione; le lezioni `low` sono
+  12–23% più corte. Decide la lettura alla cieca di Angelo (pagina locale, non
+  pubblicata). Ipotesi: sforzo per ruolo, `low` per planner, leggera e giudice.
+- Da guardare: lo sforzo cambia quando la lezione leggera rimanda a una lezione
+  nuova (`<<<NUOVA_LEZIONE>>>`), e ogni rimando costa una lezione intera.
+
+**Schema Cypher più corto: provato e scartato.** Tre varianti contro lo schema
+completo, sul Neo4j vero, 28 domande (12 prese da lezioni vere); lo schema completo
+contro se stesso si sovrappone all'85–91% (rumore del modello):
+
+| variante | caratteri udl / neuro | sovrapposizione | con risultati |
+| --- | ---: | ---: | ---: |
+| completo | 101k / 128k | 85–91% (con sé) | 24–25/28 |
+| `lean` (senza id, domain, proprietà ripetute) | 74k / 93k | 43% | 22/28 |
+| solo nomi + descrizione a 80 caratteri | 43k / 55k | 57% | 23/28 |
+| solo nomi | 22k / 29k | 38% | 23/28 |
+
+Ogni accorciamento cambia molto che cosa il modello cerca nel grafo, e trova
+risultati in meno domande. Con la cache una chiamata Cypher costa già ~$0,0008:
+il guadagno non vale il rischio. Il codice delle varianti non è entrato; restano
+le 12 domande vere e la misura del rumore in `compare_role_models.py text2cypher`
+(lo stesso modello due volte).
 
 ## Un difetto preesistente trovato il 2026-09-11 — chiuso
 
