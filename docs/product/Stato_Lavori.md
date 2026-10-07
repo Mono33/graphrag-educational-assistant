@@ -2631,6 +2631,25 @@ Test: `test_reasoning_kwargs.py` (15). Suite unit: 1038 passano; le due di
 - Da guardare: lo sforzo cambia quando la lezione leggera rimanda a una lezione
   nuova (`<<<NUOVA_LEZIONE>>>`), e ogni rimando costa una lezione intera.
 
+**Lettura alla cieca di Angelo (5 lezioni, ordine nascosto) e decisione.**
+
+| configurazione | posizione media | prima | ultima |
+| --- | ---: | ---: | ---: |
+| Sonnet 5.5 · low | 2,0 | 2 | 0 |
+| Sonnet 5 · come oggi | 2,2 | 2 | 1 |
+| Sonnet 5.5 · come oggi | 2,4 | 1 | 1 |
+| Sonnet 5 · low | 3,4 | 0 | 3 |
+
+Sonnet 5 con `low` peggiora le lezioni (come diceva il Critic); Sonnet 5.5 con
+`low` è la preferita, allo stesso prezzo e in circa metà del tempo. **Deciso:
+`LLM_MODEL=anthropic/claude-sonnet-5.5` con `AIX_THINKING_EFFORT=low`, per tutto
+ciò che usa Sonnet** (Writer, revisione, planner, lezione leggera, giudice).
+Nei file di esempio e in `docs/ENVIRONMENT.md`; `deploy/.env.prod.example`
+passa anche lui da `claude-sonnet-4-6` a 5.5 (il suo `AIX_WRITER_MAX_TOKENS=2000`
+resta da decidere con Louis). Da verificare su Langfuse dopo il passaggio: quanto
+spesso la lezione leggera rimanda a una lezione nuova, che con 5.5 è capitato
+più spesso.
+
 **Schema Cypher più corto: provato e scartato.** Tre varianti contro lo schema
 completo, sul Neo4j vero, 28 domande (12 prese da lezioni vere); lo schema completo
 contro se stesso si sovrappone all'85–91% (rumore del modello):

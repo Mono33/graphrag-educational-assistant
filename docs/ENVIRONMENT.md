@@ -19,7 +19,7 @@ spegne. Una variabile assente o vuota vale il suo default.
 | Variabile | Default | Se manca |
 | --- | --- | --- |
 | `OPENROUTER_API_KEY` | — | Nessuna chiamata al modello. Ripiego: `OPENAI_API_KEY` |
-| `LLM_MODEL` | `anthropic/claude-sonnet-5` | Usa il default del codice |
+| `LLM_MODEL` | `anthropic/claude-sonnet-5.5` | Il modello del Writer, e di tutto ciò che usa Sonnet (planner, lezione leggera, giudice delle citazioni). Scelto il 2026-10-07 rigiocando 22 chiamate vere (`scripts/eval/replay_sonnet_settings.py`) e con una lettura alla cieca di Angelo: con `AIX_THINKING_EFFORT=low` è la versione preferita in media, stesso prezzo di Sonnet 5 ($2/$10 per milione) e circa metà del tempo. Sonnet 5 con `low` invece peggiora le lezioni (ultima in 3 casi su 5) |
 | `NEO4J_URI` · `NEO4J_USER` · `NEO4J_PASSWORD` | — | Nessun recupero dal Knowledge Graph: lezioni senza fondamento pedagogico |
 | `AIX_NEO4J_CONNECT_TIMEOUT_S` | `5` | Quanto si aspetta la connessione al grafo. **Il default del driver è 60 s**, e una lezione fa dieci domande al grafo: il 2026-09-21 un database raggiungibile ma muto ha tenuto una generazione ferma 3 minuti e 14 |
 | `AIX_NEO4J_RETRY_TIME_S` | `5` | Per quanto si riprova una transazione fallita (default del driver: 30 s) |
@@ -38,7 +38,7 @@ gira sugli stessi casi del vecchio.
 
 | Ruolo | Variabile | Valore attuale | Predefinito nel codice | Come misurare un candidato |
 | --- | --- | --- | --- | --- |
-| Writer: scrive la lezione | `LLM_MODEL` | `anthropic/claude-sonnet-5` | `core/config.py` | `scripts/eval/measure_followup_turns.py` |
+| Writer: scrive la lezione | `LLM_MODEL` | `anthropic/claude-sonnet-5.5` | `core/config.py` | `scripts/eval/measure_followup_turns.py` |
 | Risposte veloci nei turni successivi | `AIX_CHAT_MODEL` | vuoto = `LLM_MODEL` | `webui/agent/light.py` · `chat_model` | `scripts/eval/measure_light_turns.py` |
 | Critic: rivede la bozza | `AIX_CRITIC_MODEL` | `google/gemini-3.5-flash-lite` | `agent/agents/critic_agent.py` · `DEFAULT_CRITIC_MODEL` | `compare_role_models.py critic --models a,b` |
 | Domande al grafo e traduzione | `TEXT2CYPHER_MODEL` | `google/gemini-3.1-flash-lite` | `core/config.py` · `Text2CypherConfig.model` | `compare_role_models.py text2cypher --models a,b` |
