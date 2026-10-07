@@ -397,12 +397,17 @@ async def _ask(pair: dict[str, Any], client: Any, *, mark: bool) -> Optional[str
     if mark:
         messages = prompt_cache.cacheable(messages, model=model, stable_user_prefix=_STATIC)
 
+    from aix.core.config import reasoning_extra_body
+
+    # One word to answer: Claude 5 needs no thinking budget for it (see config).
+    extra = reasoning_extra_body(model)
     try:
         response = await client.chat.completions.create(
             model=model,
             messages=messages,
             max_tokens=2000,
             temperature=0,
+            **({"extra_body": extra} if extra else {}),
         )
         answer = (response.choices[0].message.content or "").strip().lower()
     except Exception as exc:  # noqa: BLE001 — fail open, per citation

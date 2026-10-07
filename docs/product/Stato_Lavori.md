@@ -2577,6 +2577,38 @@ Test: `test_prompt_cache.py` (10), `test_result_cache.py` (10),
 suite unit: 1022 passano; due
 test di `test_concurrency_limits.py` falliscono anche su HEAD pulito e non c'entrano.
 
+### 2026-10-07 — Sonnet 5 ragionava senza limiti: corretto
+
+Analisi Langfuse (679 chiamate, $5,83 dal 30/9): con le cache di Cypher e del
+giudice in funzione (verificate dal vivo sulla WebUI locale: Cypher ~-88%,
+giudice ~-40%) l'85% della spesa sono le chiamate Sonnet. E lì c'era un difetto.
+
+- **`AIX_THINKING_EFFORT=low` arrivava solo a Claude 4** (`claude-sonnet-4`,
+  `claude-opus-4` in `config.py`). Su Sonnet 5 veniva ignorato: ~117k token di
+  ragionamento in una settimana di prove, **~20% della spesa**, fatturati come
+  output. E le risposte si troncavano: una revisione del Writer è finita a
+  `max_tokens` (8000) con 5129 token di ragionamento; di qui le continuazioni.
+- Rigiocate chiamate vere con `effort: low`: revisione $0,122 → $0,073 e 91 s →
+  39 s, completa; planner -40% e 28 s → 8–14 s; lezione leggera -15%, completa.
+- **Correzione:** per Claude 5.x si manda solo lo sforzo
+  (`reasoning_extra_body` in `config.py`); temperatura, budget e JSON del planner
+  restano quelli chiesti (il ramo di Claude 4 forzerebbe temperatura 1 e
+  toglierebbe il JSON). Lo usa anche il giudice delle citazioni.
+  `AIX_THINKING_EFFORT=default` torna al comportamento di prima.
+- Due chiamate costruivano i parametri per il modello del Writer e poi
+  chiamavano Gemini (la traduzione per text2cypher e `llm_chain`): ora li
+  costruiscono per il modello vero, così Gemini non riceve il ragionamento di Claude.
+- Da segnalare, non toccato: `deploy/.env.prod.example` ha ancora
+  `LLM_MODEL=claude-sonnet-4-6` e `AIX_WRITER_MAX_TOKENS=2000`.
+
+Prossimo: controllo di qualità su lezioni vere rigiocate da Langfuse, Sonnet 5 e
+5.5, come oggi e con sforzo `low` (Critic, controlli strutturali, giudice sui casi
+d'oro, lettura alla cieca di Angelo). Poi lo schema Cypher compatto: il 70% dei
+due prompt di dominio (101k e 127k caratteri) sono righe `Example:` ripetitive.
+
+Test: `test_reasoning_kwargs.py` (17). Suite unit: 1038 passano; le due di
+`test_concurrency_limits.py` falliscono anche su HEAD pulito.
+
 ## Un difetto preesistente trovato il 2026-09-11 — chiuso
 
 *Chiuso nella PR 5: `_legacy_read` trasforma un PDF illeggibile in un `ValueError` con un messaggio in italiano, e la docente riceve un 422 leggibile invece di un 500. Il testo sotto resta come registro.*
