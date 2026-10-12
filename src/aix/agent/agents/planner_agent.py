@@ -20,6 +20,7 @@ from aix.agent.prompts.planner_prompt import (
     PLANNER_USER_TEMPLATE,
 )
 from aix.agent.prompts.profile_renderer import render_classroom_constraints
+from aix.core import prompt_cache
 from aix.core.concurrency import guarded_chat_completion
 from aix.core.config import config as app_config
 from aix.core.config import extract_response_content
@@ -351,12 +352,17 @@ class PlannerAgent:
             json_mode=True,
             model_override=model,
         )
+        # 14k characters of instructions and examples, identical for every
+        # request: marked, a repeat within minutes costs a tenth.
         response = await guarded_chat_completion(
             client,
-            messages=[
-                {"role": "system", "content": PLANNER_SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt},
-            ],
+            messages=prompt_cache.cacheable(
+                [
+                    {"role": "system", "content": PLANNER_SYSTEM_PROMPT},
+                    {"role": "user", "content": user_prompt},
+                ],
+                model=completion_kwargs["model"],
+            ),
             **completion_kwargs,
         )
 

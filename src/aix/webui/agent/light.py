@@ -34,6 +34,7 @@ from aix.agent.prompts.light_prompt import (
     LIGHT_USER_TEMPLATE,
     NEW_LESSON,
 )
+from aix.core import prompt_cache
 from aix.webui.agent.service import StreamEvent
 from aix.webui.errors import report as _report_failure
 from aix.webui.features import light_turns_enabled
@@ -168,25 +169,35 @@ async def _documents(lesson: Any, instruction: str) -> tuple[str, list[dict[str,
     return teacher_material_appendix(items, None, phase="light", material_maps=maps), items
 
 
-def _messages(
-    lesson: Any, instruction: str, history: str, documents: str, *, answer_here: bool
-) -> list[dict[str, str]]:
+#: The template up to the lesson is the same on every turn of a lesson (the date,
+#: the class, the lesson); what follows -- passages, history, request -- changes.
+_HEAD, _TAIL = LIGHT_USER_TEMPLATE.split("{documents}", 1)
+_TAIL = "{documents}" + _TAIL
+
+
+def _head(lesson: Any) -> str:
+    """The stable start of the user message: what the provider can keep in cache."""
     from aix.agent.prompts.profile_renderer import render_profile_section
     from aix.agent.prompts.today import today_note
 
     profile = {
         k: v for k, v in (lesson.educational_profile_json or {}).items() if not k.startswith("__")
     }
-    system = LIGHT_SYSTEM_PROMPT.format(
-        scope_rule=ANSWER_HERE_RULE if answer_here else ESCALATION_RULE
-    )
-    user = LIGHT_USER_TEMPLATE.format(
+    return _HEAD.format(
         today=today_note().strip(),
         profile=render_profile_section(profile),
         lesson=(lesson.lesson_plan_md or "")[:_LESSON_CHARS],
-        documents=documents,
-        history=history,
-        instruction=instruction,
+    )
+
+
+def _messages(
+    lesson: Any, instruction: str, history: str, documents: str, *, answer_here: bool
+) -> list[dict[str, str]]:
+    system = LIGHT_SYSTEM_PROMPT.format(
+        scope_rule=ANSWER_HERE_RULE if answer_here else ESCALATION_RULE
+    )
+    user = _head(lesson) + _TAIL.format(
+        documents=documents, history=history, instruction=instruction
     )
     return [{"role": "system", "content": system}, {"role": "user", "content": user}]
 
@@ -266,6 +277,10 @@ async def run_light_turn(
             documents,
             answer_here=answer_here,
         )
+        # The lesson (up to ~15k tokens) is resent on every turn and on every
+        # hand-off to a new lesson: marked, a turn within minutes of the last
+        # reads it at a tenth of the price. The text is unchanged.
+        messages = prompt_cache.cacheable(messages, model=model, stable_user_prefix=_head(lesson))
         kwargs = app_config.openai.build_completion_kwargs(
             temperature=0.4,
             max_tokens=_MAX_TOKENS,

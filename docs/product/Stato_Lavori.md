@@ -2710,6 +2710,27 @@ Haiku sbaglia in 12. Sonnet contro se stesso: 2 su 49.
 - La cache del giudice dipende dal provider che OpenRouter sceglie per Sonnet 5.5:
   il 12/10 (Google) funziona, il 7/10 quasi mai.
 
+### 2026-10-12 — Cache dei prompt fissi di Writer, planner e lezione leggera
+
+- **Lezione leggera:** data, profilo e testo della lezione (fino a ~15k token) sono
+  uguali a ogni turno della stessa lezione e a ogni rimando a una lezione nuova:
+  ora sono un blocco in cache (`light._head`), il resto (passaggi, storia,
+  richiesta) no. Testo identico, verificato da `test_light_prompt_cache.py`.
+- **Writer, revisione e planner:** il system prompt (Writer: intento, testo di
+  dominio, vincoli, ~3–4k token; planner: 14k caratteri) è uguale per tutte le
+  docenti dello stesso dominio: ora è in cache. `test_system_prompt_cache.py`.
+- **Come si comporta la cache di Sonnet 5.5 su OpenRouter** (misurato): una
+  lettura costa il 7% ($0,0010 contro $0,0146 per i 5.700 token del planner), una
+  scrittura il 125%. Google e Bedrock servono 5.5 con più istanze, ciascuna con la
+  sua cache: con richieste diverse la lettura riesce a caso, **4 volte su 8** in
+  una sessione di una sola docente (costo medio del system del planner $0,0078
+  invece di $0,0118, -34%); con più docenti attive le istanze restano calde e la
+  quota sale. Dove sta il segno (system o primo blocco utente) non cambia nulla.
+  Conviene sopra ~22% di letture.
+- Accorciare i testi di dominio: il system del Writer pesa ~$0,004–0,008 a
+  chiamata, quello del planner ~$0,011; con la cache il guadagno di un taglio si
+  riduce in proporzione. Proposta da fare con chi ha scritto i testi.
+
 ## Un difetto preesistente trovato il 2026-09-11 — chiuso
 
 *Chiuso nella PR 5: `_legacy_read` trasforma un PDF illeggibile in un `ValueError` con un messaggio in italiano, e la docente riceve un 422 leggibile invece di un 500. Il testo sotto resta come registro.*

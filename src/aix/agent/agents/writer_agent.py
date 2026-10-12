@@ -28,6 +28,7 @@ from aix.agent.prompts.writer_prompt import (
     format_external_resources,
     get_writer_prompts,
 )
+from aix.core import prompt_cache
 from aix.core.concurrency import guarded_chat_completion, llm_slot
 from aix.core.config import config as app_config
 from aix.core.config import extract_response_content
@@ -651,10 +652,16 @@ class WriterAgent:
                 temperature=0.7,
                 max_tokens=_WRITER_MAX_TOKENS,
             )
-            messages: list[Any] = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ]
+            # The system prompt (intent, domain knowledge, constraints: ~3-4k
+            # tokens) is the same for every teacher of a domain: marked, the
+            # provider bills a repeat at a tenth. The text does not change.
+            messages: list[Any] = prompt_cache.cacheable(
+                [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                model=completion_kwargs["model"],
+            )
 
             if token_bus is not None:
                 # Streaming path: forward each token to the webUI bus so the
@@ -844,10 +851,13 @@ class WriterAgent:
                 temperature=0.5,
                 max_tokens=_WRITER_MAX_TOKENS,
             )
-            messages: list[Any] = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ]
+            messages: list[Any] = prompt_cache.cacheable(
+                [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                model=completion_kwargs["model"],
+            )
             response = await guarded_chat_completion(
                 client,
                 messages=messages,
