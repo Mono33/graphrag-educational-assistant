@@ -2612,7 +2612,7 @@ Test: `test_reasoning_kwargs.py` (15). Suite unit: 1038 passano; le due di
 **Controllo di qualità su chiamate vere** (`scripts/eval/replay_sonnet_settings.py`:
 22 chiamate Sonnet rigiocate da Langfuse con i loro messaggi, 4 configurazioni):
 
-| | Writer | Revisione | Leggera | Planner |
+| | Writer | Ibrida (era «Revisione») | Leggera | Planner |
 | --- | --- | --- | --- | --- |
 | Sonnet 5 · come oggi | $0,070 · 53 s · Critic 4,67 | $0,088 · 63 s · 4,30 | $0,040 · 1 risposta **vuota** | $0,035 · 20 s |
 | Sonnet 5 · low | $0,042 · 27 s · 4,26 | $0,062 · 38 s · 3,73 | $0,040 | $0,024 · 9 s · 29/30 |
@@ -2672,7 +2672,7 @@ le 12 domande vere e la misura del rumore in `compare_role_models.py text2cypher
 Obiettivo di Angelo: dimezzare il costo di generazione. Rigiocate le stesse 22
 chiamate vere con modelli più economici, poi 6 lezioni lette alla cieca.
 
-| modello | Writer | Revisione | Leggera | Planner | posizione media | scartate |
+| modello | Writer | Ibrida (era «Revisione») | Leggera | Planner | posizione media | scartate |
 | --- | --- | --- | --- | --- | ---: | ---: |
 | Sonnet 5.5 · low (oggi) | $0,040 | $0,077 | $0,035 | $0,025 | 1,3 | 0/6 |
 | Gemini 3.5 Flash · low | $0,034 | $0,058 | $0,028, 2 troncate | $0,013 | 1,8 | 0/6 |
@@ -2699,8 +2699,14 @@ Haiku sbaglia in 12. Sonnet contro se stesso: 2 su 49.
   appena compare il segnale (`light.py:288`): Langfuse registra 0 token e $0, ma
   OpenRouter fattura i ~14k token di input (~$0,03 su Sonnet). Nel replay Sonnet
   5.5 rimanda 4 richieste leggere su 6.
-- La revisione avviene nel 75% dei turni di prova ed è la chiamata più cara di una
-  lezione ($0,077 contro $0,040 del Writer).
+- **Correzione (2026-10-12):** le colonne «Revisione» di queste tabelle e di quelle
+  del 7/10 non sono revisioni ma il **Writer delle lezioni ibride** (argomento fuori
+  dal grafo, `WRITER_SYSTEM_PROMPT_HYBRID`, che si apre con «Content Writer
+  creating lessons»): l'analisi le confondeva. Le revisioni vere (messaggio «Please
+  revise the content…») sono 3 su 24 turni, non il 75%. Le letture alla cieca
+  restano valide: erano comunque lezioni vere. La chiamata più cara di un turno è
+  il Writer ibrido, il caso più frequente (storia, attualità).
+  `replay_sonnet_settings.py` ora distingue `writer`, `ibrida` e `revisione`.
 - La cache del giudice dipende dal provider che OpenRouter sceglie per Sonnet 5.5:
   il 12/10 (Google) funziona, il 7/10 quasi mai.
 

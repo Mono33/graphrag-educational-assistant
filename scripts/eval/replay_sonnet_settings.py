@@ -58,11 +58,20 @@ CONFIGS = [
 ]
 
 KINDS = {  # marker in the system prompt -> kind
+    # The lesson Writer for a topic outside the graph (WRITER_SYSTEM_PROMPT_HYBRID):
+    # most teacher requests (history, current affairs). Until 2026-10-12 this
+    # script called it "revisione", which it is not.
+    "Content Writer creating lessons that combine": "ibrida",
     "Content Writer specialized": "writer",
-    "Content Writer creating lessons": "revisione",
+    "Content Writer creating": "writer",
     "Sei l'assistente didattico": "leggera",
     "Educational Planning": "planner",
 }
+
+#: A revision is told apart by its user message, not its system prompt.
+REVISION_OPENING = "Please revise the content based on the critic's feedback"
+
+LESSON_KINDS = ("writer", "ibrida", "revisione")
 
 MARKER = re.compile(r"\[\[material:[^\]]*\]\]")
 
@@ -111,6 +120,9 @@ def _text(content) -> str:
 
 def _kind(messages: list) -> str | None:
     system = _text(next((m.get("content") for m in messages if m.get("role") == "system"), ""))
+    user = _text(next((m.get("content") for m in messages if m.get("role") == "user"), ""))
+    if "Content Writer" in system and user.lstrip().startswith(REVISION_OPENING):
+        return "revisione"
     return next((kind for marker, kind in KINDS.items() if marker in system), None)
 
 
@@ -248,9 +260,9 @@ async def run(cases: list[dict], concurrency: int) -> dict:
     async def one(case, label, model, effort):
         async with gate:
             r = await replay(client, case, model, effort)
-            if r["ok"] and case["kind"] in ("writer", "revisione", "leggera"):
+            if r["ok"] and case["kind"] in (*LESSON_KINDS, "leggera"):
                 r.update(citations(case, r["content"]))
-            if r["ok"] and case["kind"] in ("writer", "revisione"):
+            if r["ok"] and case["kind"] in LESSON_KINDS:
                 r.update(await critique(case, r["content"]))
             if r["ok"] and case["kind"] == "planner":
                 r["plan"] = plan_fields(r["content"])
@@ -271,14 +283,14 @@ async def run(cases: list[dict], concurrency: int) -> dict:
 def report(cases: list[dict], results: dict) -> str:
     reference = CONFIGS[0][0]
     lines = [f"# Sonnet: modello e sforzo di ragionamento su {len(cases)} chiamate vere\n"]
-    for kind in ("writer", "revisione", "leggera", "planner"):
+    for kind in (*LESSON_KINDS, "leggera", "planner"):
         group = [c for c in cases if c["kind"] == kind]
         if not group:
             continue
         lines.append(f"\n## {kind} ({len(group)} chiamate vere)\n")
         head = "| configurazione | costo medio | secondi (mediana) | output medio | ragionamento medio | troncate | errori |"
         rule = "| --- | ---: | ---: | ---: | ---: | ---: | ---: |"
-        if kind in ("writer", "revisione"):
+        if kind in LESSON_KINDS:
             head += " voto Critic medio | approvate | citazioni tenute | inventate |"
             rule += " ---: | ---: | ---: | ---: |"
         if kind == "leggera":
@@ -302,7 +314,7 @@ def report(cases: list[dict], results: dict) -> str:
                 f"| {sum(r['finish'] in ('length', 'max_tokens') for r in ok)}/{len(ok)} "
                 f"| {len(rs) - len(ok)} |"
             )
-            if kind in ("writer", "revisione"):
+            if kind in LESSON_KINDS:
                 scored = [r for r in ok if r.get("critic_ok")]
                 row += (
                     f" {statistics.mean(r['score'] for r in scored):.2f} |" if scored else " — |"
@@ -332,7 +344,7 @@ def blind_page(cases: list[dict], results: dict, seed: int) -> tuple[str, dict]:
 
     rng = random.Random(seed)
     key, sections = {}, []
-    lessons = [c for c in cases if c["kind"] in ("writer", "revisione")]
+    lessons = [c for c in cases if c["kind"] in LESSON_KINDS]
     for n, case in enumerate(lessons, 1):
         labels = [
             label for label, _, _ in CONFIGS if results.get((case["id"], label), {}).get("ok")
@@ -373,6 +385,9 @@ def main() -> int:
     parser.add_argument("--out", required=True, help="a folder OUTSIDE the repository")
     parser.add_argument("--source-model", default="anthropic/claude-sonnet-5")
     parser.add_argument("--writer", type=int, default=3)
+    parser.add_argument(
+        "--hybrid", type=int, default=3, help="lessons on a topic outside the graph"
+    )
     parser.add_argument("--revisions", type=int, default=3)
     parser.add_argument("--light", type=int, default=6)
     parser.add_argument("--planner", type=int, default=10)
@@ -401,6 +416,7 @@ def main() -> int:
 
     wanted = {
         "writer": args.writer,
+        "ibrida": args.hybrid,
         "revisione": args.revisions,
         "leggera": args.light,
         "planner": args.planner,
