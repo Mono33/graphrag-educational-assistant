@@ -2667,6 +2667,43 @@ il guadagno non vale il rischio. Il codice delle varianti non è entrato; restan
 le 12 domande vere e la misura del rumore in `compare_role_models.py text2cypher`
 (lo stesso modello due volte).
 
+### 2026-10-12 — Modelli più economici per generare: provati, scartati
+
+Obiettivo di Angelo: dimezzare il costo di generazione. Rigiocate le stesse 22
+chiamate vere con modelli più economici, poi 6 lezioni lette alla cieca.
+
+| modello | Writer | Revisione | Leggera | Planner | posizione media | scartate |
+| --- | --- | --- | --- | --- | ---: | ---: |
+| Sonnet 5.5 · low (oggi) | $0,040 | $0,077 | $0,035 | $0,025 | 1,3 | 0/6 |
+| Gemini 3.5 Flash · low | $0,034 | $0,058 | $0,028, 2 troncate | $0,013 | 1,8 | 0/6 |
+| Mistral Large 4 · ragionamento spento | $0,006 | $0,014 | $0,007 | $0,003 | 3,2 | **3/6** |
+| Haiku 4.5 | $0,018 | $0,031 | $0,017, 4 citazioni inventate | $0,012 | 3,7 | **3/6** |
+
+- Mistral Large 4 costa l'80–87% in meno e il Critic lo vota quasi come Sonnet,
+  ma Angelo ne scarta metà: testo corrotto con metadati trapelati, residui della
+  pipeline, un errore storico. Haiku: fonti fuori dal grafo, durata sbagliata,
+  imprecisioni scientifiche. **Il Critic non distingue queste lezioni da quelle buone.**
+- Mistral va chiamato con il ragionamento **spento** (`reasoning.enabled=false`):
+  con `effort: low` ragiona di più (troncamenti, 100+ s, JSON non valido).
+  Gemini 3.5 Flash non permette di spegnerlo.
+- **Il Writer resta Sonnet 5.5 · low.** Per dimezzare il costo si lavora sul
+  numero di chiamate, non sul modello.
+
+**Il giudice delle citazioni resta su Sonnet.** Sui casi d'oro i modelli economici
+fanno come Sonnet (11/12), ma sulle 49 coppie vere no: Gemini 3.5 flash-lite
+lascia passare 7 citazioni sbagliate su 8; 3.1 flash-lite ne toglie 11 di troppo;
+Haiku sbaglia in 12. Sonnet contro se stesso: 2 su 49.
+
+**Costi nascosti trovati:**
+- Quando la lezione leggera rimanda a una lezione nuova, lo stream si interrompe
+  appena compare il segnale (`light.py:288`): Langfuse registra 0 token e $0, ma
+  OpenRouter fattura i ~14k token di input (~$0,03 su Sonnet). Nel replay Sonnet
+  5.5 rimanda 4 richieste leggere su 6.
+- La revisione avviene nel 75% dei turni di prova ed è la chiamata più cara di una
+  lezione ($0,077 contro $0,040 del Writer).
+- La cache del giudice dipende dal provider che OpenRouter sceglie per Sonnet 5.5:
+  il 12/10 (Google) funziona, il 7/10 quasi mai.
+
 ## Un difetto preesistente trovato il 2026-09-11 — chiuso
 
 *Chiuso nella PR 5: `_legacy_read` trasforma un PDF illeggibile in un `ValueError` con un messaggio in italiano, e la docente riceve un 422 leggibile invece di un 500. Il testo sotto resta come registro.*

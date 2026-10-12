@@ -22,6 +22,9 @@ Run from the repo root, with the ``.env`` keys (OpenRouter, Langfuse)::
 
     python scripts/eval/replay_sonnet_settings.py --out /tmp/aix_replay
     python scripts/eval/replay_sonnet_settings.py --out /tmp/x --dry-run   # what would be replayed
+    # other models: model@effort, the first is the reference
+    python scripts/eval/replay_sonnet_settings.py --out /tmp/x \\
+        --configs anthropic/claude-sonnet-5.5@low,mistralai/mistral-large-4-0@low
 """
 
 from __future__ import annotations
@@ -167,7 +170,10 @@ async def replay(client, case: dict, model: str, effort: str | None) -> dict:
     if case["kind"] == "planner":
         kwargs["response_format"] = {"type": "json_object"}
     if effort:
-        kwargs["extra_body"] = {"reasoning": {"effort": effort}}
+        # "off" turns the reasoning off: on Mistral Large 4, "low" made it think more.
+        kwargs["extra_body"] = {
+            "reasoning": {"enabled": False} if effort == "off" else {"effort": effort}
+        }
     started = time.monotonic()
     try:
         response = await client.chat.completions.create(**kwargs)
@@ -373,7 +379,18 @@ def main() -> int:
     parser.add_argument("--concurrency", type=int, default=6)
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--configs",
+        help="model@effort,... (effort optional: none = no reasoning setting); the first is the reference",
+    )
     args = parser.parse_args()
+    if args.configs:
+        global CONFIGS
+        CONFIGS = []
+        for item in args.configs.split(","):
+            model, _, effort = item.strip().partition("@")
+            effort = None if effort in ("", "none") else effort
+            CONFIGS.append((f"{model.split('/')[-1]} · {effort or 'come oggi'}", model, effort))
 
     out = Path(args.out).resolve()
     if REPO_ROOT in out.parents or out == REPO_ROOT:
