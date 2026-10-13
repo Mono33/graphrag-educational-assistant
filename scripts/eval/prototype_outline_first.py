@@ -43,13 +43,29 @@ import replay_sonnet_settings as replay  # noqa: E402
 
 MODEL = "anthropic/claude-sonnet-5.5"
 
+#: Version 2 (2026-10-13), after Angelo's reading of version 1: one outline was so
+#: long the next steps were cut off; one followed the earlier conversation instead
+#: of the request; one mixed English and Italian.
 OUTLINE_RULE = (
-    "\n\n**OUTPUT FOR THIS TURN (overrides the format above)**: do not write the full lesson. "
-    "Write only its outline, in Italian: the title, level and duration; the objectives (at most 4 "
-    "bullets); then one line per section or activity with its minutes and what happens in it. At the "
-    "end, under the heading «Cosa sviluppo adesso?», offer 3 or 4 concrete next steps the teacher may "
-    "want, numbered, the most useful first (for example: le attività nel dettaglio, una verifica "
-    "pronta, gli adattamenti per gli studenti con BES, una scheda per gli studenti). At most 250 words."
+    "\n\n**OUTPUT FOR THIS TURN (overrides the format and length rules above)**: do not write the "
+    "full lesson, only its outline, built on the teacher's LATEST request (the earlier conversation "
+    "is context, not the subject). Write everything in the language the lesson must be in -- the "
+    "teacher's language unless she asked for another -- headings included. Strictly:\n"
+    "1. Title, level, duration: one line.\n"
+    "2. Objectives: at most 3 bullets, at most 12 words each.\n"
+    "3. Structure: one line per section or activity, at most 15 words each, with its minutes.\n"
+    "4. Last, always, a heading that asks what to develop next (Italian: «Cosa sviluppo adesso?»; "
+    "English: «What should I develop next?») and 3 numbered proposals specific to THIS lesson "
+    "(name the activity, the check or the adaptation), one line each, the most useful first.\n"
+    "The whole answer stays under 180 words, so the proposals are never cut off."
+)
+
+#: Headings that open the proposals, in the languages a lesson is written in.
+NEXT_STEPS = (
+    "cosa sviluppo adesso",
+    "what should i develop next",
+    "qué desarrollo",
+    "que dois-je développer",
 )
 
 SECTION_REQUEST = (
@@ -76,7 +92,7 @@ async def call(client, messages, max_tokens):
     }
 
 
-async def prototype(client, case):
+async def prototype(client, case, outline_only: bool = False):
     from aix.core import prompt_cache
 
     base = [{**m, "content": replay._text(m.get("content"))} for m in case["messages"]]
@@ -85,8 +101,10 @@ async def prototype(client, case):
     outline = await call(
         client,
         prompt_cache.cacheable(first, model=MODEL, stable_user_prefix=first[1]["content"]),
-        1200,
+        900,
     )
+    if outline_only:
+        return {"outline": outline}
     second = [
         *first,
         {"role": "assistant", "content": outline["content"]},
@@ -100,6 +118,60 @@ async def prototype(client, case):
     return {"outline": outline, "section": section}
 
 
+def outline_report(out: Path, cases: list, results: list, baseline: dict) -> int:
+    """The outlines alone: cost, time, length, whether the proposals came, and a page to read."""
+    import re
+
+    import markdown
+
+    rows = []
+    for case, res in zip(cases, results, strict=True):
+        text = res["outline"]["content"]
+        has_steps = any(h in text.lower() for h in NEXT_STEPS)
+        steps_after = text.lower().split(
+            next((h for h in NEXT_STEPS if h in text.lower()), "\0"), 1
+        )
+        numbered = len(re.findall(r"^\s*\d+[.)]", steps_after[-1], re.M)) if has_steps else 0
+        rows.append(
+            {
+                "cost": res["outline"]["cost"],
+                "seconds": res["outline"]["seconds"],
+                "words": len(text.split()),
+                "steps": has_steps and numbered >= 3,
+                "full_cost": baseline[case["id"]]["cost"],
+            }
+        )
+    m = lambda k: statistics.mean(r[k] for r in rows)  # noqa: E731
+    text = (
+        f"# Scaletta (v2) — {len(rows)} richieste vere (Sonnet 5.5 · low)\n\n"
+        f"- costo medio ${m('cost'):.4f} (lezione intera ${m('full_cost'):.4f}); "
+        f"{m('seconds'):.0f} s; {m('words'):.0f} parole (max {max(r['words'] for r in rows)})\n"
+        f"- proposte «cosa sviluppo adesso» presenti e numerate: "
+        f"{sum(r['steps'] for r in rows)}/{len(rows)}\n"
+    )
+    (out / "risultati.md").write_text(text, encoding="utf-8")
+    sections = []
+    for n, (case, res) in enumerate(zip(cases, results, strict=True), 1):
+        sections.append(
+            f"<article><h2>Richiesta {n}</h2><p class='q'><b>Richiesta:</b> "
+            f"{html.escape(case['query'][:500])}</p><section>"
+            f"{markdown.markdown(res['outline']['content'], extensions=['tables'])}</section></article>"
+        )
+    page = (
+        "<!doctype html><html lang='it'><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'><title>Scalette v2</title><style>"
+        "body{font-family:system-ui,sans-serif;margin:16px;background:#fafafa;color:#222;max-width:820px}"
+        "article{margin:28px 0;border-top:3px solid #333;padding-top:8px}"
+        "section{background:#fff;border:1px solid #ddd;border-radius:6px;padding:12px;font-size:14px}"
+        ".q{background:#eef;padding:8px}</style></head><body><h1>Scalette, versione 2</h1>"
+        "<p>Per ognuna: è utile per partire (sì/no)? Le proposte finali sono quelle giuste per questa "
+        "lezione (sì/no)? Che cosa cambieresti?</p>" + "".join(sections) + "</body></html>"
+    )
+    (out / "scalette_v2.html").write_text(page, encoding="utf-8")
+    print(text)
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--out", required=True)
@@ -107,6 +179,9 @@ def main() -> int:
         "--baseline", required=True, help="grezzi.json of a replay run with the whole lessons"
     )
     parser.add_argument("--baseline-config", default="claude-sonnet-5.5 · low")
+    parser.add_argument(
+        "--outline-only", action="store_true", help="only the outline, read on its own"
+    )
     args = parser.parse_args()
     out = Path(args.out).resolve()
     if REPO_ROOT in out.parents:
@@ -129,9 +204,11 @@ def main() -> int:
 
     async def run_all():
         client = config.openai.get_async_client()
-        return await asyncio.gather(*(prototype(client, c) for c in cases))
+        return await asyncio.gather(*(prototype(client, c, args.outline_only) for c in cases))
 
     results = asyncio.run(run_all())
+    if args.outline_only:
+        return outline_report(out, cases, results, baseline)
 
     rows = []
     for case, res in zip(cases, results, strict=True):

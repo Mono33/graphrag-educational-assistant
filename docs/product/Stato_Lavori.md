@@ -2788,8 +2788,11 @@ sono su due righe, come nel caso reale.
   intuitiva, da sviluppare. Difetti visti: una scaletta troppo lunga ha tagliato le
   proposte «Cosa sviluppo adesso?» (2); una segue la conversazione precedente
   invece della richiesta (3); lingue mischiate, scaletta in inglese e proposte in
-  italiano (9). Prossimo passo: versione 2 del prototipo con brevità garantita,
-  lingua della lezione, proposte specifiche.
+  italiano (9). **Versione 2** (`prototype_outline_first.py --outline-only`):
+  brevità imposta, lingua della lezione anche nei titoli, basata sull'ultima
+  richiesta, proposte specifiche. Sulle stesse 9 richieste: $0,032 (-45% rispetto
+  alla lezione intera), 5 s, 175 parole in media (max 207), proposte presenti e
+  numerate 9/9; la 9 ora è tutta in inglese. Pagina da leggere per Angelo.
 - **Writer asciutto**: la pagina mostrava solo la versione A (etichetta sbagliata
   nel generatore); rigenerata, lettura da rifare.
 
