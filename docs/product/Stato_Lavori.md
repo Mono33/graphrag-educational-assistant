@@ -2874,3 +2874,28 @@ $0,10/$0,50 per milione di token contro $2/$10 di Sonnet 5.5.
   prime lezioni vere: troncamenti, citazioni tolte dal giudice, giudizi del Critic.
 - Lo staging legge il suo `.env` sulla VM (repo cloud-infra): lì il cambio va
   fatto a parte.
+
+### 2026-10-13 — Il giudice delle citazioni chiede Google per primo
+
+Misure del giorno (120 coppie vere): con un server fisso la cache delle
+istruzioni del giudice passa dal 47% al 52% dell'input (−10% sul costo), e nelle
+tracce delle prove di Angelo il 37% delle chiamate dopo la prima la riscriveva
+invece di leggerla (in un turno 14 su 15), al doppio del costo. Il conto ha la
+conservazione zero dei dati: per Sonnet 5.5 restano Google Vertex (global) e
+Amazon Bedrock.
+
+- `AIX_CITATION_CHECK_PROVIDER`, predefinito `google-vertex/global`: le chiamate
+  del giudice chiedono a OpenRouter quel server per primo, con gli altri di
+  riserva (`allow_fallbacks`). Stesso prezzo per token. Vuoto o `none` lascia
+  decidere OpenRouter; mai mandato a un endpoint che non sia OpenRouter.
+- Da verificare su Langfuse nelle prime sessioni: chiamate del giudice che
+  scrivono la cache dopo la prima del turno (`input_cache_write_tokens`), che
+  dovrebbero scendere verso zero.
+- Provati e scartati lo stesso giorno: Haiku 5.5, Qwen 3.8 27B, DeepSeek V4.1
+  Flash e V4 Pro come giudice o come pianificatore, e tutte le coppie di un
+  turno in una chiamata sola (dettagli sul branch `feature/section-edits-optional`).
+- Prova dal vivo, 4 coppie: OpenRouter accetta il campo e manda tutto a Google,
+  ma delle 3 chiamate parallele dopo la prima solo 1 legge la cache. Una parte
+  dei mancati colpi avviene dentro Google: il server fisso ne toglie una parte,
+  non tutti. Se Langfuse lo conferma, la leva successiva è un breve intervallo
+  dopo la prima chiamata, perché la cache sia pronta prima delle altre.

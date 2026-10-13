@@ -381,6 +381,31 @@ def _model() -> str:
     return os.getenv("AIX_CITATION_CHECK_MODEL") or app_config.openai.model
 
 
+#: The provider the judge's calls go to first. The instructions are read from the
+#: provider's cache only on the server that wrote it, and with free routing a
+#: third of the calls after the first wrote it again instead (14 of 15 in one turn
+#: of 2026-10-13), each costing twice a read. Same price per token; with
+#: fallbacks, a provider that is down only means the next one.
+_DEFAULT_PROVIDER = "google-vertex/global"
+
+
+def _provider_routing() -> Optional[dict]:
+    """``{"order": [...], "allow_fallbacks": True}`` for OpenRouter, or ``None``.
+
+    ``AIX_CITATION_CHECK_PROVIDER`` empty or ``none`` leaves the routing to
+    OpenRouter; any other endpoint than OpenRouter is never sent the field.
+    """
+    from aix.core.config import config as app_config
+
+    raw = os.getenv("AIX_CITATION_CHECK_PROVIDER")
+    provider = (_DEFAULT_PROVIDER if raw is None else raw).strip()
+    if not provider or provider.lower() == "none":
+        return None
+    if "openrouter" not in (app_config.openai.base_url or ""):
+        return None
+    return {"order": [provider], "allow_fallbacks": True}
+
+
 async def _verdict(pair: dict[str, Any], client: Any, *, mark: bool) -> str:
     """The verdict on one pair, remembered: temperature 0, so the same pair says the same.
 
@@ -413,7 +438,9 @@ async def _ask(pair: dict[str, Any], client: Any, *, mark: bool) -> Optional[str
     from aix.core.config import reasoning_extra_body
 
     # One word to answer: Claude 5 needs no thinking budget for it (see config).
-    extra = reasoning_extra_body(model)
+    extra = dict(reasoning_extra_body(model) or {})
+    if routing := _provider_routing():
+        extra["provider"] = routing
     try:
         response = await client.chat.completions.create(
             model=model,

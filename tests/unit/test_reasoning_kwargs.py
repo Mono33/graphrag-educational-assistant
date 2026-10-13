@@ -131,7 +131,7 @@ async def test_the_citation_judge_passes_the_effort(monkeypatch):
     client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
     await citation_support.judge([{"claim": "c", "passage": "p"}], client)
 
-    assert sent["extra_body"] == {"reasoning": {"effort": "low"}}
+    assert sent["extra_body"]["reasoning"] == {"effort": "low"}
     assert sent["temperature"] == 0
 
 

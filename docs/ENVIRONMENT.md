@@ -132,6 +132,7 @@ dimenticata serviva il prodotto vecchio senza che nessuno se ne accorgesse.
 | `AIX_VALIDATOR_MAX_RETRIES` | `2` | Riscritture che il validatore può chiedere |
 | `AIX_CITATION_CHECK_ENABLED` | `true` | Verifica che il passaggio citato sostenga la frase, e toglie il riferimento quando non lo sostiene (la frase resta). Costa una chiamata al modello, e **solo** se la bozza contiene citazioni ai materiali privati |
 | `AIX_CITATION_CHECK_MODEL` | come `LLM_MODEL` | Modello diverso per quella verifica. Negli esempi `anthropic/claude-sonnet-5.5`: il Writer è Haiku, il giudice resta Sonnet |
+| `AIX_CITATION_CHECK_PROVIDER` | `google-vertex/global` | Il server OpenRouter a cui la verifica delle citazioni si rivolge per primo (gli altri restano di riserva). Le istruzioni del giudice si leggono dalla cache solo sul server che l'ha scritta: con l'instradamento libero, il 2026-10-13, un terzo delle chiamate la riscriveva (costo doppio). Stesso prezzo per token. Con il conto a conservazione zero dei dati, per Sonnet 5.5 restano solo Google Vertex (global) e Amazon Bedrock. Vuoto o `none`: decide OpenRouter |
 
 ### Tracciamento (Langfuse)
 

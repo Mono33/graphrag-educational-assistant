@@ -116,6 +116,37 @@ async def test_the_instructions_are_one_marked_block_and_the_pair_is_not(marked)
     assert head["text"] + tail["text"] == citation_support._PROMPT.format(claim="c2", passage="p2")
 
 
+async def test_the_judge_asks_for_one_provider_first_and_keeps_its_reasoning(marked, monkeypatch):
+    monkeypatch.delenv("AIX_CITATION_CHECK_PROVIDER", raising=False)
+    seen = {}
+
+    async def create(**kwargs):
+        seen.update(kwargs)
+        return _answer("supported")
+
+    await citation_support.judge([{"claim": "c", "passage": "p"}], _client(create))
+
+    assert seen["extra_body"]["provider"] == {
+        "order": ["google-vertex/global"],
+        "allow_fallbacks": True,
+    }
+    assert seen["extra_body"]["reasoning"] == {"effort": "low"}
+
+
+@pytest.mark.parametrize("value", ["", "none"])
+async def test_the_provider_can_be_left_to_openrouter(marked, monkeypatch, value):
+    monkeypatch.setenv("AIX_CITATION_CHECK_PROVIDER", value)
+    seen = {}
+
+    async def create(**kwargs):
+        seen.update(kwargs)
+        return _answer("supported")
+
+    await citation_support.judge([{"claim": "c", "passage": "p"}], _client(create))
+
+    assert "provider" not in seen.get("extra_body", {})
+
+
 async def test_fewer_than_three_citations_are_sent_as_plain_text(marked):
     seen = {}
 
