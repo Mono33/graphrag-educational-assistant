@@ -2899,3 +2899,20 @@ Amazon Bedrock.
   dei mancati colpi avviene dentro Google: il server fisso ne toglie una parte,
   non tutti. Se Langfuse lo conferma, la leva successiva è un breve intervallo
   dopo la prima chiamata, perché la cache sia pronta prima delle altre.
+
+### 2026-10-14 — Test: meno doppioni (portato da `feature/section-edits-optional`)
+
+Richiesta di Angelo: oltre 1.000 test, togliere i ridondanti e i vecchi. Qui da
+1.079 a **998**, tutti verdi.
+
+- **Tolti:** i test di script usati una volta (migrazione SQLite→Postgres del
+  5/10, benchmark dei parser del 14/9); quelli del corrective RAG, che il pilota
+  tiene spento; i doppioni delle strade «flag spento» (resta un test per
+  interruttore, e `test_feature_defaults.py` legge tutti i default); i casi
+  parametrizzati che ripetevano lo stesso ramo.
+- **Tenuti:** sicurezza (CSRF, sanificazione, IDOR, nomi di file pericolosi), i
+  casi normali «senza allegati / senza profilo», il controllo degli asset Docker
+  (ora 1 test invece di 8).
+- Il tempo che resta è distribuito (~0,04 s a test, quasi tutto per creare il
+  database di prova): per scendere ancora servirebbe eseguirli in parallelo
+  (`pytest-xdist`), non toglierne altri.

@@ -72,17 +72,16 @@ def test_partition_invents_nothing():
         ("error", "a stale error short-circuits every node before it runs"),
         ("approved", "a previous approval would end the new turn immediately"),
         ("lesson_plan_draft", "write_node would revise a stale draft instead of writing"),
-        ("retrieval_attempts", "a spent corrective-RAG budget would carry over"),
     ],
 )
 def test_load_bearing_keys_are_reset_every_turn(key, why):
     assert key in _keys(AgentInput), f"{key} must reset per turn: {why}"
 
 
-@pytest.mark.parametrize("key", sorted(PERSISTED_ACROSS_TURNS))
-def test_create_initial_state_does_not_null_the_persisted_keys(key):
+def test_create_initial_state_does_not_null_the_persisted_keys():
     """The reset used to happen here, by spelling out every output as None."""
-    assert key not in create_initial_state(query="q")
+    nulled = PERSISTED_ACROSS_TURNS & set(create_initial_state(query="q"))
+    assert not nulled, f"persisted keys reset by a new turn: {sorted(nulled)}"
 
 
 # ---------------------------------------------------------------------------
@@ -94,8 +93,6 @@ def test_create_initial_state_does_not_null_the_persisted_keys(key):
     "current, update, expected",
     [
         ("start", "plan_complete", "plan_complete"),
-        ("plan_complete", "retrieve_complete", "retrieve_complete"),
-        ("write_complete", "critique_complete", "critique_complete"),
         # The revision loop walks back to the writer; the marker does not.
         ("critique_complete", "write_complete", "critique_complete"),
         # Failure outranks every stage, whichever side it arrives on.

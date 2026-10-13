@@ -202,11 +202,6 @@ async def test_pipeline_and_orchestrator_expose_the_shared_graph(monkeypatch):
         ),
         ({"approved": True}, "finish", "the critic approved"),
         (
-            {"approved": False, "revision_count": 0, "max_revisions": 2},
-            "revise",
-            "budget left, so loop back to the writer",
-        ),
-        (
             {"approved": False, "revision_count": 2, "max_revisions": 2},
             "revise",
             "the second of two permitted revisions (the count includes this rejection)",
@@ -215,11 +210,6 @@ async def test_pipeline_and_orchestrator_expose_the_shared_graph(monkeypatch):
             {"approved": False, "revision_count": 3, "max_revisions": 2},
             "finish",
             "ceiling reached — ship the draft rather than loop",
-        ),
-        (
-            {"approved": False, "revision_count": 5, "max_revisions": 2},
-            "finish",
-            "past the ceiling behaves like the ceiling",
         ),
         (
             {"approved": False, "revision_count": 1, "max_revisions": 0},
