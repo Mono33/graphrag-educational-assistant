@@ -45,6 +45,7 @@ FEATURE_FLAGS_OFF = {
     # .env must not change what the suite plans with. Empty is today's behavior.
     "AIX_PLANNER_MODEL": "",
     "AIX_LIGHT_TOOLS_ENABLED": "false",
+    "AIX_WRITER_GRAPH_RELATIONS": "false",
 }
 
 #: On by default since before 2026-10-05, and tested at their default.

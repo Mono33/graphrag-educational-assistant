@@ -283,6 +283,40 @@ _CONTINUATION_INSTRUCTION = (
 )
 
 
+def graph_relations_enabled() -> bool:
+    """``AIX_WRITER_GRAPH_RELATIONS``: the graph's relationships reach the Writer. Off until measured."""
+    raw = os.getenv("AIX_WRITER_GRAPH_RELATIONS")
+    return bool(raw) and raw.strip().lower() in ("1", "true", "yes", "on")
+
+
+def _format_relationships(relationships: Optional[list], max_relations: int = 15) -> str:
+    """The graph's relationships as short lines: who suggests, mitigates or supports what.
+
+    Retrieved on every search and, until 2026-10-13, never shown to the Writer:
+    it saw node names and descriptions but not that, say, an ADHD profile
+    SUGGESTS movement breaks. A few lines carry the structure of the graph.
+    """
+    lines: list[str] = []
+    seen: set[tuple[str, str, str]] = set()
+    for rel in relationships or []:
+        if not isinstance(rel, dict):
+            continue
+        triple = (
+            str(rel.get("source") or "").strip(),
+            str(rel.get("type") or rel.get("relationship") or "").strip(),
+            str(rel.get("target") or "").strip(),
+        )
+        if not all(triple) or triple in seen:
+            continue
+        seen.add(triple)
+        lines.append(f"- {triple[0]} —{triple[1]}→ {triple[2]}")
+        if len(lines) >= max_relations:
+            break
+    if not lines:
+        return ""
+    return "\n\n### Relazioni nel Knowledge Graph\n" + "\n".join(lines)
+
+
 class WriterAgent:
     """
     Writer Agent - Generates educational content adapted to query intent.
@@ -454,6 +488,8 @@ class WriterAgent:
 
         # Format retrieved nodes for prompt
         nodes_text = self._format_nodes(retrieval_result.nodes)
+        if graph_relations_enabled():
+            nodes_text += _format_relationships(getattr(retrieval_result, "relationships", None))
         recommendations_text = self._format_recommendations(retrieval_result.recommendations)
         key_concepts_text = ", ".join(plan.key_concepts) if plan.key_concepts else "Not specified"
 
