@@ -43,7 +43,7 @@ import replay_sonnet_settings as replay  # noqa: E402
 
 MODEL = "anthropic/claude-sonnet-5.5"
 
-#: Version 2 (2026-10-13), after Angelo's reading of version 1: one outline was so
+#: Version 3 (2026-10-13). v2 fixed what Angelo saw in v1: one outline so
 #: long the next steps were cut off; one followed the earlier conversation instead
 #: of the request; one mixed English and Italian.
 OUTLINE_RULE = (
@@ -55,8 +55,15 @@ OUTLINE_RULE = (
     "2. Objectives: at most 3 bullets, at most 12 words each.\n"
     "3. Structure: one line per section or activity, at most 15 words each, with its minutes.\n"
     "4. Last, always, a heading that asks what to develop next (Italian: «Cosa sviluppo adesso?»; "
-    "English: «What should I develop next?») and 3 numbered proposals specific to THIS lesson "
-    "(name the activity, the check or the adaptation), one line each, the most useful first.\n"
+    "English: «What should I develop next?») and 3 numbered proposals specific to THIS lesson, "
+    "one line each, in this order -- a path from discovery to depth:\n"
+    "   1) the obvious next step: develop the structure above into the full lesson;\n"
+    "   2) a deepening of something the outline names but does not explain (a concept, a "
+    "source, a passage of the attached material);\n"
+    "   3) one option off the beaten track: a different way to explain the key concept, or a "
+    "map of the lesson (a diagram of its concepts and how they connect).\n"
+    "   Do not propose adaptations for students with special needs yet: they come once the "
+    "lesson is developed.\n"
     "The whole answer stays under 180 words, so the proposals are never cut off."
 )
 

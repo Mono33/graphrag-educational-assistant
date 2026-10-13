@@ -2793,8 +2793,19 @@ sono su due righe, come nel caso reale.
   richiesta, proposte specifiche. Sulle stesse 9 richieste: $0,032 (-45% rispetto
   alla lezione intera), 5 s, 175 parole in media (max 207), proposte presenti e
   numerate 9/9; la 9 ora è tutta in inglese. Pagina da leggere per Angelo.
-- **Writer asciutto**: la pagina mostrava solo la versione A (etichetta sbagliata
-  nel generatore); rigenerata, lettura da rifare.
+- **Writer asciutto**: lettura alla cieca di 9 lezioni: preferita la versione di
+  oggi in 5, l'asciutta in 3, una pari. Con un risparmio del solo 10%, **non si
+  applica**. Togliere la storia ripetuta resta da misurare da solo, senza il
+  vincolo di lunghezza.
+- **Scalette v2 lette da Angelo**: utili per partire 9/9, proposte giuste 7/9.
+  Cosa manca, nelle sue parole: il passo ovvio («sviluppa la struttura»), un
+  percorso logico scoperta → sviluppo → approfondimento, almeno una proposta fuori
+  dallo standard (modi diversi di spiegare, mappa della lezione), nessun
+  adattamento BES finché la lezione è da sviluppare. **Versione 3** con queste
+  regole: 9/9 seguono l'ordine (struttura, approfondimento specifico spesso legato
+  ai documenti, mappa o approccio diverso), $0,032, 5 s, 171 parole. Restano: la
+  terza proposta è quasi sempre una mappa (8/9); in un caso gli adattamenti ADHD
+  rientrano nell'approfondimento.
 
 ## Un difetto preesistente trovato il 2026-09-11 — chiuso
 
