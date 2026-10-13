@@ -2743,6 +2743,41 @@ applicato a ogni occorrenza. Un test esistente metteva due frasi sulla stessa
 riga e si aspettava due verdetti diversi da due domande identiche: ora le frasi
 sono su due righe, come nel caso reale.
 
+### 2026-10-13 — Misure delle leve: Writer asciutto, scaletta, strumenti nella lezione leggera
+
+- **Writer asciutto** (replay di 9 chiamate vere, `#storia+grafo+lunghezza`): -10%
+  di costo sia nel Writer nel grafo sia nell'ibrido; lezioni del 7–16% più corte
+  (erano già vicine al limite di 1.600 parole). Critic 4,20 contro 4,13 (grafo),
+  4,07 contro 4,37 (ibrida). Lettura alla cieca di Angelo in attesa prima di
+  implementarlo.
+- **Lezione leggera progressiva** (solo le sezioni pertinenti): sui 25 turni
+  leggeri veri toglie solo il 5% dell'input. La lezione è il 21% dell'input di un
+  turno leggero; **i passaggi dei documenti il 70%**, cercati a ogni turno anche
+  per domande che non li riguardano. Non implementata nel flusso: il modulo
+  `lesson_outline` resta per la scaletta e gli strumenti.
+- **Strumenti nella lezione leggera** (`AIX_LIGHT_TOOLS_ENABLED`, spento): stessa
+  lezione con documenti, 5 richieste tipiche (`measure_light_turns.py` nel
+  container, costi da Langfuse): **$0,247 → $0,186 (-25%)**. Le domande che non
+  riguardano i documenti costano dal 36 al 77% in meno e il primo token arriva in
+  0,9–3,6 s invece di 5–10 s; la domanda sui documenti costa il 42% in più (un
+  giro di ricerca, e la risposta cita 15 passaggi invece di 7). Qualità delle
+  risposte da provare nella WebUI prima di accenderlo.
+- **Prima la scaletta** (`prototype_outline_first.py`, 9 richieste vere): la
+  scaletta da sola costa il 36% in meno e arriva in 9 s invece di 25; scaletta +
+  una sezione costa il 64% in più della lezione intera, perché il secondo passo
+  rimanda tutto l'input (documenti compresi) e la cache del provider ne ha letto
+  solo il system. L'output incrementale conviene solo se i passi successivi
+  ricevono i soli materiali della loro sezione (strumenti).
+- **Planner su Gemini 3.5 Flash** con sforzo `low` (`compare_role_models.py
+  planner --retrieval`): lingua 30/30, intento 27/30, scope 29/30, fuori tema 4/5
+  (l'equazione di secondo grado), sovrapposizione del grafo 41%; più lento di
+  Sonnet 5.5 low (7,2 s contro 3,4). Il rumore di Sonnet contro se stesso è in
+  misura prima di decidere.
+- I Gemini Flash/Pro ragionano per default: ora ricevono `effort: low` (-18% su
+  un piano vero); i -lite (Critic, traduzione) no, perché non ragionano.
+- Lo stato salvato non contiene più `graphrag_results`, una copia per ricerca
+  mai letta da nessuno.
+
 ## Un difetto preesistente trovato il 2026-09-11 — chiuso
 
 *Chiuso nella PR 5: `_legacy_read` trasforma un PDF illeggibile in un `ValueError` con un messaggio in italiano, e la docente riceve un 422 leggibile invece di un 500. Il testo sotto resta come registro.*
