@@ -40,6 +40,9 @@ def thinking_effort() -> Optional[str]:
 #: gemini-3.5-flash used 680 reasoning tokens by default, 439 with low (-18%).
 #: The -lite models do not think either way and are left alone (2026-10-13).
 _THINKING_GEMINI = re.compile(r"gemini-[3-9][\d.]*-(flash|pro)(?!-lite)")
+#: Qwen 3.x thinks by default and reads the effort: on a three-sentence answer
+#: qwen3.8-27b used 192 reasoning tokens by default, 112 with low (2026-10-13).
+_THINKING_QWEN = re.compile(r"qwen3\.\d")
 #: Mistral Large 4 reasons by default too, and with ``effort: low`` even more
 #: (truncated lessons, 100+ s, invalid JSON in the 2026-10-12 replay); on a
 #: three-sentence answer it spent 936 reasoning tokens and returned nothing
@@ -52,9 +55,11 @@ def is_adaptive_claude(model: Optional[str]) -> bool:
 
 
 def takes_effort(model: Optional[str]) -> bool:
-    """A model that reasons on its own and reads ``reasoning.effort``: Claude 5.x, Gemini 3+ Flash/Pro."""
+    """A model that reasons on its own and reads ``reasoning.effort``: Claude 5.x,
+    Gemini 3+ Flash/Pro, Qwen 3.x."""
     return is_adaptive_claude(model) or (
-        bool(model) and bool(_THINKING_GEMINI.search(model.lower()))
+        bool(model)
+        and bool(_THINKING_GEMINI.search(model.lower()) or _THINKING_QWEN.search(model.lower()))
     )
 
 

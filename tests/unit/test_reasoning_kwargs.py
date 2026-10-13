@@ -165,3 +165,7 @@ def test_mistral_large_4_is_told_not_to_reason(model):
 
 def test_older_mistral_is_left_alone():
     assert reasoning_extra_body("mistralai/mistral-large-2512") is None
+
+
+def test_qwen_3_gets_the_effort():
+    assert reasoning_extra_body("qwen/qwen3.8-27b") == {"reasoning": {"effort": "low"}}

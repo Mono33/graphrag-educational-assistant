@@ -2832,4 +2832,9 @@ nulla, come per gli altri). Haiku 5.5 riceve già `effort: low` come Sonnet 5.5.
 Nello stack locale (`deploy/.env.local`, non in git): `LLM_MODEL` sul modello in
 prova, planner e giudice delle citazioni fissati su Sonnet 5.5
 (`AIX_PLANNER_MODEL`, `AIX_CITATION_CHECK_MODEL`), così cambia solo chi scrive:
-Writer e risposte in chat. Test: `tests/unit/test_reasoning_kwargs.py` (+3).
+Writer e risposte in chat. Test: `tests/unit/test_reasoning_kwargs.py` (+4).
+
+Aggiunto su richiesta di Angelo **Qwen 3.8 27B** (`qwen/qwen3.8-27b`, $0,04/$2,30
+per milione): ragiona di default (192 token su una risposta di tre frasi), con
+`effort: low` 112 e la risposta resta buona; ora i Qwen 3.x ricevono l'effort
+come Claude 5.x e Gemini 3+.
