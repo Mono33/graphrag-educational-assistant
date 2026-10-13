@@ -35,8 +35,22 @@ def thinking_effort() -> Optional[str]:
     return None if raw == "default" else raw
 
 
+#: Gemini 3+ Flash and Pro think by default and cannot be told not to ("reasoning
+#: is mandatory"); the effort still trims it: on a real Planner request
+#: gemini-3.5-flash used 680 reasoning tokens by default, 439 with low (-18%).
+#: The -lite models do not think either way and are left alone (2026-10-13).
+_THINKING_GEMINI = re.compile(r"gemini-[3-9][\d.]*-(flash|pro)(?!-lite)")
+
+
 def is_adaptive_claude(model: Optional[str]) -> bool:
     return bool(model) and bool(_ADAPTIVE_CLAUDE.search(model.lower()))
+
+
+def takes_effort(model: Optional[str]) -> bool:
+    """A model that reasons on its own and reads ``reasoning.effort``: Claude 5.x, Gemini 3+ Flash/Pro."""
+    return is_adaptive_claude(model) or (
+        bool(model) and bool(_THINKING_GEMINI.search(model.lower()))
+    )
 
 
 def reasoning_extra_body(model: Optional[str]) -> Optional[dict]:
@@ -49,7 +63,7 @@ def reasoning_extra_body(model: Optional[str]) -> Optional[dict]:
     less, took 39 s instead of 91 and came back whole. ``AIX_THINKING_EFFORT``
     was already ``low``; it only reached the Claude 4 family below.
     """
-    if not is_adaptive_claude(model):
+    if not takes_effort(model):
         return None
     effort = thinking_effort()
     return {"reasoning": {"effort": effort}} if effort else None

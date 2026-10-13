@@ -141,3 +141,15 @@ def test_the_pattern_reads_versions_not_substrings():
     assert not config_module.is_adaptive_claude("anthropic/claude-sonnet-4-6")
     assert not config_module.is_adaptive_claude("anthropic/claude-haiku-4.5")
     assert not config_module.is_adaptive_claude(None)
+
+
+@pytest.mark.parametrize("model", ["google/gemini-3.5-flash", "google/gemini-3.5-pro"])
+def test_gemini_flash_and_pro_get_the_effort(model):
+    """They think by default and cannot be switched off; low trims it (-18% on a real plan)."""
+    assert reasoning_extra_body(model) == {"reasoning": {"effort": "low"}}
+
+
+@pytest.mark.parametrize("model", ["google/gemini-3.5-flash-lite", "google/gemini-3.1-flash-lite"])
+def test_gemini_lite_is_left_alone(model):
+    """The Critic and the translation run on these: they do not think, nothing is sent."""
+    assert reasoning_extra_body(model) is None
