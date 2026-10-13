@@ -46,8 +46,10 @@ _THINKING_QWEN = re.compile(r"qwen3\.\d")
 #: Mistral Large 4 reasons by default too, and with ``effort: low`` even more
 #: (truncated lessons, 100+ s, invalid JSON in the 2026-10-12 replay); on a
 #: three-sentence answer it spent 936 reasoning tokens and returned nothing
-#: within 800 (2026-10-13). It is switched off: ``reasoning.enabled=false``.
-_THINKING_MISTRAL = re.compile(r"mistral-large-[4-9](?!\d)")
+#: within 800 (2026-10-13). DeepSeek V4 likewise: 220 reasoning tokens by
+#: default, 310 with low, 0 off with the same answer (2026-10-13). Both are
+#: switched off: ``reasoning.enabled=false``.
+_REASONING_OFF = re.compile(r"mistral-large-[4-9](?!\d)|deepseek-v4")
 
 
 def is_adaptive_claude(model: Optional[str]) -> bool:
@@ -64,7 +66,7 @@ def takes_effort(model: Optional[str]) -> bool:
 
 
 def reasoning_extra_body(model: Optional[str]) -> Optional[dict]:
-    """The reasoning setting a Claude 5.x, Gemini 3+ or Mistral Large 4 call needs, or ``None``.
+    """The reasoning setting a model that thinks on its own needs, or ``None``.
 
     Claude 5 thinks by default, and as much as it likes. On 2026-10-07 that was
     ~117k reasoning tokens in a week of rehearsals (a fifth of the bill, billed
@@ -74,7 +76,7 @@ def reasoning_extra_body(model: Optional[str]) -> Optional[dict]:
     was already ``low``; it only reached the Claude 4 family below.
     """
     effort = thinking_effort()
-    if model and _THINKING_MISTRAL.search(model.lower()):
+    if model and _REASONING_OFF.search(model.lower()):
         return {"reasoning": {"enabled": False}} if effort else None
     if not takes_effort(model):
         return None

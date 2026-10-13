@@ -155,8 +155,11 @@ def test_gemini_lite_is_left_alone(model):
     assert reasoning_extra_body(model) is None
 
 
-@pytest.mark.parametrize("model", ["mistralai/mistral-large-4-0", "mistralai/mistral-large-5"])
-def test_mistral_large_4_is_told_not_to_reason(model):
+@pytest.mark.parametrize(
+    "model",
+    ["mistralai/mistral-large-4-0", "mistralai/mistral-large-5", "deepseek/deepseek-v4.1-flash"],
+)
+def test_mistral_large_4_and_deepseek_v4_are_told_not_to_reason(model):
     """By default it spent its whole budget reasoning and answered nothing (2026-10-13)."""
     assert reasoning_extra_body(model) == {"reasoning": {"enabled": False}}
     kwargs = config.openai.build_completion_kwargs(model_override=model)

@@ -2838,3 +2838,7 @@ Aggiunto su richiesta di Angelo **Qwen 3.8 27B** (`qwen/qwen3.8-27b`, $0,04/$2,3
 per milione): ragiona di default (192 token su una risposta di tre frasi), con
 `effort: low` 112 e la risposta resta buona; ora i Qwen 3.x ricevono l'effort
 come Claude 5.x e Gemini 3+.
+
+E **DeepSeek V4.1 Flash** (`deepseek/deepseek-v4.1-flash`, $0,15/$0,60): come
+Mistral, con `effort: low` ragiona di più (310 token contro 220 di default);
+spento risponde uguale con 0. Ora i DeepSeek V4 hanno il ragionamento spento.
