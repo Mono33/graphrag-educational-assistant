@@ -22,7 +22,8 @@ Run from the repo root, with the ``.env`` keys (OpenRouter, Langfuse)::
 
     python scripts/eval/replay_sonnet_settings.py --out /tmp/aix_replay
     python scripts/eval/replay_sonnet_settings.py --out /tmp/x --dry-run   # what would be replayed
-    # other models: model@effort, the first is the reference
+    # other models: model@effort, the first is the reference; #storia+grafo+lunghezza
+    # applies a leaner prompt to the recorded call (see apply_transforms)
     python scripts/eval/replay_sonnet_settings.py --out /tmp/x \\
         --configs anthropic/claude-sonnet-5.5@low,mistralai/mistral-large-4-0@low
 """
@@ -74,6 +75,98 @@ REVISION_OPENING = "Please revise the content based on the critic's feedback"
 LESSON_KINDS = ("writer", "ibrida", "revisione")
 
 MARKER = re.compile(r"\[\[material:[^\]]*\]\]")
+
+# ---------------------------------------------------------------------------
+# Transforms: what a leaner prompt would look like, applied to recorded calls
+# ---------------------------------------------------------------------------
+
+LENGTH_RULE = (
+    "\n\n**LENGTH (overrides the domain guidance above)**: the whole lesson stays within "
+    "1,600 words (about 8,000 characters). Objectives: at most 4 bullets. Materials: one line "
+    "each. Each activity: at most 6 short steps. Differentiation: at most 4 bullets. Where the "
+    "domain guidance asks for more (a tool for every process, barriers, approaches to avoid), "
+    "keep only the one or two that matter most for this class."
+)
+
+
+def _short_history(user: str) -> str:
+    """Only the last exchange of the conversation, its answer cut to 600 characters."""
+    start = user.find("## Conversazione precedente")
+    end = user.find("## Nuova richiesta del docente")
+    if start < 0 or end < 0:
+        return user
+    turns = re.split(r"(?=### Turno \d+ — Docente)", user[start:end])
+    last = turns[-1]
+    head, _, answer = last.partition("— Risposta dell'assistente")
+    if answer:
+        last = head + "— Risposta dell'assistente" + answer[:600].rstrip() + "\n…\n\n"
+    return user[:start] + "## Conversazione precedente\n\n" + last + user[end:]
+
+
+def _compact_graph(user: str, nodes: int = 12, strategies: int = 6) -> str:
+    """At most ``nodes`` retrieved concepts and ``strategies`` strategy headings."""
+
+    def keep(text: str, header: str, item: str, limit: int) -> str:
+        i = text.find(header)
+        if i < 0:
+            return text
+        j = text.find("\n## ", i + len(header))
+        j = len(text) if j < 0 else j
+        block = text[i:j]
+        parts = re.split(f"(?={re.escape(item)})", block)
+        return text[:i] + "".join(parts[: limit + 1]).rstrip() + "\n\n" + text[j:].lstrip("\n")
+
+    user = keep(user, "### Retrieved Concepts", "- **", nodes)
+    return keep(user, "## Pedagogical Strategies", "\n### ", strategies + 1)
+
+
+_LESSON_OPENING = "## La lezione (documento di lavoro)"
+_AFTER_LESSON = (
+    "\n## Materiale della docente",
+    "\n## La conversazione finora",
+    "\n## La richiesta della docente",
+)
+
+
+def _progressive_lesson(user: str) -> str:
+    """A light turn's lesson as outline + the sections the request is about (see lesson_outline)."""
+    from aix.webui.agent import lesson_outline as lo
+
+    start = user.find(_LESSON_OPENING)
+    if start < 0:
+        return user
+    body_start = start + len(_LESSON_OPENING)
+    ends = [i for i in (user.find(m, body_start) for m in _AFTER_LESSON) if i >= 0]
+    end = min(ends) if ends else len(user)
+    request = user.rsplit("## La richiesta della docente", 1)[-1]
+    sections = lo.split_sections(user[body_start:end])
+    chosen = lo.pick(sections, request)
+    if not chosen:
+        return user
+    return (
+        user[:start]
+        + lo.outline(sections)
+        + "\n"
+        + lo.chosen_sections(sections, chosen)
+        + user[end:]
+    )
+
+
+def apply_transforms(messages: list, names: list[str]) -> list:
+    out = []
+    for m in messages:
+        content = _text(m.get("content"))
+        if m.get("role") == "user":
+            if "storia" in names:
+                content = _short_history(content)
+            if "grafo" in names:
+                content = _compact_graph(content)
+            if "progressiva" in names:
+                content = _progressive_lesson(content)
+        if m.get("role") == "system" and "lunghezza" in names:
+            content = content + LENGTH_RULE
+        out.append({**m, "content": content})
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -173,9 +266,15 @@ def fetch_cases(source_model: str, wanted: dict[str, int]) -> list[dict]:
 
 
 async def replay(client, case: dict, model: str, effort: str | None) -> dict:
+    transforms = []
+    if effort and "#" in effort:
+        effort, _, names = effort.partition("#")
+        transforms = names.split("+")
+        effort = effort or None
+    messages = apply_transforms(case["messages"], transforms) if transforms else case["messages"]
     kwargs = {
         "model": model,
-        "messages": case["messages"],
+        "messages": messages,
         "max_tokens": case["max_tokens"],
         "temperature": case["temperature"],
     }
@@ -195,6 +294,7 @@ async def replay(client, case: dict, model: str, effort: str | None) -> dict:
     details = getattr(usage, "completion_tokens_details", None)
     return {
         "ok": True,
+        "input_chars": sum(len(_text(m.get("content"))) for m in messages),
         "seconds": time.monotonic() - started,
         "cost": getattr(usage, "cost", None) or 0.0,
         "output_tokens": usage.completion_tokens or 0,
@@ -405,7 +505,8 @@ def main() -> int:
         for item in args.configs.split(","):
             model, _, effort = item.strip().partition("@")
             effort = None if effort in ("", "none") else effort
-            CONFIGS.append((f"{model.split('/')[-1]} · {effort or 'come oggi'}", model, effort))
+            label = f"{model.split('/')[-1]} · {(effort or 'come oggi').replace('#', ' + ')}"
+            CONFIGS.append((label, model, effort))
 
     out = Path(args.out).resolve()
     if REPO_ROOT in out.parents or out == REPO_ROOT:
