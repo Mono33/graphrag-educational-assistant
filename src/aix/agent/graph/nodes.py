@@ -474,12 +474,11 @@ async def retrieve_node(state: AgentState) -> dict[str, Any]:
         # Sanitize before storing in AgentState — msgpack (LangGraph checkpointer)
         # cannot serialize numpy scalar types that Neo4j / sklearn may return.
         return {
-            "graphrag_results": _sanitize(
-                [
-                    {"nodes": r.nodes, "relationships": r.relationships}
-                    for r in result.search_results
-                ]
-            ),
+            # Was a per-query copy of nodes and relationships, kept in every
+            # checkpoint and carried across turns, that nothing read: the merged
+            # ``retrieved_*`` below are what every node uses. Written as None so
+            # threads saved before 2026-10-13 drop their old copy too.
+            "graphrag_results": None,
             "retrieved_nodes": _sanitize(result.nodes),
             "retrieved_relationships": _sanitize(result.relationships),
             "recommendations": _sanitize(result.recommendations),

@@ -225,7 +225,7 @@ class AgentState(TypedDict, total=False):
     # ========================================
     # RETRIEVER OUTPUT
     # ========================================
-    graphrag_results: Optional[list[dict[str, Any]]]  # Results from GraphRAG searches
+    graphrag_results: Optional[list[dict[str, Any]]]  # Unused since 2026-10-13: always None (old checkpoints)
     retrieved_nodes: Optional[list[dict[str, Any]]]  # All retrieved nodes
     retrieved_relationships: Optional[list[dict[str, Any]]]  # All relationships
     recommendations: Optional[list[dict[str, Any]]]  # Educational recommendations
