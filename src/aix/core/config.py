@@ -40,6 +40,11 @@ def thinking_effort() -> Optional[str]:
 #: gemini-3.5-flash used 680 reasoning tokens by default, 439 with low (-18%).
 #: The -lite models do not think either way and are left alone (2026-10-13).
 _THINKING_GEMINI = re.compile(r"gemini-[3-9][\d.]*-(flash|pro)(?!-lite)")
+#: Mistral Large 4 reasons by default too, and with ``effort: low`` even more
+#: (truncated lessons, 100+ s, invalid JSON in the 2026-10-12 replay); on a
+#: three-sentence answer it spent 936 reasoning tokens and returned nothing
+#: within 800 (2026-10-13). It is switched off: ``reasoning.enabled=false``.
+_THINKING_MISTRAL = re.compile(r"mistral-large-[4-9](?!\d)")
 
 
 def is_adaptive_claude(model: Optional[str]) -> bool:
@@ -54,7 +59,7 @@ def takes_effort(model: Optional[str]) -> bool:
 
 
 def reasoning_extra_body(model: Optional[str]) -> Optional[dict]:
-    """The reasoning setting a Claude 5.x call needs, or ``None`` for any other model.
+    """The reasoning setting a Claude 5.x, Gemini 3+ or Mistral Large 4 call needs, or ``None``.
 
     Claude 5 thinks by default, and as much as it likes. On 2026-10-07 that was
     ~117k reasoning tokens in a week of rehearsals (a fifth of the bill, billed
@@ -63,9 +68,11 @@ def reasoning_extra_body(model: Optional[str]) -> Optional[dict]:
     less, took 39 s instead of 91 and came back whole. ``AIX_THINKING_EFFORT``
     was already ``low``; it only reached the Claude 4 family below.
     """
+    effort = thinking_effort()
+    if model and _THINKING_MISTRAL.search(model.lower()):
+        return {"reasoning": {"enabled": False}} if effort else None
     if not takes_effort(model):
         return None
-    effort = thinking_effort()
     return {"reasoning": {"effort": effort}} if effort else None
 
 

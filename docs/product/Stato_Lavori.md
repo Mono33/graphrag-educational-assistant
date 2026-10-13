@@ -2818,3 +2818,18 @@ caricato dalla docente diventa un **500**, non un messaggio.
 Non l'ho corretto perché è il percorso legacy, che questa PR ha il compito di
 lasciare intatto. È una riga — trasformare l'eccezione in un `ValueError` con
 un messaggio in italiano, come gli altri controlli di `save_upload`.
+
+### 2026-10-13 — Mistral Large 4 con il ragionamento spento, per la prova in WebUI
+
+Angelo vuole provare da sé in WebUI la generazione con Mistral Large 4 e con
+Haiku 5.5 (nuovo: $0,10/$0,50 per milione di token, contro Haiku 4.5 scartato
+il 12/10). Una chiamata di prova: Mistral Large 4 senza impostazioni ragiona di
+default, ha speso 936 token di ragionamento e non ha restituito nulla entro 800;
+con `reasoning.enabled=false` risponde in 127 token. Ora `reasoning_extra_body`
+lo spegne per Mistral Large 4+ (con `AIX_THINKING_EFFORT=default` non manda
+nulla, come per gli altri). Haiku 5.5 riceve già `effort: low` come Sonnet 5.5.
+
+Nello stack locale (`deploy/.env.local`, non in git): `LLM_MODEL` sul modello in
+prova, planner e giudice delle citazioni fissati su Sonnet 5.5
+(`AIX_PLANNER_MODEL`, `AIX_CITATION_CHECK_MODEL`), così cambia solo chi scrive:
+Writer e risposte in chat. Test: `tests/unit/test_reasoning_kwargs.py` (+3).

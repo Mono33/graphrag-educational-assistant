@@ -153,3 +153,15 @@ def test_gemini_flash_and_pro_get_the_effort(model):
 def test_gemini_lite_is_left_alone(model):
     """The Critic and the translation run on these: they do not think, nothing is sent."""
     assert reasoning_extra_body(model) is None
+
+
+@pytest.mark.parametrize("model", ["mistralai/mistral-large-4-0", "mistralai/mistral-large-5"])
+def test_mistral_large_4_is_told_not_to_reason(model):
+    """By default it spent its whole budget reasoning and answered nothing (2026-10-13)."""
+    assert reasoning_extra_body(model) == {"reasoning": {"enabled": False}}
+    kwargs = config.openai.build_completion_kwargs(model_override=model)
+    assert kwargs["extra_body"] == {"reasoning": {"enabled": False}}
+
+
+def test_older_mistral_is_left_alone():
+    assert reasoning_extra_body("mistralai/mistral-large-2512") is None
