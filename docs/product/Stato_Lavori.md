@@ -2842,3 +2842,12 @@ come Claude 5.x e Gemini 3+.
 E **DeepSeek V4.1 Flash** (`deepseek/deepseek-v4.1-flash`, $0,15/$0,60): come
 Mistral, con `effort: low` ragiona di più (310 token contro 220 di default);
 spento risponde uguale con 0. Ora i DeepSeek V4 hanno il ragionamento spento.
+
+### 2026-10-13 — Uno slot libero non viene mai rifiutato
+
+I 2 test di `test_concurrency_limits.py` che fallivano da sempre su Windows
+segnalavano un difetto vero: con una finestra d'attesa 0 il timer da 1 ms poteva
+scattare prima della richiesta dello slot, e una generazione veniva rifiutata
+con uno slot libero. Ora uno slot libero si prende subito; il timer resta solo
+quando bisogna aspettare, e l'ordine della coda non cambia. In staging l'attesa è
+di 5 s, quindi lì non si presentava. (Portato da `feature/section-edits-optional`.)
