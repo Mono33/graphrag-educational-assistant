@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from aix.agent.agents import planner_agent
+from aix.agent.agents import planner_agent, writer_agent
 from aix.agent.graph import nodes
 from aix.agent.media.media_config import MediaConfig
 from aix.agent.validation import validator
@@ -35,6 +35,8 @@ ON_BY_DEFAULT = {
     "AIX_PROMPT_CACHE_ENABLED": [prompt_cache.enabled],
     "AIX_RESULT_CACHE_ENABLED": [result_cache.enabled],
     "AIX_PLANNER_ESCALATE": [planner_agent.escalate_enabled],
+    # Read blind 2026-10-13: preferred in three lessons out of four.
+    "AIX_WRITER_GRAPH_RELATIONS": [writer_agent.graph_relations_enabled],
 }
 
 
@@ -68,11 +70,9 @@ def test_tracing_is_on_by_default_but_needs_its_keys(monkeypatch):
         "AIX_VALIDATOR_ENABLED",
         "AIX_CORRECTIVE_RAG_ENABLED",
         "AIX_LIGHT_TOOLS_ENABLED",
-        "AIX_WRITER_GRAPH_RELATIONS",
     ],
 )
 def test_what_the_pilot_keeps_off_stays_off(flag, monkeypatch):
-    from aix.agent.agents import writer_agent
     from aix.webui.agent import light_tools
 
     monkeypatch.delenv(flag, raising=False)
@@ -81,6 +81,5 @@ def test_what_the_pilot_keeps_off_stays_off(flag, monkeypatch):
         "AIX_CORRECTIVE_RAG_ENABLED": nodes._corrective_rag_enabled,
         # Until measured on real lessons (2026-10-13).
         "AIX_LIGHT_TOOLS_ENABLED": light_tools.enabled,
-        "AIX_WRITER_GRAPH_RELATIONS": writer_agent.graph_relations_enabled,
     }
     assert not readers[flag]()

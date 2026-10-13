@@ -284,9 +284,16 @@ _CONTINUATION_INSTRUCTION = (
 
 
 def graph_relations_enabled() -> bool:
-    """``AIX_WRITER_GRAPH_RELATIONS``: the graph's relationships reach the Writer. Off until measured."""
+    """``AIX_WRITER_GRAPH_RELATIONS``: the graph's relationships reach the Writer. On by default.
+
+    Read blind on 2026-10-13 (four lessons regenerated with and without): the
+    lesson with the relationships was preferred in three, the fourth a tie. It
+    costs the Writer ~15% more input (~$0.005 a lesson).
+    """
     raw = os.getenv("AIX_WRITER_GRAPH_RELATIONS")
-    return bool(raw) and raw.strip().lower() in ("1", "true", "yes", "on")
+    if raw is None or not raw.strip():
+        return True
+    return raw.strip().lower() in ("1", "true", "yes", "on")
 
 
 def _format_relationships(relationships: Optional[list], max_relations: int = 15) -> str:

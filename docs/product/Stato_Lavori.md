@@ -2778,6 +2778,21 @@ sono su due righe, come nel caso reale.
 - Lo stato salvato non contiene più `graphrag_results`, una copia per ricerca
   mai letta da nessuno.
 
+### 2026-10-13 — Letture di Angelo: relazioni del grafo accese, scaletta da sviluppare
+
+- **Relazioni del grafo nel Writer**: lettura alla cieca di 4 lezioni rigenerate
+  con e senza: preferita quella con le relazioni in 3, pari la quarta.
+  `AIX_WRITER_GRAPH_RELATIONS` ora è acceso di default (~$0,005 in più a lezione).
+- **Prima la scaletta**: Angelo la valuta da sola (il confronto con la lezione
+  intera non ha senso: è un'altra cosa) e la giudica una buona strategia, più
+  intuitiva, da sviluppare. Difetti visti: una scaletta troppo lunga ha tagliato le
+  proposte «Cosa sviluppo adesso?» (2); una segue la conversazione precedente
+  invece della richiesta (3); lingue mischiate, scaletta in inglese e proposte in
+  italiano (9). Prossimo passo: versione 2 del prototipo con brevità garantita,
+  lingua della lezione, proposte specifiche.
+- **Writer asciutto**: la pagina mostrava solo la versione A (etichetta sbagliata
+  nel generatore); rigenerata, lettura da rifare.
+
 ## Un difetto preesistente trovato il 2026-09-11 — chiuso
 
 *Chiuso nella PR 5: `_legacy_read` trasforma un PDF illeggibile in un `ValueError` con un messaggio in italiano, e la docente riceve un 422 leggibile invece di un 500. Il testo sotto resta come registro.*
