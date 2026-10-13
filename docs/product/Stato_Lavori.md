@@ -2851,3 +2851,26 @@ scattare prima della richiesta dello slot, e una generazione veniva rifiutata
 con uno slot libero. Ora uno slot libero si prende subito; il timer resta solo
 quando bisogna aspettare, e l'ordine della coda non cambia. In staging l'attesa è
 di 5 s, quindi lì non si presentava. (Portato da `feature/section-edits-optional`.)
+
+### 2026-10-13 — Haiku 5.5 scrive: decisione di Angelo dopo le prove in WebUI
+
+Angelo ha provato in WebUI la generazione con Mistral Large 4, Haiku 5.5, Qwen
+3.8 27B e DeepSeek V4.1 Flash (pianificatore e giudice fermi su Sonnet) e ha
+scelto **Haiku 5.5** come modello predefinito: risposte giuste, più veloce,
+$0,10/$0,50 per milione di token contro $2/$10 di Sonnet 5.5.
+
+- `LLM_MODEL=anthropic/claude-haiku-5.5` negli esempi (`.env.example`,
+  `deploy/.env.prod.example`) e in `docs/ENVIRONMENT.md`: scrive lezioni e
+  risposte in chat (`AIX_CHAT_MODEL` vuoto).
+- **Restano Sonnet 5.5** il pianificatore (`AIX_PLANNER_MODEL`) e il giudice
+  delle citazioni (`AIX_CITATION_CHECK_MODEL`), come nelle prove: sul giudice
+  Haiku 4.5 sbagliava 12 verdetti su 49 (Sonnet 2), sul pianificatore Gemini
+  Flash dava piani meno affidabili.
+- `AIX_PLANNER_ESCALATE=false` negli esempi: con il pianificatore su Sonnet e il
+  Writer su Haiku, un piano incerto verrebbe richiesto al modello più debole.
+  Spento, il pianificatore fa esattamente quello che faceva prima.
+- È una scelta fatta sulle prove di Angelo, non su una lettura alla cieca come
+  quella del 12/10 (dove era Haiku 4.5, scartato). Da seguire su Langfuse e nelle
+  prime lezioni vere: troncamenti, citazioni tolte dal giudice, giudizi del Critic.
+- Lo staging legge il suo `.env` sulla VM (repo cloud-infra): lì il cambio va
+  fatto a parte.

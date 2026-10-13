@@ -19,7 +19,7 @@ spegne. Una variabile assente o vuota vale il suo default.
 | Variabile | Default | Se manca |
 | --- | --- | --- |
 | `OPENROUTER_API_KEY` | — | Nessuna chiamata al modello. Ripiego: `OPENAI_API_KEY` |
-| `LLM_MODEL` | `anthropic/claude-sonnet-5.5` | Il modello del Writer, e di tutto ciò che usa Sonnet (planner, lezione leggera, giudice delle citazioni). Scelto il 2026-10-07 rigiocando 22 chiamate vere (`scripts/eval/replay_sonnet_settings.py`) e con una lettura alla cieca di Angelo: con `AIX_THINKING_EFFORT=low` è la versione preferita in media, stesso prezzo di Sonnet 5 ($2/$10 per milione) e circa metà del tempo. Sonnet 5 con `low` invece peggiora le lezioni (ultima in 3 casi su 5) |
+| `LLM_MODEL` | `anthropic/claude-haiku-5.5` | Il modello che scrive: Writer e risposte in chat (`AIX_CHAT_MODEL` vuoto). **Haiku 5.5 dal 2026-10-13**, scelto da Angelo dopo averlo provato in WebUI contro Mistral Large 4, Qwen 3.8 27B e DeepSeek V4.1 Flash: risposte giuste, più veloce, $0,10/$0,50 per milione contro $2/$10 di Sonnet 5.5. Planner e giudice delle citazioni restano su Sonnet 5.5 (`AIX_PLANNER_MODEL`, `AIX_CITATION_CHECK_MODEL`). Prima: Sonnet 5.5, scelto il 2026-10-07 rigiocando 22 chiamate vere e con una lettura alla cieca |
 | `NEO4J_URI` · `NEO4J_USER` · `NEO4J_PASSWORD` | — | Nessun recupero dal Knowledge Graph: lezioni senza fondamento pedagogico |
 | `AIX_NEO4J_CONNECT_TIMEOUT_S` | `5` | Quanto si aspetta la connessione al grafo. **Il default del driver è 60 s**, e una lezione fa dieci domande al grafo: il 2026-09-21 un database raggiungibile ma muto ha tenuto una generazione ferma 3 minuti e 14 |
 | `AIX_NEO4J_RETRY_TIME_S` | `5` | Per quanto si riprova una transazione fallita (default del driver: 30 s) |
@@ -38,13 +38,13 @@ gira sugli stessi casi del vecchio.
 
 | Ruolo | Variabile | Valore attuale | Predefinito nel codice | Come misurare un candidato |
 | --- | --- | --- | --- | --- |
-| Writer: scrive la lezione | `LLM_MODEL` | `anthropic/claude-sonnet-5.5` | `core/config.py` | `scripts/eval/measure_followup_turns.py` |
+| Writer: scrive la lezione | `LLM_MODEL` | `anthropic/claude-haiku-5.5` | `core/config.py` | `scripts/eval/measure_followup_turns.py` |
 | Risposte veloci nei turni successivi | `AIX_CHAT_MODEL` | vuoto = `LLM_MODEL` | `webui/agent/light.py` · `chat_model` | `scripts/eval/measure_light_turns.py` |
 | Critic: rivede la bozza | `AIX_CRITIC_MODEL` | `google/gemini-3.5-flash-lite` | `agent/agents/critic_agent.py` · `DEFAULT_CRITIC_MODEL` | `compare_role_models.py critic --models a,b` |
 | Domande al grafo e traduzione | `TEXT2CYPHER_MODEL` | `google/gemini-3.1-flash-lite` | `core/config.py` · `Text2CypherConfig.model` | `compare_role_models.py text2cypher --models a,b` |
 | OCR di scansioni e immagini | `AIX_OCR_MODEL` | `google/gemini-3.5-flash-lite` | `materials/parsing/vision_ocr.py` · `DEFAULT_MODEL` | `check_ocr.py` e `check_ocr_datasets.py --models a,b` |
 | Mappa dei documenti | `AIX_DOCUMENT_MAP_MODEL` | `google/gemini-3.5-flash-lite` | `materials/document_map.py` · `DEFAULT_MODEL` | — |
-| Verifica delle citazioni | `AIX_CITATION_CHECK_MODEL` | vuoto = `LLM_MODEL` | `agent/validation/citation_support.py` | `check_citation_support.py` |
+| Verifica delle citazioni | `AIX_CITATION_CHECK_MODEL` | `anthropic/claude-sonnet-5.5` (vuoto = `LLM_MODEL`) | `agent/validation/citation_support.py` | `check_citation_support.py` |
 | Embedding dei documenti | `AIX_PRIVATE_EMBEDDING_MODEL` | `baai/bge-m3` | `materials/embedding.py` | `run_private_rag.py` (**cambiarlo richiede di reindicizzare tutto**) |
 
 I costi di ogni ruolo si vedono in Langfuse, per modello (sezione «Tracciamento»).
@@ -66,8 +66,8 @@ I costi di ogni ruolo si vedono in Langfuse, per modello (sezione «Tracciamento
 | `AIX_WRITER_GRAPH_RELATIONS` | `true` | Le relazioni del Knowledge Graph (es. «ADHD —SUGGESTS→ pause attive», max 15 righe) arrivano al Writer accanto ai nodi. Lettura alla cieca del 2026-10-13 su 4 lezioni rigenerate: preferita la lezione con le relazioni in 3, pari la quarta. Costa al Writer ~15% di input in più (~$0,005 a lezione) |
 | `AIX_THINKING_EFFORT` | `low` | Quanto ragiona il modello prima di rispondere: `low`, `medium`, `high`, oppure `default` (non manda nulla e il modello decide da solo). Vale per Claude 4 e, dal 2026-10-07, anche per Claude 5.x: prima su Sonnet 5 veniva ignorato, il modello ragionava a piacere (~20% della spesa in token di ragionamento) e le lezioni si troncavano a `max_tokens`. Rigiocate con `low`: revisione del Writer -40% di costo e 39 s invece di 91, completa; planner -40% e 8–14 s invece di 28. Su Claude 5.x cambia solo lo sforzo: temperatura, budget e JSON restano quelli chiesti |
 | `AIX_CRITIC_MODEL` | `google/gemini-3.5-flash-lite` | Modello del Critic. Scelto il 2026-09-30 fra quattro Gemini (`scripts/eval/compare_role_models.py critic`): coglie più difetti di 2.5 Flash (5 su 9 contro 1), approva 6 lezioni buone su 8, è il più veloce e il più stabile |
-| `AIX_PLANNER_MODEL` | vuoto | Modello del Planner. Vuoto = lo stesso del Writer (`LLM_MODEL`), cioè il comportamento di oggi. Il piano è una classificazione (lingua, intento, scope) più un'estrazione (concetti, query), non scrittura: su Sonnet impiega in media 19 s e costa $0,035 a chiamata (tracce del 2026-10-06). **Non attivarlo senza** `scripts/eval/compare_role_models.py planner --retrieval` (soglie nel registro di `Stato_Lavori.md`) |
-| `AIX_PLANNER_ESCALATE` | `true` | Con `AIX_PLANNER_MODEL` impostato, un piano che il modello economico non sa dare (JSON illeggibile, errore) o di cui non è sicuro (intento o lingua `LOW`, lingua non supportata, scope sotto il 50%) viene richiesto al modello del Writer. Il risparmio non costa un piano peggiore. Nel log: `event=planner_escalation` |
+| `AIX_PLANNER_MODEL` | `anthropic/claude-sonnet-5.5` negli esempi | Modello del Planner. Vuoto = lo stesso del Writer (`LLM_MODEL`); dal 2026-10-13 il Writer è Haiku e il Planner resta Sonnet. Il piano è una classificazione (lingua, intento, scope) più un'estrazione (concetti, query), non scrittura: su Sonnet impiega in media 19 s e costa $0,035 a chiamata (tracce del 2026-10-06). **Non attivarlo senza** `scripts/eval/compare_role_models.py planner --retrieval` (soglie nel registro di `Stato_Lavori.md`) |
+| `AIX_PLANNER_ESCALATE` | `true` (`false` negli esempi dal 2026-10-13: con il Planner su Sonnet e il Writer su Haiku il rinvio andrebbe al modello più debole) | Con `AIX_PLANNER_MODEL` impostato, un piano che il modello economico non sa dare (JSON illeggibile, errore) o di cui non è sicuro (intento o lingua `LOW`, lingua non supportata, scope sotto il 50%) viene richiesto al modello del Writer. Il risparmio non costa un piano peggiore. Nel log: `event=planner_escalation` |
 | `AIX_MAX_REVISIONS` | `1` | Giri di revisione Critic → Writer |
 
 ### Writer
@@ -131,7 +131,7 @@ dimenticata serviva il prodotto vecchio senza che nessuno se ne accorgesse.
 | `AIX_PRIVATE_RAG_HYBRID` | `true` | Fonde la ricerca per parole con quella vettoriale (§8.5). Spegnerla torna al solo vettoriale: serve a bisezionare una regressione, non è una configurazione da tenere — sui casi d'oro l'ibrida è migliore su tutte le misure |
 | `AIX_VALIDATOR_MAX_RETRIES` | `2` | Riscritture che il validatore può chiedere |
 | `AIX_CITATION_CHECK_ENABLED` | `true` | Verifica che il passaggio citato sostenga la frase, e toglie il riferimento quando non lo sostiene (la frase resta). Costa una chiamata al modello, e **solo** se la bozza contiene citazioni ai materiali privati |
-| `AIX_CITATION_CHECK_MODEL` | come `LLM_MODEL` | Modello diverso per quella verifica |
+| `AIX_CITATION_CHECK_MODEL` | come `LLM_MODEL` | Modello diverso per quella verifica. Negli esempi `anthropic/claude-sonnet-5.5`: il Writer è Haiku, il giudice resta Sonnet |
 
 ### Tracciamento (Langfuse)
 
