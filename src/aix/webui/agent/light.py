@@ -202,6 +202,15 @@ def _messages(
     return [{"role": "system", "content": system}, {"role": "user", "content": user}]
 
 
+async def _content_deltas(stream: Any) -> AsyncIterator[str]:
+    """The text pieces of a streamed answer, in order."""
+    async for chunk in stream:
+        choice = chunk.choices[0] if chunk.choices else None
+        delta = (choice.delta.content or "") if choice and choice.delta else ""
+        if delta:
+            yield delta
+
+
 async def _finish(answer: str, items: list[dict[str, Any]], lesson_md: str) -> str:
     """The same clean-up a Writer answer gets, minus the Critic."""
     from aix.agent.validation.answer_shape import tidy_answer
@@ -269,7 +278,12 @@ async def run_light_turn(
     output: Optional[str] = None
     error = ""
     try:
-        documents, items = await _documents(lesson, instruction)
+        from aix.webui.agent import light_tools
+
+        # With the tools the documents are looked up only if the model asks
+        # (see light_tools); without, they are searched before every answer.
+        toolbox = light_tools.Toolbox(lesson) if light_tools.enabled() else None
+        documents, items = ("", []) if toolbox else await _documents(lesson, instruction)
         messages = _messages(
             lesson,
             instruction,
@@ -277,6 +291,11 @@ async def run_light_turn(
             documents,
             answer_here=answer_here,
         )
+        if toolbox:
+            messages[0] = {
+                **messages[0],
+                "content": messages[0]["content"] + light_tools.TOOLS_RULE,
+            }
         # The lesson (up to ~15k tokens) is resent on every turn and on every
         # hand-off to a new lesson: marked, a turn within minutes of the last
         # reads it at a tenth of the price. The text is unchanged.
@@ -292,12 +311,13 @@ async def run_light_turn(
         first_token: Optional[float] = None
         client = app_config.openai.get_async_client()
         async with llm_slot():
-            stream = await client.chat.completions.create(messages=messages, stream=True, **kwargs)
-            async for chunk in stream:
-                choice = chunk.choices[0] if chunk.choices else None
-                delta = (choice.delta.content or "") if choice and choice.delta else ""
-                if not delta:
-                    continue
+            if toolbox:
+                deltas = light_tools.stream_with_tools(client, messages, kwargs, toolbox)
+            else:
+                deltas = _content_deltas(
+                    await client.chat.completions.create(messages=messages, stream=True, **kwargs)
+                )
+            async for delta in deltas:
                 shown = gate.feed(delta)
                 if gate.escalated:
                     break
@@ -326,6 +346,8 @@ async def run_light_turn(
             yield StreamEvent(kind="light_escalate", payload={"query": instruction})
             return
 
+        if toolbox:
+            items = toolbox.items
         answer = (await _finish("".join(parts), items, lesson.lesson_plan_md or "")).strip()
         if not answer:
             raise RuntimeError("Il modello non ha prodotto una risposta.")
