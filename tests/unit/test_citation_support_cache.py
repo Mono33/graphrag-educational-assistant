@@ -141,3 +141,34 @@ async def test_a_model_that_does_not_read_the_mark_is_sent_plain_text(monkeypatc
     await citation_support.judge(pairs, _client(create))
 
     assert isinstance(seen["messages"][0]["content"], str)
+
+
+async def test_the_same_sentence_and_passage_twice_is_asked_once():
+    calls = []
+
+    async def create(**kwargs):
+        calls.append(kwargs)
+        return _answer("unsupported")
+
+    pairs = [
+        {"claim": "Yalta divise l'Europa", "passage": "p"},
+        {"claim": "altra frase", "passage": "p"},
+        {"claim": "Yalta divise l'Europa", "passage": "p"},
+    ]
+
+    verdicts = await citation_support.judge(pairs, _client(create))
+
+    assert len(calls) == 2, "the repeated pair is not paid twice"
+    assert verdicts == ["unsupported", "unsupported", "unsupported"], (
+        "every occurrence gets its answer"
+    )
+
+
+async def test_a_repeated_unsupported_citation_is_removed_everywhere():
+    draft = f"La conferenza di Yalta divise l'Europa {YALTA} {YALTA}."
+    create = AsyncMock(side_effect=[_answer("unsupported")])
+
+    out = await drop_unsupported_citations(draft, ITEMS, client=_client(create))
+
+    assert YALTA not in out
+    assert create.await_count == 1

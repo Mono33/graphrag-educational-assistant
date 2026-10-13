@@ -351,15 +351,28 @@ async def judge(pairs: list[dict[str, Any]], client: Any) -> list[str]:
     """
     if not pairs:
         return []
-    if len(pairs) >= _WARM_FROM and prompt_cache.enabled() and prompt_cache.supports(_model()):
+    # The same sentence citing the same passage twice (a marker repeated on one
+    # line, two blocks of one page) is one question: asked once, answered for
+    # every occurrence. 9% of the calls in the rehearsals were such repeats,
+    # sent in parallel and paid twice (2026-10-13).
+    unique: dict[tuple[str, str], dict[str, Any]] = {}
+    for pair in pairs:
+        unique.setdefault((pair["claim"], pair["passage"]), pair)
+    asked = list(unique.values())
+    if len(asked) >= _WARM_FROM and prompt_cache.enabled() and prompt_cache.supports(_model()):
         # The ~1.3k tokens of instructions are the same in every call, and a
         # provider can only read a cache a finished call has written: sent all
         # at once, every call would pay the write and none the read. So the first
         # goes alone, and the rest read what it left.
-        first = await _verdict(pairs[0], client, mark=True)
-        rest = await asyncio.gather(*(_verdict(pair, client, mark=True) for pair in pairs[1:]))
-        return [first, *rest]
-    return list(await asyncio.gather(*(_verdict(pair, client, mark=False) for pair in pairs)))
+        first = await _verdict(asked[0], client, mark=True)
+        rest = await asyncio.gather(*(_verdict(pair, client, mark=True) for pair in asked[1:]))
+        answers = [first, *rest]
+    else:
+        answers = list(
+            await asyncio.gather(*(_verdict(pair, client, mark=False) for pair in asked))
+        )
+    by_question = dict(zip(unique, answers, strict=True))
+    return [by_question[(pair["claim"], pair["passage"])] for pair in pairs]
 
 
 def _model() -> str:

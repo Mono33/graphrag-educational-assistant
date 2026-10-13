@@ -2731,6 +2731,18 @@ Haiku sbaglia in 12. Sonnet contro se stesso: 2 su 49.
   chiamata, quello del planner ~$0,011; con la cache il guadagno di un taglio si
   riduce in proporzione. Proposta da fare con chi ha scritto i testi.
 
+### 2026-10-13 — Piano per dimezzare il costo: giudice senza doppioni
+
+Piano approvato (leve 1–3, principi di context engineering applicati dietro flag,
+prototipo dell'output incrementale, modalità a sezioni opzionale in un branch a
+parte). Primo passo, il giudice delle citazioni: la stessa frase che cita lo
+stesso passaggio due volte (un marcatore ripetuto sulla riga, due blocchi della
+stessa pagina) era giudicata due volte in parallelo. Nelle tracce il 9% delle
+chiamate del giudice (18 su 196, $0,09 su $0,92). Ora una domanda, un verdetto,
+applicato a ogni occorrenza. Un test esistente metteva due frasi sulla stessa
+riga e si aspettava due verdetti diversi da due domande identiche: ora le frasi
+sono su due righe, come nel caso reale.
+
 ## Un difetto preesistente trovato il 2026-09-11 — chiuso
 
 *Chiuso nella PR 5: `_legacy_read` trasforma un PDF illeggibile in un `ValueError` con un messaggio in italiano, e la docente riceve un 422 leggibile invece di un 500. Il testo sotto resta come registro.*
