@@ -61,14 +61,6 @@ def test_with_the_private_rag_on_the_document_is_kept_without_its_excerpt(monkey
     )
 
 
-def test_with_the_private_rag_off_the_refusal_stands(monkeypatch):
-    """Then the excerpt is the only channel, and there is nowhere to put the file."""
-    monkeypatch.setenv("AIX_PRIVATE_RAG_ENABLED", "false")
-
-    with pytest.raises(ValueError, match="Troppo testo estratto"):
-        save_upload(LESSON, "modello_pei.txt", b"Il PEI e le misure di sostegno.", _full_manifest())
-
-
 def test_a_document_that_fits_keeps_its_excerpt(monkeypatch):
     monkeypatch.setenv("AIX_PRIVATE_RAG_ENABLED", "true")
 

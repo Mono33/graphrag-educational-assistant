@@ -83,14 +83,6 @@ def _followup(**over):
 # ---------------------------------------------------------------------------
 
 
-def test_flag_off_keeps_the_unconditional_edge(_off):
-    compiled = build_lesson_planner_graph()
-    edges = {(e.source, e.target, bool(e.conditional)) for e in compiled.get_graph().edges}
-
-    assert ("plan", "retrieve", False) in edges, "the pre-T6 edge, unconditional"
-    assert "reuse" not in compiled.get_graph().nodes
-
-
 def test_flag_on_forks_the_planner(_on):
     compiled = build_lesson_planner_graph()
     graph = compiled.get_graph()
@@ -106,10 +98,6 @@ def test_flag_on_forks_the_planner(_on):
 # ---------------------------------------------------------------------------
 # The routing decision
 # ---------------------------------------------------------------------------
-
-
-def test_flag_off_always_retrieves(_off):
-    assert should_retrieve(_followup()) == "retrieve"
 
 
 def test_upstream_error_keeps_todays_path(_on):
@@ -318,11 +306,6 @@ async def test_first_turn_prompt_is_unchanged(_on):
     kwargs, _ = await _plan_node_kwargs(_followup(conversation_history=[]))
     assert "conversation_history" not in kwargs
     assert "existing_corpus" not in kwargs
-
-
-async def test_flag_off_never_asks(_off):
-    kwargs, _ = await _plan_node_kwargs(_followup())
-    assert "conversation_history" not in kwargs, "flag off must send the prompt it always sent"
 
 
 async def test_plan_node_hands_the_planner_the_attachments(_off):

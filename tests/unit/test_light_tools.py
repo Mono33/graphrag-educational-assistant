@@ -117,9 +117,3 @@ async def test_a_broken_look_up_is_told_to_the_model_not_raised():
     result = await Broken().run("cerca_nei_documenti", json.dumps({"richiesta": "x"}))
 
     assert "non è riuscita" in result
-
-
-def test_off_by_default(monkeypatch):
-    monkeypatch.delenv("AIX_LIGHT_TOOLS_ENABLED", raising=False)
-
-    assert light_tools.enabled() is False

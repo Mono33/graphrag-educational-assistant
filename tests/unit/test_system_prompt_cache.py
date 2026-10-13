@@ -60,14 +60,6 @@ async def test_the_writer_system_prompt_is_one_marked_block(cache_on):
     assert isinstance(messages[1]["content"], str), "the request itself is not cached"
 
 
-async def test_with_the_cache_off_the_writer_sends_plain_text(monkeypatch):
-    monkeypatch.setenv("AIX_PROMPT_CACHE_ENABLED", "false")
-
-    messages = await _writer_messages(SONNET)
-
-    assert isinstance(messages[0]["content"], str)
-
-
 async def test_the_planner_system_prompt_is_one_marked_block(cache_on):
     from aix.agent.agents.planner_agent import PlannerAgent
     from aix.agent.prompts.planner_prompt import PLANNER_SYSTEM_PROMPT

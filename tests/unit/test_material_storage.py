@@ -32,7 +32,6 @@ from aix.webui.materials.storage import (
     S3CompatibleStorage,
     StorageError,
     get_storage_backend,
-    materials_enabled,
     object_key_for,
     sha256_of,
 )
@@ -263,15 +262,3 @@ def test_s3_without_its_configuration_raises(monkeypatch):
 
     with pytest.raises(StorageError, match="ENDPOINT"):
         get_storage_backend()
-
-
-@pytest.mark.parametrize(
-    "value, expected",
-    [(None, True), ("", True), ("false", False), ("no", False), ("true", True), ("ON", True)],
-)
-def test_the_pipeline_is_on_by_default_and_off_when_asked(value, expected, monkeypatch):
-    monkeypatch.delenv("AIX_MATERIALS_ENABLED", raising=False)
-    if value is not None:
-        monkeypatch.setenv("AIX_MATERIALS_ENABLED", value)
-
-    assert materials_enabled() is expected

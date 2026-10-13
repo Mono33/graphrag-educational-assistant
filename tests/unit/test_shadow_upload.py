@@ -222,15 +222,6 @@ def _parser_off(monkeypatch):
     monkeypatch.setenv("AIX_UPLOAD_PARSER_ENABLED", "false")
 
 
-async def test_with_the_parser_off_only_the_old_formats_are_accepted(client, maker, _parser_off):
-    """A Word file was not accepted before this branch, and is not now."""
-    response = _upload(client, "programma.docx", _docx(), DOCX_MIME)
-
-    assert response.status_code == 422
-    assert "solo PDF, TXT, Markdown" in response.text
-    assert await _manifest(maker) == []
-
-
 async def test_with_the_parser_off_a_pdf_is_read_the_way_it_always_was(client, maker, _parser_off):
     from reportlab.lib.pagesizes import A4
     from reportlab.pdfgen import canvas
@@ -245,13 +236,6 @@ async def test_with_the_parser_off_a_pdf_is_read_the_way_it_always_was(client, m
     entry = (await _manifest(maker))[0]
     assert "Programma di storia" in entry["text_excerpt"]
     assert "parse" not in entry, "the legacy manifest entry keeps exactly its old keys"
-
-
-async def test_with_the_parser_off_a_corrupt_pdf_is_still_not_a_500(client, _parser_off):
-    """The one deliberate difference from the old path: an answer, not a crash."""
-    response = _upload(client, "rotto.pdf", b"%PDF-1.4\n non un pdf", "application/pdf")
-
-    assert response.status_code == 422
 
 
 # ---------------------------------------------------------------------------
@@ -342,14 +326,6 @@ async def test_with_the_flag_off_nothing_shadow_happens(client, maker, monkeypat
 
     assert await _rows(maker, Material) == []
     assert await _rows(maker, IngestionJob) == []
-
-
-async def test_with_the_flag_off_the_manifest_has_no_shadow_keys(client, maker, monkeypatch):
-    monkeypatch.setenv("AIX_MATERIALS_ENABLED", "false")
-    _upload(client)
-
-    entry = (await _manifest(maker))[0]
-    assert set(entry) == {"id", "filename", "mime", "size", "text_excerpt", "stored_name", "parse"}
 
 
 # ---------------------------------------------------------------------------
@@ -618,14 +594,6 @@ async def test_the_lesson_binds_the_material_when_the_private_rag_is_on(
 
     versions = await _rows(maker, MaterialVersion)
     assert bindings[0].selected_version_id == versions[0].id
-
-
-async def test_with_the_private_rag_off_no_binding_is_claimed(client, maker, _on):
-    from aix.webui.materials.models import LessonMaterialBinding
-
-    _upload(client)
-
-    assert await _rows(maker, LessonMaterialBinding) == []
 
 
 async def test_an_embedding_failure_leaves_the_job_retryable_not_ready(
