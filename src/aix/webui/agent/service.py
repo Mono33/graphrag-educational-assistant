@@ -365,6 +365,23 @@ def _query_from_lesson(lesson: Any) -> str:
     return " ".join(parts)
 
 
+def _seed_from_checkpoint(final_state: dict[str, Any], values: Any) -> None:
+    """Carry over from the thread's checkpoint only what outlives a turn.
+
+    The seed exists for the evidence a follow-up may reuse (``PERSISTED_ACROSS_TURNS``:
+    the graph's nodes, the media, the outside sources). The rest of the
+    checkpoint belongs to the previous run, and the graph resets it for this
+    one -- but the seed did not: the error of a failed turn came back here and
+    failed the next turn after it had written and approved its lesson
+    (2026-10-14, «'wikipedia_content'» on a retry that succeeded).
+    """
+    from aix.agent.graph.state import PERSISTED_ACROSS_TURNS
+
+    final_state.update(
+        {key: value for key, value in dict(values or {}).items() if key in PERSISTED_ACROSS_TURNS}
+    )
+
+
 def _fail_if_the_turn_produced_nothing(final_state: dict[str, Any]) -> None:
     """Raise when a node reported a failure, before reading the lesson out.
 
@@ -1514,7 +1531,7 @@ async def run_agent_stream(
     try:
         _snapshot = await graph.aget_state(run_config)
         if _snapshot is not None and _snapshot.values:
-            final_state.update(dict(_snapshot.values))
+            _seed_from_checkpoint(final_state, _snapshot.values)
     except Exception:  # noqa: BLE001
         logger.debug("[webui.agent] no prior checkpoint to seed final_state from")
 
@@ -1881,7 +1898,7 @@ async def stream_agent_events(
     try:
         _snapshot = await graph.aget_state(run_config)
         if _snapshot is not None and _snapshot.values:
-            final_state.update(dict(_snapshot.values))
+            _seed_from_checkpoint(final_state, _snapshot.values)
     except Exception:  # noqa: BLE001
         logger.debug("[api.agent] no prior checkpoint to seed final_state from")
 

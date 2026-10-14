@@ -2970,3 +2970,17 @@ testo di Wikipedia, e cade su `KeyError: 'wikipedia_content'` (codice 438471).
 
 Test: tre casi in `test_conditional_retrieval.py`, uno in
 `test_hybrid_prompt_cites_documents.py`.
+
+### 2026-10-14 — Un turno fallito non fa più fallire il successivo
+
+Riprovando la stessa lezione dopo la correzione qui sopra, il turno è andato bene
+(ricerca esterna fatta, lezione scritta, Critic 3,8 approvata) ma è stato
+dichiarato fallito con lo stesso `'wikipedia_content'` (codice 32C6B0). Prima di
+partire il servizio caricava **tutto** lo stato salvato del turno precedente,
+compreso il suo errore; il grafo lo azzera per il nuovo turno, ma il controllo
+finale leggeva ancora quello vecchio. Quindi, dopo un qualsiasi turno fallito,
+ogni turno successivo della stessa lezione risultava fallito.
+
+Ora dallo stato salvato si prende solo ciò che deve passare da un turno
+all'altro (`PERSISTED_ACROSS_TURNS`: nodi del grafo, risorse, fonti esterne), non
+l'errore né la lezione del turno prima. Test: `test_seed_from_checkpoint.py`.
