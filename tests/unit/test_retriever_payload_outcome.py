@@ -11,7 +11,6 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import patch
 
-
 from aix.webui.agent.service import (
     _build_retriever_payload,
     _classify_coverage_tier,
