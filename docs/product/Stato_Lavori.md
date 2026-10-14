@@ -3016,3 +3016,25 @@ IDOR. L'API riusa la stessa regola invece di inventarne una seconda: chi chiama
   client non resta in chiaro (è dentro un hash).
 
 `src/aix/api/principals.py` (`owner_for`), test `test_api_principals.py` (8).
+
+### 2026-10-14 — API per i chatbot, passo 1: il turno fuori dalle rotte HTML
+
+Le due rotte che fanno un turno nella WebUI (`POST …/run`, ~380 righe, e
+`GET …/stream`, ~290) mescolavano decisioni, scritture e HTML. L'API ha bisogno
+dello stesso identico turno, e una seconda copia si sarebbe allontanata dalla
+prima alla modifica successiva. Ora le decisioni stanno in
+`src/aix/webui/agent/turns.py`:
+
+- `accept_turn`: richiesta, controlli (richiesta vuota, generazione già in corso,
+  documenti ancora in preparazione, limite di frequenza), turno veloce o catena
+  completa, intento, chip di rifinitura, interruttore del grafo, messaggio della
+  docente, `status=running`. Un rifiuto è un `TurnRefused` con un **codice
+  stabile** (`empty_query`, `already_running`, `materials_preparing`,
+  `rate_limited`) oltre alla frase in italiano.
+- `drive_turn`: slot globale, presa della lezione, heartbeat, poi risposta veloce
+  o catena completa (`already_running`, `at_capacity` se non può partire).
+
+Le rotte della WebUI sono ora adattatori HTML (−424 righe). La scheda
+dell'intento resta della WebUI; l'API passerà l'intento nel profilo
+(`ask_intent=False`). **Nessun test della WebUI è cambiato** e la suite è verde;
+`test_turns.py` (6) fissa ciò su cui conta l'API.

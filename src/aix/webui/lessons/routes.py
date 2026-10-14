@@ -61,7 +61,6 @@ SSE event vocabulary (single ``card`` event, terminating ``final`` / ``error``):
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import html
 import logging
 import re
@@ -100,16 +99,14 @@ from aix.core.ai_marking import (
     DISCLOSURE_SHORT,
     strip_marking,
 )
-from aix.core.concurrency import (
-    AtCapacity,
-    RateLimited,
-    acquire_run_slot,
-    check_user_rate_limit,
-    release_run_slot,
+from aix.core.run_registry import get_run_registry
+from aix.webui.agent.turns import (
+    TurnRefused,
+    accept_turn,
+    drive_turn,
+    refinement_label,  # noqa: F401 — re-exported, the tests import it from here
+    remember_graph_search,  # noqa: F401 — re-exported, the tests import it from here
 )
-from aix.core.run_registry import get_run_registry, heartbeat_loop
-from aix.webui.agent import run_agent_stream
-from aix.webui.agent.light import LIGHT_KEY, run_light_turn, take_light_turn, wants_light_turn
 from aix.webui.auth.csrf import token_for as _csrf_token_for
 from aix.webui.auth.dependencies import optional_current_user
 from aix.webui.auth.models import User
@@ -137,7 +134,7 @@ from aix.webui.materials.citations import (
     resolve_for_lesson,
     with_sources,
 )
-from aix.webui.materials.readiness import states_for_lesson_safe, still_preparing
+from aix.webui.materials.readiness import states_for_lesson_safe
 from aix.webui.materials.shadow import record_upload, retire_material
 from aix.webui.sanitize import sanitize_html
 
@@ -712,39 +709,6 @@ async def lesson_media_live(
 # ----------------------------------------------------------------------------
 
 
-#: What the chat shows, and the Writer reads, for a refinement chip.
-_REFINEMENT_LABELS = {
-    "simplify": "Semplifica la lezione",
-    "deepen": "Approfondisci la lezione",
-    "more_activities": "Aggiungi attività interattive",
-    "adapt_class": "Adatta la lezione alla classe",
-    "custom": "Rifinisci la lezione",
-}
-
-
-def refinement_label(code: str, detail: Optional[str] = None) -> str:
-    """The teacher's turn for a chip: «Semplifica la lezione: più breve»."""
-    label = _REFINEMENT_LABELS.get(code, "Rifinisci la lezione")
-    if code == "custom" and detail:
-        return detail[:2000]
-    return f"{label}: {detail}"[:2000] if detail else label
-
-
-def remember_graph_search(lesson: Lesson, form: Any) -> None:
-    """Keep the teacher's Knowledge Graph switch on the lesson, if the form had one.
-
-    Only the follow-up input shows the switch and sends ``graph_search_choice``;
-    an unticked checkbox sends nothing, which is why the marker is needed to
-    tell "switched off" from "not asked". Kept in the profile and left there, so
-    the switch renders as she last set it on the turns after.
-    """
-    if form.get("graph_search_choice") != "1":
-        return
-    profile = dict(lesson.educational_profile_json or {})
-    profile["__graph_search__"] = form.get("graph_search") == "on"
-    lesson.educational_profile_json = profile
-
-
 @router.get(
     "/lesson/{lesson_id}/attachments-fragment",
     response_class=HTMLResponse,
@@ -1239,301 +1203,21 @@ async def lesson_run(
     if lesson is None:
         raise HTTPException(status_code=404, detail="Lezione non trovata")
 
-    # Capture the user's new query if present.
     form = await request.form()
-    query_raw = form.get("query")
-    new_query = query_raw.strip() if isinstance(query_raw, str) and query_raw.strip() else None
-    # Decided before anything is written: a light turn answers about the lesson
-    # and leaves ``teacher_query`` -- the lesson's topic -- as it was.
-    light = wants_light_turn(lesson, form, has_query=new_query is not None)
-
-    if new_query is not None:
-        # Server-side mirror of the textarea's ``maxlength=2000``. No minimum: a
-        # reply as short as «sì» is a real answer in a conversation (2026-10-14).
-        if len(new_query) > 2000:
-            new_query = new_query[:2000]
-        if not light:
-            lesson.teacher_query = new_query
-
-    # Defensive: if the teacher posts /run without ever having set a
-    # query (no first-turn submit, then somehow triggered Rigenera), bail
-    # with a friendly error rather than running on an empty prompt.
-    if not (lesson.teacher_query or "").strip():
+    outcome = await accept_turn(session, lesson, form, rate_key=f"webui:{user.id}")
+    if isinstance(outcome, TurnRefused):
+        message = html.escape(outcome.message, quote=False)
+        if outcome.code == "materials_preparing":
+            names = ", ".join(html.escape(name) for name in outcome.preparing)
+            message = f"Sto ancora preparando {names}. Parte da solo appena è pronto."
         return HTMLResponse(
             content=(
                 '<div class="rounded-lg border border-amber-200 bg-amber-50 '
-                'text-amber-900 px-3 py-2 text-sm">'
-                "Scrivi prima la tua richiesta nel campo della chat, poi premi Invia."
-                "</div>"
+                f'text-amber-900 px-3 py-2 text-sm">{message}</div>'
             ),
-            status_code=422,
+            status_code=outcome.status_code,
+            headers=({"Retry-After": str(outcome.retry_after)} if outcome.retry_after else None),
         )
-
-    if lesson.status == "running":
-        return HTMLResponse(
-            content=(
-                '<div class="rounded-lg border border-amber-200 bg-amber-50 '
-                'text-amber-900 px-3 py-2 text-sm">'
-                "Una generazione è già in corso. Attendi il termine."
-                "</div>"
-            ),
-            status_code=409,
-        )
-
-    # §6.1.4 / decision U1 — a lesson is generated from material that is ready.
-    # Without this, a request sent seconds after the upload is written from the
-    # pasted text while the teacher believes the document was read: exactly what
-    # happened on 2026-09-16. The tray polls and re-enables the send button by
-    # itself, so waiting costs the teacher nothing but a few seconds.
-    preparing = await still_preparing(session, lesson_id=lesson.id, owner_id=user.id)
-    if preparing:
-        names = ", ".join(html.escape(name) for name in preparing)
-        return HTMLResponse(
-            content=(
-                '<div class="rounded-lg border border-amber-200 bg-amber-50 '
-                'text-amber-900 px-3 py-2 text-sm">'
-                f"Sto ancora preparando {names}. Parte da solo appena è pronto."
-                "</div>"
-            ),
-            status_code=409,
-        )
-
-    # ── Per-user rate limit (#33) ─────────────────────────────────────
-    # Cap how often a single teacher can *start* runs (rolling window).
-    # Checked here at the run-initiation POST rather than in the SSE GET,
-    # so legitimate stream reconnects never count against the budget.
-    try:
-        check_user_rate_limit(f"webui:{user.id}")
-    except RateLimited as exc:
-        return HTMLResponse(
-            content=(
-                '<div class="rounded-lg border border-amber-200 bg-amber-50 '
-                'text-amber-900 px-3 py-2 text-sm">'
-                "Hai avviato troppe generazioni in poco tempo. Attendi "
-                f"{int(exc.retry_after) + 1} secondi e riprova."
-                "</div>"
-            ),
-            status_code=429,
-            headers={"Retry-After": str(int(exc.retry_after) + 1)},
-        )
-
-    # ── Multi-turn mode detection (#10.3c) ────────────────────────────
-    # Computed early so the phase-1/phase-2 logic below can branch on it.
-    is_follow_up = lesson.status in ("complete", "error")
-    mode = "follow_up" if is_follow_up else "new"
-
-    # ── Chat-based pedagogical intent — two-phase flow ───────────────
-    # Phase 1 (ask first): first new-run on a draft lesson, before the
-    # teacher has confirmed an intent from the chat card.  We flag this
-    # with __ask_intent__ in profile_json so the SSE generator renders the
-    # intent selection card straight away, without running any agent.
-    #
-    # Phase 2 (full run): the teacher clicked a chip in the intent card
-    # and the POST carries intent_confirmed=1.  We store the chosen intent
-    # in profile_json and run the full pipeline.  No new LessonMessage is
-    # written for phase 2 — the user turn was already recorded in phase 1.
-    #
-    # Refinement runs and follow-up turns bypass phase 1 entirely.
-    # ─────────────────────────────────────────────────────────────────────
-    intent_confirmed = form.get("intent_confirmed") == "1"
-
-    # A teacher who already chose the intent in the profile has answered the
-    # question the card asks. Asking again stopped the generation halfway and
-    # spent a whole Planner call before the real run (measured: 78 s).
-    already_chosen = str(
-        (lesson.educational_profile_json or {}).get("pedagogical_intent") or ""
-    ).strip()
-    is_phase1 = (mode == "new") and (not intent_confirmed) and not already_chosen
-
-    if is_phase1:
-        _prof = dict(lesson.educational_profile_json or {})
-        _prof["__ask_intent__"] = True
-        lesson.educational_profile_json = _prof
-    elif intent_confirmed:
-        _intent_code_raw = form.get("pedagogical_intent_code")
-        _intent_code = (
-            _intent_code_raw.strip()
-            if isinstance(_intent_code_raw, str) and _intent_code_raw.strip()
-            else None
-        )
-        if _intent_code and _intent_code != "skip":
-            _intent_detail_raw = form.get("pedagogical_intent_detail")
-            _intent_detail = (
-                _intent_detail_raw.strip()
-                if isinstance(_intent_detail_raw, str) and _intent_detail_raw.strip()
-                else None
-            )
-            _prof = dict(lesson.educational_profile_json or {})
-            _prof.pop("__ask_intent__", None)
-            _prof.pop("__planner_only__", None)
-            _prof["pedagogical_intent"] = (
-                f"{_intent_code}: {_intent_detail}" if _intent_detail else _intent_code
-            )
-            lesson.educational_profile_json = _prof
-
-    # ── F3b: SAM guided refinement instruction ────────────────────────
-    # Optional: refinement_code (one of the predefined options) +
-    # refinement_detail (freetext). Stored transiently in profile_json
-    # as "__refinement__" so the service layer can pop it without a
-    # DB schema change. Only set on follow-up "Raffina" runs.
-    refinement_code_raw = form.get("refinement_code")
-    refinement_detail_raw = form.get("refinement_detail")
-    refinement_code = (
-        refinement_code_raw.strip()
-        if isinstance(refinement_code_raw, str) and refinement_code_raw.strip()
-        else None
-    )
-    refinement_detail = (
-        refinement_detail_raw.strip()
-        if isinstance(refinement_detail_raw, str) and refinement_detail_raw.strip()
-        else None
-    )
-    chip_label: Optional[str] = None
-    if refinement_code:
-        _REFINEMENT_PROMPTS = {
-            "simplify": "Reduce length by ~30%, simplify vocabulary, keep only essential concepts",
-            "deepen": "Add scientific depth, more precise terminology, nuanced examples",
-            "more_activities": "Replace passive sections with at least 2 interactive activities or exercises",
-            "adapt_class": "Re-calibrate to the class profile: BES accommodations, time constraint, available tech",
-        }
-        if refinement_code == "custom" and refinement_detail:
-            refinement_instruction = refinement_detail
-        else:
-            base = _REFINEMENT_PROMPTS.get(refinement_code, "")
-            refinement_instruction = f"{base} ({refinement_detail})" if refinement_detail else base
-        # Store transiently in profile_json so service.py can read it
-        profile = dict(lesson.educational_profile_json or {})
-        profile["__refinement__"] = refinement_instruction
-        lesson.educational_profile_json = profile
-        # A chip sends no text: the chat shows the chip, not a repeat of the
-        # previous request. ``teacher_query`` stays the topic the planner needs.
-        if new_query is None:
-            chip_label = refinement_label(refinement_code, refinement_detail)
-
-    # The teacher's switch for the Knowledge Graph search on a follow-up turn.
-    # Kept in the profile like ``__refinement__``, and *left there*: the switch
-    # renders in the state she last set, so turning the graph off once keeps it
-    # off for the turns after, until she turns it back on (2026-09-29: asked
-    # about a chapter of her book, the run searched the graph again anyway).
-    # Only a form that shows the switch carries ``graph_search_choice``; the
-    # first turn always searches.
-    remember_graph_search(lesson, form)
-    if light:
-        profile = dict(lesson.educational_profile_json or {})
-        profile[LIGHT_KEY] = {"answer_here": form.get("light_answer") == "1"}
-        lesson.educational_profile_json = profile
-    elif form.get("full_run") == "1":
-        # «Lezione completa»: the whole chain, with the Knowledge Graph.
-        profile = dict(lesson.educational_profile_json or {})
-        profile["__graph_search__"] = True
-        lesson.educational_profile_json = profile
-
-    # Backfill turn 1 from legacy fields if this is a follow-up on a
-    # pre-#10.3 lesson. One-time, idempotent — guarded by a count probe
-    # so subsequent follow-ups skip cleanly.
-    if is_follow_up:
-        existing_msg_count = await session.scalar(
-            select(func.count(LessonMessage.id)).where(LessonMessage.lesson_id == lesson.id)
-        )
-        if (
-            (existing_msg_count or 0) == 0
-            and (lesson.teacher_query or "").strip()
-            and (lesson.lesson_plan_md or "").strip()
-        ):
-            logger.info(
-                "[lesson_run] backfilling turn 1 from legacy fields lesson_id=%s",
-                lesson.id,
-            )
-            # NOTE: we use the OLD lesson.teacher_query for the backfilled
-            # user message, NOT the freshly submitted new_query. The new
-            # query is the CURRENT turn — the backfill represents a PRIOR
-            # turn that we never persisted to lesson_messages.
-            #
-            # Tricky bit: by this point ``lesson.teacher_query`` may already
-            # have been overwritten with ``new_query`` above. We undo that
-            # for the backfill window only — see the assignment guard below.
-            backfill_user_query = (
-                new_query is None
-                and lesson.teacher_query
-                or _legacy_query_for_backfill(lesson, new_query)
-            )
-            session.add(
-                LessonMessage(
-                    lesson_id=lesson.id,
-                    role="user",
-                    content_md=backfill_user_query,
-                    turn_index=1,
-                )
-            )
-            session.add(
-                LessonMessage(
-                    lesson_id=lesson.id,
-                    role="assistant",
-                    content_md=lesson.lesson_plan_md,
-                    turn_index=1,
-                    agent_kind="writer",
-                    meta_json={"approved": True, "backfilled": True},
-                )
-            )
-            await session.flush()
-
-    # ── Compute the next turn_index for the user message we're about to
-    # persist. MAX(turn_index) + 1 keeps the ordering invariant. For a
-    # brand-new lesson with no rows yet, MAX returns NULL → 0 + 1 = 1.
-    latest_turn = (
-        await session.scalar(
-            select(func.max(LessonMessage.turn_index)).where(LessonMessage.lesson_id == lesson.id)
-        )
-        or 0
-    )
-    new_turn_index = latest_turn + 1
-
-    # The query we persist for THIS turn. ``new_query`` is preferred (the
-    # user just typed it); we fall back to lesson.teacher_query only as a
-    # safety net for legacy buttons that POST with no body. The validation
-    # above already guarantees at least one is non-empty.
-    user_msg_content = new_query or chip_label or lesson.teacher_query
-
-    # Phase 2 (intent_confirmed) is not a new user turn — the user message
-    # was already persisted in phase 1. Skip to avoid a duplicate row that
-    # would cause _persist_assistant_turn to match the wrong turn_index.
-    if not intent_confirmed:
-        session.add(
-            LessonMessage(
-                lesson_id=lesson.id,
-                role="user",
-                content_md=user_msg_content,
-                turn_index=new_turn_index,
-            )
-        )
-
-    # Flip status optimistically so the chat conversation partial we
-    # return immediately renders the live SSE pane (rather than the input
-    # form). The service layer's setup phase commits this again — that's
-    # idempotent and cheaper than a second roundtrip.
-    #
-    # We DO NOT clear lesson.lesson_plan_md anymore (#10.3): for follow-up
-    # turns the previous lesson stays visible in the chat history (rendered
-    # via lesson_messages — see chat_conversation.html post-#10.3d). For
-    # mode=new this is the first turn so lesson_plan_md is None already.
-    lesson.status = "running"
-    lesson.error_message = None
-    if mode == "new":
-        # First turn — keep the existing semantics (clear stale state
-        # from any aborted previous attempt on a draft lesson).
-        lesson.lesson_plan_md = None
-    await session.commit()
-    await session.refresh(lesson)
-
-    logger.info(
-        "▶️  Lesson run accepted: id=%s owner=%s mode=%s turn=%s has_new_query=%s uploads=%s",
-        lesson.id,
-        user.id,
-        "light" if light else mode,
-        new_turn_index,
-        bool(new_query),
-        len(lesson.uploaded_files_json or []),
-    )
 
     # Reload the chat transcript so the response includes the just-persisted
     # user turn (and any backfilled prior turn) at the bottom of the
@@ -1556,25 +1240,6 @@ async def lesson_run(
             "media": None,
         },
     )
-
-
-def _legacy_query_for_backfill(lesson: Lesson, new_query: Optional[str]) -> str:
-    """
-    Recover the previous turn's user query for the backfill path when
-    ``lesson.teacher_query`` has already been overwritten by the route's
-    new-query write-through.
-
-    Returns the best available recovery string. Pre-#10.3 lessons that
-    DO have a ``lesson_plan_md`` but somehow lost their ``teacher_query``
-    fall back to a synthesized "richiesta precedente" placeholder so the
-    backfill row stays non-empty (NOT NULL constraint).
-    """
-    # If the route has overwritten lesson.teacher_query with new_query,
-    # we can't recover the original. Fall back to a documented placeholder
-    # — better than a NULL row that breaks the rendering invariant.
-    if new_query and (lesson.teacher_query or "").strip() == new_query.strip():
-        return "[richiesta precedente non persistita]"
-    return (lesson.teacher_query or "[richiesta precedente non persistita]").strip()
 
 
 # ----------------------------------------------------------------------------
@@ -2002,75 +1667,20 @@ async def lesson_stream(
                 yield terminal_marker
             return
 
-        # CORE 6 #31/#34 — global generation cap + graceful load-shedding.
-        # Acquire one of the process-wide run slots before starting the full
-        # pipeline; if all slots are busy past the queue window, shed load
-        # with a friendly "sistema occupato" card instead of piling on a
-        # new concurrent pipeline (which would spike LLM cost / 429s).
+        # The slot, the claim, the heartbeat and the run itself: see
+        # ``aix.webui.agent.turns.drive_turn``. What is left here is the HTML.
         try:
-            await acquire_run_slot(label=f"webui:{lesson.id}")
-        except AtCapacity:
-            # Shed gracefully (#34). The POST /run handler already flipped the
-            # row to "running" before this SSE stream opened, so revert it to
-            # its pre-run state — otherwise the lesson list shows a stale
-            # spinner for a run that never started. Reverting (rather than
-            # marking "error") keeps a retry on the correct mode: "draft" for a
-            # first turn, "complete" for a follow-up on an already-finished
-            # lesson (see lesson_run mode auto-detection).
-            lesson.status = "complete" if (lesson.lesson_plan_md or "").strip() else "draft"
-            await session.commit()
-            yield {
-                "event": "error",
-                "data": _render_partial(
-                    request,
-                    "partials/chat_error.html",
-                    {
-                        "lesson": lesson,
-                        "error": (
-                            "Il sistema è momentaneamente occupato: troppe generazioni "
-                            "in corso in questo momento. Attendi qualche istante e riprova."
+            async for event in drive_turn(lesson, session, is_disconnected=request.is_disconnected):
+                if isinstance(event, TurnRefused):
+                    yield {
+                        "event": "error",
+                        "data": _render_partial(
+                            request,
+                            "partials/chat_error.html",
+                            {"lesson": lesson, "error": event.message},
                         ),
-                    },
-                ),
-            }
-            yield terminal_marker
-            return
-
-        # Atomically claim the lesson before driving the full pipeline. If we
-        # lose the race (another worker/tab claimed it after our is_active()
-        # check), hand the run slot back and surface the friendly card.
-        _token = await _registry.claim(lesson.id, owner_id=lesson.owner_id)
-        if _token is None:
-            release_run_slot()
-            yield _busy_event()
-            yield terminal_marker
-            return
-
-        # Keep the registry row fresh for the lifetime of the (30-60s) run so
-        # other workers don't mistake it for a crashed/stale run. No-op on the
-        # in-memory backend.
-        _hb_task = asyncio.create_task(heartbeat_loop(_registry, lesson.id, _token))
-        light = take_light_turn(lesson)
-        events = (
-            run_light_turn(lesson, session, **light)
-            if light is not None
-            else run_agent_stream(lesson, session)
-        )
-        try:
-            async for event in events:
-                # Bail early if the client disconnected (closed tab,
-                # navigated away). The agent in run_agent_stream still
-                # progresses to a terminal state in the background; the
-                # status row gets updated even though no SSE listener
-                # consumes the rest of the events.
-                if await request.is_disconnected():
-                    logger.info(
-                        "[stream] client disconnected lesson_id=%s; "
-                        "agent continues to terminal state",
-                        lesson.id,
-                    )
-                    break
-
+                    }
+                    continue
                 sse_message = _stream_event_to_sse(request, lesson, event)
                 if sse_message is not None:
                     logger.info(
@@ -2081,11 +1691,6 @@ async def lesson_stream(
                     )
                     yield sse_message
         finally:
-            _hb_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError, Exception):
-                await _hb_task
-            await _registry.release(lesson.id, _token)
-            release_run_slot()
             # End-of-stream marker. Triggers ``sse-close="end"`` on the
             # client, which calls ``eventSource.close()`` and prevents
             # the browser's default auto-reconnect.
