@@ -2984,3 +2984,16 @@ ogni turno successivo della stessa lezione risultava fallito.
 Ora dallo stato salvato si prende solo ciò che deve passare da un turno
 all'altro (`PERSISTED_ACROSS_TURNS`: nodi del grafo, risorse, fonti esterne), non
 l'errore né la lezione del turno prima. Test: `test_seed_from_checkpoint.py`.
+
+### 2026-10-14 — `chore/repo-reorg` raccoglie tutto il lavoro, e da qui parte l'API per i chatbot
+
+Su richiesta di Angelo, `feature/advanced-input-and-export` è unito in
+`chore/repo-reorg` (merge senza conflitti; codice, test e migrazioni identici ad
+advanced, più i documenti di strategia che erano solo qui). La modalità a sezioni
+resta su `feature/section-edits-optional`.
+
+Prossimo lavoro, su questo branch: tutto ciò che la WebUI usa disponibile e chiaro
+dall'API, per un'app esterna che alimenterà dei chatbot — documenti caricati una
+volta e riusati per id (RAG privato via API), sessioni con la conversazione
+tenuta dall'API, risposte veloci con il rimando alla lezione nuova, spiegabilità
+completa, export PDF/Word/scaletta, guida per chi integra.
