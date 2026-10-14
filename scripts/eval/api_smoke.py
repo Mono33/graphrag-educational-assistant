@@ -112,7 +112,7 @@ def main() -> int:
             json={
                 "domain": "udl",
                 "title": "Prova API",
-                "educational_profile": {"pedagogical_intent": "first_introduction"},
+                "educational_profile": {"pedagogical_intent": "intro"},
                 "material_ids": [material["material_id"]],
             },
         )

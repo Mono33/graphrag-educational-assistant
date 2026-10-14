@@ -46,13 +46,13 @@ from typing import Optional
 from fastapi import APIRouter, Body, Depends, HTTPException, Response, status
 from sse_starlette.sse import EventSourceResponse
 
+from aix.api.explain import critic_info, planner_info, retriever_info, run_meta
 from aix.api.principals import require_caller
 from aix.api.schemas import (
     AgentRunMeta,
     AgentRunRequest,
     AgentRunResponse,
-    CriticScores,
-    MediaCounts,
+    CriticInfo,
     PlannerInfo,
     RetrieverInfo,
 )
@@ -219,55 +219,10 @@ def _serialise_event(event: StreamEvent) -> dict:
     }
 
 
-def _meta_to_pydantic(meta: dict) -> AgentRunMeta:
-    """Coerce the internal meta dict into the published response model."""
-    media_counts = meta.get("media_counts") or {}
-    scores_dict = meta.get("scores") or None
-    return AgentRunMeta(
-        duration_seconds=float(meta.get("duration_seconds", 0.0)),
-        approved=bool(meta.get("approved", False)),
-        revision_count=int(meta.get("revision_count", 0)),
-        scores=CriticScores.model_validate(scores_dict) if isinstance(scores_dict, dict) else None,
-        nodes_count=int(meta.get("nodes_count", 0)),
-        recommendations_count=int(meta.get("recommendations_count", 0)),
-        media_counts=MediaCounts(
-            videos=int(media_counts.get("videos", 0)),
-            articles=int(media_counts.get("articles", 0)),
-            oer=int(media_counts.get("oer", 0)),
-        ),
-        search_queries_count=int(meta.get("search_queries_count", 0)),
-    )
-
-
-def _planner_payload_to_pydantic(payload: dict) -> PlannerInfo:
-    return PlannerInfo(
-        intent=payload.get("intent"),
-        intent_label=payload.get("intent_label"),
-        scope=payload.get("scope"),
-        scope_label=payload.get("scope_label"),
-        scope_confidence=payload.get("scope_confidence"),
-        key_concepts=list(payload.get("key_concepts") or []),
-        search_queries=list(payload.get("search_queries") or []),
-        lesson_type=payload.get("lesson_type"),
-        target_grade=payload.get("target_grade"),
-    )
-
-
-def _retriever_payload_to_pydantic(payload: dict) -> RetrieverInfo:
-    media_counts = payload.get("media_counts") or {}
-    return RetrieverInfo(
-        nodes_count=int(payload.get("nodes_count", 0)),
-        relationships_count=int(payload.get("relationships_count", 0)),
-        recommendations_count=int(payload.get("recommendations_count", 0)),
-        media_counts=MediaCounts(
-            videos=int(media_counts.get("videos", 0)),
-            articles=int(media_counts.get("articles", 0)),
-            oer=int(media_counts.get("oer", 0)),
-        ),
-        media=dict(payload.get("media") or {}),
-        top_concepts=list(payload.get("top_concepts") or []),
-        retrieval_confidence=payload.get("retrieval_confidence"),
-    )
+# The WebUI's payloads, validated into the published models (``aix.api.explain``).
+_meta_to_pydantic = run_meta
+_planner_payload_to_pydantic = planner_info
+_retriever_payload_to_pydantic = retriever_info
 
 
 # ---------------------------------------------------------------------------
@@ -325,6 +280,7 @@ async def run_agent(
 
     planner_info: Optional[PlannerInfo] = None
     retriever_info: Optional[RetrieverInfo] = None
+    critic: Optional[CriticInfo] = None
     final_lesson_plan: str = ""
     final_meta: Optional[AgentRunMeta] = None
     error_message: Optional[str] = None
@@ -362,6 +318,8 @@ async def run_agent(
                     planner_info = _planner_payload_to_pydantic(event.payload or {})
                 elif event.kind == "retriever":
                     retriever_info = _retriever_payload_to_pydantic(event.payload or {})
+                elif event.kind == "critic":
+                    critic = critic_info(event.payload or {})
                 elif event.kind == "done":
                     final_lesson_plan = event.lesson_plan_md or ""
                     final_meta = _meta_to_pydantic(event.meta or {})
@@ -394,6 +352,7 @@ async def run_agent(
                 meta=final_meta,
                 planner=planner_info,
                 retriever=retriever_info,
+                critic=critic,
             )
     except AtCapacity as exc:
         raise HTTPException(

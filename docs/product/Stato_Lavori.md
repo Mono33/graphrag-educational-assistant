@@ -3094,3 +3094,22 @@ lezione in **33 s** con le citazioni risolte al nome del documento; domanda
 risposta in **4,8 s** dal documento; «fammi una lezione sui vulcani» tornata come
 `handoff` in **1,2 s**. Il service account locale (`chatbot-local`) è in
 `deploy/.env.local`.
+
+### 2026-10-14 — API per i chatbot, passo 4: tutto ciò che la WebUI mostra
+
+- **Le schede, tipizzate.** `PlannerInfo`, `RetrieverInfo` e il nuovo `CriticInfo`
+  (che l'API prima non restituiva) leggono i payload della WebUI così come sono
+  (`aix/api/explain.py`), con i campi che mancavano: `subject_concepts`,
+  `scope_variant`, `kg_unreachable`, `retrieval_outcome`, `coverage_tier` e le
+  etichette del dominio, `reused` e il motivo, giudizio e istruzioni del Critic,
+  `udl_coverage` nel riepilogo. Valgono anche per `/agent/run`.
+- **La lezione in tre forme** in ogni turno `lesson` e nella sessione: Markdown con
+  le citazioni risolte e le fonti in fondo, `structure` (sezioni con livello e
+  minuti, scaletta temporizzata, avvertenze: lo stesso modello dell'export PDF) e
+  `cited_documents`. Le risposte hanno `cited_documents` e `answer_meta`.
+- `GET /api/v1/sessions/{id}/media`: le risorse trovate dal vivo (articoli,
+  Wikipedia, video) del pannello destro della WebUI. Le funzioni sono passate da
+  `routes.py` a `aix/webui/lessons/live_media.py`, usato da entrambe.
+- `GET /api/v1/catalog`: domini, intenti pedagogici (codici veri: `intro`,
+  `deepening`…), chip di rifinitura, modi del turno, codici del profilo con le
+  etichette della WebUI, formati e limiti dei documenti.

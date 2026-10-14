@@ -229,24 +229,45 @@ class AgentRunMeta(BaseModel):
     recommendations_count: int = Field(default=0, ge=0)
     media_counts: MediaCounts = Field(default_factory=MediaCounts)
     search_queries_count: int = Field(default=0, ge=0)
+    udl_coverage: Optional[dict[str, Any]] = Field(
+        default=None,
+        description="How the lesson covers the three UDL principles (representation, "
+        "action, engagement), as the WebUI's lesson card shows it.",
+    )
+
+
+# The three cards below take the WebUI's payloads as they are (``extra="ignore"``):
+# every field the WebUI card shows is a field here, and
+# ``tests/unit/test_api_webui_parity.py`` fails when the WebUI gains one that is not.
 
 
 class PlannerInfo(BaseModel):
-    """Planner output included in the sync response for explainability."""
+    """What the planner understood: the WebUI's planner card."""
 
-    intent: Optional[str] = None
-    intent_label: Optional[str] = None
-    scope: Optional[str] = None
+    model_config = ConfigDict(extra="ignore")
+
+    intent: Optional[str] = Field(None, description="lesson_creation, activity_design, …")
+    intent_label: Optional[str] = Field(None, description="The intent in Italian.")
+    scope: Optional[str] = Field(None, description="in_scope · partial_scope · out_of_scope")
     scope_label: Optional[str] = None
+    scope_variant: Optional[str] = Field(
+        None, description="success · warning · danger: how the card colours the scope."
+    )
     scope_confidence: Optional[float] = None
     key_concepts: list[str] = Field(default_factory=list)
+    subject_concepts: list[str] = Field(
+        default_factory=list,
+        description="The subject the lesson is about (searched outside the graph when out of scope).",
+    )
     search_queries: list[str] = Field(default_factory=list)
     lesson_type: Optional[str] = None
     target_grade: Optional[str] = None
 
 
 class RetrieverInfo(BaseModel):
-    """Retriever output included in the sync response for explainability."""
+    """What the search found: the WebUI's retriever card."""
+
+    model_config = ConfigDict(extra="ignore")
 
     nodes_count: int = Field(default=0, ge=0)
     relationships_count: int = Field(default=0, ge=0)
@@ -261,6 +282,53 @@ class RetrieverInfo(BaseModel):
     )
     top_concepts: list[str] = Field(default_factory=list)
     retrieval_confidence: Optional[str] = None
+    media_total: int = Field(default=0, ge=0)
+    kg_unreachable: bool = Field(
+        False,
+        description="The Knowledge Graph did not answer: the lesson was written without it. "
+        "Not the same as an out-of-scope question.",
+    )
+    retrieval_outcome: Optional[str] = Field(
+        None,
+        description="success · adapted_with_hybrid (outside sources filled in) · "
+        "limited_kg_only · grader_error",
+    )
+    coverage_tier: Optional[str] = Field(
+        None, description="How much of the request the graph covers, for the coverage banner."
+    )
+    domain: Optional[str] = None
+    domain_label_short: Optional[str] = None
+    domain_label_long: Optional[str] = None
+    reused: bool = Field(
+        False, description="This turn reused an earlier turn's search instead of searching again."
+    )
+    reuse_reason: Optional[str] = Field(None, description="Why the planner chose to reuse it.")
+    retrieval_grade: Optional[str] = Field(
+        None,
+        description="Corrective RAG only (off in the pilot): relevant · ambiguous · irrelevant.",
+    )
+    retrieval_grade_label: Optional[str] = None
+    retrieval_grade_reason: Optional[str] = None
+    retrieval_attempts: Optional[int] = None
+    retrieval_attempts_max: Optional[int] = None
+    retrieval_warning: bool = False
+    retrieval_rewritten_query: Optional[str] = None
+
+
+class CriticInfo(BaseModel):
+    """The critic's judgement: the WebUI's critic card."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    approved: bool = False
+    revision_count: int = Field(0, ge=0)
+    max_revisions: int = Field(1, ge=0)
+    score: Optional[float] = Field(None, description="0-5.")
+    score_pct: Optional[int] = Field(None, description="The score as a percentage.")
+    critique: str = Field("", description="The critic's assessment, in the lesson's language.")
+    revision_instructions: str = Field(
+        "", description="What the critic asked the writer to change, when it did."
+    )
 
 
 class AgentRunResponse(BaseModel):
@@ -287,6 +355,9 @@ class AgentRunResponse(BaseModel):
         default=None,
         description="Retriever-stage explainability. Absent only on early "
         "errors that bailed before the retriever ran.",
+    )
+    critic: Optional[CriticInfo] = Field(
+        default=None, description="The critic's last judgement on the lesson."
     )
 
     model_config = ConfigDict(

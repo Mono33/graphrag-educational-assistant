@@ -86,7 +86,7 @@ def _new_session(client, user="anna"):
         "/api/v1/sessions",
         json={
             "domain": "udl",
-            "educational_profile": {"pedagogical_intent": "first_introduction"},
+            "educational_profile": {"pedagogical_intent": "intro"},
         },
         headers=_as(user),
     )
@@ -107,7 +107,15 @@ def test_the_first_turn_writes_the_lesson(api):
     result = response.json()
     assert (result["kind"], result["turn_index"]) == ("lesson", 1)
     assert result["markdown"].startswith("# La cellula")
-    assert set(result["phases"]) == {"planner", "retriever", "critic"}
+    assert result["planner"]["intent"] == "lesson_creation"
+    assert result["retriever"]["nodes_count"] == 12
+    assert result["critic"]["approved"] is True
+    assert result["lesson_meta"]["duration_seconds"] == 1.0
+    assert result["structure"]["sections"][0] == {
+        "title": "Introduzione (10 minuti)",
+        "level": 2,
+        "minutes": 10,
+    }
     assert result["ai_disclosure"]
     assert response.headers["x-ai-generated"] == "true"
 
@@ -131,6 +139,8 @@ def test_a_question_after_the_lesson_is_answered_in_a_few_seconds(api, monkeypat
 
     assert (result["kind"], result["turn_index"]) == ("answer", 2)
     assert result["markdown"] == "Perché la cellula vive."
+    assert result["answer_meta"]["passages"] == 0
+    assert result["planner"] is None, "an answer has no planner card"
     detail = api.get(f"/api/v1/sessions/{session_id}", headers=_as()).json()
     assert detail["turns"][-1]["kind"] == "answer"
     assert detail["lesson_markdown"].startswith("# La cellula"), "an answer leaves the lesson"
@@ -238,3 +248,23 @@ def test_a_session_can_be_deleted(api):
 
     assert api.delete(f"/api/v1/sessions/{session_id}", headers=_as()).status_code == 204
     assert api.get(f"/api/v1/sessions/{session_id}", headers=_as()).status_code == 404
+
+
+def test_the_media_panel_is_empty_when_the_live_search_is_off(api, monkeypatch):
+    monkeypatch.setenv("AIX_MEDIA_LIVE_ENABLED", "false")
+    session_id = _new_session(api)
+
+    response = api.get(f"/api/v1/sessions/{session_id}/media", headers=_as())
+
+    assert response.status_code == 200
+    assert response.json() == {"videos": [], "citations": [], "wikipedia": []}
+
+
+def test_the_catalog_has_the_webui_s_choices(api):
+    catalog = api.get("/api/v1/catalog", headers=_as()).json()
+
+    assert {d["code"] for d in catalog["domains"]} == {"neuro", "udl"}
+    assert any(i["code"] == "intro" for i in catalog["pedagogical_intents"])
+    assert {r["code"] for r in catalog["refinements"]} >= {"simplify", "custom"}
+    assert catalog["profile"]["disabilities"]
+    assert ".pdf" in catalog["materials"]["extensions"]

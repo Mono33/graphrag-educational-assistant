@@ -11,6 +11,7 @@ from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
+from aix.api.schemas.agent import AgentRunMeta, CriticInfo, PlannerInfo, RetrieverInfo
 from aix.api.schemas.educational_profile import EducationalProfile
 
 #: The AI Act Art. 50 notice, in the body as well as the ``X-AI-Generated`` header.
@@ -74,6 +75,35 @@ class TurnRequest(BaseModel):
     )
 
 
+class LessonSection(BaseModel):
+    title: str
+    level: int = Field(..., description="2 for a ## section, 3 for a ### part of it.")
+    minutes: Optional[int] = Field(None, description="The minutes the section declares, if any.")
+
+
+class LessonStructure(BaseModel):
+    """The lesson as sections and minutes, read from its Markdown (the export model)."""
+
+    title: str
+    duration_minutes: Optional[int] = None
+    sections: list[LessonSection] = Field(default_factory=list)
+    timed_outline: list[LessonSection] = Field(
+        default_factory=list,
+        description="The timed sections without double counting: the outline export.",
+    )
+    warnings: list[str] = Field(
+        default_factory=list,
+        description="What the reader noticed, e.g. minutes that do not add up.",
+    )
+
+
+class AnswerMeta(BaseModel):
+    model: Optional[str] = None
+    seconds: Optional[float] = None
+    first_token_seconds: Optional[float] = None
+    passages: int = Field(0, description="Passages of the user's documents the answer was given.")
+
+
 class TurnResult(BaseModel):
     session_id: str
     turn_index: Optional[int] = None
@@ -94,11 +124,15 @@ class TurnResult(BaseModel):
         ),
     )
     handoff_query: Optional[str] = None
-    phases: dict[str, Any] = Field(
-        default_factory=dict,
-        description="What each phase reported (planner, retriever, critic), as the WebUI cards.",
+    cited_documents: list[str] = Field(
+        default_factory=list, description="Names of the user's documents the text cites."
     )
-    meta: dict[str, Any] = Field(default_factory=dict)
+    structure: Optional[LessonStructure] = Field(None, description="For a lesson.")
+    planner: Optional[PlannerInfo] = Field(None, description="For a lesson: the planner card.")
+    retriever: Optional[RetrieverInfo] = Field(None, description="For a lesson: the search card.")
+    critic: Optional[CriticInfo] = Field(None, description="For a lesson: the critic card.")
+    lesson_meta: Optional[AgentRunMeta] = Field(None, description="For a lesson: the run summary.")
+    answer_meta: Optional[AnswerMeta] = Field(None, description="For an answer.")
     ai_disclosure: str = AI_DISCLOSURE
 
 
@@ -131,7 +165,17 @@ class SessionOut(SessionSummary):
     lesson_markdown: Optional[str] = Field(
         None, description="The current lesson, citations resolved."
     )
+    lesson_structure: Optional[LessonStructure] = None
+    cited_documents: list[str] = Field(default_factory=list)
     error: Optional[str] = None
     materials: list[SessionMaterial] = Field(default_factory=list)
     turns: list[TurnOut] = Field(default_factory=list)
     ai_disclosure: str = AI_DISCLOSURE
+
+
+class SessionMedia(BaseModel):
+    """Resources on the lesson's subject, found live (papers, Wikipedia, videos)."""
+
+    videos: list[dict[str, Any]] = Field(default_factory=list)
+    citations: list[dict[str, Any]] = Field(default_factory=list)
+    wikipedia: list[dict[str, Any]] = Field(default_factory=list)

@@ -29,11 +29,21 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
 
+from aix.api.explain import (
+    cited_documents,
+    critic_info,
+    lesson_structure,
+    planner_info,
+    retriever_info,
+    run_meta,
+)
 from aix.api.principals import current_owner
 from aix.api.schemas.sessions import (
+    AnswerMeta,
     SessionCreate,
     SessionMaterial,
     SessionMaterials,
+    SessionMedia,
     SessionOut,
     SessionSummary,
     TurnOut,
@@ -45,9 +55,10 @@ from aix.webui.agent.service import StreamEvent
 from aix.webui.agent.turns import TurnAccepted, TurnRefused, accept_turn, drive_turn
 from aix.webui.auth.models import User
 from aix.webui.db import get_async_session
+from aix.webui.lessons.live_media import live_media_for_lesson
 from aix.webui.lessons.models import Lesson, LessonMessage
 from aix.webui.materials import library
-from aix.webui.materials.citations import resolve_for_lesson
+from aix.webui.materials.citations import labels_for_lesson_safe, resolve_for_lesson
 
 logger = logging.getLogger(__name__)
 
@@ -189,6 +200,26 @@ async def delete_session(
     await session.commit()
 
 
+@router.get(
+    "/{session_id}/media",
+    response_model=SessionMedia,
+    summary="Resources on the lesson's subject, found live",
+    description=(
+        "Papers, Wikipedia and videos on the lesson's subject, as the WebUI's right panel "
+        "shows them after a lesson. Best effort: empty when nothing is found or the live "
+        "search is off. The curated resources of the Knowledge Graph are in the lesson "
+        "turn's ``retriever.media``."
+    ),
+)
+async def session_media(
+    session_id: str,
+    owner: User = Depends(current_owner),
+    session: AsyncSession = Depends(get_async_session),
+) -> SessionMedia:
+    lesson = await _lesson(session, owner, session_id)
+    return SessionMedia.model_validate(await live_media_for_lesson(lesson))
+
+
 @router.post(
     "/{session_id}/materials",
     response_model=SessionOut,
@@ -240,8 +271,15 @@ async def _session_out(session: AsyncSession, lesson: Lesson, owner: User) -> Se
         for m in await library.list_materials(session, owner_id=owner.id)
         if str(lesson.id) in m.sessions
     ]
+    labels = await labels_for_lesson_safe(session, lesson)
     return SessionOut(
         **_summary(lesson),
+        lesson_structure=(
+            lesson_structure(lesson.lesson_plan_md, lesson_id=str(lesson.id), title=lesson.title)
+            if lesson.lesson_plan_md
+            else None
+        ),
+        cited_documents=cited_documents(lesson.lesson_plan_md or "", labels),
         educational_profile={
             k: v
             for k, v in (lesson.educational_profile_json or {}).items()
@@ -311,13 +349,20 @@ async def _turn_events(
         if event.kind in ("error", "light_error"):
             raise _error(502, "generation_failed", event.error or "La generazione non è riuscita.")
         if event.kind == "done":
+            raw = event.lesson_plan_md or ""
             result = TurnResult(
                 session_id=str(lesson.id),
                 turn_index=outcome.turn_index,
                 kind="lesson",
-                markdown=await resolve_for_lesson(event.lesson_plan_md or "", session, lesson),
-                phases=phases,
-                meta=event.meta or {},
+                markdown=await resolve_for_lesson(raw, session, lesson),
+                cited_documents=cited_documents(raw, await labels_for_lesson_safe(session, lesson)),
+                structure=lesson_structure(raw, lesson_id=str(lesson.id), title=lesson.title),
+                planner=planner_info(phases.get("planner")) if "planner" in phases else None,
+                retriever=retriever_info(phases.get("retriever"))
+                if "retriever" in phases
+                else None,
+                critic=critic_info(phases.get("critic")) if "critic" in phases else None,
+                lesson_meta=run_meta(event.meta),
             )
         elif event.kind == "light_done":
             answer = await session.scalar(
@@ -335,7 +380,10 @@ async def _turn_events(
                 turn_index=outcome.turn_index,
                 kind="answer",
                 markdown=await resolve_for_lesson(answer or "", session, lesson),
-                meta=event.meta or {},
+                cited_documents=cited_documents(
+                    answer or "", await labels_for_lesson_safe(session, lesson)
+                ),
+                answer_meta=AnswerMeta.model_validate(event.meta or {}),
             )
         elif event.kind == "light_escalate":
             result = TurnResult(
