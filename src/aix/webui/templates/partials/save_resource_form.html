@@ -1,5 +1,22 @@
+{#
+  The bookmark on a media item. Saved without leaving the page (htmx swaps this
+  form for its saved state), shown as saved when the resource is already in the
+  library (``saved_keys``, the owner's keys, from the route), and saved with the
+  lesson it came from, so the library links back to it (2026-10-14).
+
+  Context: resource_item, resource_kind, resource_source, resource_title,
+  resource_url, lesson_id, saved_keys (optional).
+#}
 {% if resource_title %}
-<form method="post" action="/webui/resources/saved" class="inline-flex shrink-0">
+{% set _key = saved_resource_key(resource_kind, resource_source, resource_title, resource_url, resource_item) %}
+{% if saved_keys and _key in saved_keys %}
+<a href="/webui/resources" class="aix-media-save is-saved inline-flex shrink-0"
+   title="Salvata nelle tue risorse" aria-label="{{ resource_title }} è nelle tue risorse">
+  <wa-icon name="bookmark" variant="solid"></wa-icon>
+</a>
+{% else %}
+<form method="post" action="/webui/resources/saved" class="inline-flex shrink-0"
+      hx-post="/webui/resources/saved" hx-target="this" hx-swap="outerHTML">
   <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}" />
   <input type="hidden" name="kind" value="{{ resource_kind }}" />
   <input type="hidden" name="source" value="{{ resource_source }}" />
@@ -13,12 +30,14 @@
   <input type="hidden" name="journal" value="{{ resource_item.get('journal') or '' }}" />
   <input type="hidden" name="license" value="{{ resource_item.get('license') or '' }}" />
   <input type="hidden" name="provenance" value="{{ resource_source }}" />
+  <input type="hidden" name="lesson_id" value="{{ lesson_id or '' }}" />
   <input type="hidden" name="next" value="/webui/lesson/{{ lesson_id }}" />
   <button type="submit"
           class="aix-media-save"
           title="Salva nelle tue risorse"
           aria-label="Salva {{ resource_title }} nelle tue risorse">
-    <wa-icon name="bookmark"></wa-icon>
+    <wa-icon name="bookmark" variant="regular"></wa-icon>
   </button>
 </form>
+{% endif %}
 {% endif %}

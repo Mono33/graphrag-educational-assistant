@@ -54,10 +54,18 @@
                   <span>{{ (row.size_bytes / 1024) | round(0, "ceil") | int }} KB</span>
                 {% endif %}
               </div>
-              {% if row.active_bindings %}
+              {% if row.copies > 1 %}
                 <p class="aix-fs-12 aix-text-muted mt-2 mb-0">
-                  Usato in {{ row.active_bindings | length }}
-                  {{ "lezione" if row.active_bindings | length == 1 else "lezioni" }}.
+                  Caricato {{ row.copies }} volte: è lo stesso file.
+                </p>
+              {% endif %}
+              {% if row.active_lesson_ids %}
+                <p class="aix-fs-13 mt-2 mb-0">
+                  <span class="aix-text-muted">Usato in:</span>
+                  {% for lesson_id in row.active_lesson_ids | unique %}
+                    <a href="/webui/lesson/{{ lesson_id }}" class="aix-link-navy">
+                      {{ row.all_lessons.get(lesson_id) or "Lezione senza titolo" }}</a>{{ "," if not loop.last }}
+                  {% endfor %}
                 </p>
               {% endif %}
             </div>
@@ -95,6 +103,14 @@
                 <span class="aix-pill aix-pill-neutral">{{ resource.kind }}</span>
                 <h3 class="aix-card-title aix-fs-16 mt-2 break-words">{{ resource.title }}</h3>
                 <p class="aix-text-muted aix-fs-12 mt-1">{{ resource.source }}</p>
+                {% set from_lesson = (resource.metadata_json or {}).get("lesson_id") %}
+                {% if from_lesson and saved_lessons.get(from_lesson) %}
+                  <p class="aix-fs-13 mt-1 mb-0">
+                    <span class="aix-text-muted">Dalla lezione:</span>
+                    <a href="/webui/lesson/{{ from_lesson }}" class="aix-link-navy">
+                      {{ saved_lessons[from_lesson] }}</a>
+                  </p>
+                {% endif %}
               </div>
               <form method="post" action="/webui/resources/saved/{{ resource.id }}/delete">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}" />

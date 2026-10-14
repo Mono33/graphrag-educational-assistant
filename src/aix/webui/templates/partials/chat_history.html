@@ -44,6 +44,15 @@
 
 {% set initials = (user.email[0] | upper) if user and user.email else "T" %}
 
+{# The current lesson is the last full-lesson turn: its card carries the
+   downloads, which export the lesson as it is now. #}
+{% set latest = namespace(lesson_turn=0) %}
+{% for m in messages %}
+  {% if m.role == "assistant" and m.agent_kind != "tutor" %}
+    {% set latest.lesson_turn = m.turn_index %}
+  {% endif %}
+{% endfor %}
+
 {% for msg in messages %}
 
   {% if msg.role == "user" %}
@@ -174,6 +183,12 @@
           <article class="lesson-prose aix-prose-padding">
             {{ msg.content_html | safe }}
           </article>
+
+          {% if msg.turn_index == latest.lesson_turn and lesson.status != "running" %}
+            <footer class="aix-lesson-footer">
+              {% include "partials/lesson_downloads.html" %}
+            </footer>
+          {% endif %}
 
         </article>
 

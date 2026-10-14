@@ -1896,6 +1896,12 @@ body.aix-body {
   color: var(--aix-teal);
   background: var(--aix-teal-soft);
 }
+/* Already in the library: filled, coloured, and a link to the library. */
+.aix-media-save.is-saved {
+  border-color: var(--aix-teal);
+  color: #fff;
+  background: var(--aix-teal);
+}
 .aix-media-item-meta {
   font-size: 11px;
   color: var(--aix-text-tertiary);

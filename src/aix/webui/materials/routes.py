@@ -31,7 +31,10 @@ from aix.webui.materials.repository import (
     MaterialService,
     MaterialVersionRepository,
 )
-from aix.webui.materials.saved_resources import SavedResourceRepository
+from aix.webui.materials.saved_resources import (
+    SavedResourceRepository,
+    saved_keys_for_owner,
+)
 from aix.webui.materials.shadow import retire_material
 from aix.webui.materials.storage import StorageError, get_storage_backend
 
@@ -85,10 +88,36 @@ async def _material_row(
         "versions": versions,
         "latest": latest,
         "size_bytes": blob.size_bytes if blob is not None else None,
+        "digest": blob.sha256 if blob is not None else None,
         "bindings": bindings,
         "active_bindings": active,
         "lesson_titles": lesson_titles,
     }
+
+
+def _same_file_once(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """One card per file: the same bytes uploaded to several lessons are one document.
+
+    Each upload is its own material (it has its own versions and bindings), so
+    the library showed «guerra-fredda-def.pdf» twice. The newest copy stands for
+    the file; the others add their lessons and their count (2026-10-14).
+    """
+    by_digest: dict[str, dict[str, Any]] = {}
+    out: list[dict[str, Any]] = []
+    for row in rows:  # newest first
+        digest = row.get("digest")
+        first = by_digest.get(digest) if digest else None
+        if first is None:
+            row = {**row, "copies": 1, "all_lessons": dict(row["lesson_titles"])}
+            row["active_lesson_ids"] = [b.lesson_id for b in row["active_bindings"]]
+            if digest:
+                by_digest[digest] = row
+            out.append(row)
+            continue
+        first["copies"] += 1
+        first["all_lessons"].update(row["lesson_titles"])
+        first["active_lesson_ids"] += [b.lesson_id for b in row["active_bindings"]]
+    return out
 
 
 @router.get("/resources", response_class=HTMLResponse, name="webui_resources")
@@ -101,8 +130,24 @@ async def resource_library(
         return _login_redirect("/webui/resources")
 
     materials = await MaterialRepository(session).list_for_owner(user.id)
-    rows = [await _material_row(session, material, owner_id=user.id) for material in materials]
+    rows = _same_file_once(
+        [await _material_row(session, material, owner_id=user.id) for material in materials]
+    )
     saved_resources = await SavedResourceRepository(session).list_for_owner(user.id)
+    # The lesson each resource was saved from (kept in its metadata), by title.
+    saved_lesson_ids = {
+        uuid.UUID(lesson_id)
+        for resource in saved_resources
+        if (lesson_id := (resource.metadata_json or {}).get("lesson_id"))
+    }
+    saved_lessons: dict[str, str] = {}
+    if saved_lesson_ids:
+        found = await session.execute(
+            select(Lesson.id, Lesson.title).where(
+                Lesson.owner_id == user.id, Lesson.id.in_(saved_lesson_ids)
+            )
+        )
+        saved_lessons = {str(lid): title or "Lezione senza titolo" for lid, title in found}
     return templates.TemplateResponse(
         request,
         "pages/resources.html",
@@ -112,6 +157,7 @@ async def resource_library(
             "active_nav": "resources",
             "rows": rows,
             "saved_resources": saved_resources,
+            "saved_lessons": saved_lessons,
         },
     )
 
@@ -339,6 +385,18 @@ async def save_external_resource(
         )
         if form.get(key)
     }
+    # The lesson it was saved from, kept only if it is this teacher's.
+    lesson_id = None
+    try:
+        candidate = uuid.UUID(str(form.get("lesson_id") or ""))
+    except ValueError:
+        candidate = None
+    if candidate is not None and await session.scalar(
+        select(Lesson.id).where(Lesson.id == candidate, Lesson.owner_id == user.id)
+    ):
+        lesson_id = candidate
+        metadata["lesson_id"] = str(candidate)
+
     try:
         await SavedResourceRepository(session).save(
             owner_id=user.id,
@@ -351,6 +409,26 @@ async def save_external_resource(
         await session.commit()
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    # From the panel (htmx): answer with the bookmark in its saved state, so the
+    # page does not reload and the teacher sees it took (2026-10-14).
+    if request.headers.get("HX-Request"):
+        return templates.TemplateResponse(
+            request,
+            "partials/save_resource_form.html",
+            {
+                "resource_kind": str(form.get("kind") or ""),
+                "resource_source": str(form.get("source") or "unknown"),
+                "resource_title": str(form.get("title") or ""),
+                "resource_url": str(form.get("url") or "") or None,
+                "resource_item": {
+                    "doi": form.get("doi") or "",
+                    "video_id": form.get("video_id") or "",
+                },
+                "lesson_id": lesson_id,
+                "saved_keys": await saved_keys_for_owner(session, user.id),
+            },
+        )
 
     next_path = str(form.get("next") or "")
     if not (next_path == "/webui/resources" or next_path.startswith("/webui/lesson/")):

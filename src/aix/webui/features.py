@@ -98,6 +98,10 @@ def register(templates) -> None:
     templates.env.globals["conditional_retrieval_enabled"] = conditional_retrieval_enabled
     templates.env.globals["light_turns_enabled"] = light_turns_enabled
     templates.env.globals["material_library_enabled"] = material_library_enabled
+
+    from aix.webui.materials.saved_resources import resource_key
+
+    templates.env.globals["saved_resource_key"] = resource_key
     templates.env.globals["export_pdf_enabled"] = export_pdf_enabled
     templates.env.globals["export_outline_enabled"] = export_outline_enabled
     templates.env.globals["export_docx_enabled"] = export_docx_enabled

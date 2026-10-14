@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import uuid
 from typing import Any, Optional
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -15,6 +16,9 @@ from aix.webui.materials.models import SavedResource
 
 RESOURCE_KINDS = {"video", "article", "oer", "web", "wikipedia", "textbook"}
 _TRACKING_QUERY_KEYS = {"fbclid", "gclid", "mc_cid", "mc_eid"}
+
+
+logger = logging.getLogger(__name__)
 
 
 def normalize_external_url(raw: Optional[str]) -> Optional[str]:
@@ -82,6 +86,8 @@ def sanitize_resource_metadata(raw: Any) -> dict[str, Any]:
         "duration_hint",
         "license",
         "provenance",
+        # The lesson the resource was saved from: the library links back to it.
+        "lesson_id",
     }
     clean: dict[str, Any] = {}
     for key in allowed:
@@ -94,6 +100,40 @@ def sanitize_resource_metadata(raw: Any) -> dict[str, Any]:
         elif isinstance(value, (list, tuple)):
             clean[key] = [str(item)[:300] for item in list(value)[:20]]
     return clean
+
+
+def resource_key(kind: str, source: str, title: str, url: Optional[str], item: Any = None) -> str:
+    """The key a resource is saved under, from what the panel renders.
+
+    The same computation ``SavedResourceRepository.save`` makes, so the panel can
+    tell a resource already in the library from one that is not.
+    """
+    metadata = sanitize_resource_metadata(item if isinstance(item, dict) else {})
+    return stable_resource_key(
+        kind=(kind or "").strip().lower(),
+        source=(source or "unknown").strip().lower()[:64],
+        title=(title or "").strip()[:500],
+        url=normalize_external_url(url),
+        doi=str(metadata.get("doi") or "") or None,
+        video_id=str(metadata.get("video_id") or "") or None,
+    )
+
+
+async def saved_keys_for_owner(session: AsyncSession, owner_id: uuid.UUID) -> set[str]:
+    """Every key this owner has saved: what the panel marks as already saved."""
+    rows = await session.execute(
+        select(SavedResource.stable_key).where(SavedResource.owner_id == owner_id)
+    )
+    return set(rows.scalars().all())
+
+
+async def saved_keys_safe(session: AsyncSession, owner_id: Any) -> set[str]:
+    """``saved_keys_for_owner`` for a render path: an empty set rather than an error."""
+    try:
+        return await saved_keys_for_owner(session, owner_id)
+    except Exception:  # noqa: BLE001 — a page is not lost over a bookmark's colour
+        logger.warning("[saved-resources] could not read the saved keys", exc_info=True)
+        return set()
 
 
 class SavedResourceRepository:

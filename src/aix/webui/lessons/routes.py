@@ -146,6 +146,7 @@ from aix.webui.materials.citations import (
 )
 from aix.webui.materials.readiness import states_for_lesson_safe, still_preparing
 from aix.webui.materials.repository import BindingRepository
+from aix.webui.materials.saved_resources import saved_keys_safe
 from aix.webui.materials.shadow import record_upload, retire_material
 from aix.webui.sanitize import sanitize_html
 
@@ -690,6 +691,7 @@ async def lesson_media_live(
                 "citations": panel.get("citations") or [],
                 "wikipedia": panel.get("wikipedia") or [],
                 "lesson_id": lesson.id,
+                "saved_keys": await saved_keys_safe(session, user.id),
             },
         )
 
@@ -712,6 +714,7 @@ async def lesson_media_live(
                 "citations": panel.get("citations") or [],
                 "wikipedia": panel.get("wikipedia") or [],
                 "lesson_id": lesson.id,
+                "saved_keys": await saved_keys_safe(session, user.id),
             },
         )
 
@@ -777,6 +780,7 @@ async def lesson_media_live(
             "citations": panel.get("citations") or [],
             "wikipedia": panel.get("wikipedia") or [],
             "lesson_id": lesson.id,
+            "saved_keys": await saved_keys_safe(session, user.id),
         },
     )
 
@@ -1236,6 +1240,7 @@ async def lesson_show(
             "lesson_plan_html": lesson_plan_html,
             "meta": meta_for_replay,
             "media": persisted_media,
+            "saved_keys": await saved_keys_safe(session, user.id),
             # A persisted live snapshot is replayed through the existing htmx
             # fragment endpoint.  That endpoint returns stored data and never
             # calls a provider on a passive page open.
@@ -2149,6 +2154,9 @@ async def lesson_stream(
         # other workers don't mistake it for a crashed/stale run. No-op on the
         # in-memory backend.
         _hb_task = asyncio.create_task(heartbeat_loop(_registry, lesson.id, _token))
+        # The library's keys, read once: the media panel marks what is saved.
+        saved_keys = await saved_keys_safe(session, lesson.owner_id)
+
         light = take_light_turn(lesson)
         events = (
             run_light_turn(lesson, session, **light)
@@ -2170,7 +2178,7 @@ async def lesson_stream(
                     )
                     break
 
-                sse_message = _stream_event_to_sse(request, lesson, event)
+                sse_message = _stream_event_to_sse(request, lesson, event, saved_keys=saved_keys)
                 if sse_message is not None:
                     logger.info(
                         "[stream] → SSE lesson_id=%s kind=%s event=%s",
@@ -2590,6 +2598,7 @@ def _stream_event_to_sse(
     request: Request,
     lesson: Lesson,
     event: Any,  # StreamEvent — typed Any to avoid a circular import
+    saved_keys: Optional[set[str]] = None,
 ) -> Optional[dict]:
     """
     Translate a ``StreamEvent`` from the agent service into the SSE wire
@@ -2644,6 +2653,7 @@ def _stream_event_to_sse(
             "partials/media_panel.html",
             {
                 "media": (event.payload or {}).get("media") or {},
+                "saved_keys": saved_keys or set(),
                 "oob": True,
                 # Phase 1b — this OOB swap happens *during an active run* (the
                 # retriever just produced curated media), which is the only moment

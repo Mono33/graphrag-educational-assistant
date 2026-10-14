@@ -157,51 +157,8 @@
 
         <footer class="aix-lesson-footer">
 
-          {# ── Download actions ── #}
-          <div class="aix-lesson-footer-group">
-            <span class="aix-lesson-footer-label">Scarica:</span>
-            <a href="/webui/lesson/{{ lesson.id }}/export?format=md" download
-               class="aix-btn aix-btn-outline aix-btn-sm">
-              <wa-icon name="file-arrow-down" class="aix-btn-icon"></wa-icon>
-              MD
-            </a>
-            <a href="/webui/lesson/{{ lesson.id }}/export?format=txt" download
-               class="aix-btn aix-btn-outline aix-btn-sm">
-              <wa-icon name="file-lines" class="aix-btn-icon"></wa-icon>
-              TXT
-            </a>
-            {# Fase 3 · PR 7 — PDF is now a real file rendered on the server, not
-               the browser's print dialog. /print stays, under its own name.
-               Behind flags (on by default) so the pilot can fall back to MD, TXT
-               and /print — the paths §10.4 requires unchanged — without a deploy. #}
-            {% if export_pdf_enabled() %}
-            <a href="/webui/lesson/{{ lesson.id }}/export?format=pdf" download
-               class="aix-btn aix-btn-outline aix-btn-sm">
-              <wa-icon name="file-pdf" class="aix-btn-icon"></wa-icon>
-              PDF
-            </a>
-            {% endif %}
-            {# Word: the lesson as a document the teacher can edit (2026-10-14). #}
-            {% if export_docx_enabled() %}
-            <a href="/webui/lesson/{{ lesson.id }}/export?format=docx" download
-               class="aix-btn aix-btn-outline aix-btn-sm">
-              <wa-icon name="file-word" class="aix-btn-icon"></wa-icon>
-              Word
-            </a>
-            {% endif %}
-            {% if export_outline_enabled() %}
-            <a href="/webui/lesson/{{ lesson.id }}/export?format=outline" download
-               class="aix-btn aix-btn-outline aix-btn-sm">
-              <wa-icon name="list-ol" class="aix-btn-icon"></wa-icon>
-              Scaletta
-            </a>
-            {% endif %}
-            <a href="/webui/lesson/{{ lesson.id }}/print" target="_blank"
-               class="aix-btn aix-btn-outline aix-btn-sm">
-              <wa-icon name="print" class="aix-btn-icon"></wa-icon>
-              Stampa
-            </a>
-          </div>
+          {# ── Download actions (shared with the history card) ── #}
+          {% include "partials/lesson_downloads.html" %}
 
           {# ── Navigation + Raffina ── #}
           <div class="aix-lesson-footer-group">

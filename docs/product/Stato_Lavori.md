@@ -2984,3 +2984,31 @@ ogni turno successivo della stessa lezione risultava fallito.
 Ora dallo stato salvato si prende solo ciò che deve passare da un turno
 all'altro (`PERSISTED_ACROSS_TURNS`: nodi del grafo, risorse, fonti esterne), non
 l'errore né la lezione del turno prima. Test: `test_seed_from_checkpoint.py`.
+
+### 2026-10-14 — Prova di Angelo sulle risorse di Louis: tre correzioni
+
+Pull delle modifiche di Louis (risorse multimediali salvate con la lezione,
+libreria `/webui/resources`, API dei documenti). In locale: migrazioni applicate,
+audit dello storage `healthy: True`, nessun vecchio allegato da migrare,
+`AIX_MATERIAL_LIBRARY_ENABLED=true` solo in `deploy/.env.local`. Le risorse
+salvate tornano davvero alla riapertura di una lezione nuova; le lezioni di
+prima non ne hanno (atteso: il salvataggio parte con la generazione).
+
+Dalla prova, tre cose sistemate:
+
+- **I download spariti.** I pulsanti c'erano solo nella scheda subito dopo la
+  generazione; ricaricata la pagina, la lezione viene dalla cronologia, che non
+  li ha mai avuti (non era una modifica di Louis: il segnalino, ricaricando la
+  pagina, l'ha solo reso visibile). Ora un partial, `lesson_downloads.html`, li
+  mette in entrambe, nella cronologia sulla lezione corrente.
+- **Il segnalino.** Salvava ricaricando la pagina e restava uguale. Ora salva
+  senza ricaricare (htmx) e diventa pieno; una risorsa già nella libreria
+  appare piena in ogni pannello (le chiavi salvate passano alla pagina, al
+  pannello dal vivo e alla scheda della ricerca durante la generazione). Con la
+  risorsa si registra la lezione da cui è stata salvata, se è della docente.
+- **La pagina Risorse.** Ogni documento elenca le lezioni in cui è usato, con il
+  titolo cliccabile; lo stesso file caricato più volte è una scheda sola
+  («Caricato 2 volte: è lo stesso file»); ogni risorsa salvata dice «Dalla
+  lezione: …» con il link.
+
+Test: `test_resource_library_links.py` (4). Suite: 1.059 verdi.
