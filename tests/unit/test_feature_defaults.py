@@ -70,6 +70,7 @@ def test_tracing_is_on_by_default_but_needs_its_keys(monkeypatch):
         "AIX_VALIDATOR_ENABLED",
         "AIX_CORRECTIVE_RAG_ENABLED",
         "AIX_LIGHT_TOOLS_ENABLED",
+        "AIX_MATERIAL_LIBRARY_ENABLED",
     ],
 )
 def test_what_the_pilot_keeps_off_stays_off(flag, monkeypatch):
@@ -81,5 +82,6 @@ def test_what_the_pilot_keeps_off_stays_off(flag, monkeypatch):
         "AIX_CORRECTIVE_RAG_ENABLED": nodes._corrective_rag_enabled,
         # Until measured on real lessons (2026-10-13).
         "AIX_LIGHT_TOOLS_ENABLED": light_tools.enabled,
+        "AIX_MATERIAL_LIBRARY_ENABLED": features.material_library_enabled,
     }
     assert not readers[flag]()

@@ -150,6 +150,15 @@ class MaterialRepository:
         )
         return list(result.scalars())
 
+    async def count_for_owner(self, owner_id: uuid.UUID) -> int:
+        result = await self._session.scalar(
+            select(func.count(Material.id)).where(
+                Material.owner_id == owner_id,
+                Material.deleted_at.is_(None),
+            )
+        )
+        return int(result or 0)
+
     async def soft_delete(self, material_id: uuid.UUID, *, owner_id: uuid.UUID) -> bool:
         """Mark a material deleted, keeping the row.
 
@@ -320,6 +329,22 @@ class BindingRepository:
         if lesson_owner is None or lesson_owner != owner_id:
             return None
 
+        existing = (
+            await self._session.execute(
+                select(LessonMaterialBinding).where(
+                    LessonMaterialBinding.lesson_id == lesson_id,
+                    LessonMaterialBinding.material_id == material_id,
+                    LessonMaterialBinding.owner_id == owner_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if existing is not None:
+            existing.selected_version_id = selected_version_id
+            existing.mode = mode
+            existing.enabled = True
+            await self._session.flush()
+            return existing
+
         binding = LessonMaterialBinding(
             lesson_id=lesson_id,
             material_id=material_id,
@@ -331,6 +356,22 @@ class BindingRepository:
         self._session.add(binding)
         await self._session.flush()
         return binding
+
+    async def list_for_material(
+        self,
+        material_id: uuid.UUID,
+        *,
+        owner_id: uuid.UUID,
+        enabled_only: bool = False,
+    ) -> list[LessonMaterialBinding]:
+        stmt = select(LessonMaterialBinding).where(
+            LessonMaterialBinding.material_id == material_id,
+            LessonMaterialBinding.owner_id == owner_id,
+        )
+        if enabled_only:
+            stmt = stmt.where(LessonMaterialBinding.enabled.is_(True))
+        result = await self._session.execute(stmt)
+        return list(result.scalars())
 
     async def disable_for_material(
         self, material_id: uuid.UUID, *, owner_id: uuid.UUID

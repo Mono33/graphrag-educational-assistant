@@ -449,6 +449,16 @@ try:
 except Exception as exc:  # noqa: BLE001
     logger.warning("⚠️ Agent JSON+SSE API not loaded (skipping): %s", exc)
 
+# Owner-scoped private-material API.  It is mounted independently so a defect
+# in the new additive surface cannot remove the established agent/context APIs.
+try:
+    from aix.api.routes.materials import router as materials_router
+
+    app.include_router(materials_router, prefix="/api/v1")
+    logger.info("✅ Private material API mounted at /api/v1/materials/*")
+except Exception as exc:  # noqa: BLE001
+    logger.warning("⚠️ Private material API not loaded (skipping): %s", exc)
+
 # Path C webui — internal HTML+SSE surface for agent end-to-end testing.
 # Mounts at /webui/* (not /api/v1/*), so the public JSON contract used by the
 # DEV team is unaffected. See docs/architecture/Frontend_Platform_Evaluation.md

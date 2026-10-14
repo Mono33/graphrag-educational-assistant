@@ -50,6 +50,9 @@
           </span>
         {% endif %}
         <span class="aix-pill aix-pill-warning aix-fs-2xs shrink-0" title="Recuperato in tempo reale per questa richiesta">auto</span>
+        {% with resource_item=v, resource_kind="video", resource_source="live", resource_title=(v.get("title") or "Video"), resource_url=url %}
+          {% include "partials/save_resource_form.html" %}
+        {% endwith %}
       </div>
       {% if v.get('channel') or v.get('duration_hint') %}
         <span class="aix-media-item-meta ml-0">
@@ -73,6 +76,10 @@
           {{ c.get('title') or 'Articolo' }}
         </div>
         <span class="aix-pill aix-pill-warning aix-fs-2xs shrink-0" title="Recuperato in tempo reale per questa richiesta">auto</span>
+        {% set citation_url = c.get('url') or (('https://doi.org/' ~ c.get('doi')) if c.get('doi') else None) %}
+        {% with resource_item=c, resource_kind="article", resource_source="live", resource_title=(c.get("title") or "Articolo"), resource_url=citation_url %}
+          {% include "partials/save_resource_form.html" %}
+        {% endwith %}
       </div>
       <div class="aix-media-item-meta ml-0">
         {% set authors = c.get('authors') or [] %}
@@ -122,6 +129,9 @@
                 {{ w.summary[:140] }}{% if w.summary | length > 140 %}…{% endif %}
               </span>
             {% endif %}
+            {% with resource_item=w, resource_kind="wikipedia", resource_source="live", resource_title=(w.get("title") or "Voce"), resource_url=w.get("url") %}
+              {% include "partials/save_resource_form.html" %}
+            {% endwith %}
           </li>
         {% endfor %}
       </ul>

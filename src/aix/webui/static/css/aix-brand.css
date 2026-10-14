@@ -1879,6 +1879,23 @@ body.aix-body {
   align-items: flex-start;
   gap: 6px;
 }
+.aix-media-save {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--aix-border-soft);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--aix-text-tertiary);
+  cursor: pointer;
+}
+.aix-media-save:hover {
+  border-color: var(--aix-teal);
+  color: var(--aix-teal);
+  background: var(--aix-teal-soft);
+}
 .aix-media-item-meta {
   font-size: 11px;
   color: var(--aix-text-tertiary);

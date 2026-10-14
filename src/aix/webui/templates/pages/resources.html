@@ -1,0 +1,124 @@
+{% extends "_base.html" %}
+
+{% block content %}
+<main class="aix-page-shell py-8">
+  <section class="flex flex-wrap items-start justify-between gap-4 mb-6">
+    <div>
+      <p class="aix-eyebrow mb-2">Libreria personale</p>
+      <h1 class="aix-page-title">Risorse</h1>
+      <p class="aix-text-muted mt-2 max-w-2xl">
+        Documenti caricati nelle tue lezioni. I materiali restano privati e
+        sono visibili soltanto al tuo account.
+      </p>
+    </div>
+    <a href="/docs" class="aix-btn aix-btn-outline aix-btn-sm">
+      <wa-icon name="code"></wa-icon>
+      Documentazione API
+    </a>
+  </section>
+
+  <nav class="flex gap-2 mb-5" aria-label="Sezioni risorse">
+    <span class="aix-pill aix-pill-neutral">I miei documenti · {{ rows | length }}</span>
+    <span class="aix-pill aix-pill-neutral">Risorse salvate · {{ saved_resources | length }}</span>
+  </nav>
+
+  {% if rows %}
+    <section class="grid gap-4">
+      {% for row in rows %}
+        {% set material = row.material %}
+        {% set latest = row.latest %}
+        <article class="aix-card p-5">
+          <div class="flex flex-wrap items-start justify-between gap-4">
+            <div class="min-w-0">
+              <div class="flex items-center gap-2">
+                <wa-icon name="file-lines" class="aix-color-teal"></wa-icon>
+                <h2 class="aix-card-title aix-fs-18 break-words">{{ material.display_name }}</h2>
+              </div>
+              <div class="aix-text-muted aix-fs-13 mt-2 flex flex-wrap gap-x-3 gap-y-1">
+                {% if latest %}
+                  <span>Versione {{ latest.version_number }}</span>
+                  <span>{{ latest.media_type }}</span>
+                  <span>
+                    {% if latest.status in ("ready", "ready_with_warnings") %}
+                      pronto
+                    {% elif latest.status == "failed" %}
+                      non indicizzato
+                    {% else %}
+                      in preparazione
+                    {% endif %}
+                  </span>
+                {% else %}
+                  <span>Nessuna versione disponibile</span>
+                {% endif %}
+                {% if row.size_bytes is not none %}
+                  <span>{{ (row.size_bytes / 1024) | round(0, "ceil") | int }} KB</span>
+                {% endif %}
+              </div>
+              {% if row.active_bindings %}
+                <p class="aix-fs-12 aix-text-muted mt-2 mb-0">
+                  Usato in {{ row.active_bindings | length }}
+                  {{ "lezione" if row.active_bindings | length == 1 else "lezioni" }}.
+                </p>
+              {% endif %}
+            </div>
+            <a href="/webui/materials/{{ material.id }}" class="aix-btn aix-btn-outline aix-btn-sm">
+              Apri
+              <wa-icon name="arrow-right"></wa-icon>
+            </a>
+          </div>
+        </article>
+      {% endfor %}
+    </section>
+  {% else %}
+    <section class="aix-card p-8 aix-empty-state">
+      <div class="aix-empty-state-icon"><wa-icon name="folder-open"></wa-icon></div>
+      <h2 class="aix-card-title">Nessun documento ancora</h2>
+      <p class="aix-empty-state-body">
+        I documenti caricati dalla graffetta di una lezione appariranno qui
+        quando la pipeline dei materiali è attiva.
+      </p>
+      <a href="/webui/lesson/new" class="aix-btn aix-btn-primary mt-3">Crea una lezione</a>
+    </section>
+  {% endif %}
+
+  <section class="mt-8">
+    <div class="mb-4">
+      <p class="aix-eyebrow mb-2">Collegamenti esterni</p>
+      <h2 class="aix-page-title aix-fs-24">Risorse salvate</h2>
+    </div>
+    {% if saved_resources %}
+      <div class="grid md:grid-cols-2 gap-4">
+        {% for resource in saved_resources %}
+          <article class="aix-card p-5">
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0">
+                <span class="aix-pill aix-pill-neutral">{{ resource.kind }}</span>
+                <h3 class="aix-card-title aix-fs-16 mt-2 break-words">{{ resource.title }}</h3>
+                <p class="aix-text-muted aix-fs-12 mt-1">{{ resource.source }}</p>
+              </div>
+              <form method="post" action="/webui/resources/saved/{{ resource.id }}/delete">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}" />
+                <button type="submit" class="aix-btn aix-btn-outline aix-btn-sm"
+                        aria-label="Rimuovi {{ resource.title }}">
+                  <wa-icon name="trash"></wa-icon>
+                </button>
+              </form>
+            </div>
+            {% if resource.url %}
+              <a href="{{ resource.url }}" target="_blank" rel="noopener noreferrer"
+                 class="aix-link-navy aix-fs-13 mt-3 inline-block">Apri la risorsa ↗</a>
+            {% endif %}
+          </article>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="aix-card p-5">
+        <p class="aix-text-muted mb-0">
+          Dal pannello multimediale di una lezione puoi salvare video, articoli,
+          OER e collegamenti da ritrovare qui.
+        </p>
+      </div>
+    {% endif %}
+  </section>
+</main>
+{% endblock %}

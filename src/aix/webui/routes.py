@@ -49,6 +49,7 @@ from aix.webui.lessons.display import (
     today_label_it,
 )
 from aix.webui.lessons.models import Lesson, SavedProfile
+from aix.webui.materials.routes import router as materials_router
 
 logger = logging.getLogger(__name__)
 
@@ -231,3 +232,4 @@ async def health_fragment() -> HTMLResponse:
 router.include_router(_pages_router)
 router.include_router(auth_router)
 router.include_router(lessons_router)
+router.include_router(materials_router)

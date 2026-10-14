@@ -71,6 +71,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from aix.core.ai_marking import ensure_marking
 from aix.webui.errors import report as _report_failure
+from aix.webui.lessons.media_snapshots import save_curated_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -822,8 +823,10 @@ async def _summarise_history(
 async def _persist_assistant_turn(
     session: AsyncSession,
     lesson_id: Any,
+    owner_id: Any,
     content_md: str,
     meta: dict[str, Any],
+    curated_media: Any,
 ) -> None:
     """
     Append the assistant's response for the current turn to the
@@ -866,6 +869,23 @@ async def _persist_assistant_turn(
                 meta_json=meta or None,
             )
         )
+        try:
+            # Snapshot persistence is additive. A missing migration or a
+            # transient snapshot failure must never roll back the established
+            # assistant-message write.
+            async with session.begin_nested():
+                await save_curated_snapshot(
+                    session,
+                    lesson_id=lesson_id,
+                    owner_id=owner_id,
+                    turn_index=int(latest_turn),
+                    media=curated_media,
+                )
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "[media-snapshot] curated save failed for lesson_id=%s; assistant message kept",
+                lesson_id,
+            )
         await session.commit()
     except Exception:  # noqa: BLE001
         logger.exception(
@@ -1688,8 +1708,10 @@ async def run_agent_stream(
         await _persist_assistant_turn(
             session=session,
             lesson_id=lesson.id,
+            owner_id=lesson.owner_id,
             content_md=lesson_plan_md,
             meta=meta,
+            curated_media=final_state.get("curated_media") or {},
         )
 
         logger.info(
