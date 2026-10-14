@@ -3031,3 +3031,15 @@ Test: `test_resource_library_links.py` (4). Suite: 1.059 verdi.
 - Da sistemare fuori da questo rilascio: il workflow `sync-to-fem` fallisce a ogni
   push su `main` da luglio (il repo di destinazione non esiste più); in
   `cloud-infra` c'è una chiave privata di `progetto-pinot` sotto versione.
+
+### 2026-10-14 — Tolto il workflow `sync-to-fem`
+
+Scritto da Louis a ottobre 2025 per copiare il suo repo personale dentro
+l'organizzazione: a ogni push su `main` faceva un force push verso
+`FEM-modena/graphrag-educational-assistant` con un token personale
+(`FEM_MODENA_PAT`). Dal 4 dicembre 2025 il codice vive già in
+`FEM-modena/graphrag-aixlearning`, il repo di destinazione non risulta più
+(404) e il workflow non è mai riuscito da allora: a ogni push su `main` una X
+rossa. Lo scopo non esiste più, quindi il file è tolto. Fra i secret del repo
+`FEM_MODENA_PAT` non c'è (solo `SCW_SECRET_KEY`, quello del deploy): il token
+probabilmente non è mai stato impostato qui, e già quello faceva fallire il push.
