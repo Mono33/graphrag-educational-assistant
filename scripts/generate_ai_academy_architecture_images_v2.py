@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Iterable, Sequence
 
 from PIL import Image, ImageDraw, ImageFont
-
 
 W, H = 1920, 1080
 OUT = Path(__file__).resolve().parents[1] / "docs" / "product"
@@ -123,7 +122,7 @@ def arrow(
     both: bool = False,
 ) -> None:
     if dashed:
-        for start, end in zip(points, points[1:]):
+        for start, end in zip(points, points[1:], strict=False):
             x1, y1 = start
             x2, y2 = end
             length = max(abs(x2 - x1), abs(y2 - y1))
@@ -161,7 +160,9 @@ def arrow(
             head(points[1], points[0])
 
 
-def icon(draw: ImageDraw.ImageDraw, kind: str, cx: int, cy: int, color: str, scale: int = 34) -> None:
+def icon(
+    draw: ImageDraw.ImageDraw, kind: str, cx: int, cy: int, color: str, scale: int = 34
+) -> None:
     r = scale // 2
     if kind == "person":
         draw.ellipse((cx - r // 2, cy - r, cx + r // 2, cy), fill=color)
@@ -174,11 +175,26 @@ def icon(draw: ImageDraw.ImageDraw, kind: str, cx: int, cy: int, color: str, sca
                 outline=color,
                 width=3,
             )
-            draw.line((cx - r + 8 + offset, cy - 3 - offset, cx + r - 7 + offset, cy - 3 - offset), fill=color, width=3)
-            draw.line((cx - r + 8 + offset, cy + 7 - offset, cx + r - 11 + offset, cy + 7 - offset), fill=color, width=3)
+            draw.line(
+                (cx - r + 8 + offset, cy - 3 - offset, cx + r - 7 + offset, cy - 3 - offset),
+                fill=color,
+                width=3,
+            )
+            draw.line(
+                (cx - r + 8 + offset, cy + 7 - offset, cx + r - 11 + offset, cy + 7 - offset),
+                fill=color,
+                width=3,
+            )
     elif kind == "shield":
         draw.polygon(
-            [(cx, cy - r - 4), (cx + r, cy - r // 2), (cx + r - 4, cy + r // 2), (cx, cy + r + 7), (cx - r + 4, cy + r // 2), (cx - r, cy - r // 2)],
+            [
+                (cx, cy - r - 4),
+                (cx + r, cy - r // 2),
+                (cx + r - 4, cy + r // 2),
+                (cx, cy + r + 7),
+                (cx - r + 4, cy + r // 2),
+                (cx - r, cy - r // 2),
+            ],
             outline=color,
             fill=None,
         )
@@ -200,9 +216,13 @@ def icon(draw: ImageDraw.ImageDraw, kind: str, cx: int, cy: int, color: str, sca
     elif kind == "apps":
         for dx in (-12, 12):
             for dy in (-12, 12):
-                draw.rounded_rectangle((cx + dx - 8, cy + dy - 8, cx + dx + 8, cy + dy + 8), radius=4, fill=color)
+                draw.rounded_rectangle(
+                    (cx + dx - 8, cy + dy - 8, cx + dx + 8, cy + dy + 8), radius=4, fill=color
+                )
     elif kind == "bot":
-        draw.rounded_rectangle((cx - r, cy - r + 4, cx + r, cy + r), radius=9, outline=color, width=3)
+        draw.rounded_rectangle(
+            (cx - r, cy - r + 4, cx + r, cy + r), radius=9, outline=color, width=3
+        )
         draw.ellipse((cx - 11, cy - 4, cx - 5, cy + 2), fill=color)
         draw.ellipse((cx + 5, cy - 4, cx + 11, cy + 2), fill=color)
         draw.line((cx - 10, cy + 11, cx + 10, cy + 11), fill=color, width=3)
@@ -216,7 +236,9 @@ def icon(draw: ImageDraw.ImageDraw, kind: str, cx: int, cy: int, color: str, sca
     elif kind == "plan":
         draw.rounded_rectangle((cx - r, cy - r, cx + r, cy + r), radius=5, outline=color, width=3)
         for dy in (-11, 0, 11):
-            draw.line((cx - 9, cy + dy, cx - 4, cy + dy + 4, cx + 3, cy + dy - 5), fill=color, width=2)
+            draw.line(
+                (cx - 9, cy + dy, cx - 4, cy + dy + 4, cx + 3, cy + dy - 5), fill=color, width=2
+            )
             draw.line((cx + 8, cy + dy, cx + r - 5, cy + dy), fill=color, width=2)
     elif kind == "tools":
         draw.line((cx - 17, cy + 17, cx + 12, cy - 12), fill=color, width=7)
@@ -272,7 +294,14 @@ def stack_profiles(
 ) -> None:
     draw.text((72, 853), "IMPLEMENTATION PROFILES", font=F_EYE, fill=MUTED)
     cards = [
-        ((72, 885, 945, 1014), "PORTABLE / SELF-HOSTED", portable_lines, GREEN, GREEN_PALE, "database"),
+        (
+            (72, 885, 945, 1014),
+            "PORTABLE / SELF-HOSTED",
+            portable_lines,
+            GREEN,
+            GREEN_PALE,
+            "database",
+        ),
         ((975, 885, 1848, 1014), "GOOGLE CLOUD MANAGED", cloud_lines, BLUE, BLUE_PALE, "cloud"),
     ]
     for box, label, lines, accent, pale, icon_kind in cards:
@@ -319,25 +348,41 @@ def light_v2() -> Path:
     center_text(draw, 213, 615, "response", F_NODE, GREEN_DARK)
 
     # Selected data sources
-    titled_group(draw, (390, 245, 1410, 355), "Selected corporate data sources", BLUE, BLUE_PALE, "files")
+    titled_group(
+        draw, (390, 245, 1410, 355), "Selected corporate data sources", BLUE, BLUE_PALE, "files"
+    )
     compact_node(draw, (420, 305, 715, 340), "Documents", "", BLUE, "files", BLUE_PALE)
     compact_node(draw, (745, 305, 1050, 340), "LMS / Drive folder", "", BLUE, "database", BLUE_PALE)
     compact_node(draw, (1080, 305, 1380, 340), "Approved API", "", BLUE, "tools", BLUE_PALE)
 
     # Secure processing
-    titled_group(draw, (430, 395, 1370, 510), "Secure knowledge processing", GOLD, GOLD_PALE, "shield")
-    compact_node(draw, (458, 456, 730, 494), "Validate & quarantine", "", GOLD_DARK, "shield", GOLD_PALE)
+    titled_group(
+        draw, (430, 395, 1370, 510), "Secure knowledge processing", GOLD, GOLD_PALE, "shield"
+    )
+    compact_node(
+        draw, (458, 456, 730, 494), "Validate & quarantine", "", GOLD_DARK, "shield", GOLD_PALE
+    )
     compact_node(draw, (764, 456, 1037, 494), "Parse / OCR", "", GOLD_DARK, "files", GOLD_PALE)
     compact_node(draw, (1070, 456, 1342, 494), "Metadata & ACL", "", GOLD_DARK, "plan", GOLD_PALE)
 
     # Private knowledge workspace
-    titled_group(draw, (470, 550, 1330, 663), "Private knowledge workspace", BLUE, BLUE_PALE, "database")
-    compact_node(draw, (498, 610, 750, 648), "Versioned originals", "", BLUE_DARK, "files", BLUE_PALE)
-    compact_node(draw, (774, 610, 1050, 648), "Private search index", "", BLUE_DARK, "database", BLUE_PALE)
-    compact_node(draw, (1074, 610, 1302, 648), "Source citations", "", BLUE_DARK, "graph", BLUE_PALE)
+    titled_group(
+        draw, (470, 550, 1330, 663), "Private knowledge workspace", BLUE, BLUE_PALE, "database"
+    )
+    compact_node(
+        draw, (498, 610, 750, 648), "Versioned originals", "", BLUE_DARK, "files", BLUE_PALE
+    )
+    compact_node(
+        draw, (774, 610, 1050, 648), "Private search index", "", BLUE_DARK, "database", BLUE_PALE
+    )
+    compact_node(
+        draw, (1074, 610, 1302, 648), "Source citations", "", BLUE_DARK, "graph", BLUE_PALE
+    )
 
     # AI engine
-    titled_group(draw, (430, 708, 1370, 796), "Configurable AI learning engine", GREEN, GREEN_PALE, "chip")
+    titled_group(
+        draw, (430, 708, 1370, 796), "Configurable AI learning engine", GREEN, GREEN_PALE, "chip"
+    )
     draw.text(
         (477, 767),
         "Governed search / RAG when useful  •  Model gateway  •  Human review",
@@ -347,9 +392,33 @@ def light_v2() -> Path:
 
     # FEM tools output
     titled_group(draw, (1480, 292, 1818, 696), "FEM tools", GOLD, GOLD_PALE, "apps")
-    compact_node(draw, (1512, 372, 1786, 452), "Knowledge Tester", "Practice and assessment", GOLD_DARK, "plan", GOLD_PALE)
-    compact_node(draw, (1512, 474, 1786, 554), "Learning Assistant", "Grounded dialogue", GOLD_DARK, "bot", GOLD_PALE)
-    compact_node(draw, (1512, 576, 1786, 656), "Delivery", "AI for Learning / API", GOLD_DARK, "apps", GOLD_PALE)
+    compact_node(
+        draw,
+        (1512, 372, 1786, 452),
+        "Knowledge Tester",
+        "Practice and assessment",
+        GOLD_DARK,
+        "plan",
+        GOLD_PALE,
+    )
+    compact_node(
+        draw,
+        (1512, 474, 1786, 554),
+        "Learning Assistant",
+        "Grounded dialogue",
+        GOLD_DARK,
+        "bot",
+        GOLD_PALE,
+    )
+    compact_node(
+        draw,
+        (1512, 576, 1786, 656),
+        "Delivery",
+        "AI for Learning / API",
+        GOLD_DARK,
+        "apps",
+        GOLD_PALE,
+    )
 
     # Flow
     arrow(draw, [(900, 355), (900, 395)], GREEN_DARK)
@@ -426,8 +495,24 @@ def strong_v2() -> Path:
     center_text(draw, 211, 617, "experience", F_NODE, GREEN_DARK)
 
     # Cognitive controls
-    compact_node(draw, (480, 251, 740, 339), "Memory", "Session and governed state", PURPLE, "memory", PURPLE_PALE)
-    compact_node(draw, (776, 251, 1036, 339), "Planning", "Goals, policy and routing", PURPLE, "plan", PURPLE_PALE)
+    compact_node(
+        draw,
+        (480, 251, 740, 339),
+        "Memory",
+        "Session and governed state",
+        PURPLE,
+        "memory",
+        PURPLE_PALE,
+    )
+    compact_node(
+        draw,
+        (776, 251, 1036, 339),
+        "Planning",
+        "Goals, policy and routing",
+        PURPLE,
+        "plan",
+        PURPLE_PALE,
+    )
 
     # Orchestrator
     titled_group(draw, (560, 377, 1000, 490), "Academy orchestrator", PURPLE, PURPLE_PALE, "chip")
@@ -441,18 +526,56 @@ def strong_v2() -> Path:
 
     # Tool hub
     titled_group(draw, (1070, 283, 1388, 604), "Tool & policy hub", GOLD, GOLD_PALE, "tools")
-    compact_node(draw, (1100, 357, 1358, 421), "MCP / tool registry", "Controlled actions", GOLD_DARK, "tools", GOLD_PALE)
-    compact_node(draw, (1100, 440, 1358, 504), "Guardrails", "Approval and policy", GOLD_DARK, "shield", GOLD_PALE)
-    compact_node(draw, (1100, 523, 1358, 587), "Evaluations", "Quality and evidence", GOLD_DARK, "plan", GOLD_PALE)
+    compact_node(
+        draw,
+        (1100, 357, 1358, 421),
+        "MCP / tool registry",
+        "Controlled actions",
+        GOLD_DARK,
+        "tools",
+        GOLD_PALE,
+    )
+    compact_node(
+        draw,
+        (1100, 440, 1358, 504),
+        "Guardrails",
+        "Approval and policy",
+        GOLD_DARK,
+        "shield",
+        GOLD_PALE,
+    )
+    compact_node(
+        draw,
+        (1100, 523, 1358, 587),
+        "Evaluations",
+        "Quality and evidence",
+        GOLD_DARK,
+        "plan",
+        GOLD_PALE,
+    )
 
     # Corporate sources
     titled_group(draw, (1460, 252, 1819, 604), "Corporate systems", BLUE, BLUE_PALE, "files")
-    compact_node(draw, (1490, 327, 1789, 391), "Learning", "LMS / LXP • HRIS", BLUE_DARK, "apps", BLUE_PALE)
-    compact_node(draw, (1490, 410, 1789, 474), "Knowledge", "CMS / DAM • intranet", BLUE_DARK, "database", BLUE_PALE)
-    compact_node(draw, (1490, 493, 1789, 557), "Content", "Drive / SharePoint", BLUE_DARK, "files", BLUE_PALE)
+    compact_node(
+        draw, (1490, 327, 1789, 391), "Learning", "LMS / LXP • HRIS", BLUE_DARK, "apps", BLUE_PALE
+    )
+    compact_node(
+        draw,
+        (1490, 410, 1789, 474),
+        "Knowledge",
+        "CMS / DAM • intranet",
+        BLUE_DARK,
+        "database",
+        BLUE_PALE,
+    )
+    compact_node(
+        draw, (1490, 493, 1789, 557), "Content", "Drive / SharePoint", BLUE_DARK, "files", BLUE_PALE
+    )
 
     # Knowledge platform
-    titled_group(draw, (1040, 635, 1819, 754), "Governed enterprise knowledge", BLUE, BLUE_PALE, "database")
+    titled_group(
+        draw, (1040, 635, 1819, 754), "Governed enterprise knowledge", BLUE, BLUE_PALE, "database"
+    )
     compact_node(draw, (1070, 695, 1295, 738), "Content store", "", BLUE_DARK, "files", BLUE_PALE)
     compact_node(draw, (1313, 695, 1552, 738), "Hybrid RAG", "", BLUE_DARK, "database", BLUE_PALE)
     compact_node(draw, (1570, 695, 1789, 738), "Optional graph", "", BLUE_DARK, "graph", BLUE_PALE)

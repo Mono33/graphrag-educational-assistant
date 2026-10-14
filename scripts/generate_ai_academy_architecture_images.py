@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 from PIL import Image, ImageDraw, ImageFont
-
 
 WIDTH = 1920
 HEIGHT = 1080
@@ -216,21 +215,34 @@ def render_light() -> Path:
         (
             "02",
             "Secure knowledge processing",
-            ["Validate and quarantine", "Parse documents and basic OCR", "Metadata, permissions and versions"],
+            [
+                "Validate and quarantine",
+                "Parse documents and basic OCR",
+                "Metadata, permissions and versions",
+            ],
             YELLOW,
             YELLOW_PALE,
         ),
         (
             "03",
             "Configurable AI engine",
-            ["Governed search or RAG when useful", "Grounded answers with citations", "Model-independent orchestration", "Human review"],
+            [
+                "Governed search or RAG when useful",
+                "Grounded answers with citations",
+                "Model-independent orchestration",
+                "Human review",
+            ],
             GREEN,
             GREEN_PALE,
         ),
         (
             "04",
             "FEM applications & tools",
-            ["Knowledge Tester", "Learning Assistant / chatbot", "AI for Learning or versioned API"],
+            [
+                "Knowledge Tester",
+                "Learning Assistant / chatbot",
+                "AI for Learning or versioned API",
+            ],
             YELLOW,
             YELLOW_PALE,
         ),
@@ -297,35 +309,60 @@ def render_strong() -> Path:
         (
             "01",
             "Corporate ecosystem",
-            ["LMS / LXP and HRIS", "CMS / DAM and intranet", "Drive / SharePoint", "Approved APIs and events"],
+            [
+                "LMS / LXP and HRIS",
+                "CMS / DAM and intranet",
+                "Drive / SharePoint",
+                "Approved APIs and events",
+            ],
             GREEN,
             GREEN_PALE,
         ),
         (
             "02",
             "Connect & govern",
-            ["ACL-aware connectors", "Quarantine and classification", "Ownership and versioning", "Lineage and retention"],
+            [
+                "ACL-aware connectors",
+                "Quarantine and classification",
+                "Ownership and versioning",
+                "Lineage and retention",
+            ],
             YELLOW,
             YELLOW_PALE,
         ),
         (
             "03",
             "Enterprise knowledge layer",
-            ["Tenant-scoped hybrid RAG", "Citations and provenance", "Optional graph after validation", "Continuous content lifecycle"],
+            [
+                "Tenant-scoped hybrid RAG",
+                "Citations and provenance",
+                "Optional graph after validation",
+                "Continuous content lifecycle",
+            ],
             GREEN,
             GREEN_PALE,
         ),
         (
             "04",
             "Agent & tool orchestration",
-            ["Plan, retrieve, generate, review", "Policy gateway and MCP tools", "Human approval and evaluation", "Model-independent routing"],
+            [
+                "Plan, retrieve, generate, review",
+                "Policy gateway and MCP tools",
+                "Human approval and evaluation",
+                "Model-independent routing",
+            ],
             YELLOW,
             YELLOW_PALE,
         ),
         (
             "05",
             "Academy apps & integrations",
-            ["AI for Learning / Academy portal", "Tester and learning assistant", "LMS / HRIS / Workspace", "Versioned APIs and events"],
+            [
+                "AI for Learning / Academy portal",
+                "Tester and learning assistant",
+                "LMS / HRIS / Workspace",
+                "Versioned APIs and events",
+            ],
             GREEN,
             GREEN_PALE,
         ),

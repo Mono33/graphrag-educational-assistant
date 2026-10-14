@@ -3233,3 +3233,12 @@ segue la stessa regola: rilegge lo snapshot, altrimenti cerca una volta e lo sal
 
 Guide aggiornate (`Chatbot_API_Guide.md`, `PRIVATE_MATERIALS_API.md`). Suite:
 1.102 verdi; i test di Louis passano senza modifiche con il nuovo accesso.
+
+### 2026-10-14 — `chore/repo-reorg` pubblicato; la CI torna a passare il lint
+
+Pubblicato `chore/repo-reorg` (`ed4989c`). La CI del branch falliva già da
+settembre al passo Ruff, per i due script che generano le immagini
+dell'architettura (commit di documentazione `b736ef2`): import non ordinati,
+`typing` al posto di `collections.abc`, uno `zip` senza `strict`. Corretti e
+formattati; nessun cambio di comportamento (lo `zip` sui segmenti consecutivi è
+volutamente di lunghezze diverse: `strict=False`).
