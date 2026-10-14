@@ -268,3 +268,36 @@ def test_the_catalog_has_the_webui_s_choices(api):
     assert {r["code"] for r in catalog["refinements"]} >= {"simplify", "custom"}
     assert catalog["profile"]["disabilities"]
     assert ".pdf" in catalog["materials"]["extensions"]
+
+
+@pytest.mark.parametrize(
+    ("fmt", "media_type", "magic"),
+    [
+        ("md", "text/markdown", b"# La cellula"),
+        ("pdf", "application/pdf", b"%PDF"),
+        ("docx", "application/vnd.openxmlformats-officedocument", b"PK"),
+        ("outline", "text/plain", None),
+    ],
+)
+def test_the_lesson_downloads_in_every_format(api, fmt, media_type, magic):
+    session_id = _new_session(api)
+    _turn(api, session_id, message="Crea una lezione sulla cellula")
+
+    response = api.get(f"/api/v1/sessions/{session_id}/export?format={fmt}", headers=_as())
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith(media_type)
+    assert response.headers["x-ai-generated"] == "true"
+    if magic:
+        assert response.content.startswith(magic)
+
+
+def test_no_lesson_no_download_and_a_bad_format_says_which_exist(api):
+    session_id = _new_session(api)
+
+    empty = api.get(f"/api/v1/sessions/{session_id}/export?format=pdf", headers=_as())
+    assert (empty.status_code, empty.json()["detail"]["code"]) == (404, "no_lesson_yet")
+
+    _turn(api, session_id, message="Crea una lezione sulla cellula")
+    bad = api.get(f"/api/v1/sessions/{session_id}/export?format=odt", headers=_as())
+    assert (bad.status_code, bad.json()["detail"]["code"]) == (400, "unsupported_format")

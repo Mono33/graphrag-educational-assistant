@@ -96,9 +96,9 @@ from aix.core.ai_marking import (
     AI_GENERATED_HEADER_VALUE,
     DISCLOSURE_LONG,
     DISCLOSURE_SHORT,
-    strip_marking,
 )
 from aix.core.run_registry import get_run_registry
+from aix.export.service import ExportRefused, render_lesson_export
 from aix.webui.agent.turns import (
     TurnRefused,
     accept_turn,
@@ -111,11 +111,6 @@ from aix.webui.auth.dependencies import optional_current_user
 from aix.webui.auth.models import User
 from aix.webui.db import get_async_session
 from aix.webui.errors import report
-from aix.webui.features import (
-    export_docx_enabled,
-    export_outline_enabled,
-    export_pdf_enabled,
-)
 from aix.webui.features import (
     register as _register_feature_flags,
 )
@@ -131,7 +126,6 @@ from aix.webui.lessons.uploads import (
 )
 from aix.webui.materials.citations import (
     labels_for_lesson_safe,
-    resolve_for_lesson,
     with_sources,
 )
 from aix.webui.materials.readiness import states_for_lesson_safe
@@ -1743,120 +1737,18 @@ async def lesson_export(
     lesson = result.scalar_one_or_none()
     if lesson is None:
         raise HTTPException(status_code=404, detail="Lezione non trovata")
-    if not lesson.lesson_plan_md:
-        raise HTTPException(status_code=404, detail="Nessun contenuto disponibile")
-
-    slug = (lesson.title or f"lezione-{lesson.id}").lower()
-    slug = "".join(c if c.isalnum() or c in "-_" else "-" for c in slug).strip("-")[:60]
-
-    # §8.6 — resolve the citation markers once, here, with the names of the
-    # documents this lesson is bound to. Every format below exports the same
-    # readable reference, and an internal address reaches none of them.
-    plan_md = await resolve_for_lesson(lesson.lesson_plan_md, session, lesson)
-
-    if format == "md":
-        # Keep the machine-readable Art. 50 comment that the agent stamped at
-        # the top of the markdown; add the header too (#21).
-        return Response(
-            content=plan_md,
-            media_type="text/markdown; charset=utf-8",
-            headers={
-                "Content-Disposition": f'attachment; filename="{slug}.md"',
-                AI_GENERATED_HEADER: AI_GENERATED_HEADER_VALUE,
-            },
-        )
-
-    if format == "txt":
-        import re
-
-        # The HTML comment is meaningless in plain text — strip it and replace
-        # it with a human-readable Art. 50 notice at the top (#21).
-        text = strip_marking(plan_md)
-        text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)  # links
-        text = re.sub(r"!\[[^\]]*\]\([^)]+\)", "", text)  # images
-        text = re.sub(r"#{1,6}\s*", "", text)  # headings
-        text = re.sub(r"\*{1,3}([^*]+)\*{1,3}", r"\1", text)  # bold/italic
-        text = re.sub(r"`{1,3}[^`]*`{1,3}", lambda m: m.group().strip("`"), text)  # code
-        text = re.sub(r"_{1,2}([^_]+)_{1,2}", r"\1", text)  # underscores
-        text = re.sub(r"^\s*[-*+]\s+", "• ", text, flags=re.MULTILINE)  # bullets
-        notice = f"[{DISCLOSURE_SHORT}] {DISCLOSURE_LONG}\n{'-' * 60}\n\n"
-        return Response(
-            content=notice + text.lstrip(),
-            media_type="text/plain; charset=utf-8",
-            headers={
-                "Content-Disposition": f'attachment; filename="{slug}.txt"',
-                AI_GENERATED_HEADER: AI_GENERATED_HEADER_VALUE,
-            },
-        )
-
-    if format in ("pdf", "docx", "outline"):
-        # A hidden button is not a closed door: the route checks the flag too,
-        # or a bookmarked URL would still render what the pilot switched off.
-        if (
-            (format == "pdf" and not export_pdf_enabled())
-            or (format == "docx" and not export_docx_enabled())
-            or (format == "outline" and not export_outline_enabled())
-        ):
-            raise HTTPException(status_code=404, detail="Questo formato di export non è attivo.")
-
-        # Fase 3 · PR 7 — both go through the document model: Markdown is read
-        # into LessonDocumentV1, grouped into ExportIRV1, then rendered. MD and
-        # TXT above deliberately do not, because §10.4 requires them unchanged.
-        import asyncio
-
-        from aix.export import adapt_lesson_markdown, build_export_ir, render_outline
-
-        ir = build_export_ir(
-            adapt_lesson_markdown(
-                plan_md,
-                lesson_id=str(lesson.id),
-                fallback_title=lesson.title or "Lezione",
-            )
-        )
-
-        if format == "outline":
-            return Response(
-                content=render_outline(ir),
-                media_type="text/plain; charset=utf-8",
-                headers={
-                    "Content-Disposition": f'attachment; filename="{slug}-scaletta.txt"',
-                    AI_GENERATED_HEADER: AI_GENERATED_HEADER_VALUE,
-                },
-            )
-
-        if format == "docx":
-            from aix.export.word import render_docx
-
-            # Off the event loop, like the PDF.
-            document = await asyncio.to_thread(render_docx, ir)
-            return Response(
-                content=document.content,
-                media_type=(
-                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                ),
-                headers={
-                    "Content-Disposition": f'attachment; filename="{slug}.docx"',
-                    AI_GENERATED_HEADER: AI_GENERATED_HEADER_VALUE,
-                },
-            )
-
-        from aix.export.pdf import render_pdf
-
-        # Off the event loop: rendering is CPU work, and a request thread
-        # blocked on it would stall every SSE stream in the process.
-        result = await asyncio.to_thread(render_pdf, ir)
-        return Response(
-            content=result.content,
-            media_type="application/pdf",
-            headers={
-                "Content-Disposition": f'attachment; filename="{slug}.pdf"',
-                AI_GENERATED_HEADER: AI_GENERATED_HEADER_VALUE,
-            },
-        )
-
-    raise HTTPException(
-        status_code=400,
-        detail="Formato non supportato. Usa ?format=md, txt, pdf, docx oppure outline",
+    # The body is ``aix.export.service``: the API's session export is the same file.
+    try:
+        exported = await render_lesson_export(session, lesson, format)
+    except ExportRefused as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.message) from None
+    return Response(
+        content=exported.content,
+        media_type=exported.media_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{exported.filename}"',
+            AI_GENERATED_HEADER: AI_GENERATED_HEADER_VALUE,
+        },
     )
 
 

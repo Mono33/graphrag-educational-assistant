@@ -51,6 +51,7 @@ from aix.api.schemas.sessions import (
     TurnResult,
 )
 from aix.core.ai_marking import AI_GENERATED_HEADER, AI_GENERATED_HEADER_VALUE
+from aix.export.service import ExportRefused, render_lesson_export
 from aix.webui.agent.service import StreamEvent
 from aix.webui.agent.turns import TurnAccepted, TurnRefused, accept_turn, drive_turn
 from aix.webui.auth.models import User
@@ -218,6 +219,46 @@ async def session_media(
 ) -> SessionMedia:
     lesson = await _lesson(session, owner, session_id)
     return SessionMedia.model_validate(await live_media_for_lesson(lesson))
+
+
+@router.get(
+    "/{session_id}/export",
+    summary="Download the session's lesson: md, txt, pdf, docx or outline",
+    description=(
+        "The same files as the WebUI's download buttons: citations resolved to the "
+        "documents' names, the AI notice in every format. ``outline`` is the timed outline "
+        "as plain text."
+    ),
+    responses={
+        200: {
+            "content": {
+                "application/pdf": {},
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document": {},
+                "text/markdown": {},
+                "text/plain": {},
+            }
+        }
+    },
+)
+async def export_session(
+    session_id: str,
+    format: str = "md",
+    owner: User = Depends(current_owner),
+    session: AsyncSession = Depends(get_async_session),
+) -> Response:
+    lesson = await _lesson(session, owner, session_id)
+    try:
+        exported = await render_lesson_export(session, lesson, format)
+    except ExportRefused as exc:
+        raise _error(exc.status, exc.code, exc.message) from None
+    return Response(
+        content=exported.content,
+        media_type=exported.media_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{exported.filename}"',
+            AI_GENERATED_HEADER: AI_GENERATED_HEADER_VALUE,
+        },
+    )
 
 
 @router.post(

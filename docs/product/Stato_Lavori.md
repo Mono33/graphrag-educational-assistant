@@ -3113,3 +3113,12 @@ risposta in **4,8 s** dal documento; «fammi una lezione sui vulcani» tornata c
 - `GET /api/v1/catalog`: domini, intenti pedagogici (codici veri: `intro`,
   `deepening`…), chip di rifinitura, modi del turno, codici del profilo con le
   etichette della WebUI, formati e limiti dei documenti.
+
+### 2026-10-14 — API per i chatbot, passo 5: gli export
+
+Il corpo della rotta di download della WebUI è passato in
+`src/aix/export/service.py` (`render_lesson_export`): la WebUI e
+`GET /api/v1/sessions/{id}/export?format=md|txt|pdf|docx|outline` producono gli
+stessi file (citazioni risolte ai nomi dei documenti, avviso IA in ogni formato,
+stessi flag). Rifiuti con codice: `no_lesson_yet`, `unsupported_format`,
+`format_disabled`. Test: un download per formato e i due rifiuti.
