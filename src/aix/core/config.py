@@ -4,6 +4,7 @@ config.py - Configuration settings for the GraphRAG text2cypher module.
 """
 
 import os
+import re
 from dataclasses import dataclass
 from typing import Optional
 
@@ -22,6 +23,64 @@ def _float_env(name: str, default: float) -> float:
         return float(raw)
     except ValueError:
         return default
+
+
+#: Claude 5 and later decide on their own how much to think, unless told.
+_ADAPTIVE_CLAUDE = re.compile(r"claude-(sonnet|opus|haiku)-([5-9]|\d{2,})")
+
+
+def thinking_effort() -> Optional[str]:
+    """``AIX_THINKING_EFFORT``: low (default), medium, high; ``default`` sends nothing."""
+    raw = (os.getenv("AIX_THINKING_EFFORT") or "low").strip().lower()
+    return None if raw == "default" else raw
+
+
+#: Gemini 3+ Flash and Pro think by default and cannot be told not to ("reasoning
+#: is mandatory"); the effort still trims it: on a real Planner request
+#: gemini-3.5-flash used 680 reasoning tokens by default, 439 with low (-18%).
+#: The -lite models do not think either way and are left alone (2026-10-13).
+_THINKING_GEMINI = re.compile(r"gemini-[3-9][\d.]*-(flash|pro)(?!-lite)")
+#: Qwen 3.x thinks by default and reads the effort: on a three-sentence answer
+#: qwen3.8-27b used 192 reasoning tokens by default, 112 with low (2026-10-13).
+_THINKING_QWEN = re.compile(r"qwen3\.\d")
+#: Mistral Large 4 reasons by default too, and with ``effort: low`` even more
+#: (truncated lessons, 100+ s, invalid JSON in the 2026-10-12 replay); on a
+#: three-sentence answer it spent 936 reasoning tokens and returned nothing
+#: within 800 (2026-10-13). DeepSeek V4 likewise: 220 reasoning tokens by
+#: default, 310 with low, 0 off with the same answer (2026-10-13). Both are
+#: switched off: ``reasoning.enabled=false``.
+_REASONING_OFF = re.compile(r"mistral-large-[4-9](?!\d)|deepseek-v4")
+
+
+def is_adaptive_claude(model: Optional[str]) -> bool:
+    return bool(model) and bool(_ADAPTIVE_CLAUDE.search(model.lower()))
+
+
+def takes_effort(model: Optional[str]) -> bool:
+    """A model that reasons on its own and reads ``reasoning.effort``: Claude 5.x,
+    Gemini 3+ Flash/Pro, Qwen 3.x."""
+    return is_adaptive_claude(model) or (
+        bool(model)
+        and bool(_THINKING_GEMINI.search(model.lower()) or _THINKING_QWEN.search(model.lower()))
+    )
+
+
+def reasoning_extra_body(model: Optional[str]) -> Optional[dict]:
+    """The reasoning setting a model that thinks on its own needs, or ``None``.
+
+    Claude 5 thinks by default, and as much as it likes. On 2026-10-07 that was
+    ~117k reasoning tokens in a week of rehearsals (a fifth of the bill, billed
+    as output), and lessons cut off by ``max_tokens`` because the thinking had
+    used the budget: replayed with ``effort: low``, the same revision cost 40%
+    less, took 39 s instead of 91 and came back whole. ``AIX_THINKING_EFFORT``
+    was already ``low``; it only reached the Claude 4 family below.
+    """
+    effort = thinking_effort()
+    if model and _REASONING_OFF.search(model.lower()):
+        return {"reasoning": {"enabled": False}} if effort else None
+    if not takes_effort(model):
+        return None
+    return {"reasoning": {"effort": effort}} if effort else None
 
 
 @dataclass
@@ -225,7 +284,7 @@ class OpenAIConfig:
                 #   low    ~1 024 tokens  +2 000
                 #   medium ~4 000 tokens  +6 000
                 #   high   ~8 000 tokens  +10 000
-                effort = os.getenv("AIX_THINKING_EFFORT", "low")
+                effort = thinking_effort() or "low"
                 _thinking_buffer = {"low": 2000, "medium": 6000, "high": 10000}.get(effort, 2000)
                 kwargs["temperature"] = 1
                 kwargs["max_tokens"] = max_tokens + _thinking_buffer
@@ -233,6 +292,15 @@ class OpenAIConfig:
             elif "deepseek" in m_lower:
                 kwargs["extra_body"] = {"include_reasoning": True}
             # o-series: reasoning is always on, no extra_body needed
+
+        # Claude 5.x: only the effort. Temperature, max_tokens and the JSON
+        # response format stay as asked -- the Claude 4 branch above would force
+        # temperature 1, drop the JSON mode and add a thinking buffer, none of
+        # which this family needs. Applied whatever ``include_reasoning`` says:
+        # that flag is about returning the thinking, this is about how much.
+        adaptive = reasoning_extra_body(model)
+        if adaptive and "extra_body" not in kwargs:
+            kwargs["extra_body"] = adaptive
 
         return kwargs
 

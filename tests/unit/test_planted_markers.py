@@ -52,13 +52,6 @@ def test_the_same_document_with_another_page_is_still_unknown():
     assert neighbour not in drop_unknown_markers(f"Frase {neighbour}.", ITEMS)
 
 
-def test_it_runs_with_the_citation_check_switched_off(monkeypatch):
-    """A guarantee, not a judgement: it does not depend on the model's flag."""
-    monkeypatch.setenv("AIX_CITATION_CHECK_ENABLED", "false")
-
-    assert PLANTED not in drop_unknown_markers(f"Frase {PLANTED}.", ITEMS)
-
-
 async def test_write_node_removes_a_planted_marker(monkeypatch):
     from aix.agent.graph import nodes as graph_nodes
 

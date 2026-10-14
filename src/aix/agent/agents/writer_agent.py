@@ -28,6 +28,7 @@ from aix.agent.prompts.writer_prompt import (
     format_external_resources,
     get_writer_prompts,
 )
+from aix.core import prompt_cache
 from aix.core.concurrency import guarded_chat_completion, llm_slot
 from aix.core.config import config as app_config
 from aix.core.config import extract_response_content
@@ -282,6 +283,47 @@ _CONTINUATION_INSTRUCTION = (
 )
 
 
+def graph_relations_enabled() -> bool:
+    """``AIX_WRITER_GRAPH_RELATIONS``: the graph's relationships reach the Writer. On by default.
+
+    Read blind on 2026-10-13 (four lessons regenerated with and without): the
+    lesson with the relationships was preferred in three, the fourth a tie. It
+    costs the Writer ~15% more input (~$0.005 a lesson).
+    """
+    raw = os.getenv("AIX_WRITER_GRAPH_RELATIONS")
+    if raw is None or not raw.strip():
+        return True
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
+def _format_relationships(relationships: Optional[list], max_relations: int = 15) -> str:
+    """The graph's relationships as short lines: who suggests, mitigates or supports what.
+
+    Retrieved on every search and, until 2026-10-13, never shown to the Writer:
+    it saw node names and descriptions but not that, say, an ADHD profile
+    SUGGESTS movement breaks. A few lines carry the structure of the graph.
+    """
+    lines: list[str] = []
+    seen: set[tuple[str, str, str]] = set()
+    for rel in relationships or []:
+        if not isinstance(rel, dict):
+            continue
+        triple = (
+            str(rel.get("source") or "").strip(),
+            str(rel.get("type") or rel.get("relationship") or "").strip(),
+            str(rel.get("target") or "").strip(),
+        )
+        if not all(triple) or triple in seen:
+            continue
+        seen.add(triple)
+        lines.append(f"- {triple[0]} —{triple[1]}→ {triple[2]}")
+        if len(lines) >= max_relations:
+            break
+    if not lines:
+        return ""
+    return "\n\n### Relazioni nel Knowledge Graph\n" + "\n".join(lines)
+
+
 class WriterAgent:
     """
     Writer Agent - Generates educational content adapted to query intent.
@@ -453,6 +495,8 @@ class WriterAgent:
 
         # Format retrieved nodes for prompt
         nodes_text = self._format_nodes(retrieval_result.nodes)
+        if graph_relations_enabled():
+            nodes_text += _format_relationships(getattr(retrieval_result, "relationships", None))
         recommendations_text = self._format_recommendations(retrieval_result.recommendations)
         key_concepts_text = ", ".join(plan.key_concepts) if plan.key_concepts else "Not specified"
 
@@ -490,12 +534,15 @@ class WriterAgent:
             else:
                 edu_profile_section += f"\n## Pedagogical Intent\n- {pedagogical_intent}\n"
 
-        # NEW Phase A: Handle HYBRID mode (out-of-scope with external resources)
-        if is_hybrid and intent in ("lesson_creation", "activity_design"):
-            # is_hybrid requires has_external which requires external_resources to be non-None
-            assert external_resources is not None
+        # NEW Phase A: Handle HYBRID mode (out-of-scope with external resources).
+        # Keyed on the template, not on the resources: ``get_writer_prompts`` picks
+        # the hybrid one for any partly or wholly out-of-scope lesson, and that
+        # template needs its fields filled even when no outside source came back
+        # (the teacher waived the search, or the sources found nothing). It used to
+        # fall to the standard branch and fail on ``{wikipedia_content}``.
+        if user_template is WRITER_USER_TEMPLATE_HYBRID:
             wikipedia_content, papers_content, oer_content = format_external_resources(
-                external_resources
+                external_resources or {}
             )
 
             user_prompt = WRITER_USER_TEMPLATE_HYBRID.format(
@@ -514,7 +561,7 @@ class WriterAgent:
 
             logger.info(
                 "[WriterAgent] Using HYBRID mode prompt with external resources (OER: %d textbooks)",
-                len(external_resources.get("oer_textbooks", [])),
+                len((external_resources or {}).get("oer_textbooks", [])),
             )
 
         # Standard mode: Format user prompt based on intent
@@ -651,10 +698,16 @@ class WriterAgent:
                 temperature=0.7,
                 max_tokens=_WRITER_MAX_TOKENS,
             )
-            messages: list[Any] = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ]
+            # The system prompt (intent, domain knowledge, constraints: ~3-4k
+            # tokens) is the same for every teacher of a domain: marked, the
+            # provider bills a repeat at a tenth. The text does not change.
+            messages: list[Any] = prompt_cache.cacheable(
+                [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                model=completion_kwargs["model"],
+            )
 
             if token_bus is not None:
                 # Streaming path: forward each token to the webUI bus so the
@@ -844,10 +897,13 @@ class WriterAgent:
                 temperature=0.5,
                 max_tokens=_WRITER_MAX_TOKENS,
             )
-            messages: list[Any] = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ]
+            messages: list[Any] = prompt_cache.cacheable(
+                [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                model=completion_kwargs["model"],
+            )
             response = await guarded_chat_completion(
                 client,
                 messages=messages,

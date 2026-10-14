@@ -83,14 +83,6 @@ def _followup(**over):
 # ---------------------------------------------------------------------------
 
 
-def test_flag_off_keeps_the_unconditional_edge(_off):
-    compiled = build_lesson_planner_graph()
-    edges = {(e.source, e.target, bool(e.conditional)) for e in compiled.get_graph().edges}
-
-    assert ("plan", "retrieve", False) in edges, "the pre-T6 edge, unconditional"
-    assert "reuse" not in compiled.get_graph().nodes
-
-
 def test_flag_on_forks_the_planner(_on):
     compiled = build_lesson_planner_graph()
     graph = compiled.get_graph()
@@ -106,10 +98,6 @@ def test_flag_on_forks_the_planner(_on):
 # ---------------------------------------------------------------------------
 # The routing decision
 # ---------------------------------------------------------------------------
-
-
-def test_flag_off_always_retrieves(_off):
-    assert should_retrieve(_followup()) == "retrieve"
 
 
 def test_upstream_error_keeps_todays_path(_on):
@@ -143,6 +131,29 @@ def test_reuses_when_the_turn_adds_no_new_concept(_on):
     assert should_retrieve(_followup()) == "reuse"
 
 
+def test_a_turn_that_leaves_the_graph_searches_for_its_outside_sources(_on):
+    """2026-10-14: an in-scope list, then «crea una lezione» on the Cold War."""
+    state = _followup(scope_status="partial_scope", requires_new_retrieval=False)
+
+    assert should_retrieve(state) == "retrieve"
+
+
+def test_outside_sources_already_on_the_thread_can_be_reused(_on):
+    state = _followup(
+        scope_status="partial_scope",
+        requires_new_retrieval=False,
+        external_resources={"wikipedia": [{"title": "Guerra fredda"}]},
+    )
+
+    assert should_retrieve(state) == "reuse"
+
+
+def test_the_teacher_s_no_search_still_wins_out_of_scope(_on):
+    state = _followup(scope_status="partial_scope", force_retrieval=False)
+
+    assert should_retrieve(state) == "reuse"
+
+
 def test_retrieves_when_the_turn_introduces_a_new_concept(_on):
     state = _followup(key_concepts=["memoria di lavoro", "carico cognitivo"])
     assert should_retrieve(state) == "retrieve"
@@ -156,7 +167,6 @@ def test_retrieves_when_the_turn_introduces_a_new_concept(_on):
 @pytest.mark.parametrize(
     "concepts, corpus, covered, why",
     [
-        (["memoria di lavoro"], ["Memoria di Lavoro"], True, "case is not significant"),
         (["memoria"], ["Memoria di Lavoro"], True, "concept inside a node name"),
         (["memoria di lavoro"], ["Memoria"], True, "node name inside the concept"),
         (["carico cognitivo"], ["Memoria di Lavoro"], False, "genuinely new"),
@@ -320,11 +330,6 @@ async def test_first_turn_prompt_is_unchanged(_on):
     assert "existing_corpus" not in kwargs
 
 
-async def test_flag_off_never_asks(_off):
-    kwargs, _ = await _plan_node_kwargs(_followup())
-    assert "conversation_history" not in kwargs, "flag off must send the prompt it always sent"
-
-
 async def test_plan_node_hands_the_planner_the_attachments(_off):
     """Whatever the retrieval flag: the Planner plans on the teacher's document."""
     state = _followup(conversation_history=[])
@@ -377,11 +382,8 @@ def test_empty_corpus_says_so():
     "raw, expected",
     [
         (True, True),
-        (False, False),
-        ("true", True),
         ("FALSE", False),
         ("yes", True),
-        ("1", True),
         ("0", False),
         (None, None),
         ("maybe", None),

@@ -2445,6 +2445,368 @@ dati di oggi si portano dietro.
 Test: `test_migrate_sqlite_to_postgres.py` (2) e un test su Postgres reale in
 `test_postgres_dialect.py` (7 su 7).
 
+### 2026-10-06 — Costi: dove vanno, e il primo risparmio (cache del prompt)
+
+Analisi delle tracce Langfuse (141 tracce, 665 generazioni, $4,63, quasi tutte
+prove generali e staging, non traffico reale delle docenti):
+
+- **Dove vanno i soldi:** Writer e revisione ~$2,0, giudice delle citazioni
+  $0,68, text2cypher $0,59, lezione leggera $0,63, planner $0,49. Una
+  `lesson.turn` costa $0,17–0,31, una `lesson.light` $0,02–0,05.
+- **Nessuna cache attiva:** `input_cached_tokens` = 0 su tutte le chiamate.
+- **text2cypher** manda ogni volta lo schema (101k caratteri per udl, 127k per
+  neuro, ~22–27k token) e fa ~10 chiamate a turno con prefisso identico al 100%.
+- **Il planner** impiega in media **19 secondi** a chiamata (mediana 18, max 35).
+
+Misurato su OpenRouter il 2026-10-06 (script usa e getta, pochi centesimi):
+
+- Sonnet 5 (Bedrock): con `cache_control` una lettura costa il 12% della
+  chiamata normale ($0,0014 contro $0,0116).
+- Gemini flash-lite: la cache implicita **non scatta** (0 token in cache su un
+  prefisso identico di 21,9k token). Con il segno esplicito: -90%
+  ($0,0055 → $0,00057), su 3.1 e su 3.5.
+
+Fatto:
+
+- `src/aix/core/prompt_cache.py`: segna la parte stabile del prompt (testo
+  invariato, solo diviso in blocchi). Solo `anthropic/` e `google/`; spenta con
+  `AIX_PROMPT_CACHE_ENABLED=false`.
+- Applicata allo schema di text2cypher (`Text2CypherConverter.convert`).
+  Verificata con una chiamata vera attraverso LangChain: 21.875 di 21.882 token
+  letti dalla cache; con il flag spento, 0.
+
+- **Il giudice delle citazioni** (`citation_support.py`): le istruzioni (1.266
+  token, uguali in ogni chiamata) sono un blocco segnato, la coppia frase–passaggio
+  no; il testo concatenato è identico al prompt misurato sui casi d'oro. Da 3
+  citazioni in su la prima parte da sola a scrivere la cache (in parallelo ogni
+  chiamata pagherebbe la scrittura, +26%, e nessuna la lettura). Misurato: una
+  chiamata con la cache costa $0,0004 invece di $0,0026 (-85%).
+- **Cache dei risultati** (`src/aix/core/result_cache.py`, sopra `MediaCache`,
+  nomi propri `aix:t2c:v1` e `aix:cite:v1`): la risposta del grafo a una domanda
+  (chiave: domanda normalizzata, dominio, `AIX_KG_VERSION`, modello, versione;
+  24 h, una risposta vuota un sesto) e il verdetto del giudice (7 giorni).
+  Mai in cache un errore, una query non valida, un verdetto di ripiego («tenuta
+  perché la chiamata è fallita»), né un valore non JSON.
+- **Dopo ogni ingestione del grafo cambia `AIX_KG_VERSION`**: il grafo non
+  memorizza una versione. `data_ingestion_neo4j.py` lo ricorda a fine corsa.
+
+Stima del risparmio dell'intero piano: 22–31% dei $4,63 (cache di Cypher e del
+giudice, planner su un modello più economico), da riconfermare dopo ogni passo.
+
+**Misura prima/dopo sui turni reali (2026-10-06).** Gli stessi turni presi dalle
+tracce (57 chiamate Cypher in 6 turni da 10 domande in parallelo; 49 coppie del
+giudice in 6 turni), rigiocati attraverso il codice vero con i flag spenti e accesi,
+ogni modalità partendo a freddo; il costo è quello fatturato da OpenRouter. Neo4j
+sostituito da uno stub (la validazione e la query non contano per il costo).
+
+| | vecchio | nuovo | risparmio |
+| --- | ---: | ---: | ---: |
+| Cypher, solo prefisso in cache | $0,2919 | $0,1179 | -60% |
+| Cypher, prefisso + risposte ricordate (15 su 57 ripetute) | $0,2919 | $0,0706 | -76% |
+| Giudice delle citazioni, 49 chiamate | $0,2463 | $0,1324 | -46% |
+
+- Per turno: Cypher $0,049 → $0,012; giudice ~$0,041 → ~$0,022. Insieme circa
+  -$0,056 su una `lesson.turn` da ~$0,25, cioè **~20%** nei turni con citazioni.
+  Il baseline Cypher qui aveva già un po' di cache implicita (20% dei token): in
+  produzione era 0, quindi il risparmio vero è leggermente più alto.
+- Qualità del giudice: due run identiche senza cache differiscono in 3 verdetti
+  su 49 (il modello non è deterministico nemmeno a temperatura 0); con la cache,
+  2–5. Nessun effetto misurabile. Il verdetto ricordato rende anzi stabile la
+  stessa coppia.
+- Latenza: turno Cypher uguale (1,7 s contro 1,9 s); turno del giudice +1–1,3 s
+  (la prima chiamata parte da sola a scrivere la cache).
+- Quanto vive la cache di Gemini: -90% entro ~5 minuti, -56% fino a 11 minuti,
+  scaduta a 16. Una burst fredda di 10 chiamate in parallelo risparmia comunque
+  il 56%. Nessun sovrapprezzo di scrittura.
+- Un falso allarme del mio test: 5 chiamate su 49 fallivano con «Connection
+  error» perché il banco di prova riusava lo stesso client fra più `asyncio.run`;
+  con un solo event loop, come nell'app, 0 fallimenti su 49 in entrambi i percorsi.
+
+**Il planner su un modello economico — pronto, spento di default.** Il piano è una
+classificazione (lingua, intento, scope) più un'estrazione (concetti, query);
+su Sonnet costa $0,035 e 19 s a chiamata. Con `AIX_PLANNER_MODEL` impostato il
+piano lo chiede prima al modello economico, e **un piano che non sa dare o di cui
+non è sicuro** (JSON illeggibile, errore, intento o lingua `LOW`, lingua non
+supportata, scope sotto il 50%) **viene richiesto al modello del Writer**
+(`AIX_PLANNER_ESCALATE`, acceso; nel log `event=planner_escalation`). Vuoto, il
+comportamento è quello di sempre. Il campo `reasoning` resta: compare nella
+scheda Planner.
+
+Prima di accenderlo: `python scripts/eval/compare_role_models.py planner
+--retrieval --models default,<candidato>` (il ruolo `planner` è nuovo: 30
+richieste, italiano per primo, con domande fuori tema). Soglie proposte, da
+confermare: accordo ≥ 95% su lingua, intento e scope; **tutte** le domande fuori
+tema colte; sovrapposizione di ciò che restituisce il grafo ≥ 85%; nessun piano
+illeggibile; mediana sotto ~5 s. Il riferimento (Sonnet) non è la verità: i
+disaccordi sono elencati per essere letti a mano. Poi una settimana in ombra su
+staging prima di spegnere Sonnet.
+
+**Prima misura del planner economico (2026-10-06, 30 richieste, senza grafo, modelli
+crudi, riferimento Sonnet): non supera le soglie, resta spento.**
+
+| modello | lingua | intento | scope | fuori tema colti | falsi allarmi | non leggibili | mediana |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Sonnet (riferimento) | 30/30 | 30/30 | 30/30 | 5/5 | 0 | 0 | 6,0 s |
+| gemini-3.5-flash-lite | 25/30 | 27/30 | 27/30 | **2/5** | 0 | 4 | 1,4 s |
+| gemini-3.1-flash-lite | 26/30 | 27/30 | 28/30 | 4/5 | 0 | 1 | 1,9 s |
+
+- 3.5 lascia passare come «in tema» una domanda sui mondiali di calcio e una
+  poesia sul mare: inaccettabile. 3.1 sbaglia solo l'equazione di secondo grado
+  (`partial_scope` invece di `out_of_scope`, discutibile).
+- Su 3 richieste in inglese 3.1 risponde in italiano (lingua `HIGH`, quindi la
+  rete di sicurezza non la ripara): perdita visibile alla docente.
+- «Non leggibili»: il piano è «troncato» entro il budget di `AIX_PLANNER_MAX_TOKENS`
+  (4000); la rete li ripara. Rimandati da rete: 3.5 6/30, 3.1 2/30.
+- Con la rete, il risparmio atteso è minore dell'85% teorico: 3.5 rimanderebbe
+  ~1/3 dei piani a Sonnet (~-50%), 3.1 ~1/10 (~-70%).
+- La sovrapposizione dei concetti (27–34%) misura poco: sono stringhe, la
+  formulazione cambia. Conta quella del grafo (`--retrieval`, serve Neo4j),
+  non ancora misurata.
+- La mediana di Sonnet qui è 6 s, non i 19 s delle tracce: quelle includono
+  carico, coda e ragionamento.
+
+Prossimi passi possibili: un modello di fascia media (Haiku), la lingua rilevata
+da codice invece che dal modello, `--retrieval` nel container.
+
+Da fare: cache del prefisso della lezione leggera, solo se la misura la
+giustifica. Jev (modello di decisione di TypeSafe) è fuori per ora.
+
+Test: `test_prompt_cache.py` (10), `test_result_cache.py` (10),
+`test_citation_support_cache.py` (6), `test_text2cypher_result_cache.py` (9),
+`test_planner_model.py` (13) e i flag in `test_feature_defaults.py`. L'intera
+suite unit: 1022 passano; due
+test di `test_concurrency_limits.py` falliscono anche su HEAD pulito e non c'entrano.
+
+### 2026-10-07 — Sonnet 5 ragionava senza limiti: corretto
+
+Analisi Langfuse (679 chiamate, $5,83 dal 30/9): con le cache di Cypher e del
+giudice in funzione (verificate dal vivo sulla WebUI locale: Cypher ~-88%,
+giudice ~-40%) l'85% della spesa sono le chiamate Sonnet. E lì c'era un difetto.
+
+- **`AIX_THINKING_EFFORT=low` arrivava solo a Claude 4** (`claude-sonnet-4`,
+  `claude-opus-4` in `config.py`). Su Sonnet 5 veniva ignorato: ~117k token di
+  ragionamento in una settimana di prove, **~20% della spesa**, fatturati come
+  output. E le risposte si troncavano: una revisione del Writer è finita a
+  `max_tokens` (8000) con 5129 token di ragionamento; di qui le continuazioni.
+- Rigiocate chiamate vere con `effort: low`: revisione $0,122 → $0,073 e 91 s →
+  39 s, completa; planner -40% e 28 s → 8–14 s; lezione leggera -15%, completa.
+- **Correzione:** per Claude 5.x si manda solo lo sforzo
+  (`reasoning_extra_body` in `config.py`); temperatura, budget e JSON del planner
+  restano quelli chiesti (il ramo di Claude 4 forzerebbe temperatura 1 e
+  toglierebbe il JSON). Lo usa anche il giudice delle citazioni.
+  `AIX_THINKING_EFFORT=default` torna al comportamento di prima.
+- Due chiamate costruivano i parametri per il modello del Writer e poi
+  chiamavano Gemini (la traduzione per text2cypher e `llm_chain`): ora li
+  costruiscono per il modello vero, così Gemini non riceve il ragionamento di Claude.
+- Da segnalare, non toccato: `deploy/.env.prod.example` ha ancora
+  `LLM_MODEL=claude-sonnet-4-6` e `AIX_WRITER_MAX_TOKENS=2000`.
+
+Prossimo: controllo di qualità su lezioni vere rigiocate da Langfuse, Sonnet 5 e
+5.5, come oggi e con sforzo `low` (Critic, controlli strutturali, giudice sui casi
+d'oro, lettura alla cieca di Angelo). Poi lo schema Cypher compatto: il 70% dei
+due prompt di dominio (101k e 127k caratteri) sono righe `Example:` ripetitive.
+
+Test: `test_reasoning_kwargs.py` (15). Suite unit: 1038 passano; le due di
+`test_concurrency_limits.py` falliscono anche su HEAD pulito.
+
+**Controllo di qualità su chiamate vere** (`scripts/eval/replay_sonnet_settings.py`:
+22 chiamate Sonnet rigiocate da Langfuse con i loro messaggi, 4 configurazioni):
+
+| | Writer | Ibrida (era «Revisione») | Leggera | Planner |
+| --- | --- | --- | --- | --- |
+| Sonnet 5 · come oggi | $0,070 · 53 s · Critic 4,67 | $0,088 · 63 s · 4,30 | $0,040 · 1 risposta **vuota** | $0,035 · 20 s |
+| Sonnet 5 · low | $0,042 · 27 s · 4,26 | $0,062 · 38 s · 3,73 | $0,040 | $0,024 · 9 s · 29/30 |
+| Sonnet 5.5 · come oggi | $0,077 · 44 s · 4,33 | $0,104 · 47 s · 4,40 · 1 troncata | $0,039 · 1 troncata | $0,029 · 8 s · 28/30 |
+| Sonnet 5.5 · low | $0,048 · 22 s · 3,87 | $0,070 · 23 s · 4,40 | $0,035 | $0,026 · 6 s · 29/30 |
+
+- Certo: `low` costa 30–40% in meno e dimezza i tempi, senza troncamenti né
+  citazioni inventate; il planner concorda con quello di oggi. Con il default,
+  una lezione leggera ha speso tutti i 3000 token a ragionare e ha risposto vuoto.
+- Giudice delle citazioni: 11/12 sui casi d'oro in tutte e quattro.
+- Non deciso: la qualità delle lezioni. Il Critic dà a `low` voti più bassi su
+  Sonnet 5 (4,26 contro 4,67; revisione 3,73 contro 4,30), ma su 3 lezioni per
+  tipo e con voti da 2,6 a 5,0 nella stessa configurazione; le lezioni `low` sono
+  12–23% più corte. Decide la lettura alla cieca di Angelo (pagina locale, non
+  pubblicata). Ipotesi: sforzo per ruolo, `low` per planner, leggera e giudice.
+- Da guardare: lo sforzo cambia quando la lezione leggera rimanda a una lezione
+  nuova (`<<<NUOVA_LEZIONE>>>`), e ogni rimando costa una lezione intera.
+
+**Lettura alla cieca di Angelo (5 lezioni, ordine nascosto) e decisione.**
+
+| configurazione | posizione media | prima | ultima |
+| --- | ---: | ---: | ---: |
+| Sonnet 5.5 · low | 2,0 | 2 | 0 |
+| Sonnet 5 · come oggi | 2,2 | 2 | 1 |
+| Sonnet 5.5 · come oggi | 2,4 | 1 | 1 |
+| Sonnet 5 · low | 3,4 | 0 | 3 |
+
+Sonnet 5 con `low` peggiora le lezioni (come diceva il Critic); Sonnet 5.5 con
+`low` è la preferita, allo stesso prezzo e in circa metà del tempo. **Deciso:
+`LLM_MODEL=anthropic/claude-sonnet-5.5` con `AIX_THINKING_EFFORT=low`, per tutto
+ciò che usa Sonnet** (Writer, revisione, planner, lezione leggera, giudice).
+Nei file di esempio e in `docs/ENVIRONMENT.md`; `deploy/.env.prod.example`
+passa anche lui da `claude-sonnet-4-6` a 5.5 (il suo `AIX_WRITER_MAX_TOKENS=2000`
+resta da decidere con Louis). Da verificare su Langfuse dopo il passaggio: quanto
+spesso la lezione leggera rimanda a una lezione nuova, che con 5.5 è capitato
+più spesso.
+
+**Schema Cypher più corto: provato e scartato.** Tre varianti contro lo schema
+completo, sul Neo4j vero, 28 domande (12 prese da lezioni vere); lo schema completo
+contro se stesso si sovrappone all'85–91% (rumore del modello):
+
+| variante | caratteri udl / neuro | sovrapposizione | con risultati |
+| --- | ---: | ---: | ---: |
+| completo | 101k / 128k | 85–91% (con sé) | 24–25/28 |
+| `lean` (senza id, domain, proprietà ripetute) | 74k / 93k | 43% | 22/28 |
+| solo nomi + descrizione a 80 caratteri | 43k / 55k | 57% | 23/28 |
+| solo nomi | 22k / 29k | 38% | 23/28 |
+
+Ogni accorciamento cambia molto che cosa il modello cerca nel grafo, e trova
+risultati in meno domande. Con la cache una chiamata Cypher costa già ~$0,0008:
+il guadagno non vale il rischio. Il codice delle varianti non è entrato; restano
+le 12 domande vere e la misura del rumore in `compare_role_models.py text2cypher`
+(lo stesso modello due volte).
+
+### 2026-10-12 — Modelli più economici per generare: provati, scartati
+
+Obiettivo di Angelo: dimezzare il costo di generazione. Rigiocate le stesse 22
+chiamate vere con modelli più economici, poi 6 lezioni lette alla cieca.
+
+| modello | Writer | Ibrida (era «Revisione») | Leggera | Planner | posizione media | scartate |
+| --- | --- | --- | --- | --- | ---: | ---: |
+| Sonnet 5.5 · low (oggi) | $0,040 | $0,077 | $0,035 | $0,025 | 1,3 | 0/6 |
+| Gemini 3.5 Flash · low | $0,034 | $0,058 | $0,028, 2 troncate | $0,013 | 1,8 | 0/6 |
+| Mistral Large 4 · ragionamento spento | $0,006 | $0,014 | $0,007 | $0,003 | 3,2 | **3/6** |
+| Haiku 4.5 | $0,018 | $0,031 | $0,017, 4 citazioni inventate | $0,012 | 3,7 | **3/6** |
+
+- Mistral Large 4 costa l'80–87% in meno e il Critic lo vota quasi come Sonnet,
+  ma Angelo ne scarta metà: testo corrotto con metadati trapelati, residui della
+  pipeline, un errore storico. Haiku: fonti fuori dal grafo, durata sbagliata,
+  imprecisioni scientifiche. **Il Critic non distingue queste lezioni da quelle buone.**
+- Mistral va chiamato con il ragionamento **spento** (`reasoning.enabled=false`):
+  con `effort: low` ragiona di più (troncamenti, 100+ s, JSON non valido).
+  Gemini 3.5 Flash non permette di spegnerlo.
+- **Il Writer resta Sonnet 5.5 · low.** Per dimezzare il costo si lavora sul
+  numero di chiamate, non sul modello.
+
+**Il giudice delle citazioni resta su Sonnet.** Sui casi d'oro i modelli economici
+fanno come Sonnet (11/12), ma sulle 49 coppie vere no: Gemini 3.5 flash-lite
+lascia passare 7 citazioni sbagliate su 8; 3.1 flash-lite ne toglie 11 di troppo;
+Haiku sbaglia in 12. Sonnet contro se stesso: 2 su 49.
+
+**Costi nascosti trovati:**
+- Quando la lezione leggera rimanda a una lezione nuova, lo stream si interrompe
+  appena compare il segnale (`light.py:288`): Langfuse registra 0 token e $0, ma
+  OpenRouter fattura i ~14k token di input (~$0,03 su Sonnet). Nel replay Sonnet
+  5.5 rimanda 4 richieste leggere su 6.
+- **Correzione (2026-10-12):** le colonne «Revisione» di queste tabelle e di quelle
+  del 7/10 non sono revisioni ma il **Writer delle lezioni ibride** (argomento fuori
+  dal grafo, `WRITER_SYSTEM_PROMPT_HYBRID`, che si apre con «Content Writer
+  creating lessons»): l'analisi le confondeva. Le revisioni vere (messaggio «Please
+  revise the content…») sono 3 su 24 turni, non il 75%. Le letture alla cieca
+  restano valide: erano comunque lezioni vere. La chiamata più cara di un turno è
+  il Writer ibrido, il caso più frequente (storia, attualità).
+  `replay_sonnet_settings.py` ora distingue `writer`, `ibrida` e `revisione`.
+- La cache del giudice dipende dal provider che OpenRouter sceglie per Sonnet 5.5:
+  il 12/10 (Google) funziona, il 7/10 quasi mai.
+
+### 2026-10-12 — Cache dei prompt fissi di Writer, planner e lezione leggera
+
+- **Lezione leggera:** data, profilo e testo della lezione (fino a ~15k token) sono
+  uguali a ogni turno della stessa lezione e a ogni rimando a una lezione nuova:
+  ora sono un blocco in cache (`light._head`), il resto (passaggi, storia,
+  richiesta) no. Testo identico, verificato da `test_light_prompt_cache.py`.
+- **Writer, revisione e planner:** il system prompt (Writer: intento, testo di
+  dominio, vincoli, ~3–4k token; planner: 14k caratteri) è uguale per tutte le
+  docenti dello stesso dominio: ora è in cache. `test_system_prompt_cache.py`.
+- **Come si comporta la cache di Sonnet 5.5 su OpenRouter** (misurato): una
+  lettura costa il 7% ($0,0010 contro $0,0146 per i 5.700 token del planner), una
+  scrittura il 125%. Google e Bedrock servono 5.5 con più istanze, ciascuna con la
+  sua cache: con richieste diverse la lettura riesce a caso, **4 volte su 8** in
+  una sessione di una sola docente (costo medio del system del planner $0,0078
+  invece di $0,0118, -34%); con più docenti attive le istanze restano calde e la
+  quota sale. Dove sta il segno (system o primo blocco utente) non cambia nulla.
+  Conviene sopra ~22% di letture.
+- Accorciare i testi di dominio: il system del Writer pesa ~$0,004–0,008 a
+  chiamata, quello del planner ~$0,011; con la cache il guadagno di un taglio si
+  riduce in proporzione. Proposta da fare con chi ha scritto i testi.
+
+### 2026-10-13 — Piano per dimezzare il costo: giudice senza doppioni
+
+Piano approvato (leve 1–3, principi di context engineering applicati dietro flag,
+prototipo dell'output incrementale, modalità a sezioni opzionale in un branch a
+parte). Primo passo, il giudice delle citazioni: la stessa frase che cita lo
+stesso passaggio due volte (un marcatore ripetuto sulla riga, due blocchi della
+stessa pagina) era giudicata due volte in parallelo. Nelle tracce il 9% delle
+chiamate del giudice (18 su 196, $0,09 su $0,92). Ora una domanda, un verdetto,
+applicato a ogni occorrenza. Un test esistente metteva due frasi sulla stessa
+riga e si aspettava due verdetti diversi da due domande identiche: ora le frasi
+sono su due righe, come nel caso reale.
+
+### 2026-10-13 — Misure delle leve: Writer asciutto, scaletta, strumenti nella lezione leggera
+
+- **Writer asciutto** (replay di 9 chiamate vere, `#storia+grafo+lunghezza`): -10%
+  di costo sia nel Writer nel grafo sia nell'ibrido; lezioni del 7–16% più corte
+  (erano già vicine al limite di 1.600 parole). Critic 4,20 contro 4,13 (grafo),
+  4,07 contro 4,37 (ibrida). Lettura alla cieca di Angelo in attesa prima di
+  implementarlo.
+- **Lezione leggera progressiva** (solo le sezioni pertinenti): sui 25 turni
+  leggeri veri toglie solo il 5% dell'input. La lezione è il 21% dell'input di un
+  turno leggero; **i passaggi dei documenti il 70%**, cercati a ogni turno anche
+  per domande che non li riguardano. Non implementata nel flusso: il modulo
+  `lesson_outline` resta per la scaletta e gli strumenti.
+- **Strumenti nella lezione leggera** (`AIX_LIGHT_TOOLS_ENABLED`, spento): stessa
+  lezione con documenti, 5 richieste tipiche (`measure_light_turns.py` nel
+  container, costi da Langfuse): **$0,247 → $0,186 (-25%)**. Le domande che non
+  riguardano i documenti costano dal 36 al 77% in meno e il primo token arriva in
+  0,9–3,6 s invece di 5–10 s; la domanda sui documenti costa il 42% in più (un
+  giro di ricerca, e la risposta cita 15 passaggi invece di 7). Qualità delle
+  risposte da provare nella WebUI prima di accenderlo.
+- **Prima la scaletta** (`prototype_outline_first.py`, 9 richieste vere): la
+  scaletta da sola costa il 36% in meno e arriva in 9 s invece di 25; scaletta +
+  una sezione costa il 64% in più della lezione intera, perché il secondo passo
+  rimanda tutto l'input (documenti compresi) e la cache del provider ne ha letto
+  solo il system. L'output incrementale conviene solo se i passi successivi
+  ricevono i soli materiali della loro sezione (strumenti).
+- **Planner su Gemini 3.5 Flash** con sforzo `low` (`compare_role_models.py
+  planner --retrieval`): lingua 30/30, intento 27/30, scope 29/30, fuori tema 4/5
+  (l'equazione di secondo grado), sovrapposizione del grafo 41%; più lento di
+  Sonnet 5.5 low (7,2 s contro 3,4). Il rumore di Sonnet contro se stesso è in
+  misura prima di decidere.
+- I Gemini Flash/Pro ragionano per default: ora ricevono `effort: low` (-18% su
+  un piano vero); i -lite (Critic, traduzione) no, perché non ragionano.
+- Lo stato salvato non contiene più `graphrag_results`, una copia per ricerca
+  mai letta da nessuno.
+
+### 2026-10-13 — Letture di Angelo: relazioni del grafo accese, scaletta da sviluppare
+
+- **Relazioni del grafo nel Writer**: lettura alla cieca di 4 lezioni rigenerate
+  con e senza: preferita quella con le relazioni in 3, pari la quarta.
+  `AIX_WRITER_GRAPH_RELATIONS` ora è acceso di default (~$0,005 in più a lezione).
+- **Prima la scaletta**: Angelo la valuta da sola (il confronto con la lezione
+  intera non ha senso: è un'altra cosa) e la giudica una buona strategia, più
+  intuitiva, da sviluppare. Difetti visti: una scaletta troppo lunga ha tagliato le
+  proposte «Cosa sviluppo adesso?» (2); una segue la conversazione precedente
+  invece della richiesta (3); lingue mischiate, scaletta in inglese e proposte in
+  italiano (9). **Versione 2** (`prototype_outline_first.py --outline-only`):
+  brevità imposta, lingua della lezione anche nei titoli, basata sull'ultima
+  richiesta, proposte specifiche. Sulle stesse 9 richieste: $0,032 (-45% rispetto
+  alla lezione intera), 5 s, 175 parole in media (max 207), proposte presenti e
+  numerate 9/9; la 9 ora è tutta in inglese. Pagina da leggere per Angelo.
+- **Writer asciutto**: lettura alla cieca di 9 lezioni: preferita la versione di
+  oggi in 5, l'asciutta in 3, una pari. Con un risparmio del solo 10%, **non si
+  applica**. Togliere la storia ripetuta resta da misurare da solo, senza il
+  vincolo di lunghezza.
+- **Scalette v2 lette da Angelo**: utili per partire 9/9, proposte giuste 7/9.
+  Cosa manca, nelle sue parole: il passo ovvio («sviluppa la struttura»), un
+  percorso logico scoperta → sviluppo → approfondimento, almeno una proposta fuori
+  dallo standard (modi diversi di spiegare, mappa della lezione), nessun
+  adattamento BES finché la lezione è da sviluppare. **Versione 3** con queste
+  regole: 9/9 seguono l'ordine (struttura, approfondimento specifico spesso legato
+  ai documenti, mappa o approccio diverso), $0,032, 5 s, 171 parole. Restano: la
+  terza proposta è quasi sempre una mappa (8/9); in un caso gli adattamenti ADHD
+  rientrano nell'approfondimento.
+
 ## Un difetto preesistente trovato il 2026-09-11 — chiuso
 
 *Chiuso nella PR 5: `_legacy_read` trasforma un PDF illeggibile in un `ValueError` con un messaggio in italiano, e la docente riceve un 422 leggibile invece di un 500. Il testo sotto resta come registro.*
@@ -2456,3 +2818,197 @@ caricato dalla docente diventa un **500**, non un messaggio.
 Non l'ho corretto perché è il percorso legacy, che questa PR ha il compito di
 lasciare intatto. È una riga — trasformare l'eccezione in un `ValueError` con
 un messaggio in italiano, come gli altri controlli di `save_upload`.
+
+### 2026-10-13 — Mistral Large 4 con il ragionamento spento, per la prova in WebUI
+
+Angelo vuole provare da sé in WebUI la generazione con Mistral Large 4 e con
+Haiku 5.5 (nuovo: $0,10/$0,50 per milione di token, contro Haiku 4.5 scartato
+il 12/10). Una chiamata di prova: Mistral Large 4 senza impostazioni ragiona di
+default, ha speso 936 token di ragionamento e non ha restituito nulla entro 800;
+con `reasoning.enabled=false` risponde in 127 token. Ora `reasoning_extra_body`
+lo spegne per Mistral Large 4+ (con `AIX_THINKING_EFFORT=default` non manda
+nulla, come per gli altri). Haiku 5.5 riceve già `effort: low` come Sonnet 5.5.
+
+Nello stack locale (`deploy/.env.local`, non in git): `LLM_MODEL` sul modello in
+prova, planner e giudice delle citazioni fissati su Sonnet 5.5
+(`AIX_PLANNER_MODEL`, `AIX_CITATION_CHECK_MODEL`), così cambia solo chi scrive:
+Writer e risposte in chat. Test: `tests/unit/test_reasoning_kwargs.py` (+4).
+
+Aggiunto su richiesta di Angelo **Qwen 3.8 27B** (`qwen/qwen3.8-27b`, $0,04/$2,30
+per milione): ragiona di default (192 token su una risposta di tre frasi), con
+`effort: low` 112 e la risposta resta buona; ora i Qwen 3.x ricevono l'effort
+come Claude 5.x e Gemini 3+.
+
+E **DeepSeek V4.1 Flash** (`deepseek/deepseek-v4.1-flash`, $0,15/$0,60): come
+Mistral, con `effort: low` ragiona di più (310 token contro 220 di default);
+spento risponde uguale con 0. Ora i DeepSeek V4 hanno il ragionamento spento.
+
+### 2026-10-13 — Uno slot libero non viene mai rifiutato
+
+I 2 test di `test_concurrency_limits.py` che fallivano da sempre su Windows
+segnalavano un difetto vero: con una finestra d'attesa 0 il timer da 1 ms poteva
+scattare prima della richiesta dello slot, e una generazione veniva rifiutata
+con uno slot libero. Ora uno slot libero si prende subito; il timer resta solo
+quando bisogna aspettare, e l'ordine della coda non cambia. In staging l'attesa è
+di 5 s, quindi lì non si presentava. (Portato da `feature/section-edits-optional`.)
+
+### 2026-10-13 — Haiku 5.5 scrive: decisione di Angelo dopo le prove in WebUI
+
+Angelo ha provato in WebUI la generazione con Mistral Large 4, Haiku 5.5, Qwen
+3.8 27B e DeepSeek V4.1 Flash (pianificatore e giudice fermi su Sonnet) e ha
+scelto **Haiku 5.5** come modello predefinito: risposte giuste, più veloce,
+$0,10/$0,50 per milione di token contro $2/$10 di Sonnet 5.5.
+
+- `LLM_MODEL=anthropic/claude-haiku-5.5` negli esempi (`.env.example`,
+  `deploy/.env.prod.example`) e in `docs/ENVIRONMENT.md`: scrive lezioni e
+  risposte in chat (`AIX_CHAT_MODEL` vuoto).
+- **Restano Sonnet 5.5** il pianificatore (`AIX_PLANNER_MODEL`) e il giudice
+  delle citazioni (`AIX_CITATION_CHECK_MODEL`), come nelle prove: sul giudice
+  Haiku 4.5 sbagliava 12 verdetti su 49 (Sonnet 2), sul pianificatore Gemini
+  Flash dava piani meno affidabili.
+- `AIX_PLANNER_ESCALATE=false` negli esempi: con il pianificatore su Sonnet e il
+  Writer su Haiku, un piano incerto verrebbe richiesto al modello più debole.
+  Spento, il pianificatore fa esattamente quello che faceva prima.
+- È una scelta fatta sulle prove di Angelo, non su una lettura alla cieca come
+  quella del 12/10 (dove era Haiku 4.5, scartato). Da seguire su Langfuse e nelle
+  prime lezioni vere: troncamenti, citazioni tolte dal giudice, giudizi del Critic.
+- Lo staging legge il suo `.env` sulla VM (repo cloud-infra): lì il cambio va
+  fatto a parte.
+
+### 2026-10-13 — Il giudice delle citazioni chiede Google per primo
+
+Misure del giorno (120 coppie vere): con un server fisso la cache delle
+istruzioni del giudice passa dal 47% al 52% dell'input (−10% sul costo), e nelle
+tracce delle prove di Angelo il 37% delle chiamate dopo la prima la riscriveva
+invece di leggerla (in un turno 14 su 15), al doppio del costo. Il conto ha la
+conservazione zero dei dati: per Sonnet 5.5 restano Google Vertex (global) e
+Amazon Bedrock.
+
+- `AIX_CITATION_CHECK_PROVIDER`, predefinito `google-vertex/global`: le chiamate
+  del giudice chiedono a OpenRouter quel server per primo, con gli altri di
+  riserva (`allow_fallbacks`). Stesso prezzo per token. Vuoto o `none` lascia
+  decidere OpenRouter; mai mandato a un endpoint che non sia OpenRouter.
+- Da verificare su Langfuse nelle prime sessioni: chiamate del giudice che
+  scrivono la cache dopo la prima del turno (`input_cache_write_tokens`), che
+  dovrebbero scendere verso zero.
+- Provati e scartati lo stesso giorno: Haiku 5.5, Qwen 3.8 27B, DeepSeek V4.1
+  Flash e V4 Pro come giudice o come pianificatore, e tutte le coppie di un
+  turno in una chiamata sola (dettagli sul branch `feature/section-edits-optional`).
+- Prova dal vivo, 4 coppie: OpenRouter accetta il campo e manda tutto a Google,
+  ma delle 3 chiamate parallele dopo la prima solo 1 legge la cache. Una parte
+  dei mancati colpi avviene dentro Google: il server fisso ne toglie una parte,
+  non tutti. Se Langfuse lo conferma, la leva successiva è un breve intervallo
+  dopo la prima chiamata, perché la cache sia pronta prima delle altre.
+
+### 2026-10-14 — Test: meno doppioni (portato da `feature/section-edits-optional`)
+
+Richiesta di Angelo: oltre 1.000 test, togliere i ridondanti e i vecchi. Qui da
+1.079 a **998**, tutti verdi.
+
+- **Tolti:** i test di script usati una volta (migrazione SQLite→Postgres del
+  5/10, benchmark dei parser del 14/9); quelli del corrective RAG, che il pilota
+  tiene spento; i doppioni delle strade «flag spento» (resta un test per
+  interruttore, e `test_feature_defaults.py` legge tutti i default); i casi
+  parametrizzati che ripetevano lo stesso ramo.
+- **Tenuti:** sicurezza (CSRF, sanificazione, IDOR, nomi di file pericolosi), i
+  casi normali «senza allegati / senza profilo», il controllo degli asset Docker
+  (ora 1 test invece di 8).
+- Il tempo che resta è distribuito (~0,04 s a test, quasi tutto per creare il
+  database di prova): per scendere ancora servirebbe eseguirli in parallelo
+  (`pytest-xdist`), non toglierne altri.
+
+### 2026-10-14 — Nessun minimo di lunghezza per scrivere in chat
+
+Angelo, rispondendo «sì» in chat, non riusciva a inviare: il campo chiedeva
+almeno 3 caratteri (`minlength`, il tasto Invio e il server). In una
+conversazione una risposta di due lettere è una risposta vera. Tolto il minimo
+nei due campi della chat e nel controllo del server; resta solo che il messaggio
+non sia vuoto, e il massimo di 2.000 caratteri. Test:
+`test_light_turns.py::test_a_two_letter_reply_is_sent`.
+
+### 2026-10-14 — Scaricare la lezione in Word
+
+Tra i formati di download mancava Word: la docente adatta la lezione prima di
+usarla, e il PDF è fatto per la stampa, non per modificarla. Ora c'è il pulsante
+**Word** accanto a PDF (`?format=docx`).
+
+- `src/aix/export/word.py` (`render_docx`, python-docx, già fra le dipendenze)
+  legge lo stesso modello del PDF (`ExportIRV1`): stesse sezioni, stesse fonti
+  già risolte con i nomi dei documenti, stesso avviso Art. 50.
+- Struttura di Word, non testo formattato: i `##` diventano Titolo 1 (riquadro di
+  spostamento e sommario funzionano), elenchi puntati con i loro livelli, tabelle
+  vere con l'intestazione ripetuta a ogni pagina, link cliccabili solo per
+  http/https/mailto. Gli elenchi numerati portano il numero nel testo: lo stile
+  numerato di Word continua la numerazione fra elenchi separati.
+- Avviso IA nell'intestazione di ogni pagina, piè di pagina con avviso e numero
+  di pagina, e nelle proprietà del documento (con l'id della lezione e l'hash del
+  contenuto, come il PDF).
+- A differenza del PDF non serve filtrare i caratteri: Word sostituisce da sé il
+  font per frecce, ≤ ≥ ed emoji. Vengono tolti solo i caratteri di controllo,
+  che un file Word non può contenere.
+- Flag `AIX_EXPORT_DOCX_ENABLED`, acceso di default come gli altri export; la
+  rotta lo controlla anche lei.
+
+Test: `tests/unit/test_export_docx.py` (12).
+
+### 2026-10-14 — Una lezione fuori ambito dopo un turno in ambito: errore corretto
+
+Prova di Angelo su `feature/section-edits-optional` (il difetto è più vecchio, ed
+è su entrambi i branch). Turno 1: «elenco di argomenti principali» su un PDF
+della Guerra fredda; il pianificatore lo giudica **in ambito** (UDL), quindi
+nessuna fonte esterna. Turno 2: «crea una lezione partendo da questa lista»; ora
+è **in parte fuori ambito**, ma il pianificatore dice anche di riusare la
+ricerca del turno prima. Lo scrittore sceglie il prompt «ibrido», che vuole il
+testo di Wikipedia, e cade su `KeyError: 'wikipedia_content'` (codice 438471).
+
+- **La ricerca:** un turno in parte o del tutto fuori ambito, in un thread che
+  non ha mai cercato fonti esterne, ora cerca invece di riusare
+  (`should_retrieve`). Resta vincente il «non cercare» scelto dalla docente.
+- **Lo scrittore:** il ramo ibrido si sceglie dal prompt, non dalla presenza di
+  fonti esterne. Se non ce ne sono, il prompt dice «Nessun contenuto Wikipedia
+  disponibile» e la lezione si scrive dai documenti e dal grafo, invece di fallire.
+
+Test: tre casi in `test_conditional_retrieval.py`, uno in
+`test_hybrid_prompt_cites_documents.py`.
+
+### 2026-10-14 — Un turno fallito non fa più fallire il successivo
+
+Riprovando la stessa lezione dopo la correzione qui sopra, il turno è andato bene
+(ricerca esterna fatta, lezione scritta, Critic 3,8 approvata) ma è stato
+dichiarato fallito con lo stesso `'wikipedia_content'` (codice 32C6B0). Prima di
+partire il servizio caricava **tutto** lo stato salvato del turno precedente,
+compreso il suo errore; il grafo lo azzera per il nuovo turno, ma il controllo
+finale leggeva ancora quello vecchio. Quindi, dopo un qualsiasi turno fallito,
+ogni turno successivo della stessa lezione risultava fallito.
+
+Ora dallo stato salvato si prende solo ciò che deve passare da un turno
+all'altro (`PERSISTED_ACROSS_TURNS`: nodi del grafo, risorse, fonti esterne), non
+l'errore né la lezione del turno prima. Test: `test_seed_from_checkpoint.py`.
+
+### 2026-10-14 — Prova di Angelo sulle risorse di Louis: tre correzioni
+
+Pull delle modifiche di Louis (risorse multimediali salvate con la lezione,
+libreria `/webui/resources`, API dei documenti). In locale: migrazioni applicate,
+audit dello storage `healthy: True`, nessun vecchio allegato da migrare,
+`AIX_MATERIAL_LIBRARY_ENABLED=true` solo in `deploy/.env.local`. Le risorse
+salvate tornano davvero alla riapertura di una lezione nuova; le lezioni di
+prima non ne hanno (atteso: il salvataggio parte con la generazione).
+
+Dalla prova, tre cose sistemate:
+
+- **I download spariti.** I pulsanti c'erano solo nella scheda subito dopo la
+  generazione; ricaricata la pagina, la lezione viene dalla cronologia, che non
+  li ha mai avuti (non era una modifica di Louis: il segnalino, ricaricando la
+  pagina, l'ha solo reso visibile). Ora un partial, `lesson_downloads.html`, li
+  mette in entrambe, nella cronologia sulla lezione corrente.
+- **Il segnalino.** Salvava ricaricando la pagina e restava uguale. Ora salva
+  senza ricaricare (htmx) e diventa pieno; una risorsa già nella libreria
+  appare piena in ogni pannello (le chiavi salvate passano alla pagina, al
+  pannello dal vivo e alla scheda della ricerca durante la generazione). Con la
+  risorsa si registra la lezione da cui è stata salvata, se è della docente.
+- **La pagina Risorse.** Ogni documento elenca le lezioni in cui è usato, con il
+  titolo cliccabile; lo stesso file caricato più volte è una scheda sola
+  («Caricato 2 volte: è lo stesso file»); ogni risorsa salvata dice «Dalla
+  lezione: …» con il link.
+
+Test: `test_resource_library_links.py` (4). Suite: 1.059 verdi.

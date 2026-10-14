@@ -1,23 +1,17 @@
 """Graph topology and branch-routing coverage.
 
-Before this file nothing compiled the graph, and the two functions that carry
-every routing decision — :func:`should_continue_to_revision` and
-:func:`should_retry_retrieval` — had no tests at all. Every edge in the
-pipeline was therefore unverified, including the revision loop and the
-corrective-RAG retry ceiling.
+Before this file nothing compiled the graph, and the function that carries
+the revision decision — :func:`should_continue_to_revision` — had no tests
+at all. Every edge in the pipeline was therefore unverified.
 
 What is locked in here:
 
 1. **Default topology** (``AIX_CORRECTIVE_RAG_ENABLED`` unset/false) — the exact
    node set and edge set, so a stray ``add_node`` / ``add_edge`` shows up as a
    failing test rather than as behaviour drift.
-2. **Corrective-RAG topology** — a smoke test only. The feature is off by
-   default and its cost/benefit is still unmeasured, so it is deliberately not
-   on the critical path: we assert it still *compiles* and wires its retry
-   edge, nothing more.
-3. **Branch functions** — table-driven, including the precedence of ``error``
-   over every other signal and both ceilings (``max_revisions`` and
-   ``AIX_CORRECTIVE_RAG_MAX_ATTEMPTS``).
+2. **Branch function** — table-driven, including the precedence of ``error``
+   over every other signal and the ``max_revisions`` ceiling. Corrective RAG,
+   kept off by the pilot, is no longer covered (2026-10-13).
 4. **One end-to-end run** with all four agents mocked: no network, no Neo4j,
    no LLM. Proves the nodes actually hand state to each other in the compiled
    graph, which none of the per-node unit tests can show.
@@ -41,7 +35,7 @@ from aix.agent.graph.lesson_planner_graph import (
     get_compiled_graph,
     reset_compiled_graph,
 )
-from aix.agent.graph.nodes import should_continue_to_revision, should_retry_retrieval
+from aix.agent.graph.nodes import should_continue_to_revision
 from aix.agent.graph.state import create_initial_state
 
 pytestmark = pytest.mark.unit
@@ -112,31 +106,6 @@ def test_default_topology_wires_the_linear_path_and_both_loops(monkeypatch):
         ("critique", "write"),
         ("critique", "__end__"),
     }
-
-
-# ---------------------------------------------------------------------------
-# 2. Corrective RAG — smoke only, deliberately off the critical path
-# ---------------------------------------------------------------------------
-
-
-def test_corrective_rag_topology_still_compiles_and_wires_its_retry_edge(monkeypatch):
-    """The flag is off in production and the feature's value is unmeasured.
-
-    This asserts only that turning it on still produces a valid graph with the
-    grader node and its retry edge back into the retriever — enough to catch a
-    change that silently breaks the flagged path, without paying to keep a
-    second topology fully covered.
-    """
-    monkeypatch.setenv("AIX_CORRECTIVE_RAG_ENABLED", "true")
-    compiled = build_lesson_planner_graph()
-
-    assert "grade_retrieval" in compiled.get_graph().nodes
-    edges = _edges(compiled)
-    assert ("retrieve", "grade_retrieval") in edges
-    assert ("grade_retrieval", "retrieve") in edges  # the retry loop
-    assert ("grade_retrieval", "write") in edges
-    # The direct retrieve → write edge is replaced by the grader hop.
-    assert ("retrieve", "write") not in edges
 
 
 # ---------------------------------------------------------------------------
@@ -233,11 +202,6 @@ async def test_pipeline_and_orchestrator_expose_the_shared_graph(monkeypatch):
         ),
         ({"approved": True}, "finish", "the critic approved"),
         (
-            {"approved": False, "revision_count": 0, "max_revisions": 2},
-            "revise",
-            "budget left, so loop back to the writer",
-        ),
-        (
             {"approved": False, "revision_count": 2, "max_revisions": 2},
             "revise",
             "the second of two permitted revisions (the count includes this rejection)",
@@ -246,11 +210,6 @@ async def test_pipeline_and_orchestrator_expose_the_shared_graph(monkeypatch):
             {"approved": False, "revision_count": 3, "max_revisions": 2},
             "finish",
             "ceiling reached — ship the draft rather than loop",
-        ),
-        (
-            {"approved": False, "revision_count": 5, "max_revisions": 2},
-            "finish",
-            "past the ceiling behaves like the ceiling",
         ),
         (
             {"approved": False, "revision_count": 1, "max_revisions": 0},
@@ -262,70 +221,6 @@ async def test_pipeline_and_orchestrator_expose_the_shared_graph(monkeypatch):
 )
 def test_should_continue_to_revision(state, expected, why):
     assert should_continue_to_revision(state) == expected, why
-
-
-# ---------------------------------------------------------------------------
-# 3b. should_retry_retrieval
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    "state, expected, why",
-    [
-        ({"error": "boom"}, "error", "an upstream failure short-circuits"),
-        (
-            {"error": "boom", "retrieval_grade": "irrelevant"},
-            "error",
-            "error outranks a retry-worthy grade",
-        ),
-        ({"retrieval_grade": "relevant"}, "continue", "good retrieval goes to the writer"),
-        ({}, "continue", "no grade defaults to relevant — the feature is opt-in"),
-        (
-            {"retrieval_grade": "irrelevant", "retrieval_attempts": 0},
-            "retry",
-            "budget left, so re-enter the retriever",
-        ),
-        (
-            {"retrieval_grade": "ambiguous", "retrieval_attempts": 1},
-            "retry",
-            "ambiguous is retry-worthy too",
-        ),
-        (
-            {"retrieval_grade": "irrelevant", "retrieval_attempts": 2},
-            "continue",
-            "ceiling reached — write with retrieval_warning rather than loop",
-        ),
-        (
-            {"retrieval_grade": "irrelevant", "retrieval_attempts": 99},
-            "continue",
-            "past the ceiling behaves like the ceiling",
-        ),
-    ],
-)
-def test_should_retry_retrieval(state, expected, why, monkeypatch):
-    monkeypatch.delenv("AIX_CORRECTIVE_RAG_MAX_ATTEMPTS", raising=False)  # default 2
-    assert should_retry_retrieval(state) == expected, why
-
-
-@pytest.mark.parametrize(
-    "raw, effective, why",
-    [
-        ("1", 1, "lower bound"),
-        ("4", 4, "upper bound"),
-        ("0", 1, "clamped up — zero attempts would make the node pointless"),
-        ("99", 4, "clamped down — a flaky grader must not loop the pipeline"),
-        ("not-a-number", 2, "unparseable falls back to the default"),
-    ],
-)
-def test_corrective_rag_attempt_ceiling_is_clamped(raw, effective, why, monkeypatch):
-    monkeypatch.setenv("AIX_CORRECTIVE_RAG_MAX_ATTEMPTS", raw)
-    assert graph_nodes._corrective_rag_max_attempts() == effective, why
-
-    # And the router honours that ceiling: one below retries, at it continues.
-    below = {"retrieval_grade": "irrelevant", "retrieval_attempts": effective - 1}
-    at = {"retrieval_grade": "irrelevant", "retrieval_attempts": effective}
-    assert should_retry_retrieval(below) == "retry"
-    assert should_retry_retrieval(at) == "continue"
 
 
 # ---------------------------------------------------------------------------

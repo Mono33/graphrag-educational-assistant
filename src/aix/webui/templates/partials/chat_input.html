@@ -143,11 +143,10 @@
         class="aix-chat-input-textarea"
         rows="2"
         required
-        minlength="3"
         maxlength="2000"
         placeholder="Es. Crea una lezione di 45 minuti sulla fotosintesi clorofilliana adattata a una classe con 2 studenti DSA…"
         autofocus
-        onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault(); if(this.value.trim().length>=3){this.form.requestSubmit();}}"
+        onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault(); if(this.value.trim().length>0){this.form.requestSubmit();}}"
       ></textarea>
 
       {# Decision U1: while a document is being indexed the lesson cannot be
@@ -270,10 +269,9 @@
         class="aix-chat-input-textarea"
         rows="2"
         required
-        minlength="3"
         maxlength="2000"
         placeholder="Continua la conversazione… (es. «adatta per studenti DSA», «aggiungi un'attività di gruppo»)"
-        onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault(); if(this.value.trim().length>=3){this.form.requestSubmit();}}"
+        onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault(); if(this.value.trim().length>0){this.form.requestSubmit();}}"
       ></textarea>
 
       {% include "partials/chat_send_button.html" %}

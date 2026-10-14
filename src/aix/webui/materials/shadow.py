@@ -131,7 +131,12 @@ async def record_upload(
         return None
 
 
-async def retire_material(*, material_id: str, owner_id: uuid.UUID) -> None:
+async def retire_material(
+    *,
+    material_id: str,
+    owner_id: uuid.UUID,
+    force: bool = False,
+) -> None:
     """Remove a material from retrieval when its attachment is removed (§12.3).
 
     The teacher's action is «togli questo documento dalla lezione», and until
@@ -146,8 +151,11 @@ async def retire_material(*, material_id: str, owner_id: uuid.UUID) -> None:
     Soft at the end, deliberately: a lesson already written from the material
     stays explainable, and the blob it points at is never orphaned
     (``material_version.blob_id`` is ``ON DELETE RESTRICT``).
+
+    ``force`` is reserved for the explicit library/API retirement action. The
+    legacy shadow hook keeps its original feature-gated no-op behavior.
     """
-    if not materials_enabled():
+    if not force and not materials_enabled():
         return
 
     try:
@@ -164,6 +172,34 @@ async def retire_material(*, material_id: str, owner_id: uuid.UUID) -> None:
             lessons = await BindingRepository(session).disable_for_material(
                 material_uuid, owner_id=owner_id
             )
+
+            # A permanent library deletion must also remove the attachment
+            # chips from every linked lesson.  The legacy remove route already
+            # did this before calling ``retire_material``; keeping the cleanup
+            # here makes the new explicit library action equally complete.
+            if lessons:
+                from sqlalchemy import select
+
+                from aix.webui.lessons.models import Lesson
+
+                linked = (
+                    await session.execute(
+                        select(Lesson).where(
+                            Lesson.id.in_(lessons),
+                            Lesson.owner_id == owner_id,
+                        )
+                    )
+                ).scalars()
+                for lesson in linked:
+                    manifest = list(lesson.uploaded_files_json or [])
+                    lesson.uploaded_files_json = [
+                        entry
+                        for entry in manifest
+                        if not (
+                            isinstance(entry, dict)
+                            and str(entry.get("material_id")) == str(material_uuid)
+                        )
+                    ]
 
             chunks_removed = 0
             for version in versions:

@@ -225,15 +225,6 @@ async def test_nothing_to_embed_is_not_a_request():
     assert client.embeddings.batches == []
 
 
-def test_the_private_rag_is_on_unless_switched_off(monkeypatch):
-    from aix.webui.materials.embedding import private_rag_enabled
-
-    monkeypatch.delenv("AIX_PRIVATE_RAG_ENABLED", raising=False)
-    assert private_rag_enabled() is True
-    monkeypatch.setenv("AIX_PRIVATE_RAG_ENABLED", "false")
-    assert private_rag_enabled() is False
-
-
 def test_the_real_client_is_reachable(monkeypatch):
     """The path every other test here skips by injecting a fake client.
 

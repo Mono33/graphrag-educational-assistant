@@ -5,11 +5,9 @@
   Displays the ``curated_media`` payload from the retriever agent.
   Updated live during a run via OOB swap (the SSE 'card' event for the
   retriever includes a sibling element with id="media-panel"
-  hx-swap-oob="outerHTML"). On reload (status=complete), the show page
-  passes ``media`` directly so this same partial renders the persisted
-  data — except today we don't persist the full curated_media dict on
-  the Lesson row (only counts via meta), so on reload the panel renders
-  in its empty/placeholder state. Persisting full media is P4 work.
+  hx-swap-oob="outerHTML"). On reload, the show page replays the latest
+  persisted per-turn media snapshot. Legacy lessons without a snapshot
+  keep the original empty/placeholder state.
 
   PRESERVED FOR HTMX:
     - id="media-panel"             ← required for the retriever-card OOB swap
@@ -53,7 +51,7 @@
     {% endif %}
   </p>
 
-  {% if total == 0 %}
+  {% if total == 0 and not media_live_ready %}
     {# ── Empty / placeholder state ─────────────────────────────────── #}
     <div class="aix-empty-state aix-p-18-16">
       <div class="aix-empty-state-icon">
@@ -98,6 +96,9 @@
                   </span>
                 {% endif %}
                 <span class="aix-pill aix-pill-success aix-fs-2xs shrink-0" title="Risorsa verificata: selezionata dal database curato (rivisto da esperti)">✓ Verificato</span>
+                {% with resource_item=v, resource_kind="video", resource_source="curated", resource_title=(v.get("title") or v.get("search_query") or "Video"), resource_url=url %}
+                  {% include "partials/save_resource_form.html" %}
+                {% endwith %}
               </div>
               {% if v.get('duration_hint') %}
                 <span class="aix-media-item-meta">{{ v.duration_hint }}</span>
@@ -135,6 +136,10 @@
                   {{ c.get('title') or 'Articolo' }}
                 </div>
                 <span class="aix-pill aix-pill-success aix-fs-2xs shrink-0" title="Risorsa verificata: selezionata dal database curato (rivisto da esperti)">✓ Verificato</span>
+                {% set citation_url = c.get('url') or (('https://doi.org/' ~ c.get('doi')) if c.get('doi') else None) %}
+                {% with resource_item=c, resource_kind="article", resource_source="curated", resource_title=(c.get("title") or "Articolo"), resource_url=citation_url %}
+                  {% include "partials/save_resource_form.html" %}
+                {% endwith %}
               </div>
               <div class="aix-media-item-meta ml-0">
                 {% set authors = c.get('authors') or [] %}
@@ -185,6 +190,9 @@
                   <span class="aix-color-primary">{{ r.get('title') or 'Risorsa' }}</span>
                 {% endif %}
                 <span class="aix-pill aix-pill-success aix-fs-2xs shrink-0" title="Risorsa verificata: selezionata dal database curato (rivisto da esperti)">✓ Verificato</span>
+                {% with resource_item=r, resource_kind="oer", resource_source="curated", resource_title=(r.get("title") or "Risorsa"), resource_url=url %}
+                  {% include "partials/save_resource_form.html" %}
+                {% endwith %}
               </div>
             </li>
           {% endfor %}
@@ -198,6 +206,9 @@
                   </span>
                 </div>
                 <span class="aix-pill aix-pill-success aix-fs-2xs shrink-0" title="Risorsa verificata: selezionata dal database curato (rivisto da esperti)">✓ Verificato</span>
+                {% with resource_item=t, resource_kind="textbook", resource_source="curated", resource_title=(t.get("title") or "Libro"), resource_url=(t.get("url") or t.get("suggested_url")) %}
+                  {% include "partials/save_resource_form.html" %}
+                {% endwith %}
               </div>
               <div class="aix-media-item-meta">
                 {{ t.get('source') or 'OER' }}
@@ -236,6 +247,9 @@
                   {{ w.snippet[:120] }}{% if w.snippet | length > 120 %}…{% endif %}
                 </span>
               {% endif %}
+              {% with resource_item=w, resource_kind="web", resource_source="live", resource_title=(w.get("title") or w.get("url") or "Risorsa web"), resource_url=w.get("url") %}
+                {% include "partials/save_resource_form.html" %}
+              {% endwith %}
             </li>
           {% endfor %}
         </ul>

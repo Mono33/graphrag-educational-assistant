@@ -447,8 +447,9 @@ The flags that change behaviour most:
 
 The stated rule is that **with every new flag off, the product is the previous product** —
 not "almost". The three flags above default off for exactly that reason; the export flags
-(`AIX_EXPORT_PDF_ENABLED`, `AIX_EXPORT_OUTLINE_ENABLED`) default on because they were
-accepted as purely additive.
+(`AIX_EXPORT_PDF_ENABLED`, `AIX_EXPORT_OUTLINE_ENABLED`, and since 2026-10-14
+`AIX_EXPORT_DOCX_ENABLED` for the Word download) default on because they were accepted
+as purely additive.
 
 Note that `validator_enabled()` and `hybrid_enabled()` are written as `not in (…)` against
 a hardcoded default string — read the default literal, not the shape of the expression.

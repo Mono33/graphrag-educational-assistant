@@ -71,6 +71,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from aix.core.ai_marking import ensure_marking
 from aix.webui.errors import report as _report_failure
+from aix.webui.lessons.media_snapshots import save_curated_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -363,6 +364,23 @@ def _query_from_lesson(lesson: Any) -> str:
         parts.append(f"(livello: {grade})")
 
     return " ".join(parts)
+
+
+def _seed_from_checkpoint(final_state: dict[str, Any], values: Any) -> None:
+    """Carry over from the thread's checkpoint only what outlives a turn.
+
+    The seed exists for the evidence a follow-up may reuse (``PERSISTED_ACROSS_TURNS``:
+    the graph's nodes, the media, the outside sources). The rest of the
+    checkpoint belongs to the previous run, and the graph resets it for this
+    one -- but the seed did not: the error of a failed turn came back here and
+    failed the next turn after it had written and approved its lesson
+    (2026-10-14, «'wikipedia_content'» on a retry that succeeded).
+    """
+    from aix.agent.graph.state import PERSISTED_ACROSS_TURNS
+
+    final_state.update(
+        {key: value for key, value in dict(values or {}).items() if key in PERSISTED_ACROSS_TURNS}
+    )
 
 
 def _fail_if_the_turn_produced_nothing(final_state: dict[str, Any]) -> None:
@@ -805,8 +823,10 @@ async def _summarise_history(
 async def _persist_assistant_turn(
     session: AsyncSession,
     lesson_id: Any,
+    owner_id: Any,
     content_md: str,
     meta: dict[str, Any],
+    curated_media: Any,
 ) -> None:
     """
     Append the assistant's response for the current turn to the
@@ -849,6 +869,23 @@ async def _persist_assistant_turn(
                 meta_json=meta or None,
             )
         )
+        try:
+            # Snapshot persistence is additive. A missing migration or a
+            # transient snapshot failure must never roll back the established
+            # assistant-message write.
+            async with session.begin_nested():
+                await save_curated_snapshot(
+                    session,
+                    lesson_id=lesson_id,
+                    owner_id=owner_id,
+                    turn_index=int(latest_turn),
+                    media=curated_media,
+                )
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "[media-snapshot] curated save failed for lesson_id=%s; assistant message kept",
+                lesson_id,
+            )
         await session.commit()
     except Exception:  # noqa: BLE001
         logger.exception(
@@ -1514,7 +1551,7 @@ async def run_agent_stream(
     try:
         _snapshot = await graph.aget_state(run_config)
         if _snapshot is not None and _snapshot.values:
-            final_state.update(dict(_snapshot.values))
+            _seed_from_checkpoint(final_state, _snapshot.values)
     except Exception:  # noqa: BLE001
         logger.debug("[webui.agent] no prior checkpoint to seed final_state from")
 
@@ -1671,8 +1708,10 @@ async def run_agent_stream(
         await _persist_assistant_turn(
             session=session,
             lesson_id=lesson.id,
+            owner_id=lesson.owner_id,
             content_md=lesson_plan_md,
             meta=meta,
+            curated_media=final_state.get("curated_media") or {},
         )
 
         logger.info(
@@ -1881,7 +1920,7 @@ async def stream_agent_events(
     try:
         _snapshot = await graph.aget_state(run_config)
         if _snapshot is not None and _snapshot.values:
-            final_state.update(dict(_snapshot.values))
+            _seed_from_checkpoint(final_state, _snapshot.values)
     except Exception:  # noqa: BLE001
         logger.debug("[api.agent] no prior checkpoint to seed final_state from")
 

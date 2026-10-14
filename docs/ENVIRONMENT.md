@@ -19,7 +19,7 @@ spegne. Una variabile assente o vuota vale il suo default.
 | Variabile | Default | Se manca |
 | --- | --- | --- |
 | `OPENROUTER_API_KEY` | — | Nessuna chiamata al modello. Ripiego: `OPENAI_API_KEY` |
-| `LLM_MODEL` | `anthropic/claude-sonnet-5` | Usa il default del codice |
+| `LLM_MODEL` | `anthropic/claude-haiku-5.5` | Il modello che scrive: Writer e risposte in chat (`AIX_CHAT_MODEL` vuoto). **Haiku 5.5 dal 2026-10-13**, scelto da Angelo dopo averlo provato in WebUI contro Mistral Large 4, Qwen 3.8 27B e DeepSeek V4.1 Flash: risposte giuste, più veloce, $0,10/$0,50 per milione contro $2/$10 di Sonnet 5.5. Planner e giudice delle citazioni restano su Sonnet 5.5 (`AIX_PLANNER_MODEL`, `AIX_CITATION_CHECK_MODEL`). Prima: Sonnet 5.5, scelto il 2026-10-07 rigiocando 22 chiamate vere e con una lettura alla cieca |
 | `NEO4J_URI` · `NEO4J_USER` · `NEO4J_PASSWORD` | — | Nessun recupero dal Knowledge Graph: lezioni senza fondamento pedagogico |
 | `AIX_NEO4J_CONNECT_TIMEOUT_S` | `5` | Quanto si aspetta la connessione al grafo. **Il default del driver è 60 s**, e una lezione fa dieci domande al grafo: il 2026-09-21 un database raggiungibile ma muto ha tenuto una generazione ferma 3 minuti e 14 |
 | `AIX_NEO4J_RETRY_TIME_S` | `5` | Per quanto si riprova una transazione fallita (default del driver: 30 s) |
@@ -38,13 +38,13 @@ gira sugli stessi casi del vecchio.
 
 | Ruolo | Variabile | Valore attuale | Predefinito nel codice | Come misurare un candidato |
 | --- | --- | --- | --- | --- |
-| Writer: scrive la lezione | `LLM_MODEL` | `anthropic/claude-sonnet-5` | `core/config.py` | `scripts/eval/measure_followup_turns.py` |
+| Writer: scrive la lezione | `LLM_MODEL` | `anthropic/claude-haiku-5.5` | `core/config.py` | `scripts/eval/measure_followup_turns.py` |
 | Risposte veloci nei turni successivi | `AIX_CHAT_MODEL` | vuoto = `LLM_MODEL` | `webui/agent/light.py` · `chat_model` | `scripts/eval/measure_light_turns.py` |
 | Critic: rivede la bozza | `AIX_CRITIC_MODEL` | `google/gemini-3.5-flash-lite` | `agent/agents/critic_agent.py` · `DEFAULT_CRITIC_MODEL` | `compare_role_models.py critic --models a,b` |
 | Domande al grafo e traduzione | `TEXT2CYPHER_MODEL` | `google/gemini-3.1-flash-lite` | `core/config.py` · `Text2CypherConfig.model` | `compare_role_models.py text2cypher --models a,b` |
 | OCR di scansioni e immagini | `AIX_OCR_MODEL` | `google/gemini-3.5-flash-lite` | `materials/parsing/vision_ocr.py` · `DEFAULT_MODEL` | `check_ocr.py` e `check_ocr_datasets.py --models a,b` |
 | Mappa dei documenti | `AIX_DOCUMENT_MAP_MODEL` | `google/gemini-3.5-flash-lite` | `materials/document_map.py` · `DEFAULT_MODEL` | — |
-| Verifica delle citazioni | `AIX_CITATION_CHECK_MODEL` | vuoto = `LLM_MODEL` | `agent/validation/citation_support.py` | `check_citation_support.py` |
+| Verifica delle citazioni | `AIX_CITATION_CHECK_MODEL` | `anthropic/claude-sonnet-5.5` (vuoto = `LLM_MODEL`) | `agent/validation/citation_support.py` | `check_citation_support.py` |
 | Embedding dei documenti | `AIX_PRIVATE_EMBEDDING_MODEL` | `baai/bge-m3` | `materials/embedding.py` | `run_private_rag.py` (**cambiarlo richiede di reindicizzare tutto**) |
 
 I costi di ogni ruolo si vedono in Langfuse, per modello (sezione «Tracciamento»).
@@ -58,8 +58,16 @@ I costi di ogni ruolo si vedono in Langfuse, per modello (sezione «Tracciamento
 | `AIX_LLM_TIMEOUT_S` | `120` | Timeout di una chiamata |
 | `AIX_LLM_MAX_RETRIES` | `1` | Tentativi su errore transitorio |
 | `AIX_LLM_PROBE_ENABLED` | `true` | Sonda di connettività all'avvio |
-| `AIX_THINKING_EFFORT` | `low` | Sforzo di ragionamento sui modelli che lo espongono |
+| `AIX_PROMPT_CACHE_ENABLED` | `true` | Segna la parte stabile del prompt (lo schema di text2cypher, ~100k caratteri, identico a ogni chiamata) perché il provider la faccia pagare un decimo alle ripetizioni. Solo per i modelli `anthropic/` e `google/`; il testo non cambia. Misurato il 2026-10-06: su Gemini senza il segno non si risparmia nulla (0 token in cache), con il segno -90% |
+| `AIX_RESULT_CACHE_ENABLED` | `true` | Ricorda le risposte che dipendono solo dai loro ingressi: la risposta del grafo a una domanda (le parole chiave tornano di turno in turno, 32 su 100 erano ripetute) e il verdetto del giudice delle citazioni su una coppia frase–passaggio. Un errore non viene mai ricordato. Usa il backend della cache dei media (`AIX_MEDIA_CACHE_BACKEND`), con nomi propri |
+| `AIX_RESULT_CACHE_TTL_S` | `86400` | Quanto vive una risposta del grafo (una vuota, un sesto); il verdetto del giudice vive 7 giorni |
+| `AIX_KG_VERSION` | — | Etichetta dei dati nel grafo, parte della chiave. **Cambiala dopo ogni ingestione** (`scripts/ingest/`): il grafo non memorizza una versione, e senza questo una risposta in cache sopravvive al cambio dei dati fino a 24 ore |
+| `AIX_LIGHT_TOOLS_ENABLED` | `false` | Lezione leggera con strumenti: i documenti allegati (e il Knowledge Graph) non vengono più cercati prima di ogni risposta, ma solo se il modello lo chiede (`cerca_nei_documenti`, `cerca_nel_grafo`, al massimo 2 giri). Nei turni leggeri di prova i passaggi dei documenti erano il 70% dell'input anche per domande che non li riguardavano. Spento finché non è misurato su lezioni vere (`scripts/eval/measure_light_turns.py`) |
+| `AIX_WRITER_GRAPH_RELATIONS` | `true` | Le relazioni del Knowledge Graph (es. «ADHD —SUGGESTS→ pause attive», max 15 righe) arrivano al Writer accanto ai nodi. Lettura alla cieca del 2026-10-13 su 4 lezioni rigenerate: preferita la lezione con le relazioni in 3, pari la quarta. Costa al Writer ~15% di input in più (~$0,005 a lezione) |
+| `AIX_THINKING_EFFORT` | `low` | Quanto ragiona il modello prima di rispondere: `low`, `medium`, `high`, oppure `default` (non manda nulla e il modello decide da solo). Vale per Claude 4 e, dal 2026-10-07, anche per Claude 5.x: prima su Sonnet 5 veniva ignorato, il modello ragionava a piacere (~20% della spesa in token di ragionamento) e le lezioni si troncavano a `max_tokens`. Rigiocate con `low`: revisione del Writer -40% di costo e 39 s invece di 91, completa; planner -40% e 8–14 s invece di 28. Su Claude 5.x cambia solo lo sforzo: temperatura, budget e JSON restano quelli chiesti |
 | `AIX_CRITIC_MODEL` | `google/gemini-3.5-flash-lite` | Modello del Critic. Scelto il 2026-09-30 fra quattro Gemini (`scripts/eval/compare_role_models.py critic`): coglie più difetti di 2.5 Flash (5 su 9 contro 1), approva 6 lezioni buone su 8, è il più veloce e il più stabile |
+| `AIX_PLANNER_MODEL` | `anthropic/claude-sonnet-5.5` negli esempi | Modello del Planner. Vuoto = lo stesso del Writer (`LLM_MODEL`); dal 2026-10-13 il Writer è Haiku e il Planner resta Sonnet. Il piano è una classificazione (lingua, intento, scope) più un'estrazione (concetti, query), non scrittura: su Sonnet impiega in media 19 s e costa $0,035 a chiamata (tracce del 2026-10-06). **Non attivarlo senza** `scripts/eval/compare_role_models.py planner --retrieval` (soglie nel registro di `Stato_Lavori.md`) |
+| `AIX_PLANNER_ESCALATE` | `true` (`false` negli esempi dal 2026-10-13: con il Planner su Sonnet e il Writer su Haiku il rinvio andrebbe al modello più debole) | Con `AIX_PLANNER_MODEL` impostato, un piano che il modello economico non sa dare (JSON illeggibile, errore) o di cui non è sicuro (intento o lingua `LOW`, lingua non supportata, scope sotto il 50%) viene richiesto al modello del Writer. Il risparmio non costa un piano peggiore. Nel log: `event=planner_escalation` |
 | `AIX_MAX_REVISIONS` | `1` | Giri di revisione Critic → Writer |
 
 ### Writer
@@ -86,6 +94,7 @@ dimenticata serviva il prodotto vecchio senza che nessuno se ne accorgesse.
 | `AIX_UPLOAD_PARSER_ENABLED` | `true` | Parser nuovo sulla graffetta: DOCX, PPTX, immagini, magic bytes, OCR. Spenta: PDF, TXT, MD letti con pypdf. Richiede i volumi `uploads` e `materials` per non perdere gli allegati a ogni ricreazione del container |
 | `AIX_MATERIALS_ENABLED` | `true` | Storage durevole, tabelle `material*`, coda e worker di ingestione |
 | `AIX_PRIVATE_RAG_ENABLED` | `true` | Chunking, embedding e recupero dai documenti della docente. **Il testo esce dalla macchina** verso il provider di embedding. Su Postgres richiede pgvector |
+| `AIX_MATERIAL_LIBRARY_ENABLED` | `false` | Azioni di riuso nella libreria: collega un documento esistente, rimuovilo da una sola lezione e ritiralo esplicitamente dalla libreria. La pagina in sola lettura resta disponibile. Attivare solo dopo che `scripts/ops/audit_material_storage.py` riporta `healthy: True`; spenta conserva la cancellazione legacy |
 | `AIX_VALIDATOR_ENABLED` | `false` | Validatore dei vincoli d'aula fra Writer e Critic |
 | `AIX_CONDITIONAL_RETRIEVAL_ENABLED` | `true` | Un turno che non porta concetti nuovi riusa il corpus del thread. Misurato il 2026-09-23 su quattro turni (`scripts/eval/measure_followup_turns.py`): il router riusa quando si riscrive e cerca quando arriva un argomento nuovo, e sui turni di modifica risparmia 4–9 s su ~65 — il resto è il Writer che riscrive la lezione intera |
 | `AIX_LIGHT_TURNS_ENABLED` | `true` | Dopo la prima lezione, un messaggio riceve una risposta in streaming in pochi secondi (lezione, conversazione e documenti, cercati di nuovo a ogni turno) e la lezione non cambia; una richiesta di lezione nuova mostra una scheda per passare alla generazione completa, che resta anche dietro la casella «Lezione completa». `AIX_CHAT_MAX_TOKENS` (default `3000`) limita la risposta |
@@ -94,6 +103,7 @@ dimenticata serviva il prodotto vecchio senza che nessuno se ne accorgesse.
 | `AIX_CORRECTIVE_RAG_ENABLED` | `false` | Nodo che giudica il recupero e riprova |
 | `AIX_CORRECTIVE_RAG_MAX_ATTEMPTS` | `2` | Quante volte può riprovare (limitata fra 1 e 4) |
 | `AIX_EXPORT_PDF_ENABLED` | `true` | Bottone PDF (server-side) |
+| `AIX_EXPORT_DOCX_ENABLED` | `true` | Bottone Word: la lezione come documento modificabile (.docx), dallo stesso modello del PDF |
 | `AIX_EXPORT_OUTLINE_ENABLED` | `true` | Bottone Scaletta |
 
 ### Parsing e OCR (solo con il parser acceso)
@@ -123,7 +133,8 @@ dimenticata serviva il prodotto vecchio senza che nessuno se ne accorgesse.
 | `AIX_PRIVATE_RAG_HYBRID` | `true` | Fonde la ricerca per parole con quella vettoriale (§8.5). Spegnerla torna al solo vettoriale: serve a bisezionare una regressione, non è una configurazione da tenere — sui casi d'oro l'ibrida è migliore su tutte le misure |
 | `AIX_VALIDATOR_MAX_RETRIES` | `2` | Riscritture che il validatore può chiedere |
 | `AIX_CITATION_CHECK_ENABLED` | `true` | Verifica che il passaggio citato sostenga la frase, e toglie il riferimento quando non lo sostiene (la frase resta). Costa una chiamata al modello, e **solo** se la bozza contiene citazioni ai materiali privati |
-| `AIX_CITATION_CHECK_MODEL` | come `LLM_MODEL` | Modello diverso per quella verifica |
+| `AIX_CITATION_CHECK_MODEL` | come `LLM_MODEL` | Modello diverso per quella verifica. Negli esempi `anthropic/claude-sonnet-5.5`: il Writer è Haiku, il giudice resta Sonnet |
+| `AIX_CITATION_CHECK_PROVIDER` | `google-vertex/global` | Il server OpenRouter a cui la verifica delle citazioni si rivolge per primo (gli altri restano di riserva). Le istruzioni del giudice si leggono dalla cache solo sul server che l'ha scritta: con l'instradamento libero, il 2026-10-13, un terzo delle chiamate la riscriveva (costo doppio). Stesso prezzo per token. Con il conto a conservazione zero dei dati, per Sonnet 5.5 restano solo Google Vertex (global) e Amazon Bedrock. Vuoto o `none`: decide OpenRouter |
 
 ### Tracciamento (Langfuse)
 

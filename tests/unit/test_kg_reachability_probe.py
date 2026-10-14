@@ -73,3 +73,11 @@ async def test_a_search_that_found_concepts_never_pays_for_the_probe():
 
     assert got["out"]["kg_unreachable"] is False
     assert got["probe_calls"] == 0, "the probe is the empty-result path only"
+
+
+async def test_the_unread_per_query_copy_is_no_longer_saved():
+    """``graphrag_results`` duplicated nodes and relationships in every checkpoint; nothing read it."""
+    got = await _retrieve([{"name": "Memoria di lavoro"}], reachable=True)
+
+    assert got["out"]["graphrag_results"] is None
+    assert got["out"]["retrieved_nodes"] == [{"name": "Memoria di lavoro"}]

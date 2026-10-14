@@ -313,6 +313,15 @@ def test_a_light_request_keeps_the_lesson_s_topic(client, maker):
     assert rows[-1].content_md == "Perché l'attività 2?"
 
 
+def test_a_two_letter_reply_is_sent(client, maker):
+    """«sì» is a real answer in a conversation: there is no minimum length (2026-10-14)."""
+    response = client.post(f"/webui/lesson/{LESSON}/run", data={"query": "sì"})
+
+    assert response.status_code == 200
+    _, rows = asyncio.run(_rows(maker))
+    assert rows[-1].content_md == "sì"
+
+
 def test_lezione_completa_runs_the_full_chain_with_the_graph(client, maker):
     client.post(
         f"/webui/lesson/{LESSON}/run", data={"query": "Rifalla per la terza", "full_run": "1"}

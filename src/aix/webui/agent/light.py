@@ -34,6 +34,7 @@ from aix.agent.prompts.light_prompt import (
     LIGHT_USER_TEMPLATE,
     NEW_LESSON,
 )
+from aix.core import prompt_cache
 from aix.webui.agent.service import StreamEvent
 from aix.webui.errors import report as _report_failure
 from aix.webui.features import light_turns_enabled
@@ -168,27 +169,46 @@ async def _documents(lesson: Any, instruction: str) -> tuple[str, list[dict[str,
     return teacher_material_appendix(items, None, phase="light", material_maps=maps), items
 
 
-def _messages(
-    lesson: Any, instruction: str, history: str, documents: str, *, answer_here: bool
-) -> list[dict[str, str]]:
+#: The template up to the lesson is the same on every turn of a lesson (the date,
+#: the class, the lesson); what follows -- passages, history, request -- changes.
+_HEAD, _TAIL = LIGHT_USER_TEMPLATE.split("{documents}", 1)
+_TAIL = "{documents}" + _TAIL
+
+
+def _head(lesson: Any) -> str:
+    """The stable start of the user message: what the provider can keep in cache."""
     from aix.agent.prompts.profile_renderer import render_profile_section
     from aix.agent.prompts.today import today_note
 
     profile = {
         k: v for k, v in (lesson.educational_profile_json or {}).items() if not k.startswith("__")
     }
-    system = LIGHT_SYSTEM_PROMPT.format(
-        scope_rule=ANSWER_HERE_RULE if answer_here else ESCALATION_RULE
-    )
-    user = LIGHT_USER_TEMPLATE.format(
+    return _HEAD.format(
         today=today_note().strip(),
         profile=render_profile_section(profile),
         lesson=(lesson.lesson_plan_md or "")[:_LESSON_CHARS],
-        documents=documents,
-        history=history,
-        instruction=instruction,
+    )
+
+
+def _messages(
+    lesson: Any, instruction: str, history: str, documents: str, *, answer_here: bool
+) -> list[dict[str, str]]:
+    system = LIGHT_SYSTEM_PROMPT.format(
+        scope_rule=ANSWER_HERE_RULE if answer_here else ESCALATION_RULE
+    )
+    user = _head(lesson) + _TAIL.format(
+        documents=documents, history=history, instruction=instruction
     )
     return [{"role": "system", "content": system}, {"role": "user", "content": user}]
+
+
+async def _content_deltas(stream: Any) -> AsyncIterator[str]:
+    """The text pieces of a streamed answer, in order."""
+    async for chunk in stream:
+        choice = chunk.choices[0] if chunk.choices else None
+        delta = (choice.delta.content or "") if choice and choice.delta else ""
+        if delta:
+            yield delta
 
 
 async def _finish(answer: str, items: list[dict[str, Any]], lesson_md: str) -> str:
@@ -258,7 +278,12 @@ async def run_light_turn(
     output: Optional[str] = None
     error = ""
     try:
-        documents, items = await _documents(lesson, instruction)
+        from aix.webui.agent import light_tools
+
+        # With the tools the documents are looked up only if the model asks
+        # (see light_tools); without, they are searched before every answer.
+        toolbox = light_tools.Toolbox(lesson) if light_tools.enabled() else None
+        documents, items = ("", []) if toolbox else await _documents(lesson, instruction)
         messages = _messages(
             lesson,
             instruction,
@@ -266,6 +291,15 @@ async def run_light_turn(
             documents,
             answer_here=answer_here,
         )
+        if toolbox:
+            messages[0] = {
+                **messages[0],
+                "content": messages[0]["content"] + light_tools.TOOLS_RULE,
+            }
+        # The lesson (up to ~15k tokens) is resent on every turn and on every
+        # hand-off to a new lesson: marked, a turn within minutes of the last
+        # reads it at a tenth of the price. The text is unchanged.
+        messages = prompt_cache.cacheable(messages, model=model, stable_user_prefix=_head(lesson))
         kwargs = app_config.openai.build_completion_kwargs(
             temperature=0.4,
             max_tokens=_MAX_TOKENS,
@@ -277,12 +311,13 @@ async def run_light_turn(
         first_token: Optional[float] = None
         client = app_config.openai.get_async_client()
         async with llm_slot():
-            stream = await client.chat.completions.create(messages=messages, stream=True, **kwargs)
-            async for chunk in stream:
-                choice = chunk.choices[0] if chunk.choices else None
-                delta = (choice.delta.content or "") if choice and choice.delta else ""
-                if not delta:
-                    continue
+            if toolbox:
+                deltas = light_tools.stream_with_tools(client, messages, kwargs, toolbox)
+            else:
+                deltas = _content_deltas(
+                    await client.chat.completions.create(messages=messages, stream=True, **kwargs)
+                )
+            async for delta in deltas:
                 shown = gate.feed(delta)
                 if gate.escalated:
                     break
@@ -311,6 +346,8 @@ async def run_light_turn(
             yield StreamEvent(kind="light_escalate", payload={"query": instruction})
             return
 
+        if toolbox:
+            items = toolbox.items
         answer = (await _finish("".join(parts), items, lesson.lesson_plan_md or "")).strip()
         if not answer:
             raise RuntimeError("Il modello non ha prodotto una risposta.")

@@ -31,6 +31,7 @@ FEATURE_FLAGS_OFF = {
     "AIX_UPLOAD_PARSER_ENABLED": "false",
     "AIX_MATERIALS_ENABLED": "false",
     "AIX_PRIVATE_RAG_ENABLED": "false",
+    "AIX_MATERIAL_LIBRARY_ENABLED": "false",
     "AIX_VALIDATOR_ENABLED": "false",
     "AIX_CONDITIONAL_RETRIEVAL_ENABLED": "false",
     "AIX_CORRECTIVE_RAG_ENABLED": "false",
@@ -39,10 +40,21 @@ FEATURE_FLAGS_OFF = {
     "AIX_TRACING_ENABLED": "false",
     "AIX_MEDIA_LIVE_ENABLED": "false",
     "AIX_MEDIA_RERANK_ENABLED": "false",
+    "AIX_PROMPT_CACHE_ENABLED": "false",
+    "AIX_RESULT_CACHE_ENABLED": "false",
+    # Not a flag but a switch of the same kind: a cheaper planner on a laptop's
+    # .env must not change what the suite plans with. Empty is today's behavior.
+    "AIX_PLANNER_MODEL": "",
+    "AIX_LIGHT_TOOLS_ENABLED": "false",
+    "AIX_WRITER_GRAPH_RELATIONS": "false",
 }
 
 #: On by default since before 2026-10-05, and tested at their default.
-FEATURE_FLAGS_AT_DEFAULT = ("AIX_EXPORT_PDF_ENABLED", "AIX_EXPORT_OUTLINE_ENABLED")
+FEATURE_FLAGS_AT_DEFAULT = (
+    "AIX_EXPORT_PDF_ENABLED",
+    "AIX_EXPORT_OUTLINE_ENABLED",
+    "AIX_EXPORT_DOCX_ENABLED",
+)
 
 
 @pytest.fixture(autouse=True)

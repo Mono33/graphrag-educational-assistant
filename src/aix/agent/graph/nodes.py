@@ -474,12 +474,11 @@ async def retrieve_node(state: AgentState) -> dict[str, Any]:
         # Sanitize before storing in AgentState — msgpack (LangGraph checkpointer)
         # cannot serialize numpy scalar types that Neo4j / sklearn may return.
         return {
-            "graphrag_results": _sanitize(
-                [
-                    {"nodes": r.nodes, "relationships": r.relationships}
-                    for r in result.search_results
-                ]
-            ),
+            # Was a per-query copy of nodes and relationships, kept in every
+            # checkpoint and carried across turns, that nothing read: the merged
+            # ``retrieved_*`` below are what every node uses. Written as None so
+            # threads saved before 2026-10-13 drop their old copy too.
+            "graphrag_results": None,
             "retrieved_nodes": _sanitize(result.nodes),
             "retrieved_relationships": _sanitize(result.relationships),
             "recommendations": _sanitize(result.recommendations),
@@ -1155,6 +1154,17 @@ def should_retrieve(state: AgentState) -> str:
 
     if not state.get("retrieved_nodes"):
         logger.info("[Router] no corpus on this thread yet → retrieve")
+        return "retrieve"
+
+    # A turn partly or wholly outside the graph takes its subject from outside
+    # sources, and a thread that began in scope never fetched any. Reusing would
+    # hand the Writer the hybrid prompt with nothing in it: on 2026-10-14 «crea
+    # una lezione partendo da questa lista», after an in-scope list on the Cold
+    # War, failed in the Writer. The teacher's own «don't search» still wins.
+    if state.get("scope_status") in ("partial_scope", "out_of_scope") and not any(
+        (state.get("external_resources") or {}).values()
+    ):
+        logger.info("[Router] the turn needs outside sources the thread never fetched → retrieve")
         return "retrieve"
 
     verdict = state.get("requires_new_retrieval")

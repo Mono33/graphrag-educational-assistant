@@ -69,8 +69,12 @@ async def test_a_citation_removed_mid_sentence_leaves_no_gap():
 
 
 async def test_the_same_marker_is_judged_once_per_sentence():
-    """Two claims, one passage: one may hold and the other may not."""
-    draft = f"Yalta divise l'Europa {YALTA}. La fotosintesi avviene nei cloroplasti {YALTA}."
+    """Two claims, one passage: one may hold and the other may not.
+
+    On two lines: the claim is the marker's line (see ``_claim_around``), so two
+    markers on one line are the same question, asked once since 2026-10-13.
+    """
+    draft = f"Yalta divise l'Europa {YALTA}.\nLa fotosintesi avviene nei cloroplasti {YALTA}."
 
     out = await drop_unsupported_citations(
         draft, ITEMS[:1], client=_judge("supported", "unsupported")

@@ -228,6 +228,44 @@ database as soon as it starts. What has been rehearsed locally
 (`docker-compose.local.yml`, 2026-09-25) is a bring-up on a **fresh** volume;
 these four steps on a volume created by the Alpine image have not been.
 
+### 4.2 Verify attachment bytes after an upgrade
+
+The SQLite-to-Postgres script copies database rows, including each lesson's
+attachment manifest. It cannot copy files from the old container filesystem.
+Before replacing a container that did not already use `app_uploads`, preserve
+the directory separately:
+
+```bash
+docker cp aix-app:/graphrag-aixlearning/data/webui/uploads ./uploads-before-upgrade
+# start the new stack, then restore into the mounted app_uploads volume
+docker cp ./uploads-before-upgrade/. aix-app:/graphrag-aixlearning/data/webui/uploads/
+docker exec -u 0 aix-app chown -R 10001:10001 /graphrag-aixlearning/data/webui/uploads
+```
+
+After every migration or volume change, run the read-only consistency audit:
+
+```bash
+docker exec aix-app python scripts/ops/audit_material_storage.py
+```
+
+Exit `0` and `healthy: True` mean every legacy manifest file and every local
+durable blob referenced by the database exists. Exit `1` means the deployment
+must be repaired before enabling `AIX_MATERIAL_LIBRARY_ENABLED`; the output
+contains only row identifiers, never filenames, storage keys or document text.
+
+If the audit is healthy but old lesson manifests predate the durable material
+pipeline, migrate them idempotently before enabling library reuse:
+
+```bash
+docker exec aix-app python scripts/ops/backfill_legacy_materials.py
+docker exec aix-app python scripts/ops/backfill_legacy_materials.py --apply
+docker exec aix-app python scripts/ops/audit_material_storage.py
+```
+
+The first command is a dry run. The apply pass leaves already annotated
+attachments untouched, creates owner-scoped material/version/binding rows and
+queues normal ingestion jobs.
+
 ---
 
 ## 5. Backups

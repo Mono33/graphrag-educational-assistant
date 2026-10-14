@@ -13,7 +13,7 @@ itself runs with them off (``tests/conftest.py``).
   pypdf;
 * conditional retrieval and the light follow-up turns;
 * the PDF and outline exports, additive slices Louis accepted (MD, TXT and
-  ``/print`` are untouched).
+  ``/print`` are untouched), and the Word export added on 2026-10-14.
 
 The functions are registered as Jinja globals, so a template asks the same
 question the server does instead of keeping its own list of extensions in sync.
@@ -40,6 +40,11 @@ def export_pdf_enabled() -> bool:
     return _flag("AIX_EXPORT_PDF_ENABLED", default=True)
 
 
+def export_docx_enabled() -> bool:
+    """The Word download: the lesson as an editable document. On by default."""
+    return _flag("AIX_EXPORT_DOCX_ENABLED", default=True)
+
+
 def export_outline_enabled() -> bool:
     return _flag("AIX_EXPORT_OUTLINE_ENABLED", default=True)
 
@@ -53,6 +58,17 @@ def light_turns_enabled() -> bool:
     """After the first lesson, a turn is one streamed answer unless she asks for a
     whole new lesson. On by default."""
     return _flag("AIX_LIGHT_TURNS_ENABLED", default=True)
+
+
+def material_library_enabled() -> bool:
+    """Enable reuse/detach/delete actions in the new material library.
+
+    The read-only library is additive and always available.  Lifecycle changes
+    stay opt-in until the deployment has passed the migration and persistence
+    checks, so disabling this flag restores the exact legacy remove-and-retire
+    behaviour.
+    """
+    return _flag("AIX_MATERIAL_LIBRARY_ENABLED", default=False)
 
 
 def upload_accept_attribute() -> str:
@@ -81,5 +97,11 @@ def register(templates) -> None:
     templates.env.globals["upload_hint"] = upload_hint
     templates.env.globals["conditional_retrieval_enabled"] = conditional_retrieval_enabled
     templates.env.globals["light_turns_enabled"] = light_turns_enabled
+    templates.env.globals["material_library_enabled"] = material_library_enabled
+
+    from aix.webui.materials.saved_resources import resource_key
+
+    templates.env.globals["saved_resource_key"] = resource_key
     templates.env.globals["export_pdf_enabled"] = export_pdf_enabled
     templates.env.globals["export_outline_enabled"] = export_outline_enabled
+    templates.env.globals["export_docx_enabled"] = export_docx_enabled

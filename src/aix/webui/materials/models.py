@@ -307,6 +307,41 @@ class LessonMaterialBinding(Base):
     )
 
 
+class SavedResource(Base):
+    """An external media item a teacher explicitly bookmarked.
+
+    This is intentionally separate from ``Material``.  A material is private
+    source content with immutable versions and retrieval bindings; a saved
+    resource is a pointer to third-party content whose availability and
+    provenance can change.
+    """
+
+    __tablename__ = "saved_resource"
+
+    id: Mapped[uuid.UUID] = mapped_column(GUID, primary_key=True, default=uuid.uuid4)
+    owner_id: Mapped[uuid.UUID] = mapped_column(
+        GUID,
+        ForeignKey("user.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    kind: Mapped[str] = mapped_column(String(24), nullable=False)
+    source: Mapped[str] = mapped_column(String(64), nullable=False)
+    stable_key: Mapped[str] = mapped_column(String(320), nullable=False)
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        UniqueConstraint("owner_id", "stable_key", name="uq_saved_resource_owner_key"),
+        Index("ix_saved_resource_owner_created", "owner_id", "created_at"),
+    )
+
+
 #: Where a job can be, from accepted to finished. ``quarantined`` and
 #: ``scanning`` exist even though the pilot does not scan: the 2026-09-08
 #: decision was that ClamAV is not required *yet*, and a status set that cannot

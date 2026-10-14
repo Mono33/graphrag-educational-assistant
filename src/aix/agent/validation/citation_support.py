@@ -32,10 +32,13 @@ teacher cannot tell the difference between "the model chose not to cite" and
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import os
 import re
 from typing import Any, Optional
+
+from aix.core import prompt_cache, result_cache
 
 logger = logging.getLogger(__name__)
 
@@ -316,6 +319,17 @@ FRASE: {claim}
 
 PASSAGGIO: {passage}"""
 
+#: Everything before the pair: identical in every call, so it is what the provider caches.
+_STATIC = _PROMPT.split("FRASE: {claim}", 1)[0]
+
+#: A change to the prompt must not be answered from the verdicts of the old one.
+_PROMPT_VERSION = hashlib.sha256(_PROMPT.encode("utf-8")).hexdigest()[:12]
+
+_VERDICT_TTL_S = 7 * 86_400
+
+#: From this many citations, the first is sent alone to write the provider's cache.
+_WARM_FROM = 3
+
 
 async def judge(pairs: list[dict[str, Any]], client: Any) -> list[str]:
     """One verdict per (claim, passage), in order. One call each, all at once.
@@ -337,36 +351,115 @@ async def judge(pairs: list[dict[str, Any]], client: Any) -> list[str]:
     """
     if not pairs:
         return []
-    return list(await asyncio.gather(*(_judge_one(pair, client) for pair in pairs)))
+    # The same sentence citing the same passage twice (a marker repeated on one
+    # line, two blocks of one page) is one question: asked once, answered for
+    # every occurrence. 9% of the calls in the rehearsals were such repeats,
+    # sent in parallel and paid twice (2026-10-13).
+    unique: dict[tuple[str, str], dict[str, Any]] = {}
+    for pair in pairs:
+        unique.setdefault((pair["claim"], pair["passage"]), pair)
+    asked = list(unique.values())
+    if len(asked) >= _WARM_FROM and prompt_cache.enabled() and prompt_cache.supports(_model()):
+        # The ~1.3k tokens of instructions are the same in every call, and a
+        # provider can only read a cache a finished call has written: sent all
+        # at once, every call would pay the write and none the read. So the first
+        # goes alone, and the rest read what it left.
+        first = await _verdict(asked[0], client, mark=True)
+        rest = await asyncio.gather(*(_verdict(pair, client, mark=True) for pair in asked[1:]))
+        answers = [first, *rest]
+    else:
+        answers = list(
+            await asyncio.gather(*(_verdict(pair, client, mark=False) for pair in asked))
+        )
+    by_question = dict(zip(unique, answers, strict=True))
+    return [by_question[(pair["claim"], pair["passage"])] for pair in pairs]
+
+
+def _model() -> str:
+    from aix.core.config import config as app_config
+
+    return os.getenv("AIX_CITATION_CHECK_MODEL") or app_config.openai.model
+
+
+#: The provider the judge's calls go to first. The instructions are read from the
+#: provider's cache only on the server that wrote it, and with free routing a
+#: third of the calls after the first wrote it again instead (14 of 15 in one turn
+#: of 2026-10-13), each costing twice a read. Same price per token; with
+#: fallbacks, a provider that is down only means the next one.
+_DEFAULT_PROVIDER = "google-vertex/global"
+
+
+def _provider_routing() -> Optional[dict]:
+    """``{"order": [...], "allow_fallbacks": True}`` for OpenRouter, or ``None``.
+
+    ``AIX_CITATION_CHECK_PROVIDER`` empty or ``none`` leaves the routing to
+    OpenRouter; any other endpoint than OpenRouter is never sent the field.
+    """
+    from aix.core.config import config as app_config
+
+    raw = os.getenv("AIX_CITATION_CHECK_PROVIDER")
+    provider = (_DEFAULT_PROVIDER if raw is None else raw).strip()
+    if not provider or provider.lower() == "none":
+        return None
+    if "openrouter" not in (app_config.openai.base_url or ""):
+        return None
+    return {"order": [provider], "allow_fallbacks": True}
+
+
+async def _verdict(pair: dict[str, Any], client: Any, *, mark: bool) -> str:
+    """The verdict on one pair, remembered: temperature 0, so the same pair says the same.
+
+    Only a real answer is kept. A call that failed is not a verdict, and
+    remembering «keep it» would make one network hiccup last a day.
+    """
+    answer = await result_cache.remember(
+        "aix:cite:v1",
+        (_model(), _PROMPT_VERSION, pair["claim"], pair["passage"]),
+        lambda: _ask(pair, client, mark=mark),
+        keep=lambda verdict: verdict is not None,
+        ttl=lambda _: _VERDICT_TTL_S,
+    )
+    return answer or "supported"
 
 
 async def _judge_one(pair: dict[str, Any], client: Any) -> str:
     """One citation. Anything that goes wrong means «keep it» — see the module docstring."""
-    from aix.core.config import config as app_config
+    return (await _ask(pair, client, mark=False)) or "supported"
 
+
+async def _ask(pair: dict[str, Any], client: Any, *, mark: bool) -> Optional[str]:
+    """The model's verdict, or ``None`` when there is none to give."""
+    prompt = _PROMPT.format(claim=pair["claim"], passage=pair["passage"])
+    messages = [{"role": "user", "content": prompt}]
+    model = _model()
+    if mark:
+        messages = prompt_cache.cacheable(messages, model=model, stable_user_prefix=_STATIC)
+
+    from aix.core.config import reasoning_extra_body
+
+    # One word to answer: Claude 5 needs no thinking budget for it (see config).
+    extra = dict(reasoning_extra_body(model) or {})
+    if routing := _provider_routing():
+        extra["provider"] = routing
     try:
         response = await client.chat.completions.create(
-            model=os.getenv("AIX_CITATION_CHECK_MODEL") or app_config.openai.model,
-            messages=[
-                {
-                    "role": "user",
-                    "content": _PROMPT.format(claim=pair["claim"], passage=pair["passage"]),
-                }
-            ],
+            model=model,
+            messages=messages,
             max_tokens=2000,
             temperature=0,
+            **({"extra_body": extra} if extra else {}),
         )
         answer = (response.choices[0].message.content or "").strip().lower()
     except Exception as exc:  # noqa: BLE001 — fail open, per citation
         logger.warning("[citation-check] one citation could not be judged (%s) — keeping it", exc)
-        return "supported"
+        return None
 
     if "unsupported" in answer:
         return "unsupported"
     if "supported" in answer:
         return "supported"
     logger.warning("[citation-check] unreadable verdict %r — keeping the citation", answer[:60])
-    return "supported"
+    return None
 
 
 async def drop_unsupported_citations(

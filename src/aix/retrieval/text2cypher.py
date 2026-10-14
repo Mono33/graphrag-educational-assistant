@@ -16,6 +16,7 @@ from langchain_openai import ChatOpenAI
 from neo4j import GraphDatabase
 
 # Import domain configuration system
+from aix.core.prompt_cache import cacheable_lc
 from aix.domains import get_domain_config
 
 # Configure logging
@@ -146,6 +147,7 @@ class Text2CypherConverter:
     ):
         self.schema_extractor = Neo4jSchemaExtractor(neo4j_uri, neo4j_user, neo4j_password)
         self.schema_info = None  # Set per-query (from cache or fresh extraction)
+        self.model = model
 
         # Build kwargs compatible with reasoning and standard models
         from aix.core.config import config as _cfg
@@ -539,12 +541,19 @@ Cypher: MATCH (i:IntrinsicMotivation) RETURN i, labels(i) as node_labels LIMIT 1
 
             prompt_template = Text2CypherConverter._prompt_cache[cache_key]
 
-            # Create chain for this query
-            chain = prompt_template | self.llm | self.output_parser
+            # The system message is ~100k characters and identical on every call
+            # (a lesson asks the graph about ten questions): marked as a cache
+            # block, the provider bills the repeats at a tenth. Same text, same
+            # answer; only the wording of the request changes.
+            messages = cacheable_lc(
+                prompt_template.format_messages(question=question, domain=domain),
+                model=self.model,
+            )
+            chain = self.llm | self.output_parser
 
             with get_openai_callback() as cb:
                 # Generate Cypher query using LCEL
-                result = chain.invoke({"question": question, "domain": domain})
+                result = chain.invoke(messages)
 
                 # Clean the result
                 cypher_query = self._clean_cypher_query(result)

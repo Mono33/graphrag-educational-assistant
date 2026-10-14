@@ -1,0 +1,112 @@
+{% extends "_base.html" %}
+
+{% block content %}
+{% set material = row.material %}
+{% set latest = row.latest %}
+<main class="aix-page-shell py-8">
+  <a href="/webui/resources" class="aix-link-navy aix-fs-13">← Torna alle risorse</a>
+
+  <section class="aix-card p-6 mt-4">
+    <div class="flex flex-wrap items-start justify-between gap-4">
+      <div class="min-w-0">
+        <p class="aix-eyebrow mb-2">Documento privato</p>
+        <h1 class="aix-page-title break-words">{{ material.display_name }}</h1>
+        <p class="aix-text-muted mt-2">
+          {{ row.versions | length }}
+          {{ "versione" if row.versions | length == 1 else "versioni" }}
+          · uso predefinito: {{ material.purpose }}
+        </p>
+      </div>
+      {% if latest %}
+        <a href="/webui/materials/{{ material.id }}/versions/{{ latest.id }}/source"
+           class="aix-btn aix-btn-outline aix-btn-sm">
+          <wa-icon name="download"></wa-icon>
+          Scarica originale
+        </a>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="grid lg:grid-cols-2 gap-4 mt-4">
+    <article class="aix-card p-5">
+      <h2 class="aix-card-title aix-fs-18">Versioni</h2>
+      <div class="grid gap-3 mt-4">
+        {% for version in row.versions %}
+          <div class="border border-slate-200 rounded-lg p-3">
+            <div class="flex items-center justify-between gap-3">
+              <strong>Versione {{ version.version_number }}</strong>
+              <span class="aix-pill aix-pill-neutral">{{ version.status }}</span>
+            </div>
+            <p class="aix-text-muted aix-fs-12 mt-1 mb-0">{{ version.media_type }}</p>
+            {% if version.parse_quality %}
+              <p class="aix-text-muted aix-fs-12 mt-2 mb-0">
+                {{ version.parse_quality.get("pages") or 0 }} pagine ·
+                {{ version.parse_quality.get("ocr_pages") or 0 }} OCR
+              </p>
+            {% endif %}
+            <a href="/webui/materials/{{ material.id }}/versions/{{ version.id }}/source"
+               class="aix-link-navy aix-fs-12 mt-2 inline-block">Scarica questa versione</a>
+          </div>
+        {% else %}
+          <p class="aix-text-muted">Nessuna versione disponibile.</p>
+        {% endfor %}
+      </div>
+    </article>
+
+    <article class="aix-card p-5">
+      <h2 class="aix-card-title aix-fs-18">Lezioni collegate</h2>
+      <div class="grid gap-2 mt-4">
+        {% for binding in row.bindings %}
+          <a href="/webui/lesson/{{ binding.lesson_id }}"
+             class="flex items-center justify-between gap-3 no-underline border border-slate-200 rounded-lg p-3">
+            <span>{{ row.lesson_titles.get(binding.lesson_id, "Lezione") }}</span>
+            <span class="aix-pill aix-pill-neutral">
+              {{ "attivo" if binding.enabled else "rimosso dalla lezione" }}
+            </span>
+          </a>
+        {% else %}
+          <p class="aix-text-muted">Il documento non è collegato a nessuna lezione.</p>
+        {% endfor %}
+      </div>
+
+      {% if material_library_enabled() and latest and latest.status in ("ready", "ready_with_warnings") %}
+        <h3 class="aix-card-title aix-fs-16 mt-6">Usa in un'altra lezione</h3>
+        <div class="grid gap-2 mt-3">
+          {% for lesson in lessons %}
+            <form method="post"
+                  action="/webui/lesson/{{ lesson.id }}/materials/{{ material.id }}/attach"
+                  class="flex items-center justify-between gap-3 border border-slate-200 rounded-lg p-3">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}" />
+              <span>{{ lesson.title or "Lezione senza titolo" }}</span>
+              <button type="submit" class="aix-btn aix-btn-outline aix-btn-sm">Collega</button>
+            </form>
+          {% else %}
+            <p class="aix-text-muted">Crea prima una lezione.</p>
+          {% endfor %}
+        </div>
+      {% elif not material_library_enabled() %}
+        <p class="aix-text-muted aix-fs-12 mt-5">
+          Il riuso dei documenti sarà attivato dopo la verifica dei volumi persistenti.
+        </p>
+      {% endif %}
+    </article>
+  </section>
+
+  {% if material_library_enabled() %}
+    <section class="aix-card p-5 mt-4 border-rose-200">
+      <h2 class="aix-card-title aix-fs-18">Rimuovi dalla libreria</h2>
+      <p class="aix-text-muted mt-2">
+        Rimuove il documento dall'indice privato e da tutte le lezioni. Le citazioni
+        storiche restano come riferimento a un materiale rimosso per rendere
+        spiegabili le lezioni già generate.
+      </p>
+      <form method="post" action="/webui/materials/{{ material.id }}/delete">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}" />
+        <button type="submit" class="aix-btn aix-btn-outline aix-btn-sm">
+          Rimuovi dalla libreria
+        </button>
+      </form>
+    </section>
+  {% endif %}
+</main>
+{% endblock %}

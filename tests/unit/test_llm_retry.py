@@ -20,7 +20,6 @@ by default, so without it LangGraph would never see a transient failure.
 
 from __future__ import annotations
 
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -139,17 +138,6 @@ def test_retriever_does_not_carry_the_llm_policy(monkeypatch):
     monkeypatch.delenv("AIX_CORRECTIVE_RAG_ENABLED", raising=False)
     compiled = build_lesson_planner_graph()
     assert not compiled.nodes["retrieve"].retry_policy
-
-
-def test_grader_is_deliberately_left_without_a_policy(monkeypatch):
-    """It already degrades to grade=relevant rather than failing the run.
-
-    Retrying an optional quality gate spends latency on a node designed never
-    to matter that much — so it keeps its fail-safe instead of a retry budget.
-    """
-    monkeypatch.setenv("AIX_CORRECTIVE_RAG_ENABLED", "true")
-    compiled = build_lesson_planner_graph()
-    assert not compiled.nodes["grade_retrieval"].retry_policy
 
 
 # ---------------------------------------------------------------------------

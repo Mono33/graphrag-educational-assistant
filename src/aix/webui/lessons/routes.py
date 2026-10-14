@@ -116,13 +116,21 @@ from aix.webui.auth.models import User
 from aix.webui.db import get_async_session
 from aix.webui.errors import report
 from aix.webui.features import (
+    export_docx_enabled,
     export_outline_enabled,
     export_pdf_enabled,
+    material_library_enabled,
 )
 from aix.webui.features import (
     register as _register_feature_flags,
 )
 from aix.webui.lessons.display import lesson_to_row
+from aix.webui.lessons.media_snapshots import (
+    latest_display_snapshot_safe,
+    latest_user_turn,
+    save_live_snapshot,
+    snapshot_for_turn_safe,
+)
 from aix.webui.lessons.models import Lesson, LessonMessage, SavedProfile
 from aix.webui.lessons.schemas import form_to_profile_dict, profile_to_form_values
 from aix.webui.lessons.uploads import (
@@ -137,6 +145,8 @@ from aix.webui.materials.citations import (
     with_sources,
 )
 from aix.webui.materials.readiness import states_for_lesson_safe, still_preparing
+from aix.webui.materials.repository import BindingRepository
+from aix.webui.materials.saved_resources import saved_keys_safe
 from aix.webui.materials.shadow import record_upload, retire_material
 from aix.webui.sanitize import sanitize_html
 
@@ -650,7 +660,7 @@ async def lesson_media_live(
     empty = HTMLResponse('<div id="media-live-slot"></div>')
 
     # Optional, best-effort panel — no auth noise, no errors bubble to the UI.
-    if user is None or not _media_live_enabled():
+    if user is None:
         return empty
 
     result = await session.execute(
@@ -658,6 +668,59 @@ async def lesson_media_live(
     )
     lesson = result.scalar_one_or_none()
     if lesson is None:
+        return empty
+
+    # Passive opens replay what the teacher already saw.  They never call an
+    # external provider: this keeps results stable and makes reload/logout free.
+    if lesson.status != "running":
+        saved = await latest_display_snapshot_safe(
+            session,
+            lesson_id=lesson.id,
+            owner_id=user.id,
+        )
+        if saved is None or not saved.live_fetched:
+            return empty
+        panel = saved.live_json or {}
+        if not panel:
+            return empty
+        return templates.TemplateResponse(
+            request,
+            "partials/media_live_sections.html",
+            {
+                "videos": panel.get("videos") or [],
+                "citations": panel.get("citations") or [],
+                "wikipedia": panel.get("wikipedia") or [],
+                "lesson_id": lesson.id,
+                "saved_keys": await saved_keys_safe(session, user.id),
+            },
+        )
+
+    turn_index = await latest_user_turn(session, lesson.id)
+    current = await snapshot_for_turn_safe(
+        session,
+        lesson_id=lesson.id,
+        owner_id=user.id,
+        turn_index=turn_index,
+    )
+    if current is not None and current.live_fetched:
+        panel = current.live_json or {}
+        if not panel:
+            return empty
+        return templates.TemplateResponse(
+            request,
+            "partials/media_live_sections.html",
+            {
+                "videos": panel.get("videos") or [],
+                "citations": panel.get("citations") or [],
+                "wikipedia": panel.get("wikipedia") or [],
+                "lesson_id": lesson.id,
+                "saved_keys": await saved_keys_safe(session, user.id),
+            },
+        )
+
+    # Only an active run may go to live providers.  With the feature disabled,
+    # stored snapshots above remain visible but no new external request starts.
+    if not _media_live_enabled():
         return empty
 
     if not _lesson_has_live_media_context(lesson):
@@ -684,6 +747,20 @@ async def lesson_media_live(
         logger.warning("[media-live] fetch/map failed for lesson_id=%s: %s", lesson_id, exc)
         return empty
 
+    try:
+        async with session.begin_nested():
+            await save_live_snapshot(
+                session,
+                lesson_id=lesson.id,
+                owner_id=user.id,
+                turn_index=turn_index,
+                media=panel,
+            )
+        await session.commit()
+    except Exception as exc:  # noqa: BLE001 — live media must stay best effort
+        await session.rollback()
+        logger.warning("[media-live] snapshot failed for lesson_id=%s: %s", lesson_id, exc)
+
     if not panel:
         return empty
 
@@ -702,6 +779,8 @@ async def lesson_media_live(
             "videos": panel.get("videos") or [],
             "citations": panel.get("citations") or [],
             "wikipedia": panel.get("wikipedia") or [],
+            "lesson_id": lesson.id,
+            "saved_keys": await saved_keys_safe(session, user.id),
         },
     )
 
@@ -1105,6 +1184,18 @@ async def lesson_show(
     # single-bubble layout (chat_user_message.html + state-driven block).
     messages = await _load_chat_messages(session, lesson.id, material_labels)
 
+    # The right panel is product state, not a disposable trace.  Rehydrate the
+    # latest completed full-retrieval turn; light follow-ups intentionally keep
+    # the previous snapshot.  Legacy lessons have no row and retain the old
+    # empty-panel behaviour.
+    media_snapshot = await latest_display_snapshot_safe(
+        session,
+        lesson_id=lesson.id,
+        owner_id=user.id,
+    )
+    persisted_media = media_snapshot.curated_json if media_snapshot is not None else None
+    persisted_live_ready = bool(media_snapshot and media_snapshot.live_fetched)
+
     # F6: "What's Next?" — adjacent KG concepts for completed lessons.
     # Runs in a sync threadpool to keep the async route non-blocking.
     # Returns [] gracefully on Neo4j errors or missing topic.
@@ -1148,15 +1239,13 @@ async def lesson_show(
             "messages": messages,
             "lesson_plan_html": lesson_plan_html,
             "meta": meta_for_replay,
-            "media": None,  # not persisted yet — empty placeholder on reload
-            # Dynamic Media Retrieval Phase 1b — the live layer must mirror the
-            # curated panel: it only appears *during an active run* (via the SSE
-            # retriever swap below), never on a passive page open/reload. On a
-            # plain GET the curated media is None (empty panel), so the live slot
-            # is suppressed here to stay consistent and avoid firing for a
-            # previously-completed lesson that still carries a persisted query.
-            "media_live_enabled": _media_live_enabled(),
-            "media_live_ready": False,
+            "media": persisted_media,
+            "saved_keys": await saved_keys_safe(session, user.id),
+            # A persisted live snapshot is replayed through the existing htmx
+            # fragment endpoint.  That endpoint returns stored data and never
+            # calls a provider on a passive page open.
+            "media_live_enabled": _media_live_enabled() or persisted_live_ready,
+            "media_live_ready": persisted_live_ready,
             "lesson_id": lesson.id,
             # P5.4 — workspace is a "leaf" of the Library tab. Highlighting
             # "Le mie lezioni" in the top nav matches the user's mental model
@@ -1247,18 +1336,8 @@ async def lesson_run(
     light = wants_light_turn(lesson, form, has_query=new_query is not None)
 
     if new_query is not None:
-        # Server-side validation mirroring the textarea ``minlength=3`` /
-        # ``maxlength=2000``. Defensive — clients can be tampered with.
-        if len(new_query) < 3:
-            return HTMLResponse(
-                content=(
-                    '<div class="rounded-lg border border-amber-200 bg-amber-50 '
-                    'text-amber-900 px-3 py-2 text-sm">'
-                    "La richiesta deve avere almeno 3 caratteri."
-                    "</div>"
-                ),
-                status_code=422,
-            )
+        # Server-side mirror of the textarea's ``maxlength=2000``. No minimum: a
+        # reply as short as «sì» is a real answer in a conversation (2026-10-14).
         if len(new_query) > 2000:
             new_query = new_query[:2000]
         if not light:
@@ -1788,6 +1867,22 @@ async def lesson_upload_delete(
     try:
         manifest = delete_upload(lesson_id, file_id, lesson.uploaded_files_json)
         lesson.uploaded_files_json = manifest
+        if material_library_enabled() and doomed and doomed.get("material_id"):
+            try:
+                material_uuid = uuid.UUID(str(doomed["material_id"]))
+            except (TypeError, ValueError):
+                logger.warning(
+                    "[upload-delete] invalid material id on lesson=%s file=%s",
+                    lesson.id,
+                    file_id,
+                )
+            else:
+                await BindingRepository(session).set_enabled(
+                    lesson_id=lesson.id,
+                    material_id=material_uuid,
+                    owner_id=user.id,
+                    enabled=False,
+                )
         await session.commit()
         await session.refresh(lesson)
     except ValueError as exc:
@@ -1799,7 +1894,7 @@ async def lesson_upload_delete(
     # Fase 1 · PR 4 — the shadow material goes with its attachment. Best effort
     # like the rest: an attachment the teacher removed must disappear from the
     # tray whether or not the shadow pipeline is reachable.
-    if doomed and doomed.get("material_id"):
+    if not material_library_enabled() and doomed and doomed.get("material_id"):
         await retire_material(material_id=doomed["material_id"], owner_id=user.id)
 
     return templates.TemplateResponse(
@@ -2059,6 +2154,9 @@ async def lesson_stream(
         # other workers don't mistake it for a crashed/stale run. No-op on the
         # in-memory backend.
         _hb_task = asyncio.create_task(heartbeat_loop(_registry, lesson.id, _token))
+        # The library's keys, read once: the media panel marks what is saved.
+        saved_keys = await saved_keys_safe(session, lesson.owner_id)
+
         light = take_light_turn(lesson)
         events = (
             run_light_turn(lesson, session, **light)
@@ -2080,7 +2178,7 @@ async def lesson_stream(
                     )
                     break
 
-                sse_message = _stream_event_to_sse(request, lesson, event)
+                sse_message = _stream_event_to_sse(request, lesson, event, saved_keys=saved_keys)
                 if sse_message is not None:
                     logger.info(
                         "[stream] → SSE lesson_id=%s kind=%s event=%s",
@@ -2323,7 +2421,7 @@ async def lesson_export(
     session: AsyncSession = Depends(get_async_session),
     user: Optional[User] = Depends(optional_current_user),
 ) -> Response:
-    """Download the lesson plan as markdown or plain text."""
+    """Download the lesson: Markdown, plain text, PDF, Word or the outline."""
     if user is None:
         raise HTTPException(status_code=401)
 
@@ -2379,11 +2477,13 @@ async def lesson_export(
             },
         )
 
-    if format in ("pdf", "outline"):
+    if format in ("pdf", "docx", "outline"):
         # A hidden button is not a closed door: the route checks the flag too,
         # or a bookmarked URL would still render what the pilot switched off.
-        if (format == "pdf" and not export_pdf_enabled()) or (
-            format == "outline" and not export_outline_enabled()
+        if (
+            (format == "pdf" and not export_pdf_enabled())
+            or (format == "docx" and not export_docx_enabled())
+            or (format == "outline" and not export_outline_enabled())
         ):
             raise HTTPException(status_code=404, detail="Questo formato di export non è attivo.")
 
@@ -2412,6 +2512,22 @@ async def lesson_export(
                 },
             )
 
+        if format == "docx":
+            from aix.export.word import render_docx
+
+            # Off the event loop, like the PDF.
+            document = await asyncio.to_thread(render_docx, ir)
+            return Response(
+                content=document.content,
+                media_type=(
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                ),
+                headers={
+                    "Content-Disposition": f'attachment; filename="{slug}.docx"',
+                    AI_GENERATED_HEADER: AI_GENERATED_HEADER_VALUE,
+                },
+            )
+
         from aix.export.pdf import render_pdf
 
         # Off the event loop: rendering is CPU work, and a request thread
@@ -2428,7 +2544,7 @@ async def lesson_export(
 
     raise HTTPException(
         status_code=400,
-        detail="Formato non supportato. Usa ?format=md, txt, pdf oppure outline",
+        detail="Formato non supportato. Usa ?format=md, txt, pdf, docx oppure outline",
     )
 
 
@@ -2482,6 +2598,7 @@ def _stream_event_to_sse(
     request: Request,
     lesson: Lesson,
     event: Any,  # StreamEvent — typed Any to avoid a circular import
+    saved_keys: Optional[set[str]] = None,
 ) -> Optional[dict]:
     """
     Translate a ``StreamEvent`` from the agent service into the SSE wire
@@ -2536,6 +2653,7 @@ def _stream_event_to_sse(
             "partials/media_panel.html",
             {
                 "media": (event.payload or {}).get("media") or {},
+                "saved_keys": saved_keys or set(),
                 "oob": True,
                 # Phase 1b — this OOB swap happens *during an active run* (the
                 # retriever just produced curated media), which is the only moment

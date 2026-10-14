@@ -20,6 +20,7 @@ from aix.agent.prompts.planner_prompt import (
     PLANNER_USER_TEMPLATE,
 )
 from aix.agent.prompts.profile_renderer import render_classroom_constraints
+from aix.core import prompt_cache
 from aix.core.concurrency import guarded_chat_completion
 from aix.core.config import config as app_config
 from aix.core.config import extract_response_content
@@ -34,6 +35,54 @@ def _planner_max_tokens() -> int:
         return max(1000, int(raw)) if raw else 4000
     except ValueError:
         return 4000
+
+
+def planner_model() -> Optional[str]:
+    """The model the plan is asked of first, or ``None`` for the default (Writer) model.
+
+    The plan is a classification (language, intent, scope) and an extraction (the
+    concepts and queries), not a piece of writing, and on the 2026-10-06 traces it
+    took 19 s and $0.035 a call on Sonnet. Empty keeps today's behavior; a cheaper
+    model is switched on only after ``scripts/eval/compare_role_models.py planner``.
+    """
+    return (os.getenv("AIX_PLANNER_MODEL") or "").strip() or None
+
+
+def escalate_enabled() -> bool:
+    """A weak plan from the planner model is asked again of the default one. On by default."""
+    raw = os.getenv("AIX_PLANNER_ESCALATE")
+    if raw is None or not raw.strip():
+        return True
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
+_SUPPORTED_LANGUAGES = {"it", "en", "es", "fr"}
+
+
+def weak_plan_reason(plan_data: Optional[dict]) -> Optional[str]:
+    """Why a plan is not good enough to trust from a cheaper model, or ``None``.
+
+    The cheap model is only worth it if a plan it is unsure about costs no quality:
+    those are the ones asked again of the default model. A plan the default model
+    gave is never judged by this.
+    """
+    if not isinstance(plan_data, dict):
+        return "no plan"
+    if not plan_data.get("query_intent"):
+        return "no intent"
+    if str(plan_data.get("intent_confidence") or "").upper() == "LOW":
+        return "intent confidence LOW"
+    if str(plan_data.get("language_confidence") or "").upper() == "LOW":
+        return "language confidence LOW"
+    language = str(plan_data.get("response_language") or "").strip().lower().split("-")[0]
+    if language and language not in _SUPPORTED_LANGUAGES:
+        return f"unsupported language {language!r}"
+    try:
+        if float(plan_data.get("scope_confidence", 1.0)) < 0.5:
+            return "scope confidence below 50%"
+    except (TypeError, ValueError):
+        return "scope confidence unreadable"
+    return None
 
 
 def _extract_json(content: str) -> dict:
@@ -274,6 +323,57 @@ class PlannerAgent:
             self._client = app_config.openai.get_async_client()
         return self._client
 
+    async def _request_plan(
+        self, client: AsyncOpenAI, user_prompt: str, *, model: Optional[str]
+    ) -> dict:
+        """One request for the plan, parsed. ``model=None`` is the default model.
+
+        Raises ``json.JSONDecodeError`` when the answer is not a plan.
+        """
+        # CORE 2 #11a — JSON parse hardening (2026-05-09):
+        # Pass json_mode=True so OpenRouter forwards
+        # ``response_format={"type": "json_object"}`` to providers that
+        # support it (OpenAI, most OpenRouter routes). build_completion_kwargs
+        # automatically skips it for reasoning models (o1/o3/o4/DeepSeek-R1
+        # / Claude-thinking) where the API rejects the parameter, so this
+        # is byte-identical for those families and a hardening boost for
+        # everything else. The PLANNER_SYSTEM_PROMPT already asks for
+        # strict JSON so this is purely additive — no prompt change.
+        # 4 000, not 2 000. A reasoning model spends part of the budget
+        # thinking before it writes a character, so a ceiling that fits the
+        # JSON exactly does not fit it at all: on 2026-09-21 the plan came
+        # back cut off mid-array, the parse failed, and the run fell through
+        # to defaults — intent LOW, no subject concepts, and a lesson whose
+        # Planner card showed nothing from the teacher's documents. Same
+        # trap as ``AIX_WRITER_MAX_TOKENS`` on 2026-09-16, one agent over.
+        completion_kwargs = app_config.openai.build_completion_kwargs(
+            temperature=0.3,
+            max_tokens=_planner_max_tokens(),
+            json_mode=True,
+            model_override=model,
+        )
+        # 14k characters of instructions and examples, identical for every
+        # request: marked, a repeat within minutes costs a tenth.
+        response = await guarded_chat_completion(
+            client,
+            messages=prompt_cache.cacheable(
+                [
+                    {"role": "system", "content": PLANNER_SYSTEM_PROMPT},
+                    {"role": "user", "content": user_prompt},
+                ],
+                model=completion_kwargs["model"],
+            ),
+            **completion_kwargs,
+        )
+
+        # Parse JSON response (extract_response_content also logs thinking tokens)
+        content = extract_response_content(response, logger)
+        try:
+            return _extract_json(content)
+        except json.JSONDecodeError as exc:
+            exc.planner_raw = content[:300]  # for the parse-error log in ``plan``
+            raise
+
     async def plan(
         self,
         query: str,
@@ -380,39 +480,39 @@ class PlannerAgent:
             )
 
         try:
-            # CORE 2 #11a — JSON parse hardening (2026-05-09):
-            # Pass json_mode=True so OpenRouter forwards
-            # ``response_format={"type": "json_object"}`` to providers that
-            # support it (OpenAI, most OpenRouter routes). build_completion_kwargs
-            # automatically skips it for reasoning models (o1/o3/o4/DeepSeek-R1
-            # / Claude-thinking) where the API rejects the parameter, so this
-            # is byte-identical for those families and a hardening boost for
-            # everything else. The PLANNER_SYSTEM_PROMPT already asks for
-            # strict JSON so this is purely additive — no prompt change.
-            # 4 000, not 2 000. A reasoning model spends part of the budget
-            # thinking before it writes a character, so a ceiling that fits the
-            # JSON exactly does not fit it at all: on 2026-09-21 the plan came
-            # back cut off mid-array, the parse failed, and the run fell through
-            # to defaults — intent LOW, no subject concepts, and a lesson whose
-            # Planner card showed nothing from the teacher's documents. Same
-            # trap as ``AIX_WRITER_MAX_TOKENS`` on 2026-09-16, one agent over.
-            completion_kwargs = app_config.openai.build_completion_kwargs(
-                temperature=0.3,
-                max_tokens=_planner_max_tokens(),
-                json_mode=True,
-            )
-            response = await guarded_chat_completion(
-                client,
-                messages=[
-                    {"role": "system", "content": PLANNER_SYSTEM_PROMPT},
-                    {"role": "user", "content": user_prompt},
-                ],
-                **completion_kwargs,
-            )
-
-            # Parse JSON response (extract_response_content also logs thinking tokens)
-            content = extract_response_content(response, logger)
-            plan_data = _extract_json(content)
+            cheap = planner_model()
+            plan_data: Optional[dict] = None
+            if cheap:
+                # The cheaper model goes first. A plan it cannot give, or is unsure
+                # of, is not accepted: it is asked again of the default model, so
+                # the saving never costs a worse plan (see ``weak_plan_reason``).
+                try:
+                    plan_data = await self._request_plan(client, user_prompt, model=cheap)
+                    reason = weak_plan_reason(plan_data)
+                except json.JSONDecodeError as exc:
+                    reason = f"unparseable plan ({exc.msg[:60]})"
+                    if not escalate_enabled():
+                        raise
+                except Exception as exc:  # noqa: BLE001 — the default model may still answer
+                    reason = f"call failed ({type(exc).__name__})"
+                    if not escalate_enabled():
+                        raise
+                if reason and escalate_enabled():
+                    logger.warning(
+                        "event=planner_escalation model=%s reason=%r — asking %s",
+                        cheap,
+                        reason,
+                        app_config.openai.model,
+                    )
+                    plan_data = None
+                elif reason:
+                    logger.warning(
+                        "event=planner_weak_plan model=%s reason=%r (escalation is off)",
+                        cheap,
+                        reason,
+                    )
+            if plan_data is None:
+                plan_data = await self._request_plan(client, user_prompt, model=None)
 
             # Extract query intent (with fallback for backward compatibility)
             query_intent = plan_data.get("query_intent", "lesson_creation")
@@ -513,7 +613,7 @@ class PlannerAgent:
             # that the doc calls out). The fallback *shape* below is
             # intentionally identical to pre-#11a so behaviour is byte-
             # compatible — only the observability fingerprint changes.
-            raw_preview = content[:300] if "content" in dir() else "<not set>"
+            raw_preview = getattr(e, "planner_raw", "<not set>")
             logger.error(
                 "event=agent_parse_error agent=planner err=%s raw_preview=%r",
                 e,
