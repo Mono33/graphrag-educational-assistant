@@ -3087,3 +3087,10 @@ l'agente si comporta come nella WebUI (stesse decisioni di `turns.py`).
 
 Test: `test_api_sessions.py` (10): lezione, risposta, rimando e lezione nuova,
 isolamento fra utenti finali, codici, stream.
+
+Prova sullo stack locale (`chore/repo-reorg`, Haiku che scrive) con
+`scripts/eval/api_smoke.py`: DOCX caricato via API e pronto in pochi secondi;
+lezione in **33 s** con le citazioni risolte al nome del documento; domanda
+risposta in **4,8 s** dal documento; «fammi una lezione sui vulcani» tornata come
+`handoff` in **1,2 s**. Il service account locale (`chatbot-local`) è in
+`deploy/.env.local`.
