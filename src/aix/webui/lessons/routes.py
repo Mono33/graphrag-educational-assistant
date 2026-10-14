@@ -1247,18 +1247,8 @@ async def lesson_run(
     light = wants_light_turn(lesson, form, has_query=new_query is not None)
 
     if new_query is not None:
-        # Server-side validation mirroring the textarea ``minlength=3`` /
-        # ``maxlength=2000``. Defensive — clients can be tampered with.
-        if len(new_query) < 3:
-            return HTMLResponse(
-                content=(
-                    '<div class="rounded-lg border border-amber-200 bg-amber-50 '
-                    'text-amber-900 px-3 py-2 text-sm">'
-                    "La richiesta deve avere almeno 3 caratteri."
-                    "</div>"
-                ),
-                status_code=422,
-            )
+        # Server-side mirror of the textarea's ``maxlength=2000``. No minimum: a
+        # reply as short as «sì» is a real answer in a conversation (2026-10-14).
         if len(new_query) > 2000:
             new_query = new_query[:2000]
         if not light:

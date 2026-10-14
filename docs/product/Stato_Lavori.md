@@ -2916,3 +2916,12 @@ Richiesta di Angelo: oltre 1.000 test, togliere i ridondanti e i vecchi. Qui da
 - Il tempo che resta è distribuito (~0,04 s a test, quasi tutto per creare il
   database di prova): per scendere ancora servirebbe eseguirli in parallelo
   (`pytest-xdist`), non toglierne altri.
+
+### 2026-10-14 — Nessun minimo di lunghezza per scrivere in chat
+
+Angelo, rispondendo «sì» in chat, non riusciva a inviare: il campo chiedeva
+almeno 3 caratteri (`minlength`, il tasto Invio e il server). In una
+conversazione una risposta di due lettere è una risposta vera. Tolto il minimo
+nei due campi della chat e nel controllo del server; resta solo che il messaggio
+non sia vuoto, e il massimo di 2.000 caratteri. Test:
+`test_light_turns.py::test_a_two_letter_reply_is_sent`.
