@@ -101,7 +101,15 @@ async def test_fresh_database_is_created_from_the_migrations(db_url):
     await _run(db_url, _migrate_or_adopt)
 
     tables = await _run(db_url, _tables)
-    assert {"user", "lesson", "lesson_message", "saved_profile", "agent_run"} <= tables
+    assert {
+        "user",
+        "lesson",
+        "lesson_message",
+        "lesson_media_snapshot",
+        "saved_profile",
+        "saved_resource",
+        "agent_run",
+    } <= tables
     assert "alembic_version" in tables
 
     assert await _run(db_url, _read_revision) is not None
@@ -122,6 +130,27 @@ async def test_running_twice_is_a_no_op(db_url):
     await _run(db_url, _migrate_or_adopt)
 
     assert await _run(db_url, _read_revision) == first
+
+
+async def test_new_resource_migrations_downgrade_and_upgrade_cleanly(db_url):
+    from alembic import command
+
+    from aix.webui.db import _alembic_config
+
+    await _run(db_url, _migrate_or_adopt)
+    assert {"lesson_media_snapshot", "saved_resource"} <= await _run(db_url, _tables)
+
+    await _run(
+        db_url,
+        lambda conn: command.downgrade(_alembic_config(conn), "3b8e6d1f4a27"),
+    )
+    assert not ({"lesson_media_snapshot", "saved_resource"} & await _run(db_url, _tables))
+
+    await _run(
+        db_url,
+        lambda conn: command.upgrade(_alembic_config(conn), "head"),
+    )
+    assert {"lesson_media_snapshot", "saved_resource"} <= await _run(db_url, _tables)
 
 
 # ---------------------------------------------------------------------------
@@ -148,7 +177,14 @@ async def test_a_real_pre_feature_database_reaches_head_with_its_new_tables(db_u
     await _run(db_url, _migrate_or_adopt)
 
     tables = await _run(db_url, _tables)
-    assert {"material", "material_version", "ingestion_job", "document_ir"} <= tables
+    assert {
+        "material",
+        "material_version",
+        "ingestion_job",
+        "document_ir",
+        "lesson_media_snapshot",
+        "saved_resource",
+    } <= tables
     assert "material_chunk" in tables
 
     head = await _run(

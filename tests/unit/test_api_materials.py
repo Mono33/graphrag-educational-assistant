@@ -1,4 +1,9 @@
-"""Documents through the API: upload once, read the state, kept per end user (2026-10-14)."""
+"""Documents through the API for a chatbot platform (2026-10-14).
+
+The materials API is Louis's (``/api/v1/materials``); these pin what the chatbot
+integration adds to it: the service account acts for an ``X-End-User-Id``, each
+end user is kept apart, and a document reports the state a client polls for.
+"""
 
 from __future__ import annotations
 
@@ -26,6 +31,7 @@ async def api(tmp_path, monkeypatch, _rag_on):
     monkeypatch.setenv("GRAPH_API_USERNAME", "chatbot-platform")
     monkeypatch.setenv("GRAPH_API_PWD", "segreto")
     monkeypatch.setenv("AIX_MATERIALS_ENABLED", "true")
+    monkeypatch.setenv("AIX_MATERIAL_LIBRARY_ENABLED", "true")
     monkeypatch.setenv("AIX_STORAGE_PROVIDER", "local")
     monkeypatch.setenv("AIX_STORAGE_LOCAL_ROOT", str(tmp_path / "objects"))
 
@@ -69,36 +75,29 @@ async def test_an_upload_is_processing_then_ready_with_its_passages(api, tmp_pat
 
     response = _upload(client)
 
-    assert response.status_code == 202, response.text
+    assert response.status_code == 201, response.text
     material = response.json()
-    assert (material["name"], material["status"]) == ("programma.docx", "processing")
-    assert (
-        client.get(f"/api/v1/materials/{material['material_id']}", headers=_as("anna")).json()[
-            "status"
-        ]
-        == "processing"
-    )
+    assert (material["display_name"], material["status"]) == ("programma.docx", "processing")
 
     await _drain_one(maker, tmp_path)
 
-    ready = client.get(f"/api/v1/materials/{material['material_id']}", headers=_as("anna")).json()
+    ready = client.get(f"/api/v1/materials/{material['id']}", headers=_as("anna")).json()
     assert ready["status"] == "ready"
     assert ready["passages"] > 0
-    assert ready["quality"]["parser"]
+    assert ready["latest_version"]["parse_quality"]["parser"]
 
 
 async def test_an_end_user_never_sees_another_s_documents(api):
     client, _ = api
-    material_id = _upload(client, user="anna").json()["material_id"]
+    material_id = _upload(client, user="anna").json()["id"]
 
     assert client.get(f"/api/v1/materials/{material_id}", headers=_as("bruno")).status_code == 404
-    assert client.get("/api/v1/materials", headers=_as("bruno")).json() == []
+    assert client.get("/api/v1/materials", headers=_as("bruno")).json()["items"] == []
     assert (
         client.delete(f"/api/v1/materials/{material_id}", headers=_as("bruno")).status_code == 404
     )
-    assert [
-        m["material_id"] for m in client.get("/api/v1/materials", headers=_as("anna")).json()
-    ] == [material_id]
+    own = client.get("/api/v1/materials", headers=_as("anna")).json()["items"]
+    assert [m["id"] for m in own] == [material_id]
 
 
 async def test_a_file_the_webui_refuses_is_refused_with_its_code(api):
@@ -110,19 +109,19 @@ async def test_a_file_the_webui_refuses_is_refused_with_its_code(api):
     assert response.json()["detail"]["code"] == "magic_mismatch"
 
 
-async def test_with_the_pipeline_off_the_answer_says_so(api, monkeypatch):
+async def test_with_the_library_off_the_answer_says_so(api, monkeypatch):
     client, _ = api
-    monkeypatch.setenv("AIX_MATERIALS_ENABLED", "false")
+    monkeypatch.setenv("AIX_MATERIAL_LIBRARY_ENABLED", "false")
 
     response = _upload(client)
 
-    assert response.status_code == 503
-    assert response.json()["detail"]["code"] == "materials_disabled"
+    assert response.status_code == 404
+    assert response.json()["detail"]["code"] == "library_disabled"
 
 
 async def test_a_deleted_document_is_gone_from_the_library(api):
     client, _ = api
-    material_id = _upload(client).json()["material_id"]
+    material_id = _upload(client).json()["id"]
 
     assert client.delete(f"/api/v1/materials/{material_id}", headers=_as("anna")).status_code == 204
     assert client.get(f"/api/v1/materials/{material_id}", headers=_as("anna")).status_code == 404

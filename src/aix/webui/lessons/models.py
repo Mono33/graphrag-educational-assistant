@@ -60,6 +60,7 @@ from typing import Any, Optional
 from fastapi_users_db_sqlalchemy.generics import GUID
 from sqlalchemy import (
     JSON,
+    Boolean,
     DateTime,
     ForeignKey,
     Index,
@@ -281,6 +282,62 @@ class LessonMessage(Base):
         # of a lesson with 10+ turns. With this, an index seek + ordered
         # walk delivers messages in O(log N + K).
         Index("ix_lesson_message_lesson_turn", "lesson_id", "turn_index"),
+    )
+
+
+class LessonMediaSnapshot(Base):
+    """Media shown for one full lesson-generation turn.
+
+    The agent checkpoint is not a UI store: it contains only the curated
+    retriever state, while the live-media layer is fetched independently by
+    the browser.  This row records both halves without making either one part
+    of the critical lesson-generation transaction.
+
+    ``(lesson_id, turn_index)`` deliberately preserves earlier searches.  A
+    light follow-up creates no snapshot, so reopening a lesson keeps showing
+    the most recent full retrieval instead of replacing it with an empty panel.
+    """
+
+    __tablename__ = "lesson_media_snapshot"
+
+    lesson_id: Mapped[uuid.UUID] = mapped_column(
+        GUID,
+        ForeignKey("lesson.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    turn_index: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[uuid.UUID] = mapped_column(
+        GUID,
+        ForeignKey("user.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    schema_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    curated_json: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    live_json: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    live_fetched: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        Index(
+            "ix_lesson_media_snapshot_owner_lesson_turn",
+            "owner_id",
+            "lesson_id",
+            "turn_index",
+        ),
     )
 
 

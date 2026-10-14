@@ -3145,3 +3145,91 @@ documento pronto, lezione in 60 s, domanda risposta in 5,3 s, «lezione sui
 vulcani» rimandata in 2,3 s, Word (41 KB), PDF (51 KB) e scaletta scaricati,
 9 risorse dal vivo (5 video, 3 articoli, 1 Wikipedia), catalogo con 6 intenti.
 Suite: 1.078 test verdi. Non ancora pubblicato.
+
+### 2026-10-14 — Prova di Angelo sulle risorse di Louis: tre correzioni
+
+Pull delle modifiche di Louis (risorse multimediali salvate con la lezione,
+libreria `/webui/resources`, API dei documenti). In locale: migrazioni applicate,
+audit dello storage `healthy: True`, nessun vecchio allegato da migrare,
+`AIX_MATERIAL_LIBRARY_ENABLED=true` solo in `deploy/.env.local`. Le risorse
+salvate tornano davvero alla riapertura di una lezione nuova; le lezioni di
+prima non ne hanno (atteso: il salvataggio parte con la generazione).
+
+Dalla prova, tre cose sistemate:
+
+- **I download spariti.** I pulsanti c'erano solo nella scheda subito dopo la
+  generazione; ricaricata la pagina, la lezione viene dalla cronologia, che non
+  li ha mai avuti (non era una modifica di Louis: il segnalino, ricaricando la
+  pagina, l'ha solo reso visibile). Ora un partial, `lesson_downloads.html`, li
+  mette in entrambe, nella cronologia sulla lezione corrente.
+- **Il segnalino.** Salvava ricaricando la pagina e restava uguale. Ora salva
+  senza ricaricare (htmx) e diventa pieno; una risorsa già nella libreria
+  appare piena in ogni pannello (le chiavi salvate passano alla pagina, al
+  pannello dal vivo e alla scheda della ricerca durante la generazione). Con la
+  risorsa si registra la lezione da cui è stata salvata, se è della docente.
+- **La pagina Risorse.** Ogni documento elenca le lezioni in cui è usato, con il
+  titolo cliccabile; lo stesso file caricato più volte è una scheda sola
+  («Caricato 2 volte: è lo stesso file»); ogni risorsa salvata dice «Dalla
+  lezione: …» con il link.
+
+Test: `test_resource_library_links.py` (4). Suite: 1.059 verdi.
+
+### 2026-10-14 — Online su staging
+
+- PR #11 (`feature/advanced-input-and-export` → `main`) e #12 (`main` → `staging`),
+  CI verde; immagine `:staging` pubblicata dal workflow di deploy.
+- Sulla VM (passi eseguiti da Angelo): `cloud-infra` aggiornato, `api` e
+  `api-staging` ricreati. `/health`: `code_version` `f3dbb60`, `db_revision`
+  `ac54b8d1e902` (le due migrazioni di Louis), Neo4j collegato.
+- Modelli nel `.env` condiviso (`cloud-infra` `b431549`, decisione di Angelo):
+  `LLM_MODEL=anthropic/claude-haiku-5.5`, pianificatore e controllo delle citazioni
+  su Sonnet 5.5, `AIX_PLANNER_ESCALATE=false`. Prima lo staging usava
+  `claude-sonnet-5` per tutto. Il `.env` vale anche per la produzione, che gira
+  l'immagine di maggio.
+- Libreria dei documenti: audit dello storage `healthy: True` (5 lezioni, 3 file),
+  nessun vecchio allegato da migrare; `AIX_MATERIAL_LIBRARY_ENABLED=true` solo per
+  `api-staging` (`cloud-infra` `bb92022`).
+- Da sistemare fuori da questo rilascio: il workflow `sync-to-fem` fallisce a ogni
+  push su `main` da luglio (il repo di destinazione non esiste più); in
+  `cloud-infra` c'è una chiave privata di `progetto-pinot` sotto versione.
+
+### 2026-10-14 — Tolto il workflow `sync-to-fem`
+
+Scritto da Louis a ottobre 2025 per copiare il suo repo personale dentro
+l'organizzazione: a ogni push su `main` faceva un force push verso
+`FEM-modena/graphrag-educational-assistant` con un token personale
+(`FEM_MODENA_PAT`). Dal 4 dicembre 2025 il codice vive già in
+`FEM-modena/graphrag-aixlearning`, il repo di destinazione non risulta più
+(404) e il workflow non è mai riuscito da allora: a ogni push su `main` una X
+rossa. Lo scopo non esiste più, quindi il file è tolto. Fra i secret del repo
+`FEM_MODENA_PAT` non c'è (solo `SCW_SECRET_KEY`, quello del deploy): il token
+probabilmente non è mai stato impostato qui, e già quello faceva fallire il push.
+
+### 2026-10-14 — Advanced in `chore/repo-reorg`: una sola API dei documenti
+
+Advanced (risorse e libreria di Louis, correzioni del giorno, deploy su staging)
+è unito in `chore/repo-reorg`. Due API dei documenti sullo stesso percorso
+`/api/v1/materials` — quella di Louis e quella del passo 2 dei chatbot — sono
+diventate una:
+
+- **la base è quella di Louis**, più completa: versioni, collegamento e
+  scollegamento da una lezione, download del sorgente, risorse salvate,
+  paginazione, il flag `AIX_MATERIAL_LIBRARY_ENABLED` per le scritture;
+- **ci si innesta l'accesso dei chatbot**: ogni rotta agisce con
+  `current_owner` (utente con il suo login, oppure service account per un
+  `X-End-User-Id`), quindi anche i chatbot possono usarla; prima rifiutava il
+  service account perché «non identifica un proprietario»;
+- **e lo stato da interrogare**: `status` (`processing` / `ready` / `failed`),
+  `passages`, `error_code`; ogni errore ha `{"code", "message"}`
+  (`library_disabled`, `unknown_material`, `magic_mismatch`, `version_not_ready`…).
+
+`lessons/routes.py`: tenuto il refactoring del branch (turni, export, risorse dal
+vivo in moduli condivisi) con sopra riapplicate le modifiche di advanced — gli
+snapshot di Louis (il pannello si rilegge, un fornitore si interroga una volta),
+lo scollegamento in modalità libreria, le chiavi delle risorse salvate.
+`live_media_for_lesson` ora distingue «non cercato» (`None`) da «cercato, nulla»
+(`{}`), perché si ricorda solo una ricerca fatta. `GET /api/v1/sessions/{id}/media`
+segue la stessa regola: rilegge lo snapshot, altrimenti cerca una volta e lo salva.
+
+Guide aggiornate (`Chatbot_API_Guide.md`, `PRIVATE_MATERIALS_API.md`). Suite:
+1.102 verdi; i test di Louis passano senza modifiche con il nuovo accesso.

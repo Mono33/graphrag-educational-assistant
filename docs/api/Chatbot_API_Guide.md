@@ -15,7 +15,7 @@ Interactive reference: `GET /docs` (Swagger) on the server.
 ## 1. The flow in four calls
 
 ```text
-1. POST /api/v1/materials              upload a document          → material_id (processing)
+1. POST /api/v1/materials              upload a document          → id (processing)
    GET  /api/v1/materials/{id}         poll until status = ready
 2. POST /api/v1/sessions               start a conversation       → session_id
 3. POST /api/v1/sessions/{id}/turns    send a message             → lesson | answer | handoff
@@ -39,19 +39,28 @@ A runnable version of this flow: `scripts/eval/api_smoke.py`.
 
 ## 3. Documents (private RAG)
 
+The document library is the WebUI's own (`/webui/resources`): what a chatbot
+uploads for an end user, that user would see there. Uploads, versions and
+attaching need `AIX_MATERIAL_LIBRARY_ENABLED` on the server (otherwise `404
+library_disabled`).
+
 | Call | What it does |
 | --- | --- |
-| `POST /materials` (multipart, field `file`) | Stores the document, starts reading it. `202` with `status: "processing"`. |
-| `GET /materials/{id}` | `processing` → `ready` (searchable) or `failed` (`error_code`). |
-| `GET /materials` | The end user's documents, with the sessions using each. |
-| `DELETE /materials/{id}` | Removes it from search and from the library. |
+| `POST /materials` (multipart: `file`; optional `display_name`, `purpose`, `lesson_id`) | Stores the document and starts reading it. `201` with `status: "processing"`. |
+| `GET /materials/{id}` | `status`: `processing` → `ready` (searchable, `passages`) or `failed` (`error_code`); `latest_version.parse_quality` says what was read. |
+| `GET /materials?limit=&offset=` | The end user's documents (`items`, `total`), each with `attached_lesson_ids` (the sessions using it). |
+| `POST /materials/{id}/versions` | A new version of the same document. |
+| `POST /materials/{id}/attach` `{"lesson_id": …}` | Use it in a session (same as `material_ids` on a session or a turn). |
+| `DELETE /materials/{id}/lessons/{session_id}` | Stop using it in one session; it stays in the library. |
+| `GET /materials/{id}/versions/{version_id}/source` | Download the original file. |
+| `DELETE /materials/{id}` | Remove it from search and from the library. |
+| `GET` `POST` `DELETE /materials/saved/resources[/{id}]` | Bookmarks of external resources (videos, articles), as the WebUI's bookmark. |
 
 - Formats and limits are the WebUI's: PDF, DOCX, PPTX, TXT, Markdown, images;
   up to 100 MB and 1000 pages; macro-enabled, encrypted and disguised files are
-  refused (`422` with a `code`: `magic_mismatch`, `ole_container`, `too_large`…).
-  Exact list: `GET /catalog` → `materials`.
-- Scans are read with OCR. `quality` tells you what was read: pages, OCR pages,
-  unread pages, warnings.
+  refused (`422` with a `code`: `magic_mismatch`, `ole_container`…; `413
+  too_large`). Exact list: `GET /catalog` → `materials`.
+- Scans are read with OCR: `parse_quality` reports pages, OCR pages, unread pages.
 - A document is uploaded **once** and used by any number of sessions.
 - A turn waits for its documents: a turn sent while one is still `processing` is
   refused with `409 materials_preparing`. Poll the document, then send the turn.
@@ -168,6 +177,7 @@ Italian, for a person; the `code` is stable, for your code.
 | --- | --- | --- |
 | 401 | — | Missing or wrong credentials. |
 | 404 | `unknown_session`, `unknown_material`, `no_lesson_yet` | Not this end user's, or no lesson to download yet. |
+| 404 | `library_disabled` | Document uploads are switched off on this server. |
 | 409 | `already_running` | A turn of this session is still running. |
 | 409 | `materials_preparing` | A bound document is still being read. Retry when `ready`. |
 | 409 | `no_lesson_yet` | `mode: answer` before the first lesson. |
@@ -176,7 +186,7 @@ Italian, for a person; the `code` is stable, for your code.
 | 429 | `rate_limited` | Too many turns (default 10 a minute per end user). Wait `Retry-After` seconds. |
 | 502 | `generation_failed` | The generation failed; retry. |
 | 503 | `at_capacity` | Every generation slot is busy (default 6 at once). Retry shortly. |
-| 503 | `materials_disabled` | Documents are switched off on this server. |
+| 503 | `materials_disabled` | Document search is switched off on this server. |
 
 ## 10. One-shot generation (unchanged)
 

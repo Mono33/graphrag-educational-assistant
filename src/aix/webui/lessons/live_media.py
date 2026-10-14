@@ -175,13 +175,19 @@ def _live_media_ranking_query(lesson: Lesson) -> Optional[str]:
     return " · ".join(ordered) or None
 
 
-async def live_media_for_lesson(lesson: Lesson) -> dict[str, Any]:
-    """The panel's buckets (``videos``, ``citations``, ``wikipedia``), or ``{}``."""
+async def live_media_for_lesson(lesson: Lesson) -> Optional[dict[str, Any]]:
+    """The panel's buckets (``videos``, ``citations``, ``wikipedia``) found now.
+
+    ``None`` when nothing was searched -- the live layer is off, the lesson has
+    no topic yet, or the providers failed -- and ``{}`` when the search ran and
+    found nothing. The difference matters to the snapshot: only a search that
+    ran is remembered (``media_snapshots.save_live_snapshot``).
+    """
     if not _media_live_enabled() or not _lesson_has_live_media_context(lesson):
-        return {}
+        return None
     concepts = _live_media_concepts(lesson)
     if not concepts:
-        return {}
+        return None
     try:
         from aix.agent.media import fetch_live_subject_resources, to_panel_media
 
@@ -197,7 +203,7 @@ async def live_media_for_lesson(lesson: Lesson) -> dict[str, Any]:
         panel = to_panel_media(live) or {}
     except Exception as exc:  # noqa: BLE001 — an optional panel never breaks anything
         logger.warning("[media-live] fetch/map failed for lesson_id=%s: %s", lesson.id, exc)
-        return {}
+        return None
     logger.info(
         "[media-live] lesson_id=%s concepts=%s → %d videos, %d citations, %d wikipedia",
         lesson.id,

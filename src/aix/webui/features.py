@@ -60,6 +60,17 @@ def light_turns_enabled() -> bool:
     return _flag("AIX_LIGHT_TURNS_ENABLED", default=True)
 
 
+def material_library_enabled() -> bool:
+    """Enable reuse/detach/delete actions in the new material library.
+
+    The read-only library is additive and always available.  Lifecycle changes
+    stay opt-in until the deployment has passed the migration and persistence
+    checks, so disabling this flag restores the exact legacy remove-and-retire
+    behaviour.
+    """
+    return _flag("AIX_MATERIAL_LIBRARY_ENABLED", default=False)
+
+
 def upload_accept_attribute() -> str:
     """What the file picker offers, which is what the server will accept."""
     from aix.webui.lessons.uploads import allowed_extensions
@@ -86,6 +97,11 @@ def register(templates) -> None:
     templates.env.globals["upload_hint"] = upload_hint
     templates.env.globals["conditional_retrieval_enabled"] = conditional_retrieval_enabled
     templates.env.globals["light_turns_enabled"] = light_turns_enabled
+    templates.env.globals["material_library_enabled"] = material_library_enabled
+
+    from aix.webui.materials.saved_resources import resource_key
+
+    templates.env.globals["saved_resource_key"] = resource_key
     templates.env.globals["export_pdf_enabled"] = export_pdf_enabled
     templates.env.globals["export_outline_enabled"] = export_outline_enabled
     templates.env.globals["export_docx_enabled"] = export_docx_enabled

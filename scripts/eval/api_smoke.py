@@ -94,15 +94,15 @@ def main() -> int:
         upload = client.post("/api/v1/materials", files={"file": (name, content)})
         upload.raise_for_status()
         material = upload.json()
-        print(f"uploaded {name}: {material['material_id']} {material['status']}")
+        print(f"uploaded {name}: {material['id']} {material['status']}")
 
         for _ in range(120):
-            state = client.get(f"/api/v1/materials/{material['material_id']}").json()
+            state = client.get(f"/api/v1/materials/{material['id']}").json()
             if state["status"] != "processing":
                 break
             time.sleep(2)
         print(
-            f"document {state['status']}: {state['passages']} passages, quality={state['quality']}"
+            f"document {state['status']}: {state['passages']} passages, quality={(state.get('latest_version') or {}).get('parse_quality')}"
         )
         if state["status"] != "ready":
             return 1
@@ -113,7 +113,7 @@ def main() -> int:
                 "domain": "udl",
                 "title": "Prova API",
                 "educational_profile": {"pedagogical_intent": "intro"},
-                "material_ids": [material["material_id"]],
+                "material_ids": [material["id"]],
             },
         )
         created.raise_for_status()

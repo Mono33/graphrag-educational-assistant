@@ -57,6 +57,11 @@ from aix.webui.agent.turns import TurnAccepted, TurnRefused, accept_turn, drive_
 from aix.webui.auth.models import User
 from aix.webui.db import get_async_session
 from aix.webui.lessons.live_media import live_media_for_lesson
+from aix.webui.lessons.media_snapshots import (
+    latest_display_snapshot_safe,
+    latest_user_turn,
+    save_live_snapshot,
+)
 from aix.webui.lessons.models import Lesson, LessonMessage
 from aix.webui.materials import library
 from aix.webui.materials.citations import labels_for_lesson_safe, resolve_for_lesson
@@ -218,7 +223,32 @@ async def session_media(
     session: AsyncSession = Depends(get_async_session),
 ) -> SessionMedia:
     lesson = await _lesson(session, owner, session_id)
-    return SessionMedia.model_validate(await live_media_for_lesson(lesson))
+    # Louis's rule for the WebUI panel: what was shown is replayed, a provider is
+    # asked once. A session has no panel to load during the run, so the first
+    # call searches and remembers, and every later call replays.
+    saved = await latest_display_snapshot_safe(session, lesson_id=lesson.id, owner_id=owner.id)
+    if saved is not None and saved.live_fetched:
+        return SessionMedia.model_validate(saved.live_json or {})
+    panel = await live_media_for_lesson(lesson)
+    if panel is None:
+        return SessionMedia()
+    turn_index = (
+        saved.turn_index if saved is not None else await latest_user_turn(session, lesson.id)
+    )
+    try:
+        async with session.begin_nested():
+            await save_live_snapshot(
+                session,
+                lesson_id=lesson.id,
+                owner_id=owner.id,
+                turn_index=turn_index,
+                media=panel,
+            )
+        await session.commit()
+    except Exception:  # noqa: BLE001 — the answer matters more than remembering it
+        await session.rollback()
+        logger.warning("[api.sessions] media snapshot not saved for session=%s", lesson.id)
+    return SessionMedia.model_validate(panel)
 
 
 @router.get(
