@@ -3062,3 +3062,28 @@ già entrambe nel codice (`store_and_queue`, ora estratto da `record_upload`, e
   stanno in `aix.api.principals`, condivise da tutte le rotte nuove.
 
 Test: `test_api_materials.py` (6), con il worker vero e un embedding finto.
+
+### 2026-10-14 — API per i chatbot, passo 3: le sessioni
+
+Una sessione è ciò che la WebUI chiama lezione: conversazione, lezione corrente,
+documenti. L'API la tiene, quindi un chatbot manda solo il messaggio nuovo e
+l'agente si comporta come nella WebUI (stesse decisioni di `turns.py`).
+
+- `POST /api/v1/sessions` (dominio, profilo con `pedagogical_intent`, documenti);
+  `GET /api/v1/sessions` e `/{id}` (profilo, stato, lezione corrente con le
+  citazioni risolte al nome del documento, turni, documenti); `DELETE`;
+  `POST /{id}/materials` per collegare documenti.
+- `POST /{id}/turns` `{message, mode, refinement, search_graph, material_ids}`
+  aspetta e restituisce `kind`: **`lesson`** (nuova versione), **`answer`** (risposta
+  in pochi secondi, la lezione non cambia) o **`handoff`** (serve una lezione
+  nuova: `handoff_query` da rimandare con `mode: lesson`, come la scheda della
+  WebUI). `mode`: `auto` (come la WebUI), `answer` (mai rimandare), `lesson`.
+- `POST /{id}/turns/stream`: gli stessi passi come Server-Sent Events JSON, con
+  l'ultimo frame `kind: result`.
+- Rifiuti con codice: `empty_message`, `no_lesson_yet`, `already_running`,
+  `materials_preparing`, `rate_limited` (con `Retry-After`), `at_capacity`,
+  `generation_failed`, `unknown_session`. La scheda dell'intento non c'è: l'API
+  prende l'intento dal profilo.
+
+Test: `test_api_sessions.py` (10): lezione, risposta, rimando e lezione nuova,
+isolamento fra utenti finali, codici, stream.
