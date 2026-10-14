@@ -3139,3 +3139,9 @@ stessi flag). Rifiuti con codice: `no_lesson_yet`, `unsupported_format`,
 - `docs/ARCHITECTURE.md` §3: gli endpoint nuovi, come sono fatti dentro, e che le
   sessioni vedono i documenti (i vecchi `/agent/run` no). Aggiornata anche la
   nota sui due test che fallivano su Windows, corretti il 13/10.
+
+**Verifica finale sullo stack locale** (`scripts/eval/api_smoke.py`, tutti i passi):
+documento pronto, lezione in 60 s, domanda risposta in 5,3 s, «lezione sui
+vulcani» rimandata in 2,3 s, Word (41 KB), PDF (51 KB) e scaletta scaricati,
+9 risorse dal vivo (5 video, 3 articoli, 1 Wikipedia), catalogo con 6 intenti.
+Suite: 1.078 test verdi. Non ancora pubblicato.

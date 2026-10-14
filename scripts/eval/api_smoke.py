@@ -136,6 +136,16 @@ def main() -> int:
         if handoff.get("kind") == "handoff":
             print("   (handoff: the client would now resend with mode=lesson)")
 
+        for fmt in ("docx", "pdf", "outline"):
+            exported = client.get(f"/api/v1/sessions/{session_id}/export", params={"format": fmt})
+            print(f"export {fmt}: HTTP {exported.status_code}, {len(exported.content)} bytes")
+        media = client.get(f"/api/v1/sessions/{session_id}/media").json()
+        print(f"live media: { {k: len(v) for k, v in media.items()} }")
+        catalog = client.get("/api/v1/catalog").json()
+        print(
+            f"catalog: {len(catalog['pedagogical_intents'])} intents, {catalog['domains'][0]['code']}…"
+        )
+
         detail = client.get(f"/api/v1/sessions/{session_id}").json()
         print(f"\nsession turns: {[(t['role'], t['kind']) for t in detail['turns']]}")
         print(f"materials: {[(m['name'], m['status']) for m in detail['materials']]}")
