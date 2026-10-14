@@ -43,6 +43,20 @@ class AgentRunRequest(BaseModel):
     Input to either ``POST /api/v1/agent/run`` (sync JSON) or
     ``POST /api/v1/agent/stream`` (SSE-encoded JSON events).
 
+    **Unknown fields are kept and logged, not rejected — for now.** A field the
+    caller misspells (``languag`` for ``language``) is silently dropped under
+    Pydantic's default, so the lesson comes back in the wrong language and
+    nothing anywhere says why. ``extra="forbid"`` would turn that into an
+    immediate 422, which is the behaviour this API should end up with.
+
+    It is not on yet because we do not know what the integrating worker
+    actually sends: one undeclared field in its payload — a trace id, a client
+    version, a leftover — and every call it makes starts failing, on code we do
+    not control. So the route logs the *names* of unknown fields on each
+    request (never the values: an unknown field may carry a teacher's data),
+    and once the logs show nobody is sending any, this becomes
+    ``extra="forbid"`` and the guesswork ends (2026-09-22).
+
     Mandatory fields are ``query`` + ``domain``. Everything else has sensible
     defaults so the smallest valid call from /docs is just::
 
@@ -79,9 +93,14 @@ class AgentRunRequest(BaseModel):
         default=None,
         max_length=128,
         description=(
-            "Optional client-side correlation id, surfaced into the agent "
-            "state. Useful for tracing a single request across logs / "
-            "Langfuse (CORE 2 #11). When omitted, a UUID4 is generated."
+            "The conversation's identity, not a log tag. It becomes LangGraph's "
+            "``thread_id``: send the same value again and the run continues that "
+            "conversation, with its checkpointed history and possibly its reused "
+            "retrieval corpus. **Two callers that send the same value share a "
+            "conversation**, so an integrator must scope it per end user — a "
+            "counter, or a key that is not guessable from outside. When omitted, "
+            "a UUID4 is generated and the run is a fresh conversation. It is also "
+            "the correlation id in the logs (CORE 2 #11)."
         ),
     )
     educational_profile: Optional[EducationalProfile] = Field(
@@ -114,6 +133,12 @@ class AgentRunRequest(BaseModel):
     )
 
     model_config = ConfigDict(
+        # Unknown fields are kept rather than dropped, so the route can name
+        # them in the log; see the class docstring. It lives in *this*
+        # ConfigDict and not in a second one earlier in the class, because a
+        # class body has one ``model_config`` and the last assignment wins —
+        # an earlier one is simply dead code.
+        extra="allow",
         # Single canonical example for the OpenAPI Schema tab and any
         # client-codegen tool (Postman / openapi-generator) that consumes
         # the bare schema. The /docs "Try it out" picker also shows the
@@ -160,7 +185,7 @@ class AgentRunRequest(BaseModel):
                     "luminosa in energia chimica…'"
                 ),
             }
-        }
+        },
     )
 
 
@@ -323,6 +348,17 @@ class _SSEEventBase(BaseModel):
     data: dict[str, Any] = Field(default_factory=dict)
     lesson_plan_md: Optional[str] = None
     error: Optional[str] = None
+    meta: dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "Run summary, populated on the terminal ``done`` event: "
+            "``duration_seconds``, ``approved``, ``revision_count``, ``scores``, "
+            "``nodes_count``, ``media_counts``. Empty on every other event. "
+            "Until 2026-09-21 this was dropped on the SSE path, so a client that "
+            "wanted both the summary and incremental phases had to call ``/run`` "
+            "as well."
+        ),
+    )
 
 
 class PlannerEvent(_SSEEventBase):

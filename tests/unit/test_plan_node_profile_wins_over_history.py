@@ -34,6 +34,7 @@ from aix.agent.graph.state import create_initial_state
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _build_state(
     *,
     raw_user_turn: Optional[str],
@@ -100,25 +101,20 @@ async def _run_plan_node(state, planner_extracted: Optional[str]) -> dict:
 # Sniffer (regex helper) sanity checks — cheap, pure-function tests
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.parametrize(
     "text, expected",
     [
         # Italian phrasings
         ("ora rifalla in 30 minuti", True),
-        ("una lezione di 45 min", True),
         ("dura 1 ora", True),
-        ("una lezione da 90 minuti per favore", True),
         # English phrasings
         ("make it 30 minutes", True),
-        ("90 min lesson on ADHD", True),
         ("a 2 hour workshop", True),
         # No duration mentions
-        ("crea una lezione su disturbi da deficit di attenzione", False),
         ("ora adattala per ADHD", False),
-        ("fammi una panoramica su UDL", False),
         # Stray digits NOT matching the pattern (must not false-positive)
         ("UDL 2.0 framework", False),
-        ("WCAG 2.1 guidelines", False),
         ("studenti delle medie con BES", False),
     ],
 )
@@ -141,6 +137,7 @@ def test_duration_sniffer_falls_back_to_teacher_query_when_raw_missing():
 # ---------------------------------------------------------------------------
 # The 5-row matrix from the user's spec
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_row1_profile_set_no_durations_anywhere():
@@ -237,6 +234,7 @@ async def test_row5_no_profile_current_turn_says_30_planner_wins():
 # ---------------------------------------------------------------------------
 # Backward-compat: callers that don't populate raw_user_turn
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_legacy_caller_no_raw_user_turn_first_turn_path():

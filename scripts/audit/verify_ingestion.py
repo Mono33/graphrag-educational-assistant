@@ -12,6 +12,7 @@ from neo4j import GraphDatabase
 # Load environment variables
 load_dotenv()
 
+
 class IngestionVerifier:
     """Verify multi-domain knowledge graph structure"""
 
@@ -204,6 +205,7 @@ class IngestionVerifier:
             print(f"\n❌ Verification failed: {e}")
             raise
 
+
 def main():
     """Main function"""
     # Load Neo4j credentials from environment variables
@@ -228,6 +230,6 @@ def main():
     finally:
         verifier.close()
 
+
 if __name__ == "__main__":
     main()
-

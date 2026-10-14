@@ -70,6 +70,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aix.core.ai_marking import ensure_marking
+from aix.webui.errors import report as _report_failure
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +98,13 @@ PHASE_LABELS: dict[str, str] = {
     # closing meta event). When the flag is OFF, the node is absent from
     # the topology and this label is unused — pre-#9 behaviour preserved.
     "grade_retrieval": "Valutazione qualità del recupero (Corrective RAG)",
+    # T6 — Conditional retrieval. ``reuse`` replaces ``retrieve`` on a
+    # follow-up turn that needs no new search. It has to be whitelisted for
+    # the same reason ``grade_retrieval`` is: the SSE loop drops any node it
+    # does not know, and a dropped node means the retriever card stays on its
+    # pending placeholder for the rest of the run — the spinner never resolves
+    # and the media panel keeps saying the retriever has not run yet.
+    "reuse": "Riuso del contesto già recuperato",
     "write": "Scrittura della lezione",
     "critique": "Revisione e valutazione qualità",
 }
@@ -357,6 +365,37 @@ def _query_from_lesson(lesson: Any) -> str:
     return " ".join(parts)
 
 
+def _seed_from_checkpoint(final_state: dict[str, Any], values: Any) -> None:
+    """Carry over from the thread's checkpoint only what outlives a turn.
+
+    The seed exists for the evidence a follow-up may reuse (``PERSISTED_ACROSS_TURNS``:
+    the graph's nodes, the media, the outside sources). The rest of the
+    checkpoint belongs to the previous run, and the graph resets it for this
+    one -- but the seed did not: the error of a failed turn came back here and
+    failed the next turn after it had written and approved its lesson
+    (2026-10-14, «'wikipedia_content'» on a retry that succeeded).
+    """
+    from aix.agent.graph.state import PERSISTED_ACROSS_TURNS
+
+    final_state.update(
+        {key: value for key, value in dict(values or {}).items() if key in PERSISTED_ACROSS_TURNS}
+    )
+
+
+def _fail_if_the_turn_produced_nothing(final_state: dict[str, Any]) -> None:
+    """Raise when a node reported a failure, before reading the lesson out.
+
+    Order matters. ``final_lesson_plan`` survives in the thread's checkpoint
+    from the previous turn, so a turn whose writer produced nothing would
+    otherwise finish "complete" and persist the *previous* lesson as the answer
+    to the new request. Observed on 2026-09-16, and invisible to the teacher:
+    the chat simply showed the same lesson again.
+    """
+    error = (final_state.get("error") or "").strip() if final_state else ""
+    if error:
+        raise RuntimeError(error)
+
+
 def _extract_lesson_plan_md(final_state: dict[str, Any]) -> str:
     """
     The lesson plan ends up under ``final_lesson_plan`` after a successful
@@ -421,6 +460,11 @@ def _teacher_upload_context(lesson: Any) -> Optional[str]:
         if not ex:
             continue
         title = (item.get("filename") or "file").strip()
+        parse = item.get("parse") if isinstance(item.get("parse"), dict) else {}
+        if parse.get("ocr_pages"):
+            # §7.8: OCR text is a machine's reading of an image. The Writer is
+            # told so, and must not quote names or figures from it as certain.
+            title += " (testo letto con OCR: può contenere errori di lettura)"
         parts.append(f"### {title}\n{ex}")
     if not parts:
         return None
@@ -851,6 +895,10 @@ def _build_planner_payload(state: dict[str, Any]) -> dict[str, Any]:
         "scope_variant": scope_variant,
         "scope_confidence": state.get("scope_confidence"),
         "key_concepts": list(state.get("key_concepts") or [])[:8],
+        # The subject the lesson is about. Without it the card showed only the
+        # pedagogy concepts that go to the Knowledge Graph, and a teacher who
+        # had attached a Cold War handout saw no trace of the Cold War.
+        "subject_concepts": list(state.get("subject_concepts") or [])[:8],
         "search_queries": list(state.get("search_queries") or [])[:8],
         "lesson_type": state.get("lesson_type"),
         "target_grade": state.get("target_grade"),
@@ -1111,6 +1159,7 @@ def _build_retriever_payload(state: dict[str, Any]) -> dict[str, Any]:
     )
 
     return {
+        "kg_unreachable": bool(state.get("kg_unreachable")),
         "nodes_count": nodes_count,
         "relationships_count": len(rels),
         "recommendations_count": len(recs),
@@ -1144,6 +1193,12 @@ def _build_retriever_payload(state: dict[str, Any]) -> dict[str, Any]:
         "domain_label_short": domain_labels["short"],
         "domain_label_long": domain_labels["long"],
         "coverage_tier": coverage_tier,
+        # T6 — the same card serves both paths. The counts and concepts are
+        # true either way (they are what the lesson was written from); these
+        # two only change how the card describes where they came from, so the
+        # teacher is never told a search ran when none did.
+        "reused": bool(state.get("retrieval_reused")),
+        "reuse_reason": ((state.get("plan") or {}).get("retrieval_reason") or "").strip(),
     }
 
 
@@ -1219,6 +1274,30 @@ def _extract_meta(final_state: dict[str, Any]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+def take_refinement(lesson: Any) -> Optional[str]:
+    """The chip's instruction for this turn, removed from the saved profile.
+
+    One turn only: taken from a copy, it stayed in the profile and was applied
+    again on every later turn. Committed with the run's RUNNING status.
+    """
+    profile = dict(lesson.educational_profile_json or {})
+    instruction = profile.pop("__refinement__", None)
+    if "__refinement__" in (lesson.educational_profile_json or {}):
+        lesson.educational_profile_json = profile
+    return instruction
+
+
+def graph_search_override(graph_search: Optional[bool]) -> Optional[bool]:
+    """The teacher's Knowledge Graph switch as the router's ``force_retrieval``.
+
+    Off -> ``False``: the turn reuses the corpus the thread already holds
+    (``should_retrieve``). On, or never set -> ``None``: the planner decides, as
+    before -- switching the graph on does not force a search. The caller drops
+    it on a first turn, which has nothing to reuse.
+    """
+    return False if graph_search is False else None
+
+
 async def run_agent_stream(
     lesson: Any,
     session: AsyncSession,
@@ -1273,9 +1352,13 @@ async def run_agent_stream(
         # be passed as separate state params (not part of the profile itself).
         pedagogical_intent: str | None = None
         refinement_instruction: str | None = None
+        graph_search: bool | None = None
         if profile_dict:
             pedagogical_intent = profile_dict.get("pedagogical_intent")
-            refinement_instruction = profile_dict.pop("__refinement__", None)
+            profile_dict.pop("__refinement__", None)
+            graph_search = profile_dict.pop("__graph_search__", None)
+        refinement_instruction = take_refinement(lesson)
+        force_retrieval = graph_search_override(graph_search)
 
         # Use the persisted teacher_query if the user supplied one in the
         # form; otherwise synthesize from the profile and *write it back*
@@ -1324,14 +1407,14 @@ async def run_agent_stream(
             domain=lesson.domain or "neuro",
             language=_detect_language(raw_query),
         )
-        pipeline = orchestrator._get_pipeline()  # noqa: SLF001 — intentional seam
+        pipeline = orchestrator.get_pipeline()
 
         # CORE 2 #10.2 — compile the graph with the AsyncSqliteSaver
         # checkpointer when available. Falls back to the no-checkpointer
         # path on graceful degradation (langgraph-checkpoint-sqlite missing,
         # disk write error, etc.) so single-turn behaviour is preserved
         # in degraded environments.
-        graph = await pipeline._get_graph_async()  # noqa: SLF001
+        graph = await pipeline.get_graph()
 
         # Thread config — required by LangGraph whenever a checkpointer
         # is attached. ``str(lesson.id)`` is the canonical thread_id so
@@ -1341,14 +1424,36 @@ async def run_agent_stream(
         from aix.agent.graph.checkpointer import thread_config
 
         run_config = thread_config(str(lesson.id))
+        from aix.core.tracing import graph_callbacks
+
+        # A span per graph node in Langfuse; empty when tracing is off.
+        if callbacks := graph_callbacks():
+            run_config["callbacks"] = callbacks
 
         teacher_ctx = _teacher_upload_context(lesson)
+
+        # Fase 2 · PR 6 — hand the graph a way to search this teacher's own
+        # documents. Registered per session and removed in the same cleanup as
+        # the writer's token bus, because it closes over an owner id: a
+        # registration that outlived its run would be a search someone else's
+        # turn could reach.
+        from aix.webui.materials.embedding import private_rag_enabled
+
+        if private_rag_enabled():
+            from aix.agent.graph import material_source
+            from aix.webui.materials.retrieval import search_for_lesson
+
+            material_source.register(str(lesson.id), search_for_lesson(lesson.id, lesson.owner_id))
 
         initial_state = create_initial_state(
             query=query,
             domain=pipeline.domain,
             language=pipeline.language,
             session_id=str(lesson.id),
+            # The same key the search function was registered under, above.
+            # Explicit, so the fallback in ``create_initial_state`` is only
+            # ever a courtesy to callers outside this module.
+            material_scope_id=str(lesson.id),
             max_revisions=pipeline.max_revisions,
             educational_profile=profile_dict,
             teacher_provided_context=teacher_ctx,
@@ -1360,6 +1465,8 @@ async def run_agent_stream(
             raw_user_turn=raw_query,
             pedagogical_intent=pedagogical_intent,
             refinement_instruction=refinement_instruction,
+            # A first turn has nothing to reuse, whatever the switch says.
+            force_retrieval=force_retrieval if conversation_history else None,
         )
 
         # CORE 2 #9.UX-5 hotfix — pre-seed final_state with initial_state so
@@ -1392,8 +1499,11 @@ async def run_agent_stream(
             "[webui.agent] setup FAILED lesson_id=%s",
             lesson.id,
         )
-        msg = str(exc) or exc.__class__.__name__
-        short_msg = msg[:480] + ("…" if len(msg) > 480 else "")
+        # str(exc) is written for whoever reads the logs — it carries the
+        # failing SQL, the database host, the container path, the URL that was
+        # called — and this string is rendered in the chat. ``report`` logs the
+        # exception with a code and returns a sentence that says what to do.
+        short_msg = str(_report_failure(exc))
         try:
             lesson.status = "error"
             lesson.error_message = short_msg
@@ -1410,6 +1520,40 @@ async def run_agent_stream(
     from aix.agent.graph import (
         write_stream as _write_stream,  # lazy — avoids circular at module level
     )
+
+    # Seed from the thread's checkpoint before streaming. ``stream_mode="updates"``
+    # yields only what each node changed, so anything carried over from an
+    # earlier turn is absent from these diffs. That was harmless while every
+    # turn re-ran the retriever; once a follow-up can reuse the corpus instead,
+    # the retriever panel would render empty for a turn that legitimately has
+    # evidence. Best-effort: a fresh thread (or a graph compiled without a
+    # checkpointer) simply has nothing to seed from.
+    try:
+        _snapshot = await graph.aget_state(run_config)
+        if _snapshot is not None and _snapshot.values:
+            _seed_from_checkpoint(final_state, _snapshot.values)
+    except Exception:  # noqa: BLE001
+        logger.debug("[webui.agent] no prior checkpoint to seed final_state from")
+
+    from aix.core.tracing import start_run
+
+    # One Langfuse trace for the turn: every model call inside it -- planner,
+    # retrieval, writer, critic, citation check -- is recorded under the teacher
+    # and the lesson, with its cost, tokens and time. A no-op when tracing is off.
+    trace = start_run(
+        "lesson.turn",
+        user_id=lesson.owner_id,
+        session_id=lesson.id,
+        tags=("webui", str(lesson.domain or "")),
+        metadata={
+            "turn": len(conversation_history) // 2 + 1,
+            "attachments": len(getattr(lesson, "uploaded_files_json", None) or []),
+            "intent": pedagogical_intent,
+        },
+        input=raw_query,
+    )
+    trace_output: Any = None
+    trace_error = ""
 
     _write_stream.register(str(lesson.id))
     try:
@@ -1447,6 +1591,23 @@ async def run_agent_stream(
                                 "feedback": "",
                             },
                         )
+
+                elif node_name == "reuse":
+                    # No search ran, so there is nothing to grade: this node
+                    # emits the card itself on both flag settings.
+                    yield StreamEvent(
+                        kind="retriever",
+                        payload=_build_retriever_payload(final_state),
+                    )
+                    write_revision_idx += 1
+                    yield StreamEvent(
+                        kind="writer_pending",
+                        payload={
+                            "revision": write_revision_idx,
+                            "is_revision": False,
+                            "feedback": "",
+                        },
+                    )
 
                 elif node_name == "grade_retrieval":
                     # CORE 2 #9.UX-2 — emit once on final attempt.
@@ -1486,7 +1647,9 @@ async def run_agent_stream(
                     approved = final_state.get("approved", False)
                     rev_count = int(final_state.get("revision_count", 0))
                     max_rev = int(final_state.get("max_revisions", 1))
-                    if (not approved) and rev_count < max_rev:
+                    # Same rule as ``should_continue_to_revision``: the count
+                    # already includes this rejection.
+                    if (not approved) and rev_count <= max_rev:
                         write_revision_idx += 1
                         yield StreamEvent(
                             kind="writer_pending",
@@ -1501,6 +1664,7 @@ async def run_agent_stream(
 
         # ── Run finished cleanly ─────────────────────────────────────────────
         elapsed = time.monotonic() - started_at
+        _fail_if_the_turn_produced_nothing(final_state)
         lesson_plan_md = _extract_lesson_plan_md(final_state)
         meta = _extract_meta(final_state)
         meta["duration_seconds"] = round(elapsed, 1)
@@ -1514,8 +1678,8 @@ async def run_agent_stream(
         # once, here at finalization, so the stored plan, the persisted assistant
         # turn, every export, and the SSE ``done`` payload all carry it. Drafts
         # (writer events) intentionally stay unmarked. ``trace_id`` falls back to
-        # the lesson id until Langfuse run-tracing lands (#24).
-        lesson_plan_md = ensure_marking(lesson_plan_md, trace_id=str(lesson.id))
+        # the lesson id when tracing is off.
+        lesson_plan_md = ensure_marking(lesson_plan_md, trace_id=trace.trace_id or str(lesson.id))
 
         lesson.status = "complete"
         lesson.lesson_plan_md = lesson_plan_md
@@ -1538,6 +1702,7 @@ async def run_agent_stream(
             run_config["configurable"]["thread_id"],
         )
 
+        trace_output = lesson_plan_md
         yield StreamEvent(
             kind="done",
             lesson_plan_md=lesson_plan_md,
@@ -1545,13 +1710,17 @@ async def run_agent_stream(
         )
 
     except Exception as exc:  # noqa: BLE001
+        trace_error = type(exc).__name__
         logger.exception(
             "[webui.agent] run FAILED lesson_id=%s after %.1fs",
             lesson.id,
             time.monotonic() - started_at,
         )
-        msg = str(exc) or exc.__class__.__name__
-        short_msg = msg[:480] + ("…" if len(msg) > 480 else "")
+        # str(exc) is written for whoever reads the logs — it carries the
+        # failing SQL, the database host, the container path, the URL that was
+        # called — and this string is rendered in the chat. ``report`` logs the
+        # exception with a code and returns a sentence that says what to do.
+        short_msg = str(_report_failure(exc))
         try:
             lesson.status = "error"
             lesson.error_message = short_msg
@@ -1564,6 +1733,21 @@ async def run_agent_stream(
         yield StreamEvent(kind="error", error=short_msg)
     finally:
         _write_stream.deregister(str(lesson.id))
+
+        # The private search closes over an owner id, so it is removed on every
+        # path out of the run — success, failure, or a teacher closing the tab.
+        from aix.agent.graph import material_source
+
+        material_source.deregister(str(lesson.id))
+        trace.end(
+            output=trace_output,
+            metadata={
+                "approved": final_state.get("approved"),
+                "revisions": final_state.get("revision_count"),
+                "seconds": round(time.monotonic() - started_at, 1),
+            },
+            error=trace_error or ("" if trace_output is not None else "interrupted"),
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -1599,6 +1783,8 @@ async def stream_agent_events(
     educational_profile: Optional[dict[str, Any]] = None,
     teacher_provided_context: Optional[str] = None,
     max_revisions: Optional[int] = None,
+    material_scope_id: Optional[str] = None,
+    user_id: Optional[str] = None,
 ) -> AsyncIterator[StreamEvent]:
     """
     Run the LangGraph lesson-planner pipeline for an *ad-hoc* request and
@@ -1636,15 +1822,19 @@ async def stream_agent_events(
         from aix.agent.orchestrator import AgentOrchestrator
 
         orchestrator = AgentOrchestrator(domain=domain, language=language)
-        pipeline = orchestrator._get_pipeline()  # noqa: SLF001 — same seam as webui
+        pipeline = orchestrator.get_pipeline()
 
         # CORE 2 #10.2 — checkpointed graph. Public-API callers that pass
         # a stable ``session_id`` get multi-turn memory across requests;
         # callers that don't get an ephemeral per-call thread (functionally
         # identical to the pre-#10 behaviour — single-turn, no shared state).
-        graph = await pipeline._get_graph_async()  # noqa: SLF001
+        graph = await pipeline.get_graph()
         effective_thread_id = session_id or f"ephemeral-{_uuid.uuid4()}"
         run_config = thread_config(effective_thread_id)
+        from aix.core.tracing import graph_callbacks
+
+        if callbacks := graph_callbacks():
+            run_config["callbacks"] = callbacks
 
         effective_max_revisions = (
             max_revisions if max_revisions is not None else pipeline.max_revisions
@@ -1655,6 +1845,11 @@ async def stream_agent_events(
             domain=pipeline.domain,
             language=pipeline.language,
             session_id=session_id,
+            # Which documents this run may search, when the caller registered
+            # any. Never ``session_id`` here: on this path that string is the
+            # caller's own, and two callers picking the same one would read
+            # each other's uploads.
+            material_scope_id=material_scope_id,
             max_revisions=effective_max_revisions,
             educational_profile=educational_profile,
             teacher_provided_context=teacher_provided_context,
@@ -1685,10 +1880,41 @@ async def stream_agent_events(
         )
     except Exception as exc:  # noqa: BLE001
         logger.exception("[api.agent] setup FAILED session_id=%s", session_id)
-        msg = str(exc) or exc.__class__.__name__
-        short_msg = msg[:480] + ("…" if len(msg) > 480 else "")
+        # str(exc) is written for whoever reads the logs — it carries the
+        # failing SQL, the database host, the container path, the URL that was
+        # called — and this string is rendered in the chat. ``report`` logs the
+        # exception with a code and returns a sentence that says what to do.
+        short_msg = str(_report_failure(exc))
         yield StreamEvent(kind="error", error=short_msg)
         return
+
+    # Seed from the thread's checkpoint before streaming. ``stream_mode="updates"``
+    # yields only what each node changed, so anything carried over from an
+    # earlier turn is absent from these diffs. That was harmless while every
+    # turn re-ran the retriever; once a follow-up can reuse the corpus instead,
+    # the retriever panel would render empty for a turn that legitimately has
+    # evidence. Best-effort: a fresh thread (or a graph compiled without a
+    # checkpointer) simply has nothing to seed from.
+    try:
+        _snapshot = await graph.aget_state(run_config)
+        if _snapshot is not None and _snapshot.values:
+            _seed_from_checkpoint(final_state, _snapshot.values)
+    except Exception:  # noqa: BLE001
+        logger.debug("[api.agent] no prior checkpoint to seed final_state from")
+
+    from aix.core.tracing import start_run
+
+    # The platform's calls, traced like the WebUI's. No teacher id reaches this
+    # API yet; the session groups the turns of one conversation.
+    trace = start_run(
+        "api.turn",
+        user_id=user_id,
+        session_id=effective_thread_id,
+        tags=("api", domain),
+        input=query,
+    )
+    trace_output: Any = None
+    trace_error = ""
 
     try:
         async for chunk in graph.astream(
@@ -1729,6 +1955,23 @@ async def stream_agent_events(
                             },
                         )
 
+                elif node_name == "reuse":
+                    # No search ran, so there is nothing to grade: this node
+                    # emits the card itself on both flag settings.
+                    yield StreamEvent(
+                        kind="retriever",
+                        payload=_build_retriever_payload(final_state),
+                    )
+                    write_revision_idx += 1
+                    yield StreamEvent(
+                        kind="writer_pending",
+                        payload={
+                            "revision": write_revision_idx,
+                            "is_revision": False,
+                            "feedback": "",
+                        },
+                    )
+
                 elif node_name == "grade_retrieval":
                     # CORE 2 #9.UX-2 — see the symmetric branch in
                     # ``run_agent_stream`` above for the full rationale.
@@ -1765,7 +2008,9 @@ async def stream_agent_events(
                     approved = final_state.get("approved", False)
                     rev_count = int(final_state.get("revision_count", 0))
                     max_rev = int(final_state.get("max_revisions", 1))
-                    if (not approved) and rev_count < max_rev:
+                    # Same rule as ``should_continue_to_revision``: the count
+                    # already includes this rejection.
+                    if (not approved) and rev_count <= max_rev:
                         write_revision_idx += 1
                         yield StreamEvent(
                             kind="writer_pending",
@@ -1780,6 +2025,7 @@ async def stream_agent_events(
 
         # ── Done ────────────────────────────────────────────────────────
         elapsed = time.monotonic() - started_at
+        _fail_if_the_turn_produced_nothing(final_state)
         lesson_plan_md = _extract_lesson_plan_md(final_state)
         meta = _extract_meta(final_state)
         meta["duration_seconds"] = round(elapsed, 1)
@@ -1804,6 +2050,7 @@ async def stream_agent_events(
             meta["revision_count"],
         )
 
+        trace_output = lesson_plan_md
         yield StreamEvent(
             kind="done",
             lesson_plan_md=lesson_plan_md,
@@ -1811,11 +2058,25 @@ async def stream_agent_events(
         )
 
     except Exception as exc:  # noqa: BLE001
+        trace_error = type(exc).__name__
         logger.exception(
             "[api.agent] run FAILED session_id=%s after %.1fs",
             session_id,
             time.monotonic() - started_at,
         )
-        msg = str(exc) or exc.__class__.__name__
-        short_msg = msg[:480] + ("…" if len(msg) > 480 else "")
+        # str(exc) is written for whoever reads the logs — it carries the
+        # failing SQL, the database host, the container path, the URL that was
+        # called — and this string is rendered in the chat. ``report`` logs the
+        # exception with a code and returns a sentence that says what to do.
+        short_msg = str(_report_failure(exc))
         yield StreamEvent(kind="error", error=short_msg)
+    finally:
+        trace.end(
+            output=trace_output,
+            metadata={
+                "approved": final_state.get("approved"),
+                "revisions": final_state.get("revision_count"),
+                "seconds": round(time.monotonic() - started_at, 1),
+            },
+            error=trace_error or ("" if trace_output is not None else "interrupted"),
+        )

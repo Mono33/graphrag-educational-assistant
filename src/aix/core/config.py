@@ -4,6 +4,7 @@ config.py - Configuration settings for the GraphRAG text2cypher module.
 """
 
 import os
+import re
 from dataclasses import dataclass
 from typing import Optional
 
@@ -11,6 +12,75 @@ from dotenv import load_dotenv
 
 # Load environment variables from .env file
 load_dotenv()
+
+
+def _float_env(name: str, default: float) -> float:
+    """A float from the environment, or the default when unset or unreadable."""
+    raw = os.getenv(name)
+    if not raw:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        return default
+
+
+#: Claude 5 and later decide on their own how much to think, unless told.
+_ADAPTIVE_CLAUDE = re.compile(r"claude-(sonnet|opus|haiku)-([5-9]|\d{2,})")
+
+
+def thinking_effort() -> Optional[str]:
+    """``AIX_THINKING_EFFORT``: low (default), medium, high; ``default`` sends nothing."""
+    raw = (os.getenv("AIX_THINKING_EFFORT") or "low").strip().lower()
+    return None if raw == "default" else raw
+
+
+#: Gemini 3+ Flash and Pro think by default and cannot be told not to ("reasoning
+#: is mandatory"); the effort still trims it: on a real Planner request
+#: gemini-3.5-flash used 680 reasoning tokens by default, 439 with low (-18%).
+#: The -lite models do not think either way and are left alone (2026-10-13).
+_THINKING_GEMINI = re.compile(r"gemini-[3-9][\d.]*-(flash|pro)(?!-lite)")
+#: Qwen 3.x thinks by default and reads the effort: on a three-sentence answer
+#: qwen3.8-27b used 192 reasoning tokens by default, 112 with low (2026-10-13).
+_THINKING_QWEN = re.compile(r"qwen3\.\d")
+#: Mistral Large 4 reasons by default too, and with ``effort: low`` even more
+#: (truncated lessons, 100+ s, invalid JSON in the 2026-10-12 replay); on a
+#: three-sentence answer it spent 936 reasoning tokens and returned nothing
+#: within 800 (2026-10-13). DeepSeek V4 likewise: 220 reasoning tokens by
+#: default, 310 with low, 0 off with the same answer (2026-10-13). Both are
+#: switched off: ``reasoning.enabled=false``.
+_REASONING_OFF = re.compile(r"mistral-large-[4-9](?!\d)|deepseek-v4")
+
+
+def is_adaptive_claude(model: Optional[str]) -> bool:
+    return bool(model) and bool(_ADAPTIVE_CLAUDE.search(model.lower()))
+
+
+def takes_effort(model: Optional[str]) -> bool:
+    """A model that reasons on its own and reads ``reasoning.effort``: Claude 5.x,
+    Gemini 3+ Flash/Pro, Qwen 3.x."""
+    return is_adaptive_claude(model) or (
+        bool(model)
+        and bool(_THINKING_GEMINI.search(model.lower()) or _THINKING_QWEN.search(model.lower()))
+    )
+
+
+def reasoning_extra_body(model: Optional[str]) -> Optional[dict]:
+    """The reasoning setting a model that thinks on its own needs, or ``None``.
+
+    Claude 5 thinks by default, and as much as it likes. On 2026-10-07 that was
+    ~117k reasoning tokens in a week of rehearsals (a fifth of the bill, billed
+    as output), and lessons cut off by ``max_tokens`` because the thinking had
+    used the budget: replayed with ``effort: low``, the same revision cost 40%
+    less, took 39 s instead of 91 and came back whole. ``AIX_THINKING_EFFORT``
+    was already ``low``; it only reached the Claude 4 family below.
+    """
+    effort = thinking_effort()
+    if model and _REASONING_OFF.search(model.lower()):
+        return {"reasoning": {"enabled": False}} if effort else None
+    if not takes_effort(model):
+        return None
+    return {"reasoning": {"effort": effort}} if effort else None
 
 
 @dataclass
@@ -23,6 +93,46 @@ class Neo4jConfig:
     database: str = "neo4j"
     encrypted: bool = True
 
+    def driver_kwargs(self) -> dict:
+        """Connection settings for every driver this process opens.
+
+        **Why these exist at all.** The driver's defaults wait up to 60 s for a
+        server that is not answering, and retry a failed transaction for 30 s
+        on top. A lesson asks the graph eleven questions, so on 2026-09-21 —
+        with the database reachable at the TCP and TLS level but silent at the
+        Bolt handshake — a single generation sat in the retrieval phase for
+        minutes, one full minute per question, while the teacher watched a
+        spinner. The private-material branch beside it had finished in one
+        second.
+
+        A database that has not answered in five seconds is not going to
+        rescue this lesson: better to degrade to what we have — the cached
+        embeddings, the teacher's own documents, the external sources — and
+        say so, which is what the retriever card now does.
+
+        ``encrypted`` is only passed when it is False: a ``bolt+s://`` or
+        ``neo4j+s://`` URI already carries the setting, and passing it again
+        makes the driver raise.
+        """
+        kwargs: dict = {
+            "auth": (self.user, self.password),
+            # TCP connect + handshake.
+            "connection_timeout": _float_env("AIX_NEO4J_CONNECT_TIMEOUT_S", 5.0),
+            # How long a failed transaction is retried before giving up.
+            "max_transaction_retry_time": _float_env("AIX_NEO4J_RETRY_TIME_S", 5.0),
+            # Waiting for a free connection from the pool.
+            "connection_acquisition_timeout": _float_env("AIX_NEO4J_ACQUIRE_TIMEOUT_S", 10.0),
+        }
+        if not self.encrypted:
+            kwargs["encrypted"] = self.encrypted
+        return kwargs
+
+    def get_driver(self):
+        """A driver configured to fail fast. See :meth:`driver_kwargs`."""
+        from neo4j import GraphDatabase
+
+        return GraphDatabase.driver(self.uri, **self.driver_kwargs())
+
 
 @dataclass
 class OpenAIConfig:
@@ -34,17 +144,58 @@ class OpenAIConfig:
     temperature: float = 0.1
     max_tokens: int = 500
 
-    def get_client(self):
-        """Return a configured OpenAI-compatible client (sync)"""
-        from openai import OpenAI
+    # ------------------------------------------------------------------
+    # Timeout and retry budget
+    # ------------------------------------------------------------------
+    #
+    # Both were left at the SDK defaults, which are wrong for an interactive
+    # request: a read timeout of 600s with max_retries=2 means one hung LLM
+    # call can hold a lesson for up to half an hour, while the run registry's
+    # heartbeat keeps reporting it healthy the whole time.
+    #
+    # These are set here so the whole budget is visible in one place. The agent
+    # graph adds a second, outer layer (RetryPolicy on the LLM nodes) which
+    # rebuilds the prompt rather than replaying the same request, so the client
+    # keeps only one retry: worst case per node is 2 client attempts x 2 node
+    # attempts = 4 calls, not the 9 that stacking three-and-three would give.
 
-        return OpenAI(api_key=self.api_key, base_url=self.base_url)
+    def _timeout_seconds(self) -> float:
+        raw = os.getenv("AIX_LLM_TIMEOUT_S", "120")
+        try:
+            return max(5.0, float(raw))
+        except ValueError:
+            return 120.0
+
+    def _max_retries(self) -> int:
+        raw = os.getenv("AIX_LLM_MAX_RETRIES", "1")
+        try:
+            return max(0, min(int(raw), 5))
+        except ValueError:
+            return 1
+
+    def get_client(self):
+        """Return a configured OpenAI-compatible client (sync), traced when tracing is on."""
+        from aix.core.tracing import openai_classes
+
+        OpenAI, _ = openai_classes()
+        return OpenAI(
+            api_key=self.api_key,
+            base_url=self.base_url,
+            timeout=self._timeout_seconds(),
+            max_retries=self._max_retries(),
+        )
 
     def get_async_client(self):
-        """Return a configured OpenAI-compatible client (async)"""
-        from openai import AsyncOpenAI
+        """Return a configured OpenAI-compatible client (async), traced when tracing is on."""
+        from aix.core.tracing import openai_classes
 
-        return AsyncOpenAI(api_key=self.api_key, base_url=self.base_url)
+        _, AsyncOpenAI = openai_classes()
+        return AsyncOpenAI(
+            api_key=self.api_key,
+            base_url=self.base_url,
+            timeout=self._timeout_seconds(),
+            max_retries=self._max_retries(),
+        )
 
     def is_reasoning_model(self) -> bool:
         """True for models that use internal chain-of-thought / thinking tokens.
@@ -133,7 +284,7 @@ class OpenAIConfig:
                 #   low    ~1 024 tokens  +2 000
                 #   medium ~4 000 tokens  +6 000
                 #   high   ~8 000 tokens  +10 000
-                effort = os.getenv("AIX_THINKING_EFFORT", "low")
+                effort = thinking_effort() or "low"
                 _thinking_buffer = {"low": 2000, "medium": 6000, "high": 10000}.get(effort, 2000)
                 kwargs["temperature"] = 1
                 kwargs["max_tokens"] = max_tokens + _thinking_buffer
@@ -141,6 +292,15 @@ class OpenAIConfig:
             elif "deepseek" in m_lower:
                 kwargs["extra_body"] = {"include_reasoning": True}
             # o-series: reasoning is always on, no extra_body needed
+
+        # Claude 5.x: only the effort. Temperature, max_tokens and the JSON
+        # response format stay as asked -- the Claude 4 branch above would force
+        # temperature 1, drop the JSON mode and add a thinking buffer, none of
+        # which this family needs. Applied whatever ``include_reasoning`` says:
+        # that flag is about returning the thinking, this is about how much.
+        adaptive = reasoning_extra_body(model)
+        if adaptive and "extra_body" not in kwargs:
+            kwargs["extra_body"] = adaptive
 
         return kwargs
 
@@ -162,7 +322,9 @@ class Text2CypherConfig:
     enable_query_validation: bool = True
     enable_query_execution: bool = True
     log_level: str = "INFO"
-    model: str = "google/gemini-2.0-flash"  # Fast model for Cypher generation and translation
+    #: Fast model for Cypher generation and translation. Chosen on 2026-09-30
+    #: (``compare_role_models.py text2cypher``): results on 16 of 16 queries.
+    model: str = "google/gemini-3.1-flash-lite"
 
 
 @dataclass
@@ -251,9 +413,9 @@ class Config:
             )
 
         self.text2cypher.log_level = os.getenv("LOG_LEVEL", self.text2cypher.log_level)
-        self.text2cypher.model = os.getenv("TEXT2CYPHER_MODEL") or os.getenv(
-            "LLM_MODEL", self.text2cypher.model
-        )
+        # Not LLM_MODEL as a fallback: the lesson writer's model is slow and
+        # costly for a one-line query.
+        self.text2cypher.model = os.getenv("TEXT2CYPHER_MODEL") or self.text2cypher.model
 
         # Embedding configuration
         self.embedding.mode = os.getenv("EMBEDDING_MODE", self.embedding.mode)

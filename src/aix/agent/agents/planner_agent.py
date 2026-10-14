@@ -7,13 +7,20 @@ Determines what to search in the knowledge graph.
 
 import json
 import logging
+import os
 import re
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 
 from openai import AsyncOpenAI
 
-from aix.agent.prompts.planner_prompt import PLANNER_SYSTEM_PROMPT, PLANNER_USER_TEMPLATE
+from aix.agent.prompts.planner_prompt import (
+    PLANNER_FOLLOWUP_TEMPLATE,
+    PLANNER_SYSTEM_PROMPT,
+    PLANNER_USER_TEMPLATE,
+)
+from aix.agent.prompts.profile_renderer import render_classroom_constraints
+from aix.core import prompt_cache
 from aix.core.concurrency import guarded_chat_completion
 from aix.core.config import config as app_config
 from aix.core.config import extract_response_content
@@ -21,9 +28,80 @@ from aix.core.config import extract_response_content
 logger = logging.getLogger(__name__)
 
 
+def _planner_max_tokens() -> int:
+    """Output budget for the plan. See the comment at the call site."""
+    raw = os.getenv("AIX_PLANNER_MAX_TOKENS")
+    try:
+        return max(1000, int(raw)) if raw else 4000
+    except ValueError:
+        return 4000
+
+
+def planner_model() -> Optional[str]:
+    """The model the plan is asked of first, or ``None`` for the default (Writer) model.
+
+    The plan is a classification (language, intent, scope) and an extraction (the
+    concepts and queries), not a piece of writing, and on the 2026-10-06 traces it
+    took 19 s and $0.035 a call on Sonnet. Empty keeps today's behavior; a cheaper
+    model is switched on only after ``scripts/eval/compare_role_models.py planner``.
+    """
+    return (os.getenv("AIX_PLANNER_MODEL") or "").strip() or None
+
+
+def escalate_enabled() -> bool:
+    """A weak plan from the planner model is asked again of the default one. On by default."""
+    raw = os.getenv("AIX_PLANNER_ESCALATE")
+    if raw is None or not raw.strip():
+        return True
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
+_SUPPORTED_LANGUAGES = {"it", "en", "es", "fr"}
+
+
+def weak_plan_reason(plan_data: Optional[dict]) -> Optional[str]:
+    """Why a plan is not good enough to trust from a cheaper model, or ``None``.
+
+    The cheap model is only worth it if a plan it is unsure about costs no quality:
+    those are the ones asked again of the default model. A plan the default model
+    gave is never judged by this.
+    """
+    if not isinstance(plan_data, dict):
+        return "no plan"
+    if not plan_data.get("query_intent"):
+        return "no intent"
+    if str(plan_data.get("intent_confidence") or "").upper() == "LOW":
+        return "intent confidence LOW"
+    if str(plan_data.get("language_confidence") or "").upper() == "LOW":
+        return "language confidence LOW"
+    language = str(plan_data.get("response_language") or "").strip().lower().split("-")[0]
+    if language and language not in _SUPPORTED_LANGUAGES:
+        return f"unsupported language {language!r}"
+    try:
+        if float(plan_data.get("scope_confidence", 1.0)) < 0.5:
+            return "scope confidence below 50%"
+    except (TypeError, ValueError):
+        return "scope confidence unreadable"
+    return None
+
+
 def _extract_json(content: str) -> dict:
-    """Multi-strategy JSON extractor for LLM responses that may wrap JSON in markdown."""
+    """Multi-strategy JSON extractor for LLM responses that may wrap JSON in markdown.
+
+    A truncated answer is named as such. «No valid JSON found» sent the next
+    reader hunting for markdown fences when the real cause was a plan cut off
+    mid-array by the token ceiling (2026-09-21) — the fences were being handled
+    correctly all along.
+    """
     content = content.strip()
+
+    if content and content.count("{") > content.count("}"):
+        raise json.JSONDecodeError(
+            "the plan is truncated — more '{' than '}', so the model ran out of "
+            "output budget (AIX_PLANNER_MAX_TOKENS)",
+            content,
+            0,
+        )
 
     # Strategy 1: direct parse
     try:
@@ -49,6 +127,67 @@ def _extract_json(content: str) -> dict:
             pass
 
     raise json.JSONDecodeError("No valid JSON found in LLM response", content, 0)
+
+
+# ---------------------------------------------------------------------------
+# T6 — formatting the thread context the planner is given on a follow-up turn
+# ---------------------------------------------------------------------------
+
+_HISTORY_TURNS = 6
+_HISTORY_CHARS = 400
+_CORPUS_NAMES = 40
+
+
+def _format_history(history: Optional[list[dict[str, str]]]) -> str:
+    """The last few turns, one per line, each cut to a readable length.
+
+    Only the tail matters for this decision — whether *this* turn needs new
+    evidence — and the whole thread would crowd out the query itself in a
+    prompt the planner reads top to bottom.
+    """
+    turns = [t for t in (history or []) if isinstance(t, dict) and t.get("content")]
+    if not turns:
+        return "(none)"
+
+    lines = []
+    for turn in turns[-_HISTORY_TURNS:]:
+        content = str(turn["content"]).strip().replace("\n", " ")
+        if len(content) > _HISTORY_CHARS:
+            content = content[:_HISTORY_CHARS] + "..."
+        lines.append(f"- {turn.get('role', 'user')}: {content}")
+    return "\n".join(lines)
+
+
+def _format_corpus(names: Optional[list[str]]) -> str:
+    """The names already retrieved, comma separated and capped.
+
+    Capped because a wide first turn can bring back dozens of nodes, and past
+    a point the list stops informing the verdict and starts diluting it.
+    """
+    clean = [str(n).strip() for n in (names or []) if n and str(n).strip()]
+    if not clean:
+        return "(nothing retrieved yet)"
+
+    shown = clean[:_CORPUS_NAMES]
+    suffix = f", and {len(clean) - len(shown)} more" if len(clean) > len(shown) else ""
+    return ", ".join(shown) + suffix
+
+
+def _as_bool(value: Any) -> Optional[bool]:
+    """Read the planner's verdict without trusting its JSON typing.
+
+    Returns None for anything unrecognised, which is the same signal as an
+    absent key: fall back to comparing concepts rather than guess.
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in ("true", "yes", "1"):
+            return True
+        if lowered in ("false", "no", "0"):
+            return False
+    return None
 
 
 @dataclass
@@ -84,6 +223,13 @@ class RetrievalPlan:
     )
     language_confidence: str = "LOW"  # "HIGH" | "MEDIUM" | "LOW"
 
+    # T6 — conditional retrieval. Set only when the caller put the thread's
+    # context in front of the planner (see ``PLANNER_FOLLOWUP_TEMPLATE``); a
+    # first turn, or a planner that ignored the two keys, leaves this None and
+    # the router falls back to comparing concepts.
+    requires_new_retrieval: Optional[bool] = None
+    retrieval_reason: Optional[str] = None
+
     @property
     def is_lesson_intent(self) -> bool:
         """Check if this is a lesson/activity creation intent"""
@@ -113,6 +259,43 @@ class RetrievalPlan:
         return self.response_language is not None and self.language_confidence in ("HIGH", "MEDIUM")
 
 
+#: How much of each attachment the Planner sees. It chooses concepts and search
+#: queries, so the opening of a document is enough; the Writer gets the rest.
+MATERIAL_DIGEST_PER_FILE = 1500
+MATERIAL_DIGEST_TOTAL = 4500
+
+
+def material_digest(teacher_materials: Optional[str]) -> Optional[str]:
+    """One line per attachment: its name and the start of its text.
+
+    Reads the ``### filename`` sections that ``_teacher_upload_context`` builds;
+    plain text from an API caller becomes a single section called "Materiale".
+    """
+    import re
+
+    if not teacher_materials or not teacher_materials.strip():
+        return None
+
+    text = teacher_materials.strip()
+    if not text.startswith("### "):
+        text = "### Materiale\n" + text
+
+    lines = []
+    for section in re.split(r"(?m)^### ", text):
+        if not section.strip():
+            continue
+        title, _, body = section.partition("\n")
+        body = " ".join(body.split())
+        if not body:
+            continue
+        if len(body) > MATERIAL_DIGEST_PER_FILE:
+            body = body[:MATERIAL_DIGEST_PER_FILE].rstrip() + "…"
+        lines.append(f"- {title.strip()}: {body}")
+
+    digest = "\n".join(lines)
+    return digest[:MATERIAL_DIGEST_TOTAL] if digest else None
+
+
 class PlannerAgent:
     """
     Planner Agent - First step in the lesson planning pipeline.
@@ -140,12 +323,67 @@ class PlannerAgent:
             self._client = app_config.openai.get_async_client()
         return self._client
 
+    async def _request_plan(
+        self, client: AsyncOpenAI, user_prompt: str, *, model: Optional[str]
+    ) -> dict:
+        """One request for the plan, parsed. ``model=None`` is the default model.
+
+        Raises ``json.JSONDecodeError`` when the answer is not a plan.
+        """
+        # CORE 2 #11a — JSON parse hardening (2026-05-09):
+        # Pass json_mode=True so OpenRouter forwards
+        # ``response_format={"type": "json_object"}`` to providers that
+        # support it (OpenAI, most OpenRouter routes). build_completion_kwargs
+        # automatically skips it for reasoning models (o1/o3/o4/DeepSeek-R1
+        # / Claude-thinking) where the API rejects the parameter, so this
+        # is byte-identical for those families and a hardening boost for
+        # everything else. The PLANNER_SYSTEM_PROMPT already asks for
+        # strict JSON so this is purely additive — no prompt change.
+        # 4 000, not 2 000. A reasoning model spends part of the budget
+        # thinking before it writes a character, so a ceiling that fits the
+        # JSON exactly does not fit it at all: on 2026-09-21 the plan came
+        # back cut off mid-array, the parse failed, and the run fell through
+        # to defaults — intent LOW, no subject concepts, and a lesson whose
+        # Planner card showed nothing from the teacher's documents. Same
+        # trap as ``AIX_WRITER_MAX_TOKENS`` on 2026-09-16, one agent over.
+        completion_kwargs = app_config.openai.build_completion_kwargs(
+            temperature=0.3,
+            max_tokens=_planner_max_tokens(),
+            json_mode=True,
+            model_override=model,
+        )
+        # 14k characters of instructions and examples, identical for every
+        # request: marked, a repeat within minutes costs a tenth.
+        response = await guarded_chat_completion(
+            client,
+            messages=prompt_cache.cacheable(
+                [
+                    {"role": "system", "content": PLANNER_SYSTEM_PROMPT},
+                    {"role": "user", "content": user_prompt},
+                ],
+                model=completion_kwargs["model"],
+            ),
+            **completion_kwargs,
+        )
+
+        # Parse JSON response (extract_response_content also logs thinking tokens)
+        content = extract_response_content(response, logger)
+        try:
+            return _extract_json(content)
+        except json.JSONDecodeError as exc:
+            exc.planner_raw = content[:300]  # for the parse-error log in ``plan``
+            raise
+
     async def plan(
         self,
         query: str,
         domain: str = "neuro",
         language: str = "it",
         pedagogical_intent: Optional[str] = None,
+        conversation_history: Optional[list[dict[str, str]]] = None,
+        existing_corpus: Optional[list[str]] = None,
+        educational_profile: Optional[dict[str, Any]] = None,
+        teacher_materials: Optional[str] = None,
     ) -> RetrievalPlan:
         """
         Analyze a teacher query and create a retrieval plan.
@@ -154,6 +392,21 @@ class PlannerAgent:
             query: Teacher's natural language query
             domain: Knowledge domain ("neuro" or "udl")
             language: Response language ("it" or "en")
+            educational_profile: The class and classroom. Only its constraints
+                are used here — devices, LIM, WiFi, furniture, class size — so
+                the concepts and queries chosen are ones the room can act on.
+                Without a profile the prompt is unchanged.
+            conversation_history: Earlier turns of the thread. Passing it marks
+                this as a follow-up and asks the planner for a
+                ``requires_new_retrieval`` verdict; omitting it keeps the
+                prompt byte-identical to a first turn.
+            existing_corpus: Names of what the thread already retrieved, which
+                is what the verdict is judged against.
+            teacher_materials: The teacher's attachments, as the Writer receives
+                them (``### filename`` sections). The Planner gets a short digest
+                of each, so it plans on the document instead of declaring it
+                unavailable and searching the web for "documento allegato".
+                Without it the prompt is unchanged.
 
         Returns:
             RetrievalPlan with structured search parameters
@@ -184,33 +437,82 @@ class PlannerAgent:
                 f"concepts to the knowledge graph.\n\n"
             ) + user_prompt
 
-        try:
-            # CORE 2 #11a — JSON parse hardening (2026-05-09):
-            # Pass json_mode=True so OpenRouter forwards
-            # ``response_format={"type": "json_object"}`` to providers that
-            # support it (OpenAI, most OpenRouter routes). build_completion_kwargs
-            # automatically skips it for reasoning models (o1/o3/o4/DeepSeek-R1
-            # / Claude-thinking) where the API rejects the parameter, so this
-            # is byte-identical for those families and a hardening boost for
-            # everything else. The PLANNER_SYSTEM_PROMPT already asks for
-            # strict JSON so this is purely additive — no prompt change.
-            completion_kwargs = app_config.openai.build_completion_kwargs(
-                temperature=0.3,
-                max_tokens=2000,
-                json_mode=True,
-            )
-            response = await guarded_chat_completion(
-                client,
-                messages=[
-                    {"role": "system", "content": PLANNER_SYSTEM_PROMPT},
-                    {"role": "user", "content": user_prompt},
-                ],
-                **completion_kwargs,
+        # Q1 · 1.1: the classroom, as constraints. A Planner that does not know
+        # the students have no devices retrieves evidence for device-based
+        # activities, and the Writer then has nothing better to write from.
+        constraints = render_classroom_constraints(educational_profile)
+        if constraints:
+            user_prompt = (
+                "Classroom constraints (choose concepts and search queries the "
+                "classroom can actually act on):\n"
+                + "\n".join(f"- {line}" for line in constraints)
+                + "\n\n"
+                + user_prompt
             )
 
-            # Parse JSON response (extract_response_content also logs thinking tokens)
-            content = extract_response_content(response, logger)
-            plan_data = _extract_json(content)
+        # The teacher's attachments. Before this the Planner never saw them —
+        # only the Writer did — and on "prepara una lezione a partire dal
+        # documento allegato" it reported the document as unavailable and sent
+        # that phrase to Wikipedia, YouTube and OpenAlex as a search query.
+        digest = material_digest(teacher_materials)
+        if digest:
+            user_prompt = (
+                "Teacher-attached material. The lesson must be built on this content: "
+                "take the key concepts and search queries from it. The material IS "
+                "available - never treat it as missing, and never use the attachment "
+                "itself (e.g. 'documento allegato') as a concept or a search query.\n"
+                + digest
+                + "\n\n"
+                + user_prompt
+            )
+
+        # T6: give the planner the thread it is answering inside. Prepended
+        # last so it reads first — whether this is a follow-up changes how
+        # everything below it should be read.
+        is_followup = bool(conversation_history)
+        if is_followup:
+            user_prompt = (
+                PLANNER_FOLLOWUP_TEMPLATE.format(
+                    history=_format_history(conversation_history),
+                    corpus=_format_corpus(existing_corpus),
+                )
+                + user_prompt
+            )
+
+        try:
+            cheap = planner_model()
+            plan_data: Optional[dict] = None
+            if cheap:
+                # The cheaper model goes first. A plan it cannot give, or is unsure
+                # of, is not accepted: it is asked again of the default model, so
+                # the saving never costs a worse plan (see ``weak_plan_reason``).
+                try:
+                    plan_data = await self._request_plan(client, user_prompt, model=cheap)
+                    reason = weak_plan_reason(plan_data)
+                except json.JSONDecodeError as exc:
+                    reason = f"unparseable plan ({exc.msg[:60]})"
+                    if not escalate_enabled():
+                        raise
+                except Exception as exc:  # noqa: BLE001 — the default model may still answer
+                    reason = f"call failed ({type(exc).__name__})"
+                    if not escalate_enabled():
+                        raise
+                if reason and escalate_enabled():
+                    logger.warning(
+                        "event=planner_escalation model=%s reason=%r — asking %s",
+                        cheap,
+                        reason,
+                        app_config.openai.model,
+                    )
+                    plan_data = None
+                elif reason:
+                    logger.warning(
+                        "event=planner_weak_plan model=%s reason=%r (escalation is off)",
+                        cheap,
+                        reason,
+                    )
+            if plan_data is None:
+                plan_data = await self._request_plan(client, user_prompt, model=None)
 
             # Extract query intent (with fallback for backward compatibility)
             query_intent = plan_data.get("query_intent", "lesson_creation")
@@ -266,6 +568,12 @@ class PlannerAgent:
                 # Point (a): Response language detection
                 response_language=response_language,
                 language_confidence=language_confidence,
+                # Only trusted when the question was actually asked. Reading it
+                # off a first-turn response would be reading a hallucination.
+                requires_new_retrieval=(
+                    _as_bool(plan_data.get("requires_new_retrieval")) if is_followup else None
+                ),
+                retrieval_reason=plan_data.get("retrieval_reason") if is_followup else None,
             )
 
             # Enhanced logging with scope status
@@ -284,6 +592,13 @@ class PlannerAgent:
                 f"concepts: {plan.key_concepts[:3]}..."
             )
 
+            if plan.requires_new_retrieval is not None:
+                logger.info(
+                    "[PlannerAgent] follow-up turn: requires_new_retrieval=%s (%s)",
+                    plan.requires_new_retrieval,
+                    plan.retrieval_reason or "no reason given",
+                )
+
             if plan.needs_external_apis:
                 logger.info(f"[PlannerAgent] 🌐 External APIs needed for: {subject_concepts}")
 
@@ -298,7 +613,7 @@ class PlannerAgent:
             # that the doc calls out). The fallback *shape* below is
             # intentionally identical to pre-#11a so behaviour is byte-
             # compatible — only the observability fingerprint changes.
-            raw_preview = content[:300] if "content" in dir() else "<not set>"
+            raw_preview = getattr(e, "planner_raw", "<not set>")
             logger.error(
                 "event=agent_parse_error agent=planner err=%s raw_preview=%r",
                 e,

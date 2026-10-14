@@ -12,10 +12,16 @@ import asyncio
 import os
 import sys
 
+import pytest
+
 # Add project path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from aix.agent.orchestrator import AgentOrchestrator, LessonPlanResult
+
+# These tests drive the real agents against Neo4j and the LLM provider, so
+# they only run where those exist. CI has neither, and skips this directory.
+pytestmark = pytest.mark.integration
 
 
 async def test_lesson_plan_result_structure():
@@ -26,9 +32,9 @@ async def test_lesson_plan_result_structure():
 
     # Create a sample result with media
     sample_media = {
-        'videos': [{'title': 'Test Video', 'url': 'https://youtube.com/test'}],
-        'resources': [{'title': 'Wikipedia', 'suggested_url': 'https://en.wikipedia.org'}],
-        'citations': [{'title': 'Test Paper', 'authors': ['Smith'], 'year': 2020}]
+        "videos": [{"title": "Test Video", "url": "https://youtube.com/test"}],
+        "resources": [{"title": "Wikipedia", "suggested_url": "https://en.wikipedia.org"}],
+        "citations": [{"title": "Test Paper", "authors": ["Smith"], "year": 2020}],
     }
 
     result = LessonPlanResult(
@@ -36,13 +42,13 @@ async def test_lesson_plan_result_structure():
         lesson_plan="Test lesson plan",
         approved=True,
         revision_count=1,
-        scores={'completeness': 8},
+        scores={"completeness": 8},
         nodes_used=5,
         recommendations_used=3,
         critique_summary="Good content",
         query_intent="lesson_creation",
         key_concepts=["concept1"],
-        curated_media=sample_media
+        curated_media=sample_media,
     )
 
     # Verify has_media property
@@ -51,8 +57,8 @@ async def test_lesson_plan_result_structure():
 
     # Verify to_dict includes media
     result_dict = result.to_dict()
-    assert 'curated_media' in result_dict, "to_dict should include curated_media"
-    assert result_dict['curated_media'] == sample_media, "curated_media should be preserved"
+    assert "curated_media" in result_dict, "to_dict should include curated_media"
+    assert result_dict["curated_media"] == sample_media, "curated_media should be preserved"
     print("✅ to_dict() includes curated_media")
 
     # Test without media
@@ -64,7 +70,7 @@ async def test_lesson_plan_result_structure():
         scores=None,
         nodes_used=0,
         recommendations_used=0,
-        critique_summary=None
+        critique_summary=None,
     )
 
     assert not result_no_media.has_media, "has_media should be False when no media"
@@ -88,8 +94,10 @@ async def test_backward_compatibility():
         return False
 
     # Verify orchestrator has all expected methods
-    assert hasattr(orchestrator, 'create_lesson_plan'), "Should have create_lesson_plan method"
-    assert hasattr(orchestrator, 'create_lesson_plan_sync'), "Should have create_lesson_plan_sync method"
+    assert hasattr(orchestrator, "create_lesson_plan"), "Should have create_lesson_plan method"
+    assert hasattr(orchestrator, "create_lesson_plan_sync"), (
+        "Should have create_lesson_plan_sync method"
+    )
     print("✅ All orchestrator methods exist")
 
     print("\n✅ TEST 2 PASSED: Backward compatibility verified")
@@ -124,10 +132,10 @@ async def test_full_pipeline_with_media():
         print(f"   Has Media: {result.has_media}")
 
         if result.curated_media:
-            videos = result.curated_media.get('videos', [])
-            resources = result.curated_media.get('resources', [])
-            citations = result.curated_media.get('citations', [])
-            images = result.curated_media.get('images', [])
+            videos = result.curated_media.get("videos", [])
+            resources = result.curated_media.get("resources", [])
+            citations = result.curated_media.get("citations", [])
+            images = result.curated_media.get("images", [])
 
             print(f"   Videos: {len(videos)}")
             print(f"   Resources: {len(resources)}")
@@ -140,7 +148,9 @@ async def test_full_pipeline_with_media():
             if citations:
                 print(f"   Sample Citation: {citations[0].get('title', 'N/A')}")
         else:
-            print("   (No curated media found - this is OK if mapping file doesn't cover these concepts)")
+            print(
+                "   (No curated media found - this is OK if mapping file doesn't cover these concepts)"
+            )
 
         # The test passes regardless of media presence (backward compatible)
         assert result.success, "Pipeline should succeed"
@@ -150,6 +160,7 @@ async def test_full_pipeline_with_media():
     except Exception as e:
         print(f"\n❌ Pipeline error: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -185,5 +196,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-
-

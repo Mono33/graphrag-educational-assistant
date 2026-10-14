@@ -103,9 +103,7 @@ def heartbeat_interval_s() -> float:
     Kept well below :func:`ttl_s` (default 15s vs 60s TTL) so a healthy run is
     never mistaken for a crashed one.
     """
-    return _float_env(
-        "AIX_RUN_HEARTBEAT_INTERVAL_S", _DEFAULT_HEARTBEAT_INTERVAL_S, lo=1.0
-    )
+    return _float_env("AIX_RUN_HEARTBEAT_INTERVAL_S", _DEFAULT_HEARTBEAT_INTERVAL_S, lo=1.0)
 
 
 def _worker_id() -> str:
@@ -149,7 +147,9 @@ class InMemoryRunRegistry:
         return None
 
     async def release(
-        self, lesson_id: uuid.UUID, token: Optional[str] = None  # noqa: ARG002
+        self,
+        lesson_id: uuid.UUID,
+        token: Optional[str] = None,  # noqa: ARG002
     ) -> None:
         self._active.discard(lesson_id)
 
@@ -232,9 +232,7 @@ class DbRunRegistry:
             )
             await session.commit()
             if result.rowcount == 1:
-                logger.info(
-                    "[run-registry] took over stale run for lesson_id=%s", lesson_id
-                )
+                logger.info("[run-registry] took over stale run for lesson_id=%s", lesson_id)
                 return token.hex
             return None
 
@@ -290,9 +288,7 @@ class DbRunRegistry:
 
         cutoff = datetime.utcnow() - timedelta(seconds=ttl_s())
         async with self._session_maker() as session:
-            result = await session.execute(
-                select(AgentRun).where(AgentRun.heartbeat_at >= cutoff)
-            )
+            result = await session.execute(select(AgentRun).where(AgentRun.heartbeat_at >= cutoff))
             return [
                 {
                     "lesson_id": str(row.lesson_id),
@@ -353,9 +349,7 @@ def set_run_registry(registry: Optional[RunRegistry]) -> None:
     _REGISTRY = registry
 
 
-async def heartbeat_loop(
-    registry: RunRegistry, lesson_id: uuid.UUID, token: str
-) -> None:
+async def heartbeat_loop(registry: RunRegistry, lesson_id: uuid.UUID, token: str) -> None:
     """Refresh the run's heartbeat until cancelled.
 
     Run as a background task for the duration of a long generation. On the
@@ -370,8 +364,6 @@ async def heartbeat_loop(
             try:
                 await registry.heartbeat(lesson_id, token)
             except Exception:  # noqa: BLE001 — heartbeat must not kill the run
-                logger.warning(
-                    "[run-registry] heartbeat failed for lesson_id=%s", lesson_id
-                )
+                logger.warning("[run-registry] heartbeat failed for lesson_id=%s", lesson_id)
     except asyncio.CancelledError:
         raise

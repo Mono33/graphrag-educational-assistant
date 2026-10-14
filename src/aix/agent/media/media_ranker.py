@@ -141,7 +141,9 @@ def _rank_bucket(
         return items
 
     scored: list[tuple[float, int, dict[str, Any]]] = []
-    for idx, (item, text) in enumerate(zip(items, texts)):
+    # ``texts`` is built by a comprehension over ``items``, so the two are the
+    # same length by construction; ``strict`` locks that invariant in place.
+    for idx, (item, text) in enumerate(zip(items, texts, strict=True)):
         emb = embeddings.get(text)
         sim = embedder.compute_similarity(query_embedding, emb) if emb is not None else 0.0
         quality = _quality_signal(bucket, item)

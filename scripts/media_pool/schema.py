@@ -97,7 +97,9 @@ def save_pool(path: str, domain: str, model: str, entries: dict[str, dict]) -> N
         "entries": entries,
     }
     dir_ = os.path.dirname(path) or "."
-    with tempfile.NamedTemporaryFile("w", dir=dir_, suffix=".tmp", delete=False, encoding="utf-8") as f:
+    with tempfile.NamedTemporaryFile(
+        "w", dir=dir_, suffix=".tmp", delete=False, encoding="utf-8"
+    ) as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
         tmp_path = f.name
     os.replace(tmp_path, path)
@@ -117,7 +119,9 @@ def save_checkpoint(path: str, checkpoint: dict[str, str]) -> None:
     import tempfile
 
     dir_ = os.path.dirname(path) or "."
-    with tempfile.NamedTemporaryFile("w", dir=dir_, suffix=".tmp", delete=False, encoding="utf-8") as f:
+    with tempfile.NamedTemporaryFile(
+        "w", dir=dir_, suffix=".tmp", delete=False, encoding="utf-8"
+    ) as f:
         json.dump(checkpoint, f, ensure_ascii=False, indent=2)
         tmp_path = f.name
     os.replace(tmp_path, path)

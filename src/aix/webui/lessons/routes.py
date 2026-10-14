@@ -62,6 +62,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import html
 import logging
 import re
 import uuid
@@ -75,6 +76,12 @@ from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+# A JSON column mutated in place is invisible to the unit of work: the list
+# object is the same one it already knows about, so nothing looks dirty. The
+# shadow annotation edits an entry inside ``uploaded_files_json`` and has to say
+# so explicitly.
+from sqlalchemy.orm.attributes import flag_modified
 from sse_starlette.sse import EventSourceResponse
 
 from aix.api.schemas.educational_profile import (
@@ -102,13 +109,37 @@ from aix.core.concurrency import (
 )
 from aix.core.run_registry import get_run_registry, heartbeat_loop
 from aix.webui.agent import run_agent_stream
+from aix.webui.agent.light import LIGHT_KEY, run_light_turn, take_light_turn, wants_light_turn
+from aix.webui.auth.csrf import token_for as _csrf_token_for
 from aix.webui.auth.dependencies import optional_current_user
 from aix.webui.auth.models import User
 from aix.webui.db import get_async_session
+from aix.webui.errors import report
+from aix.webui.features import (
+    export_docx_enabled,
+    export_outline_enabled,
+    export_pdf_enabled,
+)
+from aix.webui.features import (
+    register as _register_feature_flags,
+)
 from aix.webui.lessons.display import lesson_to_row
 from aix.webui.lessons.models import Lesson, LessonMessage, SavedProfile
 from aix.webui.lessons.schemas import form_to_profile_dict, profile_to_form_values
-from aix.webui.lessons.uploads import delete_upload, save_upload
+from aix.webui.lessons.uploads import (
+    MAX_FILE_BYTES,
+    delete_upload,
+    save_upload,
+    too_large_message,
+)
+from aix.webui.materials.citations import (
+    labels_for_lesson_safe,
+    resolve_for_lesson,
+    with_sources,
+)
+from aix.webui.materials.readiness import states_for_lesson_safe, still_preparing
+from aix.webui.materials.shadow import record_upload, retire_material
+from aix.webui.sanitize import sanitize_html
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +147,18 @@ logger = logging.getLogger(__name__)
 _PACKAGE_DIR = Path(__file__).resolve().parents[1]
 _TEMPLATES_DIR = _PACKAGE_DIR / "templates"
 templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
+
+# The webui keeps three Jinja environments over the same templates directory
+# (``aix.webui.routes``, ``aix.webui.lessons.routes``, ``aix.webui.auth.routes``),
+# so the CSRF global has to be registered on each of them. A global rather than
+# a per-route context entry: a page added without the token would fail its first
+# POST with a 403, and the author would find out in production.
+templates.env.globals["csrf_token"] = _csrf_token_for
+
+# §5.2: what the templates offer must be what the server accepts, and both must
+# follow the flags. A hard-coded accept list in the HTML is how the paperclip
+# came to advertise formats the previous product never took.
+_register_feature_flags(templates)
 
 
 router = APIRouter(prefix="/webui", tags=["webui-lessons"])
@@ -155,6 +198,7 @@ def _label_dicts() -> dict[str, Any]:
 async def _load_chat_messages(
     session: AsyncSession,
     lesson_id: uuid.UUID,
+    labels: Optional[dict[str, str]] = None,
 ) -> list[dict[str, Any]]:
     """
     Load all ``LessonMessage`` rows for a lesson and shape them into the
@@ -188,7 +232,9 @@ async def _load_chat_messages(
                 # markdown — teacher's typed query, escape-safe via Jinja's
                 # default autoescape).
                 "content_html": (
-                    _markdown_to_html(msg.content_md or "") if msg.role == "assistant" else None
+                    _markdown_to_html(msg.content_md or "", labels)
+                    if msg.role == "assistant"
+                    else None
                 ),
                 "turn_index": msg.turn_index,
                 "agent_kind": msg.agent_kind,
@@ -343,8 +389,8 @@ def _live_media_ranking_query(lesson: Lesson) -> Optional[str]:
     parts = [
         profile.get("specific_topic"),  # argomento (most specific)
         _clean_lesson_query((getattr(lesson, "teacher_query", None) or "").strip()),
-        profile.get("subject_area"),     # materia (context only)
-        group.get("grade"),              # school level (context only)
+        profile.get("subject_area"),  # materia (context only)
+        group.get("grade"),  # school level (context only)
     ]
     ordered: list[str] = []
     seen: set[str] = set()
@@ -423,8 +469,7 @@ async def lesson_list(
 
     return templates.TemplateResponse(
         request,
-
-            "pages/lesson_list.html",
+        "pages/lesson_list.html",
         {
             "user": user,
             "lessons": lessons,  # legacy context var, kept for compat
@@ -520,14 +565,57 @@ async def lesson_card_fragment(
         lesson.status,
         len(lesson.lesson_plan_md or ""),
     )
+
+    # A light turn answered: show the answer, not the lesson again.
+    latest = (
+        await session.execute(
+            select(LessonMessage)
+            .where(LessonMessage.lesson_id == lesson.id)
+            .order_by(LessonMessage.turn_index.desc(), LessonMessage.created_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if latest is not None and latest.role == "assistant" and latest.agent_kind == "tutor":
+        return templates.TemplateResponse(
+            request,
+            "partials/chat_light_card.html",
+            {
+                "lesson": lesson,
+                "pending": False,
+                "turn": latest.turn_index,
+                "meta": latest.meta_json or {},
+                "answer_html": _markdown_to_html(
+                    latest.content_md or "", await labels_for_lesson_safe(session, lesson)
+                ),
+            },
+        )
+
+    # The run's own verdict, as recorded with its answer. This card used to be
+    # handed ``{"approved": status == "complete", "revision_count": 0}``, so
+    # every finished lesson read "approvata dal critic · 0 revisioni" -- one the
+    # Critic had sent back twice and never approved included, while the log
+    # said ``approved=False revisions=2`` (2026-09-25). No record, no badge:
+    # never an invented one.
+    run_meta = await session.scalar(
+        select(LessonMessage.meta_json)
+        .where(
+            LessonMessage.lesson_id == lesson.id,
+            LessonMessage.role == "assistant",
+            func.coalesce(LessonMessage.agent_kind, "") != "tutor",
+        )
+        .order_by(LessonMessage.turn_index.desc(), LessonMessage.created_at.desc())
+        .limit(1)
+    )
     return templates.TemplateResponse(
         request,
-
-            "partials/chat_lesson_card.html",
+        "partials/chat_lesson_card.html",
         {
             "lesson": lesson,
-            "lesson_plan_html": _markdown_to_html(lesson.lesson_plan_md or ""),
-            "meta": {"approved": lesson.status == "complete", "revision_count": 0},
+            "lesson_plan_html": _markdown_to_html(
+                lesson.lesson_plan_md or "",
+                await labels_for_lesson_safe(session, lesson),
+            ),
+            "meta": run_meta if isinstance(run_meta, dict) else {},
         },
     )
 
@@ -610,14 +698,101 @@ async def lesson_media_live(
     )
     return templates.TemplateResponse(
         request,
-
-            "partials/media_live_sections.html",
+        "partials/media_live_sections.html",
         {
             "videos": panel.get("videos") or [],
             "citations": panel.get("citations") or [],
             "wikipedia": panel.get("wikipedia") or [],
         },
     )
+
+
+# ----------------------------------------------------------------------------
+# GET /webui/lesson/{id}/attachments-fragment — the tray, with pipeline state
+# ----------------------------------------------------------------------------
+
+
+#: What the chat shows, and the Writer reads, for a refinement chip.
+_REFINEMENT_LABELS = {
+    "simplify": "Semplifica la lezione",
+    "deepen": "Approfondisci la lezione",
+    "more_activities": "Aggiungi attività interattive",
+    "adapt_class": "Adatta la lezione alla classe",
+    "custom": "Rifinisci la lezione",
+}
+
+
+def refinement_label(code: str, detail: Optional[str] = None) -> str:
+    """The teacher's turn for a chip: «Semplifica la lezione: più breve»."""
+    label = _REFINEMENT_LABELS.get(code, "Rifinisci la lezione")
+    if code == "custom" and detail:
+        return detail[:2000]
+    return f"{label}: {detail}"[:2000] if detail else label
+
+
+def remember_graph_search(lesson: Lesson, form: Any) -> None:
+    """Keep the teacher's Knowledge Graph switch on the lesson, if the form had one.
+
+    Only the follow-up input shows the switch and sends ``graph_search_choice``;
+    an unticked checkbox sends nothing, which is why the marker is needed to
+    tell "switched off" from "not asked". Kept in the profile and left there, so
+    the switch renders as she last set it on the turns after.
+    """
+    if form.get("graph_search_choice") != "1":
+        return
+    profile = dict(lesson.educational_profile_json or {})
+    profile["__graph_search__"] = form.get("graph_search") == "on"
+    lesson.educational_profile_json = profile
+
+
+@router.get(
+    "/lesson/{lesson_id}/attachments-fragment",
+    response_class=HTMLResponse,
+    name="webui_lesson_attachments_fragment",
+)
+async def lesson_attachments_fragment(
+    request: Request,
+    lesson_id: uuid.UUID,
+    session: AsyncSession = Depends(get_async_session),
+    user: Optional[User] = Depends(optional_current_user),
+) -> Response:
+    """The attachment tray, told what the pipeline is doing with each document.
+
+    The tray asks for this itself while anything is still being prepared (§6.1),
+    which is why the state is computed here and not at the five places that
+    render the tray: one of them would have been forgotten, and a chip that
+    lies about readiness is worse than a chip that says nothing.
+
+    The response also carries the send button out of band, so it unlocks by
+    itself when the last document turns ready — the teacher never has to guess
+    whether it is safe to press Invia (decision U1). The button, not the whole
+    chat input: swapping the input every two seconds wiped whatever the teacher
+    was typing while a document was prepared (2026-09-29).
+    """
+    if user is None:
+        raise HTTPException(status_code=401)
+
+    result = await session.execute(
+        select(Lesson).where(Lesson.id == lesson_id, Lesson.owner_id == user.id)
+    )
+    lesson = result.scalar_one_or_none()
+    if lesson is None:
+        raise HTTPException(status_code=404, detail="Lezione non trovata")
+
+    states = await states_for_lesson_safe(session, lesson_id=lesson.id, owner_id=user.id)
+    preparing = [state for state in states.values() if state.preparing]
+
+    tray = _render_partial(
+        request,
+        "partials/chat_attachments.html",
+        {"lesson": lesson, "material_states": states},
+    )
+    send_button = _render_partial(
+        request,
+        "partials/chat_send_button.html",
+        {"lesson": lesson, "materials_preparing": bool(preparing), "_send_oob": True},
+    )
+    return HTMLResponse(content=tray + send_button)
 
 
 # ----------------------------------------------------------------------------
@@ -674,8 +849,7 @@ async def lesson_chat_input_fragment(
     )
     return templates.TemplateResponse(
         request,
-
-            "partials/chat_input.html",
+        "partials/chat_input.html",
         {
             "lesson": lesson,
             # _oob=False because this response is targeted explicitly via
@@ -739,8 +913,7 @@ async def lesson_new_get(
 
     return templates.TemplateResponse(
         request,
-
-            "pages/lesson_new.html",
+        "pages/lesson_new.html",
         {
             "title": "Nuova lezione · AixLearning",
             "phase": "P3 — Chat workspace + allegati",
@@ -814,8 +987,7 @@ async def lesson_create(
         )
         return templates.TemplateResponse(
             request,
-
-                "pages/lesson_new.html",
+            "pages/lesson_new.html",
             {
                 "title": "Nuova lezione · AixLearning",
                 "phase": "P3 — Chat workspace + allegati",
@@ -909,12 +1081,16 @@ async def lesson_show(
     if lesson is None:
         raise HTTPException(status_code=404, detail="Lezione non trovata")
 
+    # §8.6 / U3 — the names of the documents this lesson may cite, looked up once
+    # for the whole page: the plan below and every assistant turn of the history.
+    material_labels = await labels_for_lesson_safe(session, lesson)
+
     # Pre-render the persisted lesson plan to HTML so the lesson card
     # template doesn't have to know which markdown extensions we use.
     # Only the terminal "complete" state needs this — running/error/draft
     # never paint it.
     lesson_plan_html = (
-        _markdown_to_html(lesson.lesson_plan_md)
+        _markdown_to_html(lesson.lesson_plan_md, material_labels)
         if lesson.status == "complete" and lesson.lesson_plan_md
         else None
     )
@@ -928,7 +1104,7 @@ async def lesson_show(
     # Multi-turn history for the chat transcript (#10.3d). Returns []
     # for legacy / fresh lessons → templates fall back to the legacy
     # single-bubble layout (chat_user_message.html + state-driven block).
-    messages = await _load_chat_messages(session, lesson.id)
+    messages = await _load_chat_messages(session, lesson.id, material_labels)
 
     # F6: "What's Next?" — adjacent KG concepts for completed lessons.
     # Runs in a sync threadpool to keep the async route non-blocking.
@@ -964,8 +1140,7 @@ async def lesson_show(
 
     return templates.TemplateResponse(
         request,
-
-            "pages/lesson_show.html",
+        "pages/lesson_show.html",
         {
             "title": (lesson.title or "Lezione") + " · AixLearning",
             "phase": "P3 — Chat workspace + allegati",
@@ -1068,23 +1243,17 @@ async def lesson_run(
     form = await request.form()
     query_raw = form.get("query")
     new_query = query_raw.strip() if isinstance(query_raw, str) and query_raw.strip() else None
+    # Decided before anything is written: a light turn answers about the lesson
+    # and leaves ``teacher_query`` -- the lesson's topic -- as it was.
+    light = wants_light_turn(lesson, form, has_query=new_query is not None)
 
     if new_query is not None:
-        # Server-side validation mirroring the textarea ``minlength=3`` /
-        # ``maxlength=2000``. Defensive — clients can be tampered with.
-        if len(new_query) < 3:
-            return HTMLResponse(
-                content=(
-                    '<div class="rounded-lg border border-amber-200 bg-amber-50 '
-                    'text-amber-900 px-3 py-2 text-sm">'
-                    "La richiesta deve avere almeno 3 caratteri."
-                    "</div>"
-                ),
-                status_code=422,
-            )
+        # Server-side mirror of the textarea's ``maxlength=2000``. No minimum: a
+        # reply as short as «sì» is a real answer in a conversation (2026-10-14).
         if len(new_query) > 2000:
             new_query = new_query[:2000]
-        lesson.teacher_query = new_query
+        if not light:
+            lesson.teacher_query = new_query
 
     # Defensive: if the teacher posts /run without ever having set a
     # query (no first-turn submit, then somehow triggered Rigenera), bail
@@ -1106,6 +1275,24 @@ async def lesson_run(
                 '<div class="rounded-lg border border-amber-200 bg-amber-50 '
                 'text-amber-900 px-3 py-2 text-sm">'
                 "Una generazione è già in corso. Attendi il termine."
+                "</div>"
+            ),
+            status_code=409,
+        )
+
+    # §6.1.4 / decision U1 — a lesson is generated from material that is ready.
+    # Without this, a request sent seconds after the upload is written from the
+    # pasted text while the teacher believes the document was read: exactly what
+    # happened on 2026-09-16. The tray polls and re-enables the send button by
+    # itself, so waiting costs the teacher nothing but a few seconds.
+    preparing = await still_preparing(session, lesson_id=lesson.id, owner_id=user.id)
+    if preparing:
+        names = ", ".join(html.escape(name) for name in preparing)
+        return HTMLResponse(
+            content=(
+                '<div class="rounded-lg border border-amber-200 bg-amber-50 '
+                'text-amber-900 px-3 py-2 text-sm">'
+                f"Sto ancora preparando {names}. Parte da solo appena è pronto."
                 "</div>"
             ),
             status_code=409,
@@ -1136,10 +1323,10 @@ async def lesson_run(
     mode = "follow_up" if is_follow_up else "new"
 
     # ── Chat-based pedagogical intent — two-phase flow ───────────────
-    # Phase 1 (planner-only): first new-run on a draft lesson, before the
+    # Phase 1 (ask first): first new-run on a draft lesson, before the
     # teacher has confirmed an intent from the chat card.  We flag this
-    # with __planner_only__ in profile_json so the SSE generator knows to
-    # stop after the planner and render the intent selection card.
+    # with __ask_intent__ in profile_json so the SSE generator renders the
+    # intent selection card straight away, without running any agent.
     #
     # Phase 2 (full run): the teacher clicked a chip in the intent card
     # and the POST carries intent_confirmed=1.  We store the chosen intent
@@ -1149,11 +1336,18 @@ async def lesson_run(
     # Refinement runs and follow-up turns bypass phase 1 entirely.
     # ─────────────────────────────────────────────────────────────────────
     intent_confirmed = form.get("intent_confirmed") == "1"
-    is_phase1 = (mode == "new") and (not intent_confirmed)
+
+    # A teacher who already chose the intent in the profile has answered the
+    # question the card asks. Asking again stopped the generation halfway and
+    # spent a whole Planner call before the real run (measured: 78 s).
+    already_chosen = str(
+        (lesson.educational_profile_json or {}).get("pedagogical_intent") or ""
+    ).strip()
+    is_phase1 = (mode == "new") and (not intent_confirmed) and not already_chosen
 
     if is_phase1:
         _prof = dict(lesson.educational_profile_json or {})
-        _prof["__planner_only__"] = True
+        _prof["__ask_intent__"] = True
         lesson.educational_profile_json = _prof
     elif intent_confirmed:
         _intent_code_raw = form.get("pedagogical_intent_code")
@@ -1170,6 +1364,7 @@ async def lesson_run(
                 else None
             )
             _prof = dict(lesson.educational_profile_json or {})
+            _prof.pop("__ask_intent__", None)
             _prof.pop("__planner_only__", None)
             _prof["pedagogical_intent"] = (
                 f"{_intent_code}: {_intent_detail}" if _intent_detail else _intent_code
@@ -1193,6 +1388,7 @@ async def lesson_run(
         if isinstance(refinement_detail_raw, str) and refinement_detail_raw.strip()
         else None
     )
+    chip_label: Optional[str] = None
     if refinement_code:
         _REFINEMENT_PROMPTS = {
             "simplify": "Reduce length by ~30%, simplify vocabulary, keep only essential concepts",
@@ -1208,6 +1404,28 @@ async def lesson_run(
         # Store transiently in profile_json so service.py can read it
         profile = dict(lesson.educational_profile_json or {})
         profile["__refinement__"] = refinement_instruction
+        lesson.educational_profile_json = profile
+        # A chip sends no text: the chat shows the chip, not a repeat of the
+        # previous request. ``teacher_query`` stays the topic the planner needs.
+        if new_query is None:
+            chip_label = refinement_label(refinement_code, refinement_detail)
+
+    # The teacher's switch for the Knowledge Graph search on a follow-up turn.
+    # Kept in the profile like ``__refinement__``, and *left there*: the switch
+    # renders in the state she last set, so turning the graph off once keeps it
+    # off for the turns after, until she turns it back on (2026-09-29: asked
+    # about a chapter of her book, the run searched the graph again anyway).
+    # Only a form that shows the switch carries ``graph_search_choice``; the
+    # first turn always searches.
+    remember_graph_search(lesson, form)
+    if light:
+        profile = dict(lesson.educational_profile_json or {})
+        profile[LIGHT_KEY] = {"answer_here": form.get("light_answer") == "1"}
+        lesson.educational_profile_json = profile
+    elif form.get("full_run") == "1":
+        # «Lezione completa»: the whole chain, with the Knowledge Graph.
+        profile = dict(lesson.educational_profile_json or {})
+        profile["__graph_search__"] = True
         lesson.educational_profile_json = profile
 
     # Backfill turn 1 from legacy fields if this is a follow-up on a
@@ -1274,7 +1492,7 @@ async def lesson_run(
     # user just typed it); we fall back to lesson.teacher_query only as a
     # safety net for legacy buttons that POST with no body. The validation
     # above already guarantees at least one is non-empty.
-    user_msg_content = new_query or lesson.teacher_query
+    user_msg_content = new_query or chip_label or lesson.teacher_query
 
     # Phase 2 (intent_confirmed) is not a new user turn — the user message
     # was already persisted in phase 1. Skip to avoid a duplicate row that
@@ -1311,7 +1529,7 @@ async def lesson_run(
         "▶️  Lesson run accepted: id=%s owner=%s mode=%s turn=%s has_new_query=%s uploads=%s",
         lesson.id,
         user.id,
-        mode,
+        "light" if light else mode,
         new_turn_index,
         bool(new_query),
         len(lesson.uploaded_files_json or []),
@@ -1322,12 +1540,13 @@ async def lesson_run(
     # history. The chat_pane below (running state) will append per-agent
     # cards live as the SSE stream fires; the final assistant message is
     # written by the service on success.
-    messages = await _load_chat_messages(session, lesson.id)
+    messages = await _load_chat_messages(
+        session, lesson.id, await labels_for_lesson_safe(session, lesson)
+    )
 
     return templates.TemplateResponse(
         request,
-
-            "partials/chat_conversation.html",
+        "partials/chat_conversation.html",
         {
             "lesson": lesson,
             "user": user,
@@ -1413,19 +1632,98 @@ async def lesson_upload(
             content='<p class="text-sm text-rose-700 px-2 py-1">Nessun file selezionato.</p>',
             status_code=422,
         )
-    content = await up.read()  # type: ignore[union-attr]
     filename = getattr(up, "filename", None) or "upload"
 
+    # Measured before it is read, not after. ``save_upload`` checks the size
+    # too, but by then the whole file is a bytes object in RAM: with the limit
+    # at 100 MB a teacher who drags a 400 MB video would cost 400 MB of the
+    # pilot VM's 4 GB before being told no. Starlette fills ``size`` from the
+    # multipart part, and a client that sends none falls through to the check
+    # inside ``save_upload``, which is authoritative either way.
+    declared = getattr(up, "size", None)
+    if isinstance(declared, int) and declared > MAX_FILE_BYTES:
+        logger.info(
+            "[upload] refused %s (%.1f MB) for lesson %s before reading it: over the limit",
+            filename,
+            declared / (1024 * 1024),
+            lesson_id,
+        )
+        return HTMLResponse(
+            content=f'<p class="text-sm text-rose-700 px-2 py-1">{html.escape(too_large_message())}</p>',
+            status_code=422,
+        )
+
+    content = await up.read()  # type: ignore[union-attr]
+
     try:
-        manifest, _entry = save_upload(lesson_id, filename, content, lesson.uploaded_files_json)
+        # In a thread: parsing a scan runs OCR, and that must not stall the
+        # event loop every other teacher's chat is streaming on.
+        manifest, entry = await asyncio.to_thread(
+            save_upload, lesson_id, filename, content, lesson.uploaded_files_json
+        )
         lesson.uploaded_files_json = manifest
         await session.commit()
         await session.refresh(lesson)
     except ValueError as exc:
+        # Logged, because a refusal that only exists in the browser is a
+        # support call. A teacher uploaded a 13.5 MB magazine issue and the
+        # server recorded nothing but "422 Unprocessable Entity" — from the
+        # log alone there was no telling a rejected file from a broken
+        # attachment, and finding out took reading the code (2026-09-22).
+        #
+        # The name and the size, never the bytes: the file is the teacher's.
+        logger.info(
+            "[upload] refused %s (%.1f MB) for lesson %s: %s",
+            filename,
+            len(content) / (1024 * 1024),
+            lesson_id,
+            exc,
+        )
         return HTMLResponse(
-            content=f'<p class="text-sm text-rose-700 px-2 py-1">{exc}</p>',
+            content=f'<p class="text-sm text-rose-700 px-2 py-1">{html.escape(str(exc))}</p>',
             status_code=422,
         )
+
+    # Fase 1 · PR 4 — shadow mode. Everything above is untouched and already
+    # committed; this runs after, on its own session, and never raises. With
+    # AIX_MATERIALS_ENABLED off it is a single boolean check and returns None.
+    #
+    # The order is deliberate: the teacher's file is safely stored and the
+    # response is already decided before the new pipeline is asked to do
+    # anything, so a broken pipeline cannot become a failed upload.
+    shadow = await record_upload(
+        owner_id=user.id, filename=filename, content=content, lesson_id=lesson_id
+    )
+    if shadow:
+        # Written straight onto the JSON column rather than through
+        # ``save_upload``: the legacy manifest format gains three optional keys
+        # and loses nothing, which is what lets the flag be turned back off.
+        #
+        # Guarded like the rest: ``record_upload`` cannot raise, but this commit
+        # is on the request's own session and could. Losing the annotation costs
+        # a little observability; failing the upload over it would cost the
+        # teacher their file.
+        try:
+            # Found by id rather than mutated through ``entry``: the refresh
+            # above reloaded the column from the database, so the list the
+            # route is holding is no longer the one attached to the lesson and
+            # writing into it would update nothing.
+            current = next(
+                (
+                    f
+                    for f in (lesson.uploaded_files_json or [])
+                    if isinstance(f, dict) and f.get("id") == entry["id"]
+                ),
+                None,
+            )
+            if current is not None:
+                current.update(shadow)
+                flag_modified(lesson, "uploaded_files_json")
+                await session.commit()
+                await session.refresh(lesson)
+        except Exception as exc:  # noqa: BLE001
+            await session.rollback()
+            report(exc, context=f"shadow manifest annotation lesson={lesson_id}")
 
     return templates.TemplateResponse(
         request,
@@ -1467,6 +1765,17 @@ async def lesson_upload_delete(
             status_code=409,
         )
 
+    # Read before removing: ``delete_upload`` returns what is left, so the
+    # entry's shadow ids are gone by the time it comes back.
+    doomed = next(
+        (
+            f
+            for f in (lesson.uploaded_files_json or [])
+            if isinstance(f, dict) and f.get("id") == file_id
+        ),
+        None,
+    )
+
     try:
         manifest = delete_upload(lesson_id, file_id, lesson.uploaded_files_json)
         lesson.uploaded_files_json = manifest
@@ -1477,6 +1786,12 @@ async def lesson_upload_delete(
             content=f'<p class="text-sm text-rose-700 px-2 py-1">{exc}</p>',
             status_code=404,
         )
+
+    # Fase 1 · PR 4 — the shadow material goes with its attachment. Best effort
+    # like the rest: an attachment the teacher removed must disappear from the
+    # tray whether or not the shadow pipeline is reachable.
+    if doomed and doomed.get("material_id"):
+        await retire_material(material_id=doomed["material_id"], owner_id=user.id)
 
     return templates.TemplateResponse(
         request,
@@ -1618,14 +1933,21 @@ async def lesson_stream(
             yield terminal_marker
             return
 
-        # ── Phase 1: planner-only run + intent selection card ────────────
+        # ── Phase 1: ask for the pedagogical intent, and ask it first ────
         # Triggered when the teacher submits their first query on a draft
-        # lesson.  We run only the Planner, show its card, then show the
-        # intent selection card and let the SSE stream end.  The teacher
-        # picks an intent from the card → POST /run with intent_confirmed=1
-        # → Phase 2 (full pipeline) starts.
+        # lesson and no intent is known yet. The card is shown immediately;
+        # the teacher picks → POST /run with intent_confirmed=1 → phase 2
+        # runs the whole pipeline once.
+        #
+        # Until 2026-09-21 this branch ran the Planner first, to show its
+        # card as a preview. It cost 14 s of a run the teacher then had to
+        # wait through again — phase 2 re-plans from scratch — and the two
+        # plans differed (6 search queries against 5, different pedagogical
+        # concepts), so the analysis shown before the choice was not the
+        # analysis the lesson was built on. The intent options are a fixed
+        # list; they never came from that plan. Nothing was saved from it.
         _profile_j = lesson.educational_profile_json or {}
-        if _profile_j.get("__planner_only__"):
+        if _profile_j.get("__ask_intent__") or _profile_j.get("__planner_only__"):
             # Atomically claim the lesson. ``None`` → another (live) connection
             # or worker won the race between our is_active() check and here.
             _token = await _registry.claim(lesson.id, owner_id=lesson.owner_id)
@@ -1634,42 +1956,16 @@ async def lesson_stream(
                 yield terminal_marker
                 return
             try:
-                from aix.agent.agents.planner_agent import PlannerAgent
                 from aix.api.schemas.educational_profile import (
                     PEDAGOGICAL_INTENT_OPTIONS as _INTENT_OPTS,
                 )
 
                 # Pop the flag so a reconnect doesn't re-trigger phase 1
                 _updated_profile = dict(_profile_j)
+                _updated_profile.pop("__ask_intent__", None)
                 _updated_profile.pop("__planner_only__", None)
                 lesson.educational_profile_json = _updated_profile
 
-                _planner = PlannerAgent()
-                _plan = await _planner.plan(
-                    query=lesson.teacher_query or "",
-                    domain=lesson.domain or "neuro",
-                    language="it",
-                )
-
-                _planner_payload = {
-                    "query_intent": _plan.query_intent,
-                    "intent_label": _plan.query_intent,
-                    "key_concepts": _plan.key_concepts,
-                    "search_queries": _plan.search_queries,
-                    "lesson_type": _plan.lesson_type,
-                    "target_grade": _plan.target_grade,
-                    "reasoning": _plan.reasoning,
-                    "nodes_count": 0,
-                    "scope_status": _plan.scope_status,
-                }
-                yield {
-                    "event": "card",
-                    "data": _render_partial(
-                        request,
-                        "partials/chat_planner_card.html",
-                        {"payload": _planner_payload, "lesson": lesson},
-                    ),
-                }
                 yield {
                     "event": "card",
                     "data": _render_partial(
@@ -1754,8 +2050,14 @@ async def lesson_stream(
         # other workers don't mistake it for a crashed/stale run. No-op on the
         # in-memory backend.
         _hb_task = asyncio.create_task(heartbeat_loop(_registry, lesson.id, _token))
+        light = take_light_turn(lesson)
+        events = (
+            run_light_turn(lesson, session, **light)
+            if light is not None
+            else run_agent_stream(lesson, session)
+        )
         try:
-            async for event in run_agent_stream(lesson, session):
+            async for event in events:
                 # Bail early if the client disconnected (closed tab,
                 # navigated away). The agent in run_agent_stream still
                 # progresses to a terminal state in the background; the
@@ -1913,8 +2215,7 @@ async def lesson_profile_edit(
 
     return templates.TemplateResponse(
         request,
-
-            "partials/profile_sidebar_edit.html",
+        "partials/profile_sidebar_edit.html",
         {
             "lesson": lesson,
             "profile_errors": None,
@@ -1957,8 +2258,7 @@ async def lesson_profile_save(
         logger.info("Profile edit validation failed: %s", exc.errors())
         return templates.TemplateResponse(
             request,
-
-                "partials/profile_sidebar_edit.html",
+            "partials/profile_sidebar_edit.html",
             {
                 "lesson": lesson,
                 "profile_errors": [
@@ -2014,7 +2314,7 @@ async def lesson_export(
     session: AsyncSession = Depends(get_async_session),
     user: Optional[User] = Depends(optional_current_user),
 ) -> Response:
-    """Download the lesson plan as markdown or plain text."""
+    """Download the lesson: Markdown, plain text, PDF, Word or the outline."""
     if user is None:
         raise HTTPException(status_code=401)
 
@@ -2030,11 +2330,16 @@ async def lesson_export(
     slug = (lesson.title or f"lezione-{lesson.id}").lower()
     slug = "".join(c if c.isalnum() or c in "-_" else "-" for c in slug).strip("-")[:60]
 
+    # §8.6 — resolve the citation markers once, here, with the names of the
+    # documents this lesson is bound to. Every format below exports the same
+    # readable reference, and an internal address reaches none of them.
+    plan_md = await resolve_for_lesson(lesson.lesson_plan_md, session, lesson)
+
     if format == "md":
         # Keep the machine-readable Art. 50 comment that the agent stamped at
         # the top of the markdown; add the header too (#21).
         return Response(
-            content=lesson.lesson_plan_md,
+            content=plan_md,
             media_type="text/markdown; charset=utf-8",
             headers={
                 "Content-Disposition": f'attachment; filename="{slug}.md"',
@@ -2047,7 +2352,7 @@ async def lesson_export(
 
         # The HTML comment is meaningless in plain text — strip it and replace
         # it with a human-readable Art. 50 notice at the top (#21).
-        text = strip_marking(lesson.lesson_plan_md)
+        text = strip_marking(plan_md)
         text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)  # links
         text = re.sub(r"!\[[^\]]*\]\([^)]+\)", "", text)  # images
         text = re.sub(r"#{1,6}\s*", "", text)  # headings
@@ -2065,8 +2370,74 @@ async def lesson_export(
             },
         )
 
+    if format in ("pdf", "docx", "outline"):
+        # A hidden button is not a closed door: the route checks the flag too,
+        # or a bookmarked URL would still render what the pilot switched off.
+        if (
+            (format == "pdf" and not export_pdf_enabled())
+            or (format == "docx" and not export_docx_enabled())
+            or (format == "outline" and not export_outline_enabled())
+        ):
+            raise HTTPException(status_code=404, detail="Questo formato di export non è attivo.")
+
+        # Fase 3 · PR 7 — both go through the document model: Markdown is read
+        # into LessonDocumentV1, grouped into ExportIRV1, then rendered. MD and
+        # TXT above deliberately do not, because §10.4 requires them unchanged.
+        import asyncio
+
+        from aix.export import adapt_lesson_markdown, build_export_ir, render_outline
+
+        ir = build_export_ir(
+            adapt_lesson_markdown(
+                plan_md,
+                lesson_id=str(lesson.id),
+                fallback_title=lesson.title or "Lezione",
+            )
+        )
+
+        if format == "outline":
+            return Response(
+                content=render_outline(ir),
+                media_type="text/plain; charset=utf-8",
+                headers={
+                    "Content-Disposition": f'attachment; filename="{slug}-scaletta.txt"',
+                    AI_GENERATED_HEADER: AI_GENERATED_HEADER_VALUE,
+                },
+            )
+
+        if format == "docx":
+            from aix.export.word import render_docx
+
+            # Off the event loop, like the PDF.
+            document = await asyncio.to_thread(render_docx, ir)
+            return Response(
+                content=document.content,
+                media_type=(
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                ),
+                headers={
+                    "Content-Disposition": f'attachment; filename="{slug}.docx"',
+                    AI_GENERATED_HEADER: AI_GENERATED_HEADER_VALUE,
+                },
+            )
+
+        from aix.export.pdf import render_pdf
+
+        # Off the event loop: rendering is CPU work, and a request thread
+        # blocked on it would stall every SSE stream in the process.
+        result = await asyncio.to_thread(render_pdf, ir)
+        return Response(
+            content=result.content,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f'attachment; filename="{slug}.pdf"',
+                AI_GENERATED_HEADER: AI_GENERATED_HEADER_VALUE,
+            },
+        )
+
     raise HTTPException(
-        status_code=400, detail="Formato non supportato. Usa ?format=md o ?format=txt"
+        status_code=400,
+        detail="Formato non supportato. Usa ?format=md, txt, pdf, docx oppure outline",
     )
 
 
@@ -2094,11 +2465,15 @@ async def lesson_print(
 
     return templates.TemplateResponse(
         request,
-
-            "pages/lesson_print.html",
+        "pages/lesson_print.html",
         {
             "lesson": lesson,
-            "lesson_plan_html": _markdown_to_html(lesson.lesson_plan_md or ""),
+            # A printed lesson is the copy that leaves the screen: it names the
+            # documents it used, not «materiale allegato».
+            "lesson_plan_html": _markdown_to_html(
+                lesson.lesson_plan_md or "",
+                await labels_for_lesson_safe(session, lesson),
+            ),
             # EU AI Act Art. 50 (#21) — visible notice on the print/PDF artifact.
             "ai_disclosure_short": DISCLOSURE_SHORT,
             "ai_disclosure_long": DISCLOSURE_LONG,
@@ -2293,6 +2668,41 @@ def _stream_event_to_sse(
             "data": error_card + oob_input,
         }
 
+    # ── Light turns ───────────────────────────────────────────────────
+    # The pending card carries ``id="lesson-card-loading"``: when the stream
+    # closes, chat_pane.html swaps it for /card-fragment, which renders the
+    # saved answer -- the same hand-over a full run uses. A hand-off or a
+    # failure removes it instead, so nothing is fetched.
+    if event.kind == "light_pending":
+        return {
+            "event": "card",
+            "data": _render_partial(
+                request,
+                "partials/chat_light_card.html",
+                {"lesson": lesson, "pending": True, "turn": (event.payload or {}).get("turn")},
+            ),
+        }
+
+    if event.kind in ("light_done", "light_escalate", "light_error"):
+        oob_input = _render_partial(
+            request, "partials/chat_input.html", {"lesson": lesson, "_oob": True}
+        )
+        if event.kind == "light_done":
+            return {"event": "final", "data": oob_input}
+        if event.kind == "light_escalate":
+            card = _render_partial(
+                request,
+                "partials/chat_light_escalate.html",
+                {"lesson": lesson, "query": (event.payload or {}).get("query", "")},
+            )
+        else:
+            card = _render_partial(
+                request,
+                "partials/chat_error.html",
+                {"lesson": lesson, "error": event.error or "Errore sconosciuto"},
+            )
+        return {"event": "error", "data": _replace_light_pending(card) + oob_input}
+
     # Unknown kind — log and skip rather than 500-ing the stream.
     logger.warning("[stream] unhandled StreamEvent.kind=%r", event.kind)
     return None
@@ -2416,9 +2826,36 @@ async def saved_profiles_delete(
 _MARKDOWN_EXTENSIONS = ["fenced_code", "tables", "sane_lists"]
 
 
-def _markdown_to_html(text: str) -> str:
-    """Render ``text`` as HTML using our pinned extension set."""
-    return md.markdown(text or "", extensions=_MARKDOWN_EXTENSIONS, output_format="html5")
+def _replace_light_pending(card_html: str) -> str:
+    """``card_html`` in place of the light pending card, and the spinner gone."""
+    return (
+        '<div id="light-turn-end" hx-swap-oob="outerHTML:#lesson-card-loading">'
+        f"{card_html}</div>"
+        '<div id="chat-spinner" hx-swap-oob="outerHTML"></div>'
+    )
+
+
+def _markdown_to_html(text: str, labels: Optional[dict[str, str]] = None) -> str:
+    """Render ``text`` as HTML using our pinned extension set, then sanitise it.
+
+    The sanitiser is here and not at the four call sites because this is the
+    only function that produces the HTML those sites mark ``| safe``. The
+    Markdown it renders is written by an LLM, from a corpus, from the teacher's
+    typing and from text extracted out of files they upload — none of which is
+    ours — and python-markdown passes raw HTML straight through.
+    """
+    # §8.6 — the citation markers are an internal address, resolved here so a raw
+    # ``[[material:…]]`` can never reach a teacher from any of the call sites.
+    # ``labels`` names the documents where the caller had a session to look them
+    # up in; without it the neutral label is used, as before. U3: the same pass
+    # appends the list of sources, built from the markers rather than asked of
+    # the model. Text already resolved (the export route) has no markers left and
+    # so gains nothing here — the block is not appended twice.
+    return sanitize_html(
+        md.markdown(
+            with_sources(text or "", labels), extensions=_MARKDOWN_EXTENSIONS, output_format="html5"
+        )
+    )
 
 
 def _render_partial(request: Request, template_name: str, ctx: dict) -> str:

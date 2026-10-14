@@ -22,6 +22,7 @@ from aix.domains import get_domain_config
 
 logger = logging.getLogger(__name__)
 
+
 class EducationalNode2VecTrainer:
     """Train Node2Vec embeddings for educational concepts with domain awareness"""
 
@@ -41,113 +42,104 @@ class EducationalNode2VecTrainer:
 
         # Node2Vec hyperparameters optimized for educational graphs
         self.node2vec_config = {
-            'dimensions': self.config.get('dimensions', 128),  # Embedding dimension
-            'walk_length': self.config.get('walk_length', 30),  # Length of random walks
-            'num_walks': self.config.get('num_walks', 200),    # Number of walks per node
-            'p': self.config.get('p', 1.0),                    # Return parameter (BFS-like)
-            'q': self.config.get('q', 0.5),                    # In-out parameter (DFS-like)
-            'workers': self.config.get('workers', 4),          # Parallel workers
-            'window': self.config.get('window', 10),           # Skip-gram window
-            'min_count': self.config.get('min_count', 1),      # Minimum word count
-            'batch_words': self.config.get('batch_words', 10000) # Batch size
+            "dimensions": self.config.get("dimensions", 128),  # Embedding dimension
+            "walk_length": self.config.get("walk_length", 30),  # Length of random walks
+            "num_walks": self.config.get("num_walks", 200),  # Number of walks per node
+            "p": self.config.get("p", 1.0),  # Return parameter (BFS-like)
+            "q": self.config.get("q", 0.5),  # In-out parameter (DFS-like)
+            "workers": self.config.get("workers", 4),  # Parallel workers
+            "window": self.config.get("window", 10),  # Skip-gram window
+            "min_count": self.config.get("min_count", 1),  # Minimum word count
+            "batch_words": self.config.get("batch_words", 10000),  # Batch size
         }
 
         # Educational domain weights (higher = more important for walks)
         # UDL domain weights
         udl_weights = {
-            'StudentWithSpecialNeeds': 3.0,
-            'PedagogicalMethodology': 3.0,
-            'StudentCharacteristic': 2.5,
-            'Context': 2.0,
-            'LearningResource': 2.0,
-            'Lighting': 1.5,
-            'Colour': 1.5,
-            'Furniture': 1.5,
-            'Acoustic': 1.5,
-            'InteractiveBoard': 1.8,
-            'EnvironmentalBarrier': 1.2,
-            'EnvironmentalSupport': 1.2
+            "StudentWithSpecialNeeds": 3.0,
+            "PedagogicalMethodology": 3.0,
+            "StudentCharacteristic": 2.5,
+            "Context": 2.0,
+            "LearningResource": 2.0,
+            "Lighting": 1.5,
+            "Colour": 1.5,
+            "Furniture": 1.5,
+            "Acoustic": 1.5,
+            "InteractiveBoard": 1.8,
+            "EnvironmentalBarrier": 1.2,
+            "EnvironmentalSupport": 1.2,
         }
 
         # Neuro domain weights (synced with graph_retriever.py domain_boosts)
         # Based on neuro_audit_report.json: 478 nodes, 195 labels, 111 relationship types
         neuro_weights = {
             # TOP 10 MOST FREQUENT LABELS
-            'Attention': 2.2,                    # 22 nodes, hub node
-            'CriticalThinking': 2.0,             # 15 nodes
-            'ExtrinsicMotivation': 1.9,          # 14 nodes
-            'ExecutiveFunctions': 2.1,           # 12 nodes, high connectivity
-            'IntrinsicMotivation': 2.0,          # 11 nodes
-            'LearningOutcomes': 1.8,             # 10 nodes
-            'TeachingPractices': 1.8,            # 10 nodes
-            'LearningDevelopment': 1.7,          # 9 nodes
-            'NegativeStressDistress': 1.7,       # 9 nodes, high out-degree
-            'Motivation': 1.6,                   # 8 nodes
-
+            "Attention": 2.2,  # 22 nodes, hub node
+            "CriticalThinking": 2.0,  # 15 nodes
+            "ExtrinsicMotivation": 1.9,  # 14 nodes
+            "ExecutiveFunctions": 2.1,  # 12 nodes, high connectivity
+            "IntrinsicMotivation": 2.0,  # 11 nodes
+            "LearningOutcomes": 1.8,  # 10 nodes
+            "TeachingPractices": 1.8,  # 10 nodes
+            "LearningDevelopment": 1.7,  # 9 nodes
+            "NegativeStressDistress": 1.7,  # 9 nodes, high out-degree
+            "Motivation": 1.6,  # 8 nodes
             # HUB NODES (high connectivity)
-            'CognitiveFlexibility': 2.0,
-            'KnowledgeConstructionAttention': 1.9,
-            'PrefrontalCortexActivation': 1.9,
-            'OptimalAttentionalNetworkActivation': 1.8,
-
+            "CognitiveFlexibility": 2.0,
+            "KnowledgeConstructionAttention": 1.9,
+            "PrefrontalCortexActivation": 1.9,
+            "OptimalAttentionalNetworkActivation": 1.8,
             # AUTHORITY NODES (learning targets)
-            'Creativity': 1.8,
-            'Memory': 1.7,
-            'MemoryEncoding': 1.6,
-            'MemorySystems': 1.6,
-
+            "Creativity": 1.8,
+            "Memory": 1.7,
+            "MemoryEncoding": 1.6,
+            "MemorySystems": 1.6,
             # CRITICAL COGNITIVE PROCESSES
-            'WorkingMemory': 1.7,
-            'Metacognition': 1.6,
-            'SelfRegulation': 1.5,
-            'CognitiveControl': 1.6,
-            'CognitiveProcesses': 1.6,
-
+            "WorkingMemory": 1.7,
+            "Metacognition": 1.6,
+            "SelfRegulation": 1.5,
+            "CognitiveControl": 1.6,
+            "CognitiveProcesses": 1.6,
             # AFFECTIVE & MOTIVATIONAL
-            'EmotionalRegulation': 1.6,
-            'EmotionalWellBeing': 1.4,
-            'PositiveEmotions': 1.6,
-            'NegativeEmotions': 1.5,
-            'AffectiveProcesses': 1.5,
-
+            "EmotionalRegulation": 1.6,
+            "EmotionalWellBeing": 1.4,
+            "PositiveEmotions": 1.6,
+            "NegativeEmotions": 1.5,
+            "AffectiveProcesses": 1.5,
             # MINDSET & GROWTH
-            'GrowthMindset': 1.7,
-            'FixedMindset': 1.5,
-            'Mindset': 1.6,
-
+            "GrowthMindset": 1.7,
+            "FixedMindset": 1.5,
+            "Mindset": 1.6,
             # STRESS & COPING
-            'PositiveStressEustress': 1.6,
-            'StressResponse': 1.5,
-            'LongTermGrowth': 1.5,
-            'LongTermDecline': 1.4,
-            'AdaptiveCoping': 1.4,
-            'MaladaptiveCoping': 1.4,
-
+            "PositiveStressEustress": 1.6,
+            "StressResponse": 1.5,
+            "LongTermGrowth": 1.5,
+            "LongTermDecline": 1.4,
+            "AdaptiveCoping": 1.4,
+            "MaladaptiveCoping": 1.4,
             # SOCIAL & COMMUNICATION
-            'SocialCognition': 1.5,
-            'SocialLearning': 1.4,
-            'Communication': 1.4,
-
+            "SocialCognition": 1.5,
+            "SocialLearning": 1.4,
+            "Communication": 1.4,
             # EDUCATIONAL OUTCOMES
-            'LearningEngagement': 1.5,
-            'LearningPerformance': 1.6,
-            'EducationalSupport': 1.5,
-
+            "LearningEngagement": 1.5,
+            "LearningPerformance": 1.6,
+            "EducationalSupport": 1.5,
             # ADDITIONAL IMPORTANT
-            'HigherOrderThinking': 1.5,
-            'LowerOrderThinking': 1.3,
-            'ProblemSolving': 1.4,
-            'LongTermMemory': 1.5,
-            'PersonalGrowth': 1.4,
-            'Strengths': 1.4,
-            'CognitiveStrengths': 1.4,
-            'ReflectiveThinking': 1.3,
-            'Consolidation': 1.3,
-            'MotivationalModulation': 1.3,
-            'BrainAdaptability': 1.4,
-            'Vulnerability': 1.3,
-            'Resilience': 1.5,
-            'CognitiveBias': 1.3
+            "HigherOrderThinking": 1.5,
+            "LowerOrderThinking": 1.3,
+            "ProblemSolving": 1.4,
+            "LongTermMemory": 1.5,
+            "PersonalGrowth": 1.4,
+            "Strengths": 1.4,
+            "CognitiveStrengths": 1.4,
+            "ReflectiveThinking": 1.3,
+            "Consolidation": 1.3,
+            "MotivationalModulation": 1.3,
+            "BrainAdaptability": 1.4,
+            "Vulnerability": 1.3,
+            "Resilience": 1.5,
+            "CognitiveBias": 1.3,
         }
 
         # Select domain weights using domain config
@@ -164,7 +156,10 @@ class EducationalNode2VecTrainer:
             udl_config = get_domain_config("udl")
             neuro_config = get_domain_config("neuro")
             if udl_config and neuro_config:
-                self.domain_weights = {**udl_config.get_node2vec_weights(), **neuro_config.get_node2vec_weights()}
+                self.domain_weights = {
+                    **udl_config.get_node2vec_weights(),
+                    **neuro_config.get_node2vec_weights(),
+                }
             else:
                 # Fallback
                 self.domain_weights = {**udl_weights, **neuro_weights}
@@ -198,18 +193,20 @@ class EducationalNode2VecTrainer:
                 """
                 result = session.run(nodes_query)
             for record in result:
-                node_id = record['node_id']
-                name = record['name']
-                labels = record['labels']
-                category = record['category']
-                description = record['description']
+                node_id = record["node_id"]
+                name = record["name"]
+                labels = record["labels"]
+                category = record["category"]
+                description = record["description"]
 
                 # Add node to graph
-                G.add_node(node_id,
-                          name=name,
-                          labels=labels,
-                          category=category or '',
-                          description=description or '')
+                G.add_node(
+                    node_id,
+                    name=name,
+                    labels=labels,
+                    category=category or "",
+                    description=description or "",
+                )
 
                 # Store label mapping
                 node_labels[str(node_id)] = name
@@ -218,7 +215,7 @@ class EducationalNode2VecTrainer:
                 if labels:
                     main_label = labels[0]
                     weight = self.domain_weights.get(main_label, 1.0)
-                    G.nodes[node_id]['domain_weight'] = weight
+                    G.nodes[node_id]["domain_weight"] = weight
 
             # Get relationships with optional domain filtering
             if self.domain and self.domain != "all":
@@ -234,9 +231,9 @@ class EducationalNode2VecTrainer:
                 """
                 result = session.run(rels_query)
             for record in result:
-                source_id = record['source_id']
-                target_id = record['target_id']
-                rel_type = record['rel_type']
+                source_id = record["source_id"]
+                target_id = record["target_id"]
+                rel_type = record["rel_type"]
 
                 # Add edge with relationship type
                 G.add_edge(source_id, target_id, rel_type=rel_type)
@@ -251,26 +248,28 @@ class EducationalNode2VecTrainer:
         # Initialize Node2Vec with educational-specific parameters
         node2vec = Node2Vec(
             G,
-            dimensions=self.node2vec_config['dimensions'],
-            walk_length=self.node2vec_config['walk_length'],
-            num_walks=self.node2vec_config['num_walks'],
-            p=self.node2vec_config['p'],
-            q=self.node2vec_config['q'],
-            workers=self.node2vec_config['workers'],
-            weight_key='domain_weight'  # Use educational domain weights
+            dimensions=self.node2vec_config["dimensions"],
+            walk_length=self.node2vec_config["walk_length"],
+            num_walks=self.node2vec_config["num_walks"],
+            p=self.node2vec_config["p"],
+            q=self.node2vec_config["q"],
+            workers=self.node2vec_config["workers"],
+            weight_key="domain_weight",  # Use educational domain weights
         )
 
         # Train the model
         model = node2vec.fit(
-            window=self.node2vec_config['window'],
-            min_count=self.node2vec_config['min_count'],
-            batch_words=self.node2vec_config['batch_words']
+            window=self.node2vec_config["window"],
+            min_count=self.node2vec_config["min_count"],
+            batch_words=self.node2vec_config["batch_words"],
         )
 
         logger.info("Node2Vec training completed!")
         return model
 
-    def build_embeddings_index(self, model: Node2Vec, node_labels: dict[str, str]) -> tuple[np.ndarray, dict[str, int], dict[int, str]]:
+    def build_embeddings_index(
+        self, model: Node2Vec, node_labels: dict[str, str]
+    ) -> tuple[np.ndarray, dict[str, int], dict[int, str]]:
         """Build embeddings index for fast similarity search"""
         logger.info("Building embeddings index...")
 
@@ -311,7 +310,7 @@ class EducationalNode2VecTrainer:
         similarities = cosine_similarity(concept_embedding, self.node_embeddings)[0]
 
         # Get top-k similar concepts
-        similar_indices = np.argsort(similarities)[::-1][1:top_k+1]  # Exclude self
+        similar_indices = np.argsort(similarities)[::-1][1 : top_k + 1]  # Exclude self
 
         results = []
         for idx in similar_indices:
@@ -326,31 +325,40 @@ class EducationalNode2VecTrainer:
         if model_path is None:
             model_path = f"artifacts/node2vec/{self.domain}_node2vec"
 
-        os.makedirs(os.path.dirname(model_path) if os.path.dirname(model_path) else "artifacts/node2vec", exist_ok=True)
+        os.makedirs(
+            os.path.dirname(model_path) if os.path.dirname(model_path) else "artifacts/node2vec",
+            exist_ok=True,
+        )
 
         # Save Node2Vec model
         model_file = f"{model_path}_model.pkl"
-        with open(model_file, 'wb') as f:
+        with open(model_file, "wb") as f:
             pickle.dump(self.model, f)
 
         # Save embeddings and indices
         embeddings_file = f"{model_path}_embeddings.npz"
-        np.savez(embeddings_file,
-                embeddings=self.node_embeddings,
-                node_index=self.node_index,
-                reverse_index=self.reverse_index)
+        np.savez(
+            embeddings_file,
+            embeddings=self.node_embeddings,
+            node_index=self.node_index,
+            reverse_index=self.reverse_index,
+        )
 
         # Save configuration
         config_file = f"{model_path}_config.json"
-        with open(config_file, 'w') as f:
-            json.dump({
-                'domain': self.domain,
-                'node2vec_config': self.node2vec_config,
-                'domain_weights': self.domain_weights,
-                'training_date': datetime.now().isoformat(),
-                'num_nodes': len(self.node_embeddings),
-                'embedding_dim': self.node_embeddings.shape[1]
-            }, f, indent=2)
+        with open(config_file, "w") as f:
+            json.dump(
+                {
+                    "domain": self.domain,
+                    "node2vec_config": self.node2vec_config,
+                    "domain_weights": self.domain_weights,
+                    "training_date": datetime.now().isoformat(),
+                    "num_nodes": len(self.node_embeddings),
+                    "embedding_dim": self.node_embeddings.shape[1],
+                },
+                f,
+                indent=2,
+            )
 
         logger.info(f"Model saved to {model_path}")
 
@@ -362,15 +370,15 @@ class EducationalNode2VecTrainer:
         try:
             # Load Node2Vec model
             model_file = f"{model_path}_model.pkl"
-            with open(model_file, 'rb') as f:
+            with open(model_file, "rb") as f:
                 self.model = pickle.load(f)
 
             # Load embeddings and indices
             embeddings_file = f"{model_path}_embeddings.npz"
             data = np.load(embeddings_file)
-            self.node_embeddings = data['embeddings']
-            self.node_index = data['node_index'].item()
-            self.reverse_index = data['reverse_index'].item()
+            self.node_embeddings = data["embeddings"]
+            self.node_index = data["node_index"].item()
+            self.reverse_index = data["reverse_index"].item()
 
             logger.info(f"Model loaded from {model_path}")
             return True
@@ -393,13 +401,16 @@ class EducationalNode2VecTrainer:
         self.model = self.train_node2vec(G)
 
         # Step 3: Build embeddings index
-        self.node_embeddings, self.node_index, self.reverse_index = self.build_embeddings_index(self.model, node_labels)
+        self.node_embeddings, self.node_index, self.reverse_index = self.build_embeddings_index(
+            self.model, node_labels
+        )
 
         # Step 4: Save everything
         self.save_model(model_path)
 
         logger.info("Node2Vec training pipeline completed!")
         return self.model
+
 
 def get_test_concepts(domain: str) -> list[str]:
     """Get domain-specific test concepts for validation
@@ -418,7 +429,7 @@ def get_test_concepts(domain: str) -> list[str]:
             "Executive Functions",
             "Emotional Regulation",
             "Critical Thinking",
-            "Creativity"
+            "Creativity",
         ]
     elif domain == "udl":
         return [
@@ -429,7 +440,7 @@ def get_test_concepts(domain: str) -> list[str]:
             "Deaf",
             "Cognitive disability [mild, moderate, severe]",
             "Physical disability",
-            "Flipped Classroom"
+            "Flipped Classroom",
         ]
     else:  # "all"
         return [
@@ -440,10 +451,13 @@ def get_test_concepts(domain: str) -> list[str]:
             "Autism spectrum disorder",
             "Working Memory",
             "Blind",
-            "Metacognition"
+            "Metacognition",
         ]
 
-def test_node2vec_similarities(trainer: EducationalNode2VecTrainer, test_concepts: list[str] = None):
+
+def test_node2vec_similarities(
+    trainer: EducationalNode2VecTrainer, test_concepts: list[str] = None
+):
     """Test Node2Vec with domain-specific concept similarities"""
     if test_concepts is None:
         test_concepts = get_test_concepts(trainer.domain)
@@ -462,6 +476,7 @@ def test_node2vec_similarities(trainer: EducationalNode2VecTrainer, test_concept
         else:
             print(f"  ⚠️ Concept '{concept}' not found in embeddings")
 
+
 def main(domain: str = "all"):
     """Main training function with domain selection
 
@@ -472,8 +487,7 @@ def main(domain: str = "all"):
 
     # Setup logging
     logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
 
     logger.info("=" * 60)
@@ -482,8 +496,7 @@ def main(domain: str = "all"):
 
     # Create Neo4j driver
     neo4j_driver = GraphDatabase.driver(
-        config.neo4j.uri,
-        auth=(config.neo4j.user, config.neo4j.password)
+        config.neo4j.uri, auth=(config.neo4j.user, config.neo4j.password)
     )
 
     # Initialize trainer with domain
@@ -491,13 +504,13 @@ def main(domain: str = "all"):
         neo4j_driver=neo4j_driver,
         domain=domain,
         config={
-            'dimensions': 128,
-            'walk_length': 30,
-            'num_walks': 200,
-            'p': 1.0,
-            'q': 0.5,
-            'workers': 4
-        }
+            "dimensions": 128,
+            "walk_length": 30,
+            "num_walks": 200,
+            "p": 1.0,
+            "q": 0.5,
+            "workers": 4,
+        },
     )
 
     try:
@@ -515,10 +528,12 @@ def main(domain: str = "all"):
     except Exception as e:
         logger.error(f"❌ Training failed: {e}")
         import traceback
+
         traceback.print_exc()
         raise
     finally:
         trainer.driver.close()
+
 
 if __name__ == "__main__":
     import sys
@@ -526,7 +541,7 @@ if __name__ == "__main__":
     # Parse command line arguments
     if len(sys.argv) > 1:
         domain = sys.argv[1].lower()
-        if domain not in ['udl', 'neuro', 'all']:
+        if domain not in ["udl", "neuro", "all"]:
             print(f"❌ Invalid domain: {domain}")
             print("Usage: python train_node2vec.py [udl|neuro|all]")
             print("  udl   - Train on UDL data only")

@@ -38,6 +38,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aix.webui.auth import router as auth_router
+from aix.webui.auth.csrf import token_for as _csrf_token_for
 from aix.webui.auth.dependencies import optional_current_user
 from aix.webui.auth.models import User
 from aix.webui.db import get_async_session
@@ -134,6 +135,19 @@ _TEMPLATES_DIR = _PACKAGE_DIR / "templates"
 
 templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
 
+# The webui keeps three Jinja environments over the same templates directory
+# (``aix.webui.routes``, ``aix.webui.lessons.routes``, ``aix.webui.auth.routes``),
+# so the CSRF global has to be registered on each of them. A global rather than
+# a per-route context entry: a page added without the token would fail its first
+# POST with a 403, and the author would find out in production.
+templates.env.globals["csrf_token"] = _csrf_token_for
+
+# Same globals as the lesson routes: any template rendered from here that
+# includes the chat input must ask the flags, not carry its own list.
+from aix.webui.features import register as _register_feature_flags  # noqa: E402
+
+_register_feature_flags(templates)
+
 # Top-level webui router. Sub-routers carry their own prefixes (/auth, /webui)
 # so we can mount everything via a single ``app.include_router(router)`` call
 # in aix.api.main.
@@ -161,8 +175,7 @@ async def home(
     dashboard = await _build_dashboard_context(session, user)
     return templates.TemplateResponse(
         request,
-
-            "pages/home.html",
+        "pages/home.html",
         {
             "title": "AixLearning · Agentic GraphRAG",
             "user": user,
@@ -189,8 +202,7 @@ async def about_ai(
     """
     return templates.TemplateResponse(
         request,
-
-            "pages/about_ai.html",
+        "pages/about_ai.html",
         {
             "title": "Come funziona l'IA · AixLearning",
             "user": user,

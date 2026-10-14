@@ -1,8 +1,13 @@
 # Install and run the backend server
 FROM python:3.12-bookworm AS base
 
-# Install additional locales
-RUN apt-get update && apt-get install -y locales gettext  && rm -rf /var/lib/apt/lists/*
+# Install additional locales, and Tesseract for OCR of scanned uploads (Fase 2 ·
+# PR 5). Only the Italian and English language packs: ~17 MB, measured. No
+# OCRmyPDF or Ghostscript — pages are rasterised in-process by pypdfium2.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends locales gettext \
+        tesseract-ocr tesseract-ocr-ita tesseract-ocr-eng \
+    && rm -rf /var/lib/apt/lists/*
 # Set locale to it_IT
 RUN localedef -i it_IT -c -f UTF-8 -A /usr/share/locale/locale.alias it_IT.UTF-8
 ENV LANG it_IT.utf8
@@ -57,10 +62,19 @@ ENV PATH="/opt/venv/bin:$PATH"
 ENV CODE_VERSION=${GIT_SHA}
 
 # Defense-in-depth: run as a non-root user. Static retrieval assets stay
-# read-only image content; the live-media cache is the only writable artifact
-# path and may be mounted independently by Compose.
+# read-only image content; the live-media cache and the teacher uploads are the
+# only writable paths, and both may be mounted independently by Compose.
+#
+# Both directories are created here, before the chown, for a reason that is
+# easy to miss: a named volume mounted on a path that does NOT exist in the
+# image is created by Docker owned by root, and uid 10001 then cannot write to
+# it. Creating them first means the volume inherits aix ownership on its first
+# use. `data/**` is excluded by .dockerignore (except data/media), so without
+# this line the uploads path would not exist.
 RUN useradd --create-home --uid 10001 aix \
     && mkdir -p /graphrag-aixlearning/artifacts/media_cache \
+        /graphrag-aixlearning/data/webui/uploads \
+        /graphrag-aixlearning/data/webui/materials \
     && chown -R aix:aix /graphrag-aixlearning \
     && chmod -R a-w \
         /graphrag-aixlearning/data/media \

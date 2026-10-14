@@ -45,7 +45,9 @@ class EducationalResponseGenerator:
         self.domain = domain
         from aix.core.config import config as _cfg
 
-        _compat = _cfg.openai.build_completion_kwargs(temperature=temperature, max_tokens=2500)
+        _compat = _cfg.openai.build_completion_kwargs(
+            temperature=temperature, max_tokens=2500, model_override=model
+        )
         self.llm = ChatOpenAI(
             openai_api_key=openai_api_key,
             openai_api_base=_cfg.openai.base_url,

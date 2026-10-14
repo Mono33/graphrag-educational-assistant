@@ -44,6 +44,152 @@
     and uses the v2 ``api.swap`` signature.
   #}
   <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+
+  {# ── Fase 0 · PR 1 — CSRF token on every htmx request ──────────────────
+     One listener instead of an attribute on each of the ~27 hx-post and
+     hx-delete call sites: an attribute has to be remembered, and the first
+     one forgotten is a 403 the author discovers in production. htmx fires
+     configRequest before every request it makes, including the ones inside
+     SSE-swapped fragments, so a card that arrives mid-stream is covered too.
+
+     The token is read from the cookie rather than printed into the page: the
+     server refreshes that cookie when a session begins or ends, and a value
+     baked into the HTML would go stale on a page left open across a login.
+  #}
+  <script>
+    // On ``document``, not ``document.body``: this script runs in <head>,
+    // where there is no body yet. htmx events bubble, so it arrives all the same.
+    document.addEventListener("htmx:configRequest", function (event) {
+      if (["GET", "HEAD", "OPTIONS"].indexOf(event.detail.verb.toUpperCase()) !== -1) return;
+      var match = document.cookie.match(/(?:^|;\s*)aix_csrf=([^;]*)/);
+      if (match) event.detail.headers["X-CSRF-Token"] = decodeURIComponent(match[1]);
+    });
+  </script>
+  <script>
+    // Dropping a file on the chat input (P3 follow-up, 2026-09-22).
+    //
+    // WHY HERE and not in the partial: htmx does not execute <script> tags it
+    // swaps in, and the chat input is re-rendered out of band on every SSE
+    // terminal event. Defined once on the page, called from ``ondrop`` /
+    // ``ondragover`` attributes — which *do* survive a swap, being attributes.
+    //
+    // Nothing new is posted: the dropped file is handed to the same hidden
+    // <input type="file"> the paperclip fills, and the ``change`` event makes
+    // htmx upload it exactly as it always did. One endpoint, one code path.
+    (function () {
+      // The upload endpoint takes one file per request, so a drop of several
+      // becomes a queue. It lives on ``window`` rather than on the input
+      // because the tray's poll replaces the input element mid-upload, and a
+      // queue parked on it would go with it.
+      window.aixUploadQueue = [];
+
+      function send(input, file) {
+        var carrier = new DataTransfer();
+        carrier.items.add(file);
+        input.files = carrier.files;
+        input.dispatchEvent(new Event("change"));
+      }
+
+      window.aixDrop = function (event, shell) {
+        event.preventDefault();
+        shell.classList.remove("aix-chat-input-shell--drop");
+        var input = document.getElementById("chat-upload-input");
+        var dropped = Array.prototype.slice.call(
+          (event.dataTransfer && event.dataTransfer.files) || []
+        );
+        if (!input || dropped.length === 0) return;
+        window.aixUploadQueue = dropped.slice(1);
+        send(input, dropped[0]);
+      };
+
+      window.aixUploadNext = function (input) {
+        if (!window.aixUploadQueue || window.aixUploadQueue.length === 0) return;
+        send(input, window.aixUploadQueue.shift());
+      };
+    })();
+  </script>
+  <script>
+    // What an upload is doing, and why it was refused (2026-09-22).
+    //
+    // Two defects, and the second is why the page looked dead. **htmx swaps
+    // 2xx only.** The upload route answers a file it cannot take with 422 and
+    // a sentence written for the teacher, and htmx was throwing that response
+    // away: a teacher attached a 13.5 MB magazine three times and the page did
+    // nothing at all, three times, while the reason sat in the server log.
+    //
+    // And the input targets ``#chat-attachments`` with ``outerHTML``, so an
+    // error allowed to swap there would have replaced the whole tray with a
+    // bare paragraph -- destroying the swap target, after which no upload
+    // could render again without a reload. Errors go to their own slot, and
+    // the swap style is overridden because the input's is not right for it.
+    //
+    // Here rather than in the partial: htmx does not execute <script> it
+    // swaps in, and the chat input is re-rendered out of band on every
+    // terminal SSE event.
+    (function () {
+      function isUpload(detail) {
+        var path =
+          (detail.pathInfo && (detail.pathInfo.requestPath || detail.pathInfo.path)) ||
+          (detail.requestConfig && detail.requestConfig.path) ||
+          (detail.xhr && detail.xhr.responseURL) ||
+          "";
+        return path.split("?")[0].slice(-7) === "/upload";
+      }
+
+      function slot(id) {
+        return document.getElementById(id);
+      }
+
+      document.addEventListener("htmx:beforeRequest", function (event) {
+        if (!isUpload(event.detail)) return;
+        var error = slot("chat-upload-error");
+        if (error) error.innerHTML = "";
+        var busy = slot("chat-upload-busy");
+        if (!busy) return;
+        // Named and measured: parsing a long document takes seconds, and
+        // "something is happening" is the one thing the page never said.
+        var file = event.detail.elt.files && event.detail.elt.files[0];
+        busy.textContent = file
+          ? "Carico " + file.name + " (" + (file.size / 1048576).toFixed(1) + " MB)…"
+          : "Carico…";
+      });
+
+      document.addEventListener("htmx:beforeSwap", function (event) {
+        if (!isUpload(event.detail) || event.detail.xhr.status < 400) return;
+        var error = slot("chat-upload-error");
+        if (!error) return;
+        event.detail.shouldSwap = true;
+        event.detail.isError = false;
+        event.detail.target = error;
+        event.detail.swapOverride = "innerHTML";
+      });
+
+      document.addEventListener("htmx:afterRequest", function (event) {
+        if (!isUpload(event.detail)) return;
+        var busy = slot("chat-upload-busy");
+        if (busy) busy.textContent = "";
+      });
+
+      // The request never answered at all. Today that meant a database lock
+      // the teacher had no way to know about: the upload hung, the chip never
+      // came, and the file had in fact been indexed. Silence is the one
+      // outcome a page must never present as nothing happening.
+      document.addEventListener("htmx:sendError", uploadFailed);
+      document.addEventListener("htmx:timeout", uploadFailed);
+
+      function uploadFailed(event) {
+        if (!isUpload(event.detail)) return;
+        var busy = slot("chat-upload-busy");
+        if (busy) busy.textContent = "";
+        var error = slot("chat-upload-error");
+        if (error) {
+          error.innerHTML =
+            '<p class="text-sm text-rose-700 px-2 py-1">Il server non ha risposto. ' +
+            "Ricarica la pagina: il documento potrebbe essere stato caricato lo stesso.</p>";
+        }
+      }
+    })();
+  </script>
   <script src="https://cdn.jsdelivr.net/npm/htmx-ext-sse@2.2.4"></script>
 
   <script defer
@@ -108,6 +254,19 @@
     the per-lesson EventSource when it finds one.
   #}
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+  {# ── Fase 0 · PR 1 — the writer stream is untrusted too ─────────────────
+     The stream pane assigns marked's output to innerHTML, and marked has had
+     no sanitiser of its own since v5. The tokens come from the LLM, which is
+     writing from a corpus and from files the teacher uploaded, so raw HTML can
+     reach the page here just as it can in the finished lesson — which the
+     server now filters in ``aix.webui.sanitize``.
+
+     Pinned, unlike marked above: this one is a security control, and a
+     security control that silently becomes a different version overnight is
+     not one. (marked's floating URL is worth pinning too, separately.)
+  #}
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.4/dist/purify.min.js"></script>
   <script>
   (function () {
     var _activeStreams = {};
@@ -129,8 +288,11 @@
       function scheduleRender() {
         if (renderTimer) return;
         renderTimer = setTimeout(function () {
-          if (window.marked) {
-            streamEl.innerHTML = marked.parse(mdBuffer);
+          // Both, or neither. Rendering markdown without the sanitiser would
+          // put unfiltered LLM output into innerHTML, so a CDN that failed to
+          // answer degrades to plain text rather than to an open door.
+          if (window.marked && window.DOMPurify) {
+            streamEl.innerHTML = DOMPurify.sanitize(marked.parse(mdBuffer));
           } else {
             streamEl.textContent = mdBuffer;
           }

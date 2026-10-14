@@ -457,12 +457,13 @@ class MultilingualText2Cypher:
             # The teacher query may contain instructions (e.g. "create a lesson plan").
             # Wrapping in <source_text> tags makes it unambiguous that the content
             # is text TO BE TRANSLATED, not an instruction to execute.
+            # The fast text2cypher model translates, not the main LLM -- and the
+            # kwargs are built for it, so it never gets the Writer's reasoning setting.
             completion_kwargs = config.openai.build_completion_kwargs(
                 temperature=0,
                 max_tokens=500,
+                model_override=config.text2cypher.model,
             )
-            # Override model: use the fast text2cypher model for translation, not the main LLM
-            completion_kwargs["model"] = config.text2cypher.model
             response = client.chat.completions.create(
                 messages=[
                     {

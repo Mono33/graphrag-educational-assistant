@@ -116,7 +116,9 @@ def main():
                 kept_videos.append(v)
             else:
                 broken_videos += 1
-                logger.warning(f"  [broken video] {concept_name}: {v.get('title')} ({v.get('video_id')})")
+                logger.warning(
+                    f"  [broken video] {concept_name}: {v.get('title')} ({v.get('video_id')})"
+                )
         if args.fix:
             entry["videos"] = kept_videos
 

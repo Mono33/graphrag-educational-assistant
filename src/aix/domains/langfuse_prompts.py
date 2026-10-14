@@ -23,17 +23,17 @@ _client: "Langfuse | None" = None
 
 
 def _get_client() -> Langfuse:
+    """The process-wide client (``core.tracing``), so prompts and traces share it.
+
+    Two clients for one key would race over whose settings apply to the traces.
+    """
     global _client
     if _client is None:
-        _client = Langfuse(
-            secret_key=os.environ["LANGFUSE_SECRET_KEY"],
-            public_key=os.environ["LANGFUSE_PUBLIC_KEY"],
-            host=(
-                os.environ.get("LANGFUSE_HOST")
-                or os.environ.get("LANGFUSE_BASE_URL")
-                or "https://cloud.langfuse.com"
-            ),
-        )
+        if not (os.environ.get("LANGFUSE_SECRET_KEY") and os.environ.get("LANGFUSE_PUBLIC_KEY")):
+            raise KeyError("LANGFUSE_SECRET_KEY / LANGFUSE_PUBLIC_KEY")
+        from aix.core.tracing import get_langfuse
+
+        _client = get_langfuse()
     return _client
 
 

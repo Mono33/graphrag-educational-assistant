@@ -78,9 +78,7 @@ async def test_resource_template_inventory(mcp_client):
     templates = await mcp_client.list_resource_templates()
     template_uris = {str(t.uriTemplate) for t in templates}
     missing = EXPECTED_RESOURCE_TEMPLATES - template_uris
-    assert not missing, (
-        f"Missing expected templated resources: {sorted(missing)}"
-    )
+    assert not missing, f"Missing expected templated resources: {sorted(missing)}"
 
 
 @pytest.mark.asyncio

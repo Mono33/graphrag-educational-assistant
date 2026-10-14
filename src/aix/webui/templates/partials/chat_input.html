@@ -78,16 +78,30 @@
          name="file"
          class="hidden"
          aria-hidden="true"
-         accept=".pdf,.txt,.md,.markdown,application/pdf,text/plain,text/markdown"
+         accept="{{ upload_accept() }}"
          hx-post="/webui/lesson/{{ lesson.id }}/upload"
          hx-encoding="multipart/form-data"
          hx-trigger="change"
          hx-target="#chat-attachments"
          hx-swap="outerHTML"
-         hx-on::after-request="this.value = ''" />
+         hx-on::after-request="this.value = ''; window.aixUploadNext && window.aixUploadNext(this)" />
 
   {# Attachment chips tray (P3). Re-rendered by /upload + DELETE responses
      via the htmx hooks on this same id. Empty when no files are attached. #}
+  {#
+    Where an upload says what it is doing, and why it was refused.
+
+    Outside the tray deliberately: the tray is replaced wholesale by every
+    upload and delete response, so a message rendered inside it would be swept
+    away by the next swap — and an error swapped *over* it would take the swap
+    target with it, leaving the page with no ``#chat-attachments`` at all and
+    no working upload until a reload.
+  #}
+  <div id="chat-upload-status" class="px-2 space-y-1" aria-live="polite">
+    <p id="chat-upload-busy" class="text-sm text-slate-600"></p>
+    <div id="chat-upload-error" role="alert"></div>
+  </div>
+
   {% include "partials/chat_attachments.html" %}
 
   <form id="chat-input-form"
@@ -97,13 +111,22 @@
         hx-disabled-elt="find textarea, find button[type=submit]"
         class="aix-col-4">
 
-    <div class="aix-chat-input-shell">
+    {#
+      Drop a file anywhere on the input. The handlers live in _base.html —
+      htmx does not run <script> it swaps in, and this partial is swapped out
+      of band on every terminal SSE event; attributes survive that, scripts do
+      not. The file ends up in the same hidden input the paperclip fills.
+    #}
+    <div class="aix-chat-input-shell"
+         ondragover="event.preventDefault(); this.classList.add('aix-chat-input-shell--drop')"
+         ondragleave="this.classList.remove('aix-chat-input-shell--drop')"
+         ondrop="window.aixDrop(event, this)">
 
       <div class="aix-chat-input-icons">
         <button type="button"
                 class="aix-chat-input-icon-btn"
                 aria-label="Allega documento"
-                title="Allega PDF, TXT o Markdown come contesto per la lezione (max 10 MB)"
+                title="{{ upload_hint() }}"
                 onclick="document.getElementById('chat-upload-input').click()">
           <wa-icon name="paperclip" class="aix-fs-095"></wa-icon>
         </button>
@@ -120,19 +143,18 @@
         class="aix-chat-input-textarea"
         rows="2"
         required
-        minlength="3"
         maxlength="2000"
         placeholder="Es. Crea una lezione di 45 minuti sulla fotosintesi clorofilliana adattata a una classe con 2 studenti DSA…"
         autofocus
-        onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault(); if(this.value.trim().length>=3){this.form.requestSubmit();}}"
+        onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault(); if(this.value.trim().length>0){this.form.requestSubmit();}}"
       ></textarea>
 
-      <button type="submit"
-              class="aix-chat-input-send"
-              aria-label="Invia messaggio e genera lezione">
-        <wa-icon name="paper-plane" class="aix-fs-085"></wa-icon>
-        <span>Invia</span>
-      </button>
+      {# Decision U1: while a document is being indexed the lesson cannot be
+         generated from it, so the button says so instead of producing a lesson
+         written from the pasted text. The tray re-renders this input out of
+         band when the last document turns ready -- the button alone, never the
+         textarea (see chat_send_button.html). #}
+      {% include "partials/chat_send_button.html" %}
 
     </div>
 
@@ -184,13 +206,27 @@
          name="file"
          class="hidden"
          aria-hidden="true"
-         accept=".pdf,.txt,.md,.markdown,application/pdf,text/plain,text/markdown"
+         accept="{{ upload_accept() }}"
          hx-post="/webui/lesson/{{ lesson.id }}/upload"
          hx-encoding="multipart/form-data"
          hx-trigger="change"
          hx-target="#chat-attachments"
          hx-swap="outerHTML"
-         hx-on::after-request="this.value = ''" />
+         hx-on::after-request="this.value = ''; window.aixUploadNext && window.aixUploadNext(this)" />
+
+  {#
+    Where an upload says what it is doing, and why it was refused.
+
+    Outside the tray deliberately: the tray is replaced wholesale by every
+    upload and delete response, so a message rendered inside it would be swept
+    away by the next swap — and an error swapped *over* it would take the swap
+    target with it, leaving the page with no ``#chat-attachments`` at all and
+    no working upload until a reload.
+  #}
+  <div id="chat-upload-status" class="px-2 space-y-1" aria-live="polite">
+    <p id="chat-upload-busy" class="text-sm text-slate-600"></p>
+    <div id="chat-upload-error" role="alert"></div>
+  </div>
 
   {% include "partials/chat_attachments.html" %}
 
@@ -201,13 +237,22 @@
         hx-disabled-elt="find textarea, find button[type=submit]"
         class="aix-col-4">
 
-    <div class="aix-chat-input-shell">
+    {#
+      Drop a file anywhere on the input. The handlers live in _base.html —
+      htmx does not run <script> it swaps in, and this partial is swapped out
+      of band on every terminal SSE event; attributes survive that, scripts do
+      not. The file ends up in the same hidden input the paperclip fills.
+    #}
+    <div class="aix-chat-input-shell"
+         ondragover="event.preventDefault(); this.classList.add('aix-chat-input-shell--drop')"
+         ondragleave="this.classList.remove('aix-chat-input-shell--drop')"
+         ondrop="window.aixDrop(event, this)">
 
       <div class="aix-chat-input-icons">
         <button type="button"
                 class="aix-chat-input-icon-btn"
                 aria-label="Allega documento"
-                title="Allega PDF, TXT o Markdown come contesto per la lezione (max 10 MB)"
+                title="{{ upload_hint() }}"
                 onclick="document.getElementById('chat-upload-input').click()">
           <wa-icon name="paperclip" class="aix-fs-095"></wa-icon>
         </button>
@@ -224,20 +269,43 @@
         class="aix-chat-input-textarea"
         rows="2"
         required
-        minlength="3"
         maxlength="2000"
         placeholder="Continua la conversazione… (es. «adatta per studenti DSA», «aggiungi un'attività di gruppo»)"
-        onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault(); if(this.value.trim().length>=3){this.form.requestSubmit();}}"
+        onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault(); if(this.value.trim().length>0){this.form.requestSubmit();}}"
       ></textarea>
 
-      <button type="submit"
-              class="aix-chat-input-send"
-              aria-label="Invia messaggio di follow-up">
-        <wa-icon name="paper-plane" class="aix-fs-085"></wa-icon>
-        <span>Invia</span>
-      </button>
+      {% include "partials/chat_send_button.html" %}
 
     </div>
+
+    {#
+      The Knowledge Graph search on a follow-up turn, the teacher's call.
+      On: the planner decides whether the turn needs new evidence, as before.
+      Off: the turn reuses what the thread already found, and asks the graph
+      and the web nothing -- the attached documents are still searched. The
+      state is kept on the lesson, so off stays off for the turns after.
+    #}
+    {% if light_turns_enabled() and lesson.status == "complete" %}
+      {#
+        Light turns: a message is answered in a few seconds from the lesson,
+        the conversation and the documents, and the lesson does not change.
+        Ticked, the turn runs the whole chain with the Knowledge Graph and
+        writes a new lesson. One turn at a time: it is never ticked by default.
+      #}
+      <label class="aix-chat-graph-toggle"
+             title="Spuntato: rigenera la lezione intera, cercando anche nel Knowledge Graph (circa un minuto). Altrimenti la risposta arriva in pochi secondi e la lezione non cambia.">
+        <input type="checkbox" name="full_run" value="1">
+        <span>Lezione completa (con Knowledge Graph)</span>
+      </label>
+    {% elif conditional_retrieval_enabled() %}
+      {% set graph_on = (lesson.educational_profile_json or {}).get("__graph_search__", True) %}
+      <label class="aix-chat-graph-toggle"
+             title="Spento: questo turno usa ciò che il Knowledge Graph ha già trovato e i tuoi documenti, senza una nuova ricerca nel grafo e sul web. Più rapido, e utile quando chiedi del documento allegato.">
+        <input type="hidden" name="graph_search_choice" value="1">
+        <input type="checkbox" name="graph_search" value="on"{% if graph_on %} checked{% endif %}>
+        <span>Cerca nel Knowledge Graph</span>
+      </label>
+    {% endif %}
 
     <p class="aix-chat-input-hint">
       <wa-icon name="circle-info" class="aix-fs-sm"></wa-icon>

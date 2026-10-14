@@ -1,706 +1,678 @@
-# 🎓 GraphRAG Educational Assistant
+# GraphRAG Educational Assistant
 
-AI-powered educational assistant that combines Knowledge Graphs (Neo4j) with Retrieval-Augmented Generation (RAG) to provide personalized teaching recommendations in Italian.
+A GraphRAG educational agent that writes lesson plans for Italian teachers. It combines a
+curated pedagogy **Knowledge Graph** in Neo4j (how to teach: methodologies, evidence,
+strategies for ADHD, DSA, autism…) with **the teacher's own uploaded documents** (what to
+teach: the handout, the textbook chapter, the slides for Friday). A LangGraph multi-agent
+pipeline plans, retrieves from both sources, writes the lesson in Italian, validates it
+against the classroom's constraints and critiques it before the teacher sees it.
 
-![Python](https://img.shields.io/badge/python-3.10+-blue.svg)
-![Neo4j](https://img.shields.io/badge/neo4j-5.0+-green.svg)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688.svg)
-![htmx](https://img.shields.io/badge/htmx-2.0-3366CC.svg)
-![MCP](https://img.shields.io/badge/MCP-FastMCP_3.x-blueviolet.svg)
-![LangGraph](https://img.shields.io/badge/LangGraph-Multi--Agent-purple.svg)
-![OpenAI](https://img.shields.io/badge/openai-GPT--4o-orange.svg)
-![Node2Vec](https://img.shields.io/badge/Node2Vec-Enabled-brightgreen.svg)
+Everything — the teacher WebUI, the JSON+SSE agent API and an MCP server — is served by a
+single FastAPI process.
 
----
+**Read this file top to bottom for orientation, then:**
 
-## 🚀 **Quick Start**
-
-**New to this project? Start here!** → [**QUICKSTART.md**](QUICKSTART.md)
-
-Get up and running in 5 minutes with our step-by-step guide.
-
----
-
-## 🌟 Features
-
-- **🌍 Multilingual Query Processing**: Handles Italian and English educational queries with intelligent translation
-- **🔍 Hybrid Graph Retrieval**: Combines traditional graph traversal with Node2Vec semantic search for superior results
-- **🎯 Educational Context Building**: Structures recommendations specifically for teaching methodologies
-- **💬 Natural Language Generation**: Produces natural Italian responses tailored for educators
-- **📊 Evidence-Based Responses**: All recommendations backed by knowledge graph evidence
-- **🤖 Agentic GraphRAG Mode**: Multi-agent pipeline for intelligent lesson plan generation
-- **🎯 Intelligent Intent Detection**: Automatically detects 7 query types (lesson, definition, comparison, etc.)
-- **✍️ Adaptive Content Generation**: Generates different formats based on query intent
-- **🔄 Quality Control Loop**: Critic agent reviews and requests revisions automatically
-- **🖥️ Teacher Webui** 🆕: Authenticated three-pane chat workspace (FastAPI + htmx + WebAwesome + Tailwind) with SSE streaming, file uploads, and educational profile editing
-- **🔌 Public Agent API** 🆕: `POST /api/v1/agent/run` (JSON) + `POST /api/v1/agent/stream` (SSE) with JWT Bearer auth and Swagger UI examples
-- **🧩 MCP Tool Servers** 🆕: 10 tools / 4 resources / 2 prompts exposed via Model Context Protocol (stdio + Streamable HTTP) — works with Claude Desktop, Cursor IDE, MCP Inspector, and any MCP-compatible client
+| You want to… | Go to |
+| --- | --- |
+| Run it on your laptop | [Running it locally](#running-it-locally) |
+| Understand the agent | [The agentic flow](#the-agentic-flow) |
+| Know which env var does what | [`docs/ENVIRONMENT.md`](docs/ENVIRONMENT.md) — every variable the code reads |
+| Call the API from another service | [`docs/api/API_INTEGRATION_GUIDE.md`](docs/api/API_INTEGRATION_GUIDE.md) |
+| Wire up Claude Desktop / Cursor | [`docs/integrations/MCP_Setup.md`](docs/integrations/MCP_Setup.md) |
+| A step-by-step first run | [`docs/runbooks/QUICKSTART.md`](docs/runbooks/QUICKSTART.md) |
 
 ---
 
-## 🏗️ Architecture
+## Architecture at a glance
 
-### Standard GraphRAG Mode
-
-```
-User Query (Italian/English)
-    ↓
-Text2Cypher Converter (Multilingual)
-    ↓
-Hybrid Graph Retriever (Neo4j + Node2Vec)
-    ├── Direct Graph Traversal
-    ├── Semantic Search (Node2Vec)
-    └── Neighbor Expansion
-    ↓
-Context Builder (Structured Educational Context)
-    ↓
-Response Generator (GPT-4o LLM)
-    ↓
-Natural Italian Response
-```
-
-### 🤖 Agentic GraphRAG Mode (NEW)
-
-Multi-agent pipeline powered by **LangGraph** for intelligent lesson plan generation:
+One uvicorn process, three entry points, two databases and one LLM provider.
 
 ```
-User Query (Italian/English)
-    ↓
-┌────────────────────────────────────────────────────────┐
-│                  AGENTIC PIPELINE                       │
-│                                                         │
-│  ┌──────────────┐    ┌──────────────┐                 │
-│  │   PLANNER    │ →  │  RETRIEVER   │                 │
-│  │ Intent Detection│  │ GraphRAG Search│                │
-│  │ Query Analysis │  │ Knowledge Fetch│                │
-│  └──────────────┘    └──────────────┘                 │
-│         ↓                   ↓                          │
-│  ┌──────────────┐    ┌──────────────┐                 │
-│  │    WRITER    │ ←→ │   CRITIC     │ ←┐              │
-│  │Content Generator│ │Quality Review │  │ Revision    │
-│  │Adaptive Format │  │Score & Decide │  │ Loop        │
-│  └──────────────┘    └──────────────┘──┘              │
-└────────────────────────────────────────────────────────┘
-    ↓
-Generated Content (Lesson Plan / Definition / Comparison / etc.)
+                      ┌──────────────────────────────────────────────┐
+  teacher (browser) ──►  /webui/*      HTML + htmx + SSE             │
+                      │                                              │
+  DEV team (JSON)  ───►  /api/v1/*     JSON + SSE, JWT Bearer        │
+                      │                                              │
+  MCP client       ───►  /mcp/         Streamable HTTP, JWT Bearer   │
+                      └───────────────────────┬──────────────────────┘
+                                              │  one FastAPI app
+                                              │  (src/aix/api/main.py)
+                                              ▼
+                              ┌───────────────────────────────┐
+                              │   LangGraph agent pipeline    │
+                              │   src/aix/agent/graph/        │
+                              └───────┬───────────────┬───────┘
+                                      │               │
+                     pedagogy ────────┘               └──────── subject content
+                          │                                          │
+                          ▼                                          ▼
+                 ┌─────────────────┐                     ┌────────────────────────┐
+                 │ Neo4j           │                     │ WebUI DB               │
+                 │ Knowledge Graph │                     │ SQLite (dev)           │
+                 │ + Node2Vec      │                     │ PostgreSQL + pgvector  │
+                 └─────────────────┘                     │ (prod)                 │
+                                                         │ users · lessons ·      │
+                                                         │ materials · chunks ·   │
+                                                         │ ingestion job queue    │
+                                                         └────────────────────────┘
+
+              LLM + embeddings: OpenRouter (src/aix/core/config.py)
 ```
-
-#### Query Intent Detection
-
-The Planner Agent automatically classifies queries into 7 intent types:
-
-| Intent | Trigger Examples | Output Format |
-|--------|------------------|---------------|
-| `lesson_creation` | "Crea una lezione sulla memoria" | Full lesson plan |
-| `activity_design` | "Attività di 30 min sulla metacognizione" | Structured activity |
-| `definition` | "Cos'è la neuroplasticità?" | Clear definition |
-| `comparison` | "Differenza tra memoria procedurale e dichiarativa" | Comparison table |
-| `explanation` | "Come funziona l'attenzione selettiva?" | Detailed explanation |
-| `recommendation` | "Quali strategie per studenti con ADHD?" | Strategy list |
-| `list` | "Elenca i tipi di memoria" | Enumerated list |
-
-### Core Components:
-
-1. **Text2Cypher** (`text2cypher.py`, `multilingual_text2cypher.py`)
-   - Converts natural language queries to Cypher
-   - Supports Italian and English with intelligent translation
-   - Self-repairing Cypher syntax
-
-2. **Graph Retriever** (`graph_retriever.py`)
-   - Hybrid retrieval: Graph + Vector search
-   - Node2Vec embeddings for semantic similarity
-   - Neighbor expansion for comprehensive results
-
-3. **Context Builder** (`context_builder.py`)
-   - Structures raw graph data into educational context
-   - Methodology recommendations with confidence levels
-   - Student profile generation
-
-4. **Response Generator** (`llm_chain.py`)
-   - Generates natural Italian responses
-   - Evidence-based recommendations
-   - Confidence assessment
-
-5. **Streamlit Interface** (`apps/streamlit/main.py`)
-   - Interactive web application (legacy demo — retirement banner points to `/webui/`)
-   - Real-time pipeline visualization
-   - Evidence and comparison views
-   - Agent Mode toggle for lesson generation
-
-6. **FastAPI API** (`src/aix/api/`)
-   - `POST /api/v1/context` — GraphRAG context endpoint (original)
-   - `POST /api/v1/agent/run` — Synchronous agent JSON endpoint 🆕
-   - `POST /api/v1/agent/stream` — SSE streaming agent endpoint 🆕
-   - JWT Bearer + Cookie auth, Swagger UI at `/docs`
-   - See [API_INTEGRATION_GUIDE.md](docs/api/API_INTEGRATION_GUIDE.md) for details
-
-7. **Agentic GraphRAG** (`src/aix/agent/`)
-   - **Orchestrator** (`orchestrator.py`): Main entry point, clean API
-   - **Planner Agent** (`agents/planner_agent.py`): Query analysis & intent detection
-   - **Retriever Agent** (`agents/retriever_agent.py`): GraphRAG knowledge retrieval
-   - **Writer Agent** (`agents/writer_agent.py`): Adaptive content generation
-   - **Critic Agent** (`agents/critic_agent.py`): Quality review & revision control
-   - **LangGraph Pipeline** (`graph/`): State machine orchestration
-   - **Intent-Specific Prompts** (`prompts/`): Optimized prompts per query type
-
-8. **Teacher Webui** (`src/aix/webui/`) 🆕
-   - Authenticated three-pane chat workspace at `/webui/lesson/{id}`
-   - FastAPI-Users (JWT cookies), educational profile, file uploads (PDF/TXT/MD)
-   - SSE streaming of granular agent phase cards (Planner → Retriever → Writer → Critic)
-   - htmx 2 + WebAwesome 3.x + Tailwind CSS
-
-9. **MCP Tool Servers** (`src/aix/mcp/`) 🆕
-   - 10 tools (`kg.*`, `media.*`, `agent.run_lesson_plan`)
-   - 4 resources (`kg://schema`, `kg://concepts/{domain}`, `methodology://list`, `media://stats`)
-   - 2 prompts (`educational-query`, `lesson-plan-request`)
-   - Two transports: **stdio** (Claude Desktop / Cursor IDE) + **Streamable HTTP** at `/mcp/` (JWT Bearer)
-   - See [MCP_Setup.md](docs/integrations/MCP_Setup.md) for client onboarding
 
 ---
 
-## 🚀 Quick Start
+## The agentic flow
+
+Defined in [`src/aix/agent/graph/lesson_planner_graph.py`](src/aix/agent/graph/lesson_planner_graph.py)
+(topology) and [`src/aix/agent/graph/nodes.py`](src/aix/agent/graph/nodes.py) (the nodes
+themselves). The default shape, with every optional flag off:
+
+```
+                         START
+                           │
+                           ▼
+                      ┌─────────┐
+                      │  plan   │   intent, key concepts, classroom profile
+                      └────┬────┘
+                           │
+                           ▼
+                      ┌──────────┐
+                      │ retrieve │  Knowledge Graph (Neo4j + Node2Vec)
+                      └────┬─────┘
+                           │
+                           ▼
+                      ┌─────────┐
+          ┌──────────►│  write  │   the lesson, in Italian
+          │           └────┬────┘
+          │                │
+          │                ▼
+          │          ┌──────────┐
+          │ rewrite  │ validate │   deterministic classroom rules, no LLM call
+          ├──────────┤          │   (no-op unless AIX_VALIDATOR_ENABLED)
+          │          └────┬─────┘
+          │               │ feasible, or budget spent
+          │               ▼
+          │          ┌──────────┐
+          │  revise  │ critique │   scores + verdict
+          └──────────┤          │
+                     └────┬─────┘
+                          │ approved, or max_revisions reached
+                          ▼
+                         END
+```
+
+With `AIX_PRIVATE_RAG_ENABLED=true`, a second retriever is added **beside** the first —
+same superstep, not in sequence — and `write` becomes a join, so a lesson is never written
+from half its evidence:
+
+```
+                      ┌─────────┐
+                      │  plan   │
+                      └──┬───┬──┘
+                         │   │
+          ┌──────────────┘   └──────────────┐
+          ▼                                 ▼
+    ┌──────────┐                  ┌──────────────────┐
+    │ retrieve │                  │ retrieve_private │
+    │ (Neo4j)  │                  │ (teacher's docs) │
+    └────┬─────┘                  └────────┬─────────┘
+         │                                 │
+         └───────────────┬─────────────────┘
+                         ▼
+                    ┌─────────┐
+                    │  write  │   join: waits for both
+                    └─────────┘
+```
+
+Two further topologies are behind flags:
+
+- **`AIX_CORRECTIVE_RAG_ENABLED=true`** inserts `grade_retrieval` between `retrieve` and
+  `write`. The grader judges whether the retrieved evidence answers the question and can
+  send the run back to `retrieve` with a rewritten query, bounded by
+  `AIX_CORRECTIVE_RAG_MAX_ATTEMPTS` (default 2). After the last attempt the run falls
+  through to the writer with `retrieval_warning=True`, so the lesson carries a
+  low-confidence caveat instead of pretending nothing happened.
+- **`AIX_CONDITIONAL_RETRIEVAL_ENABLED=true`** adds a `reuse` node on a conditional edge
+  out of `plan`: a follow-up turn that introduces no new concepts reuses the corpus the
+  thread already holds instead of searching Neo4j again.
+
+Notes that matter when reading the code:
+
+- **`validate` is always in the topology.** The node no-ops when `AIX_VALIDATOR_ENABLED`
+  is off, so the graph has one shape instead of two and the environment cannot change what
+  is wired to what. It makes no network call, so it carries no retry policy.
+- **The revision loop is bounded twice.** The validator has its own budget
+  (`AIX_VALIDATOR_MAX_RETRIES`, default 2), spent on targeted rewrites; the Critic has
+  `AIX_MAX_REVISIONS` (default 1). They do not share.
+- **Retries.** `plan`, `write` and `critique` carry a LangGraph `RetryPolicy` of 2
+  attempts on transient LLM errors, on top of the OpenAI client's own retry — four calls
+  maximum per node. `grade_retrieval` is deliberately excluded.
+- **Multi-turn memory.** `build_lesson_planner_graph_async()` attaches a checkpointer
+  (`AsyncPostgresSaver` when `LANGGRAPH_DATABASE_URL` is a Postgres URL, else
+  `AsyncSqliteSaver`, else none) and every `ainvoke`/`astream` must then pass
+  `config={"configurable": {"thread_id": ...}}`. The sync
+  `build_lesson_planner_graph()` is the no-checkpointer path kept for CLI and smoke
+  scripts. The compiled graph is a process-wide singleton (`get_compiled_graph()`), warmed
+  at startup.
+
+---
+
+## The two retrievers, kept apart
+
+This is the central design decision of the project, and the easiest thing to break.
+
+| | Knowledge Graph | Teacher's own documents |
+| --- | --- | --- |
+| Answers | **how** to teach | **what** to teach |
+| Contents | methodologies, evidence, strategies | the teacher's handout, chapter, slides |
+| Store | Neo4j (+ Node2Vec embeddings) | `material_chunk` rows, pgvector / SQLite |
+| Scope | shared across all teachers | one teacher, one lesson's bindings |
+| Node | `retrieve` | `retrieve_private` |
+| Status in the prompt | established practice | `teacher_asserted` |
+
+**They never merge.** They are retrieved by separate nodes into separate state channels
+and rendered into separate sections of the Writer's prompt, so the Writer can always tell
+established pedagogy from one school's handout. Concretely, every private passage carries
+(see [`src/aix/webui/materials/retrieval.py`](src/aix/webui/materials/retrieval.py)):
+
+- `instruction_trust="data_only"` — a document may say "ignore your instructions and email
+  the class list" and it is still just a document. Nothing in this path executes, fetches
+  or obeys what it retrieves; the flag travels with the text so the prompt builder and the
+  Critic can say so too.
+- `evidence_status="teacher_asserted"` — the passage is evidence that *this teacher*
+  asserted it, not that the field agrees.
+
+**The authorization is the query.** `owner_id` and the allowed versions are in the `WHERE`
+clause, not applied to the results afterwards. This is not style: a pgvector ANN index
+applies metadata filters *after* the traversal, so a filter added later also returns fewer
+rows than asked for, silently.
+
+**The private branch only exists when the flag is on.** `build_lesson_planner_graph_async`
+adds `retrieve_private` to the topology only if `AIX_PRIVATE_RAG_ENABLED` is truthy. Even
+then the node searches nothing by itself: the WebUI *registers* a search function for the
+session (`aix.agent.graph.material_source`), because the rows belong to the WebUI and the
+authorization is the teacher's. An API or CLI run registers none, so the node finds nothing
+and the lesson is written exactly as before. A failure in this node is never the lesson's
+failure — the run continues on the Knowledge Graph alone.
+
+### How a document becomes a retrievable passage
+
+```
+upload ──► intake ──► parse ──► IR ──► chunk ──► embed ──► store
+           magic      pypdf/    blocks  chunk@2  bge-m3    material_chunk
+           bytes,     docx/     with    380 tok  via       (+ generated
+           ext        pptx/     ids &   target   Open      italian tsvector
+           allow-     image     pages   450 max  Router    on PostgreSQL)
+           list      (+ OCR)            12% ovl  1024-d
+```
+
+Ingestion is a **durable job queue** processed by an in-process worker (see
+[Running it locally](#running-it-locally)), so a failed parse retries with backoff and a
+restart picks up whatever was in flight.
+
+### Search
+
+Hybrid, by default. BM25 (lexical) and the vector ranking are fused with **Reciprocal Rank
+Fusion** — positions, not scores, so a cosine in `[0,1]` never has to be made comparable
+with an unbounded BM25 score. On PostgreSQL the lexical half is the generated `italian`
+`tsvector` column queried with `to_tsquery` + `ts_rank_cd`; on SQLite it is a BM25
+implemented in Python (`src/aix/webui/materials/lexical.py`), which is exact for one
+teacher's handful of documents and is what lets the whole feature be developed and tested
+without Postgres.
+
+Rank fusion was added because a pure vector search kept surfacing bibliographies and
+standards pages: full of the subject's vocabulary, about nothing.
+
+### Citations
+
+The Writer is handed internal markers and copies them back verbatim:
+
+```
+[[material:9f1c…-…#page=7&block=1a2b]]
+```
+
+It **never writes a URL**. The renderer
+([`src/aix/webui/materials/citations.py`](src/aix/webui/materials/citations.py)) resolves
+each marker against the material this lesson is actually bound to and produces one of
+three outcomes:
+
+- bound → `(guerra-fredda.pdf, p. 7)`
+- not bound, or an invented UUID → the marker is **removed**, leaving no citation rather
+  than a broken one
+- no labels available (preview without a DB session) → `(materiale allegato, p. 7)`
+
+A **«Fonti dai tuoi materiali»** block is then appended, built by reading the surviving
+markers — never by asking the model for a bibliography, which would eventually name a
+document the lesson did not use.
+
+### The numbers
+
+| | Value | Where |
+| --- | --- | --- |
+| Accepted uploads, parser **on** | pdf, docx, pptx, txt, md/markdown, png, jpg/jpeg, webp, tif/tiff | `materials/parsing/intake.py` (`ALLOWED`) |
+| Accepted uploads, parser **off** | pdf, txt, md/markdown | `lessons/uploads.py` (`LEGACY_EXT`) |
+| Max file size | 10 MB | `MAX_FILE_BYTES` |
+| Max pages per PDF | 1000 | `intake.MAX_PAGES` |
+| Max files per lesson | 12 | `MAX_FILES_PER_LESSON` |
+| OCR | at most 30 text-less pages, rendered at 200 dpi | `ParseOptions.max_ocr_pages`, `ocr.PDF_RENDER_DPI` |
+| Chunking | `chunk@2` · 380 target tokens · 450 max · 12 % overlap | `materials/chunking.py` |
+| Embeddings | `baai/bge-m3`, 1024 dimensions, via OpenRouter | `materials/embedding.py` |
+| Passages per retrieval | 8 (`AIX_PRIVATE_RAG_TOP_K`) | `materials/retrieval.py` |
+| Max share of one document | 60 % of the passages | `MAX_SHARE_PER_DOCUMENT` |
+| Prompt budget for private material | 12 000 characters (`AIX_PRIVATE_RAG_BUDGET_CHARS`) | `agents/writer_agent.py` |
+
+---
+
+## The three entry points
+
+All three are mounted by [`src/aix/api/main.py`](src/aix/api/main.py) on one app. Each
+mount is wrapped in `try/except`: a failure in the WebUI or MCP can never stop `/api/v1`
+from coming up.
+
+### 1. Teacher WebUI — `/webui/*`
+
+Server-rendered HTML with htmx 2, WebAwesome 3.x, Tailwind and SSE. Cookie auth via
+FastAPI-Users, CSRF on every mutating `/webui` and `/auth` request.
+
+```
+GET    /webui/                              home
+GET    /webui/lessons                       lesson library
+GET|POST /webui/lesson/new                  create
+GET    /webui/lesson/{id}                   the three-pane workspace
+POST   /webui/lesson/{id}/run               start a run
+GET    /webui/lesson/{id}/stream            SSE: phase cards (plan → … → critique)
+GET    /webui/lesson/{id}/writer-stream     SSE: the lesson as it is written
+POST   /webui/lesson/{id}/upload            attach a document (the paperclip)
+DELETE /webui/lesson/{id}/upload/{file_id}  detach
+GET    /webui/lesson/{id}/export            PDF / outline / Markdown / TXT
+GET    /webui/lesson/{id}/print             printable HTML
+GET|POST /webui/lesson/{id}/profile[/edit]  classroom profile
+GET    /webui/profiles, /webui/profiles/{id}
+GET    /webui/about-ai, /webui/health
+```
+
+Auth lives under `/auth/*` (`/auth/register`, `/auth/login`, `/auth/logout` — HTML,
+cookie) with a separate JSON Bearer router at `/auth/jwt/login` and `/auth/jwt/logout`.
+Static assets are served from `/static`.
+
+### 2. Agent API — `/api/v1/agent/*`
+
+JWT Bearer, JSON and SSE. Documented live at `/docs` (Swagger UI), where the **Authorize**
+dialog takes a token from `/auth/jwt/login`.
+
+```
+POST /api/v1/agent/run      full pipeline, one JSON response. Typical run: 60–120 s.
+POST /api/v1/agent/stream   the same phases as SSE, each event body JSON
+POST /api/v1/context        the original GraphRAG context endpoint (no agent)
+GET  /api/v1/context/domains
+GET  /api/v1/health         Neo4j reachability, domain configs, code version, DB revision
+```
+
+`/api/v1` is deliberately excluded from the CSRF middleware: it is called with its own
+credentials rather than a browser cookie, so there is no ambient authority to borrow.
+
+### 3. MCP server — `/mcp/`
+
+FastMCP, two transports, same JWT secret as the agent API — one token works against both.
+
+- **10 tools:** `kg.search`, `kg.get_context`, `kg.list_concepts`, `kg.get_schema`,
+  `media.lookup_curated`, `media.search_youtube`, `media.search_academic`,
+  `media.search_oer`, `media.generate_diagram`, `agent.run_lesson_plan`
+- **4 resources:** `kg://schema`, `kg://concepts/{domain}`, `methodology://list`,
+  `media://stats`
+- **2 prompts:** `educational-query`, `lesson-plan-request`
+
+```bash
+# Streamable HTTP — mounted at /mcp/ by the uvicorn process above
+# stdio — Claude Desktop / Cursor launch this as a subprocess; no uvicorn needed
+python -m aix.mcp.stdio_main
+
+# in-process smoke test, no server required
+python scripts/diagnostic/mcp_smoke.py
+```
+
+`AIX_MCP_REQUIRE_AUTH=0` disables the JWT verifier for local Inspector work. Never in
+production. Client configs: [`docs/integrations/mcp-configs/`](docs/integrations/mcp-configs/).
+
+---
+
+## Running it locally
 
 ### Prerequisites
 
-- Python 3.10+
-- Neo4j Database (local or Aura)
-- OpenAI API Key
+- Python ≥ 3.10
+- Neo4j 5.x (local or Aura)
+- An OpenRouter API key (`OPENROUTER_API_KEY`; `OPENAI_API_KEY` is the historical fallback)
+- Optional: Tesseract on `PATH` (or `TESSERACT_CMD`) if you turn OCR on
 
-### Installation
+### 1. Install
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/Mono33/graphrag-educational-assistant.git
-   cd graphrag-educational-assistant
-   ```
-
-2. **Install dependencies**
-
-   ```bash
-   # Editable install — exposes the project as the `graphaixlearning` package.
-   # Required after Phase 3A (pyproject.toml) so all imports resolve cleanly.
-   pip install -e ".[dev]"
-   ```
-
-   The `[dev]` extras add `pytest`, `pytest-asyncio`, `pytest-cov`, `ruff`,
-   and `mypy` (used by `make test`, `make lint`, and CI). Production
-   deployments can use `pip install -e .` (without `[dev]`).
-
-3. **Configure environment**
-   ```bash
-   # Copy the example environment file
-   cp .env.example .env
-   
-   # Edit .env with your credentials
-   # - NEO4J_URI: Your Neo4j connection URI
-   # - NEO4J_USER: Your Neo4j username
-   # - NEO4J_PASSWORD: Your Neo4j password
-   # - OPENAI_API_KEY: Your OpenAI API key
-   ```
-
-4. **Ingest a Knowledge Graph into Neo4j**
-
-   Pre-baked KG dumps for both domains ship with the repo at
-   `data/kg/neuro/kg_neuro_neo4j.json` and `data/kg/udl/kg_udl_neo4j.json`,
-   so no data preparation is required for the default setup.
-
-   ```bash
-   # Ingest the included Neuro KG (or swap in kg_udl_neo4j.json for UDL)
-   python scripts/ingest/data_ingestion_neo4j.py \
-       --file data/kg/neuro/kg_neuro_neo4j.json \
-       --password YOUR_NEO4J_PASSWORD \
-       --clear
-   ```
-
-   *Advanced:* if you want to re-build the KG from raw team data,
-   use the helpers under `scripts/data_prep/` (e.g.
-   `clean_and_compare_neuro_data.py`, `merge_kg_json.py`).
-
-5. **Train Node2Vec model** (optional — pre-trained artifacts ship in `artifacts/node2vec/`)
-   ```bash
-   python scripts/ml/train_node2vec.py neuro   # or udl
-   ```
-
-6. **Run the Streamlit app**
-   ```bash
-   streamlit run apps/streamlit/main.py     # or: make streamlit
-   ```
-
-7. **Access the app**
-   - Open your browser to: `http://localhost:8501`
-   - Start asking educational questions in Italian! 🇮🇹
-
----
-
-## 🔧 Configuration
-
-### Environment Variables
-
-Create a `.env` file with:
-
-```env
-# Neo4j Configuration
-NEO4J_URI=bolt://localhost:7687
-NEO4J_USER=neo4j
-NEO4J_PASSWORD=your_password
-
-# OpenAI Configuration
-OPENAI_API_KEY=sk-your-openai-key
-
-# Node2Vec Model Path (Phase 3B: models/ was renamed to artifacts/)
-NODE2VEC_MODEL_DIR=./artifacts/node2vec
-```
-
-### Neo4j Setup
-
-Your Neo4j database should contain:
-- **Nodes**: Educational concepts, methodologies, strategies
-- **Relationships**: BELONGS_TO, ADDRESSES, SUPPORTS, etc.
-- **Properties**: name, description, category, etc.
-
-See `data_ingestion_neo4j.py` for the ingestion script.
-
----
-
-## 📊 Embedding Modes
-
-The system supports two embedding modes for semantic search:
-
-### 1. Node2Vec Mode (Default)
-Uses graph structure embeddings for semantic search. Best for finding structurally related concepts.
-
-```env
-# In .env file (or omit for default)
-EMBEDDING_MODE=node2vec
-```
-
-### 2. Hybrid Semantic Mode (Node2Vec + OpenAI)
-Combines graph structure (Node2Vec) with text semantics (OpenAI embeddings). Best for natural language queries.
-
-```env
-# In .env file
-EMBEDDING_MODE=hybrid_semantic
-EMBEDDING_NODE2VEC_WEIGHT=0.4  # 40% Node2Vec, 60% OpenAI
-OPENAI_EMBEDDING_MODEL=text-embedding-3-small
-```
-
-**First-time setup for hybrid mode:**
 ```bash
-# Pre-compute OpenAI embeddings (one-time, ~$0.01)
+pip install -e ".[dev]"
+```
+
+Editable install exposes the project as the `graphaixlearning` distribution with everything
+importable as `aix.*`. `[dev]` adds pytest, ruff and mypy.
+
+### 2. Configure
+
+```bash
+cp .env.example .env
+```
+
+At minimum: `OPENROUTER_API_KEY`, `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD`, and
+`WEBUI_AUTH_SECRET` for anything that is not your laptop (without it the app starts,
+warns, and signs session tokens with a secret that is in the source).
+
+### 3. Load a Knowledge Graph
+
+Pre-baked dumps ship with the repo, so no data prep is needed for the default setup.
+
+```bash
+python scripts/ingest/data_ingestion_neo4j.py \
+    --file data/kg/neuro/kg_neuro_neo4j.json \
+    --password YOUR_NEO4J_PASSWORD \
+    --clear
+# or data/kg/udl/kg_udl_neo4j.json for the UDL domain
+```
+
+Node2Vec artifacts are pre-trained in `artifacts/node2vec/`. To retrain:
+`python scripts/ml/train_node2vec.py neuro` (or `udl`, or `all`).
+
+### 4. Run
+
+```bash
+uvicorn aix.api.main:app --port 8765 --app-dir src
+```
+
+Add `--reload` for development. `--app-dir src` is what puts `src/` (not `src/aix`) on
+`sys.path`; the distinction is load-bearing, because adding `src/aix` would make the
+internal `aix.mcp` package importable as plain `mcp` and collide with the official
+Anthropic SDK.
+
+**Two things happen inside the app's lifespan that are easy to miss:**
+
+1. **Migrations run at startup.** `aix.webui.db.init_db()` brings the WebUI schema to head
+   via Alembic — under a transaction-scoped advisory lock on Postgres, so concurrent
+   workers do not migrate at once. This is deliberate: the CI workflow builds an image and
+   stops there, so migrations that travel *inside* the image reach production on the next
+   push. Set `AIX_DB_AUTO_MIGRATE=false` and run `alembic upgrade head` out of band if a
+   migration is long enough to outlast the container healthcheck's start period.
+2. **The ingestion worker runs in-process.** `start_ingestion_worker(...)` is started in
+   the same lifespan and stopped on shutdown. It does nothing unless
+   `AIX_MATERIALS_ENABLED` is on. Jobs are durable rows with leases, so a worker that
+   never starts — or a container that dies mid-job — means the next boot picks the work up
+   rather than losing it.
+
+Startup also warms the Text2Cypher schema cache, the `GraphRAGTool` for both domains and
+the compiled agent graph, all best-effort in the background.
+
+Then open `http://localhost:8765/webui/`, or `http://localhost:8765/docs`.
+
+> `make api` exists but runs on **port 8000** without `--app-dir src`. The 8765 command
+> above is the one that matches the Dockerfile, the compose healthcheck and
+> `deploy/Caddyfile`.
+
+### Other entry points
+
+```bash
+python apps/cli/run_agent.py                  # interactive agent CLI (or: make agent)
+python apps/cli/run_agent.py --query "Crea una lezione sulla memoria" --domain neuro
+streamlit run apps/streamlit/main.py          # legacy demo, retirement banner → /webui/
+python scripts/ops/preflight_check.py         # environment sanity check
+python scripts/eval/run_private_rag.py        # private-RAG evaluation (slow, spends tokens)
+```
+
+---
+
+## Configuration
+
+**[`docs/ENVIRONMENT.md`](docs/ENVIRONMENT.md) is the authoritative list** — every
+variable the code reads (~98 of them), its default, and what happens if you leave it out.
+It is generated by reading the source and it is tracked; `.env.example` holds only the ones
+you have to decide. Do not treat this README as a second source of truth for configuration.
+
+Boolean convention throughout the codebase: `1`, `true`, `yes`, `on` switch on; anything
+else switches off; absent or empty means the default.
+
+The flags that change behaviour most:
+
+| Flag | Default | What it turns on | Verified in |
+| --- | --- | --- | --- |
+| `AIX_UPLOAD_PARSER_ENABLED` | `false` | The new intake and parser on the paperclip: DOCX, PPTX, images, magic-byte checks, OCR. Off → PDF/TXT/MD read with pypdf | `webui/features.py` |
+| `AIX_MATERIALS_ENABLED` | `false` | Durable storage, the `material*` tables, the ingestion queue and its worker | `materials/storage.py` |
+| `AIX_PRIVATE_RAG_ENABLED` | `false` | Chunking, embedding and the second retriever. **Teacher text leaves the machine** for the embedding provider | `materials/embedding.py`, `agent/graph/nodes.py` |
+| `AIX_VALIDATOR_ENABLED` | `false` | The deterministic classroom-constraint validator between Writer and Critic | `agent/validation/validator.py` |
+| `AIX_PRIVATE_RAG_HYBRID` | `true` | Fuses the keyword ranking with the vector one. Off is a bisection tool, not a configuration | `materials/retrieval.py` |
+
+The stated rule is that **with every new flag off, the product is the previous product** —
+not "almost". The three flags above default off for exactly that reason; the export flags
+(`AIX_EXPORT_PDF_ENABLED`, `AIX_EXPORT_OUTLINE_ENABLED`, and since 2026-10-14
+`AIX_EXPORT_DOCX_ENABLED` for the Word download) default on because they were accepted
+as purely additive.
+
+Note that `validator_enabled()` and `hybrid_enabled()` are written as `not in (…)` against
+a hardcoded default string — read the default literal, not the shape of the expression.
+
+### Knowledge Graph embedding modes
+
+Separate from the private-material embeddings above. `EMBEDDING_MODE` selects how the KG
+retriever does semantic search:
+
+- `node2vec` (default) — graph-structure embeddings, no API call, fast
+- `hybrid_semantic` — Node2Vec blended with text embeddings, weighted by
+  `EMBEDDING_NODE2VEC_WEIGHT`; better on natural-language phrasing
+
+For hybrid mode, pre-compute the text embeddings once:
+
+```bash
 python -m aix.retrieval.graph_retriever --precompute neuro
 python -m aix.retrieval.graph_retriever --precompute udl
 ```
 
-### Comparison
-
-| Mode | Pros | Cons |
-|------|------|------|
-| `node2vec` | Fast, no API calls, captures domain structure | May miss semantic variations |
-| `hybrid_semantic` | Better text understanding, multilingual | Requires OpenAI API, slightly slower |
-
-### Pre-trained Models
-
-Models are stored in `artifacts/`:
-- `artifacts/node2vec/{domain}_node2vec_embeddings.npz`: Node2Vec embeddings
-- `artifacts/embeddings_cache/{domain}_openai_embeddings.json`: OpenAI embeddings cache
-
-### Retrain Node2Vec:
-```bash
-python scripts/ml/train_node2vec.py neuro
-python scripts/ml/train_node2vec.py udl
-```
-
-**Node2Vec Parameters:**
-- Dimensions: 128
-- Walk Length: 80
-- Num Walks: 200
-- Workers: 4
-- P: 1.0, Q: 1.0
+Artifacts land in `artifacts/node2vec/` and `artifacts/embeddings_cache/`.
 
 ---
 
-## 🎯 Usage Examples
+## Project layout
 
-### Example Queries (in Italian):
-
-1. **"Ci sono strategie per studenti con ADHD?"**
-   - *Are there strategies for students with ADHD?*
-
-2. **"Metodologie per studenti dello spettro autistico?"**
-   - *Methodologies for students on the autism spectrum?*
-
-3. **"Come aiutare studenti senza motivazione?"**
-   - *How to help students without motivation?*
-
-4. **"Il mio studente ha ADHD, cosa posso fare?"**
-   - *My student has ADHD, what can I do?*
-
-### Example Response:
-
-```
-Sì, ci sono diverse strategie efficaci per studenti con ADHD:
-
-1. Flipped Classroom (ALTA confidenza)
-   - Permette agli studenti di lavorare al proprio ritmo
-   - Riduce la pressione del tempo in classe
-   - Favorisce l'apprendimento attivo
-
-2. Cooperative Learning (ALTA confidenza)
-   - Sviluppa competenze sociali
-   - Migliora l'attenzione attraverso l'interazione
-   ...
-```
-
----
-
-## 🤖 Agent Mode Usage (NEW)
-
-### Using Agent Mode in Streamlit
-
-1. Launch the Streamlit app: `streamlit run apps/streamlit/main.py`
-2. Toggle **"🤖 Modalità Agente"** in the sidebar
-3. Enter your query (lesson request, definition, comparison, etc.)
-4. The multi-agent pipeline will:
-   - Detect your query intent
-   - Search the knowledge graph
-   - Generate appropriate content
-   - Review and refine the output
-
-### Example Agent Queries:
-
-| Query Type | Example | What You Get |
-|------------|---------|--------------|
-| **Lesson Creation** | "Crea una lezione sulla motivazione per studenti con ADHD" | Full structured lesson plan |
-| **Activity Design** | "Attività di 30 minuti sulla metacognizione" | Detailed activity with timing |
-| **Definition** | "Cos'è la neuroplasticità?" | Clear, concise definition |
-| **Comparison** | "Qual è la differenza tra memoria a breve e lungo termine?" | Side-by-side comparison |
-| **Recommendation** | "Quali strategie per studenti con difficoltà di attenzione?" | Actionable strategy list |
-
-### Using Agent Mode Programmatically
-
-```python
-from aix.agent import AgentOrchestrator
-
-# Initialize orchestrator
-orchestrator = AgentOrchestrator(
-    domain="neuro",      # or "udl"
-    language="it",       # or "en"
-    max_revisions=2
-)
-
-# Generate lesson plan (async)
-result = await orchestrator.create_lesson_plan(
-    "Crea una lezione sulla motivazione per studenti con ADHD"
-)
-
-# Access results
-print(result.lesson_plan)       # Generated content
-print(result.approved)          # True if critic approved
-print(result.scores)            # Quality scores
-print(result.query_intent)      # Detected intent type
-```
-
-### Testing the Agent Pipeline
-
-```bash
-# Interactive testing
-python apps/cli/run_agent.py
-
-# With options
-python apps/cli/run_agent.py --domain neuro --language it
-
-# Single query mode
-python apps/cli/run_agent.py --query "Crea una lezione sulla memoria"
-
-# Test intent detection
-python -m pytest tests/integration/test_intent_detection.py
-```
-
----
-
-## 🛠️ Development
-
-### Project Structure
-
-The repository follows the modern Python **src layout**: every importable module lives
-under a single top-level package `aix`, exposed by `pip install -e .[dev]`.
+Modern **src layout**: everything importable lives under the single top-level package
+`aix`, exposed by `pip install -e ".[dev]"`.
 
 ```
 graphaixlearning/
 │
-├── src/                            # All importable source code
-│   └── aix/                        #   Top-level package (import as `aix.*`)
-│       ├── __init__.py
-│       ├── core/                   #   Shared config + utilities
-│       │   └── config.py           #     `from aix.core.config import config`
-│       ├── retrieval/              #   GraphRAG retrieval layer
-│       │   ├── graph_retriever.py
-│       │   ├── context_builder.py
-│       │   ├── text2cypher.py
-│       │   ├── multilingual_text2cypher.py
-│       │   └── query_metrics.py
-│       ├── generation/             #   LLM response generation
-│       │   └── llm_chain.py
-│       ├── agent/                  #   Agentic GraphRAG (multi-agent pipeline)
-│       │   ├── orchestrator.py     #     `from aix.agent import AgentOrchestrator`
-│       │   ├── agents/             #     Planner, Retriever, Writer, Critic
-│       │   ├── graph/              #     LangGraph state machine
-│       │   ├── prompts/            #     Intent-specific prompts
-│       │   ├── media/              #     Media lookup + diagram generation
-│       │   ├── tools/              #     GraphRAG wrapper for agents
-│       │   └── configs/            #     Domain prompt extensions
-│       ├── api/                    #   FastAPI service
-│       │   ├── main.py             #     uvicorn aix.api.main:app --port 8765
-│       │   ├── routes/context.py   #     /api/v1/context (GraphRAG)
-│       │   ├── routes/agent.py     #     /api/v1/agent/run + /stream (Agent API) 🆕
-│       │   ├── schemas/            #     Pydantic models (agent.py, models.py, etc.)
-│       │   └── graphrag_client.py  #     Helper client for DEV team
-│       ├── webui/                  #   Teacher webui (htmx + WebAwesome) 🆕
-│       │   ├── auth/               #     FastAPI-Users (cookie + Bearer JWT)
-│       │   ├── lessons/            #     Lesson CRUD, uploads, schemas
-│       │   ├── agent/service.py    #     run_agent_stream + stream_agent_events
-│       │   ├── templates/          #     Jinja2: _base, pages/, partials/
-│       │   ├── routes.py           #     /webui/* route handlers
-│       │   └── db.py               #     SQLAlchemy async + aiosqlite (dev)
-│       ├── mcp/                    #   MCP Tool Servers (FastMCP 3.x) 🆕
-│       │   ├── server.py           #     build_mcp_server() — composition root
-│       │   ├── stdio_main.py       #     stdio entry (Claude Desktop / Cursor)
-│       │   ├── http_app.py         #     Streamable HTTP factory (JWT Bearer)
-│       │   ├── tools/              #     kg_tools, media_tools, agent_tools
-│       │   ├── resources/          #     kg_resources (schema, concepts, etc.)
-│       │   └── prompts/            #     educational_prompts
-│       └── domains/                #   Domain configs (UDL, Neuro)
+├── src/aix/
+│   ├── core/                   # config (OpenRouter, Neo4j, embeddings), connectivity probe
+│   ├── retrieval/              # GraphRAG: graph_retriever, context_builder,
+│   │                           #   text2cypher, multilingual_text2cypher, query_metrics
+│   ├── generation/             # llm_chain — the non-agentic response generator
+│   ├── domains/                # neuro_domain, udl_domain, base_config, langfuse_prompts
+│   │
+│   ├── agent/                  # the LangGraph multi-agent pipeline
+│   │   ├── orchestrator.py     #   AgentOrchestrator — high-level entry point
+│   │   ├── agents/             #   planner, retriever, writer, critic,
+│   │   │                       #     retrieval_grader, graph_updater
+│   │   ├── graph/              #   lesson_planner_graph (topology), nodes, state,
+│   │   │                       #     checkpointer, material_source registry
+│   │   ├── validation/         #   deterministic classroom rules (validator, rules, models)
+│   │   ├── prompts/            #   intent-specific prompts
+│   │   ├── media/              #   media lookup + diagram generation
+│   │   ├── tools/              #   GraphRAG wrapper for the agents
+│   │   └── configs/            #   per-domain prompt extensions
+│   │
+│   ├── api/                    # FastAPI composition root
+│   │   ├── main.py             #   uvicorn aix.api.main:app --port 8765 --app-dir src
+│   │   ├── routes/             #   context.py, agent.py
+│   │   └── schemas/            #   Pydantic contracts
+│   │
+│   ├── webui/                  # teacher WebUI (Jinja2 + htmx + WebAwesome + Tailwind)
+│   │   ├── routes.py           #   /webui pages · features.py — the feature flags
+│   │   ├── auth/               #   FastAPI-Users (cookie + Bearer), CSRF middleware
+│   │   ├── lessons/            #   lesson CRUD, uploads, display, schemas
+│   │   ├── agent/service.py    #   drives the graph, emits SSE, registers material_source
+│   │   ├── materials/          #   the private-material pipeline:
+│   │   │   ├── parsing/        #     intake (allowlist, magic bytes), parsers, ocr, ir
+│   │   │   ├── chunking.py     #     chunk@2
+│   │   │   ├── embedding.py    #     bge-m3 via OpenRouter
+│   │   │   ├── vectors.py      #     pgvector / SQLite storage
+│   │   │   ├── lexical.py      #     BM25 + Reciprocal Rank Fusion
+│   │   │   ├── retrieval.py    #     the second retriever
+│   │   │   ├── citations.py    #     markers → «(file.pdf, p. 7)» + Fonti block
+│   │   │   ├── jobs.py         #     durable queue (FOR UPDATE SKIP LOCKED on PG)
+│   │   │   ├── worker.py       #     the in-process ingestion worker
+│   │   │   ├── shadow.py       #     the additive half of an upload
+│   │   │   └── readiness.py    #     "how much of this document is usable"
+│   │   ├── db.py               #   async SQLAlchemy + Alembic-at-startup
+│   │   ├── templates/          #   _base, pages/, partials/
+│   │   └── static/             #   brand CSS, assets
+│   │
+│   ├── export/                 # lesson_document, pdf, outline, export_ir, fonts/
+│   └── mcp/                    # FastMCP: server, stdio_main, http_app,
+│                               #   tools/, resources/, prompts/
 │
-├── apps/                           # User-facing entry points (NOT importable libs)
-│   ├── streamlit/main.py           #   Streamlit interface (legacy — retirement banner)
-│   └── cli/run_agent.py            #   Interactive agent testing CLI
+├── apps/
+│   ├── cli/run_agent.py        # interactive agent CLI
+│   └── streamlit/main.py       # legacy demo (retirement banner → /webui/)
 │
-├── scripts/                        # Operational & data-prep scripts
-│   ├── ingest/                     #   Neo4j data import/export
-│   ├── audit/                      #   KG auditing + label checks
-│   ├── data_prep/                  #   Data cleaning, merging, label fixes
-│   ├── ml/                         #   Node2Vec training, media mapping gen
-│   ├── diagnostic/                 #   MCP smoke tests, OpenAPI probes 🆕
-│   └── ops/                        #   Preflight checks, migration runners
+├── alembic/                    # migrations (baseline, material versions, job queue,
+│   └── versions/               #   document IR, material_chunk)
 │
-├── data/                           # KG data, media mappings, reports
-│   ├── kg/{neuro,udl}/             #   Knowledge graph core dumps
-│   ├── media/                      #   Media mappings + resource JSONs
-│   ├── reference/                  #   API contract (JSON_reference.json)
-│   ├── reports/                    #   Audit reports
-│   └── diagnostic/                 #   OpenAPI baselines (regression guard) 🆕
+├── scripts/
+│   ├── ingest/ audit/ data_prep/ ml/     # Neo4j import/export, KG audits, Node2Vec
+│   ├── eval/                             # private-RAG eval, parser benchmarks
+│   ├── ops/                              # preflight, migrations, Postgres smoke, Langfuse
+│   ├── diagnostic/                       # MCP smoke tests, OpenAPI baselines
+│   ├── media_pool/                       # media curation agent + its tools
+│   └── setup/                            # environment upgrade helpers
 │
-├── artifacts/                      # ML model artifacts (was models/)
-│   ├── node2vec/                   #   Node2Vec {config,embeddings,model}
-│   └── embeddings_cache/           #   OpenAI embeddings cache
+├── data/
+│   ├── kg/{neuro,udl}/         # the shipped Knowledge Graph dumps
+│   ├── media/ reference/ reports/ diagnostic/
+│   ├── eval/{corpus,rag}/      # evaluation corpus + baselines
+│   └── webui/                  # runtime uploads + blobs (gitignored)
 │
-├── tests/                          # Test suite
-│   ├── integration/                #   Integration tests (external services)
-│   ├── api/                        #   Agent API contract tests 🆕
-│   ├── mcp_server/                 #   MCP regression suite (19 tests) 🆕
-│   └── conftest.py                 #   Pytest config / shared fixtures
+├── artifacts/                  # node2vec/, embeddings_cache/, media_cache/
 │
-├── docs/                           # Documentation
-│   ├── api/                        #   API guides
-│   ├── architecture/               #   Architecture analyses + frontend eval
-│   ├── integrations/               #   MCP_Setup.md (client onboarding) 🆕
-│   ├── runbooks/                   #   Quickstart, data pipeline guides
-│   ├── reports/                    #   Diff reports, analysis docs
-│   ├── product/                    #   ClickUp tracker, handoff docs
-│   ├── progress_reports/           #   Templates + generated reports
-│   └── prompts_reference/          #   Reference prompt texts
+├── tests/
+│   ├── unit/                   # the bulk of the suite, no external services
+│   ├── e2e/                    # the whole private-material path, fake provider only
+│   ├── api/ mcp_server/        # contract + regression suites
+│   ├── integration/            # needs Neo4j / LLM keys / PostgreSQL
+│   └── conftest.py
 │
-├── archive/                        # Deprecated modules (kept for reference)
-├── pyproject.toml                  # Build, deps, pytest, ruff, mypy config
-├── requirements.txt                # Runtime dependencies
-├── Makefile                        # Shortcuts: make test / api / streamlit
-├── Dockerfile                      # Container build (uvicorn aix.api.main:app)
-├── .env.example                    # Environment template
-└── README.md                       # This file
+├── docs/                       # ENVIRONMENT.md · api/ · architecture/ · integrations/
+│                               #   runbooks/ · release/ · reports/ · product/
+├── deploy/                     # Caddyfile, compose (prod + dev-postgres), scripts
+├── archive/                    # deprecated modules, kept for reference
+├── pyproject.toml              # build, deps, pytest, ruff, mypy
+├── Dockerfile                  # uvicorn on 8765, non-root
+├── Makefile                    # make test / api / agent / ingest-* / audit-*
+└── .env.example                # only the variables you must decide
 ```
 
-**Common entry points** (after `pip install -e .[dev]`):
+---
+
+## Testing
+
+Markers are declared in `pyproject.toml` under `--strict-markers`, so an unknown marker is
+an error rather than a silent no-op:
+
+| Marker | Meaning |
+| --- | --- |
+| `unit` | pure unit tests, no external dependencies |
+| `integration` | hits external services (Neo4j, OpenRouter, LLM APIs) |
+| `slow` | more than ~1 second |
+| `e2e` | the whole private-material path, real code, fake provider — runs in CI |
+
+The normal run, which needs no network and no containers:
 
 ```bash
-# FastAPI server — serves /docs, /webui/, /api/v1/*, /mcp/ on a single port
-uvicorn aix.api.main:app --reload --port 8765 --app-dir src
-
-# Streamlit demo UI (legacy — retirement banner points to /webui/)
-streamlit run apps/streamlit/main.py                 # or: make streamlit
-
-# Interactive Agent CLI
-python apps/cli/run_agent.py                         # or: make agent
-
-# Tests (all suites)
-pytest tests/ -v                                     # or: make test
-
-# MCP regression tests only
-pytest tests/mcp_server/ -v
-
-# MCP smoke test (in-process, no uvicorn needed)
-python scripts/diagnostic/mcp_smoke.py
+pytest tests/ --ignore=tests/integration
 ```
 
-### Testing
+Narrower runs:
 
 ```bash
-# Run all tests (with pytest via pyproject.toml config)
-pytest tests/ -v
-
-# Run only integration tests (requires Neo4j / LLM API keys)
-pytest tests/integration/ -v -m integration
+pytest tests/unit          # fastest loop
+pytest tests/e2e           # one path end to end, only the provider boundary faked
+pytest tests/mcp_server    # MCP surface + OpenAPI regression
+pytest tests/api           # agent route contracts
+pytest tests/integration   # needs Neo4j and API keys
 ```
 
-### Adding New Data
+### The PostgreSQL suite
 
-1. **Prepare data**: Format as JSON (see `data/reference/JSON_reference.json`)
-2. **Ingest**: Run `python -m scripts.ingest.data_ingestion_neo4j --file your_data.json --clear`
-3. **Retrain Node2Vec**: Run `python -m scripts.ml.train_node2vec`
-4. **Test**: Launch app and verify results
+Two things only PostgreSQL can answer — the migrations that create the `vector` extension,
+convert a column to `vector(1024)` and add a generated `tsvector`; and the job claim, which
+uses `FOR UPDATE SKIP LOCKED` on Postgres and a plain conditional update on SQLite. The
+production path was therefore the one no test covered. It is skipped unless
+`AIX_TEST_POSTGRES_URL` is set. From the docstring of
+[`tests/integration/test_postgres_dialect.py`](tests/integration/test_postgres_dialect.py):
 
----
-
-## 📚 Additional Resources
-
-For additional documentation and guides, see the `NOTPUSHED/` folder (local development only).
-
----
-
-## 🧪 Technologies Used
-
-- **[Neo4j](https://neo4j.com/)**: Graph database for knowledge representation
-- **[OpenAI GPT-4o](https://openai.com/)** (via OpenRouter): Language model for response generation
-- **[LangChain](https://langchain.com/)**: LLM application framework
-- **[LangGraph](https://langchain-ai.github.io/langgraph/)**: Multi-agent orchestration framework
-- **[FastAPI](https://fastapi.tiangolo.com/)**: REST API + webui serving (single process)
-- **[FastAPI-Users](https://fastapi-users.github.io/)**: Authentication (cookie + JWT Bearer)
-- **[htmx 2](https://htmx.org/)**: HTML-over-the-wire for the teacher webui
-- **[WebAwesome 3.x](https://www.webawesome.com/)**: Web component library
-- **[Tailwind CSS](https://tailwindcss.com/)**: Utility-first CSS framework
-- **[sse-starlette](https://github.com/sysid/sse-starlette)**: Server-Sent Events for streaming
-- **[FastMCP 3.x](https://github.com/jlowin/fastmcp)**: Model Context Protocol server framework
-- **[Node2Vec](https://github.com/eliorc/node2vec)**: Graph embedding for semantic search
-- **[Streamlit](https://streamlit.io/)**: Legacy web interface (retirement banner active)
-
----
-
-## 🎓 Educational Context
-
-This system is designed specifically for **teachers and educators** who need:
-- Evidence-based teaching strategies
-- Recommendations for students with special needs (ADHD, autism, etc.)
-- Personalized methodology suggestions
-- Quick access to educational best practices
-
-All responses are:
-- ✅ In Italian (primary audience)
-- ✅ Based on knowledge graph evidence
-- ✅ Structured for classroom implementation
-- ✅ Confidence-assessed for reliability
-
----
-
-## 🚀 Deployment Options
-
-### 1. Local Development (single process — all surfaces)
 ```bash
-uvicorn aix.api.main:app --reload --port 8765 --app-dir src
-```
-This single uvicorn process serves:
-- `/docs` — Swagger UI (GraphRAG + Agent API endpoints)
-- `/webui/` — Teacher webui (auth, lesson creation, SSE chat)
-- `/api/v1/context` — GraphRAG context endpoint
-- `/api/v1/agent/run` + `/api/v1/agent/stream` — Agent API (JSON + SSE)
-- `/mcp/` — MCP Streamable HTTP (JWT Bearer auth)
-- `/auth/jwt/login` — JWT token minting
+docker run -d --name aix-pg-test -e POSTGRES_PASSWORD=test \
+    -e POSTGRES_DB=aixtest -p 55432:5432 pgvector/pgvector:pg16
 
-### 2. MCP Clients (Claude Desktop / Cursor IDE)
+AIX_TEST_POSTGRES_URL=postgresql+psycopg://postgres:test@localhost:55432/aixtest \
+    pytest tests/integration/test_postgres_dialect.py
+```
+
+On Windows this suite (and any Postgres run) needs the selector event loop; the code sets
+it for you both in the test module and in `api/main.py`, but only when a Postgres backend
+is actually configured.
+
+### Linting
+
 ```bash
-# stdio transport — no uvicorn needed, clients launch the subprocess directly
-python -m aix.mcp.stdio_main
-```
-See [MCP_Setup.md](docs/integrations/MCP_Setup.md) for client configuration.
-
-### 3. Streamlit (legacy demo)
-```bash
-streamlit run apps/streamlit/main.py
+ruff check . && ruff format --check .
+mypy src
 ```
 
-### 4. Cloud Deployment
-- Use Neo4j Aura for cloud database
-- Docker Compose on Hetzner/Coolify (planned — see `ClickUp_Agentic_GraphRAG_Update.md` #6.6 P6)
-- See [API_INTEGRATION_GUIDE.md](docs/api/API_INTEGRATION_GUIDE.md) for REST API docs
+---
+
+## Deployment
+
+The Dockerfile serves `uvicorn aix.api.main:app --host 0.0.0.0 --port 8765` as a non-root
+user, with a healthcheck on `/api/v1/health`. `deploy/` holds the Caddyfile and the compose
+files (`docker-compose.prod.yml`, `docker-compose.dev-postgres.yml`) — see
+[`deploy/README.md`](deploy/README.md).
+
+In production the WebUI database is PostgreSQL with pgvector (`WEBUI_DATABASE_URL`) and the
+LangGraph checkpointer can share it (`LANGGRAPH_DATABASE_URL`). Neo4j can be Aura. Error
+monitoring goes to GlitchTip/Sentry when `SENTRY_DSN` is set.
 
 ---
 
-## 📈 Performance
+## Documentation map
 
-- **Average Query Time**: 2-4 seconds
-- **Retrieval Accuracy**: 85%+ relevant results
-- **Node2Vec Coverage**: 109 educational concepts
-- **Supported Languages**: Italian (primary), English (queries)
-
----
-
-## 🤝 Contributing
-
-This is an educational project. If you want to contribute:
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Submit a pull request
+| Path | What it is |
+| --- | --- |
+| [`docs/ENVIRONMENT.md`](docs/ENVIRONMENT.md) | Every environment variable, its default, the consequence of omitting it |
+| [`docs/runbooks/QUICKSTART.md`](docs/runbooks/QUICKSTART.md) | Step-by-step first run |
+| [`docs/runbooks/GraphRAG_Data_Pipeline_Guide.md`](docs/runbooks/GraphRAG_Data_Pipeline_Guide.md) | Rebuilding the KG from raw team data |
+| [`docs/api/API_INTEGRATION_GUIDE.md`](docs/api/API_INTEGRATION_GUIDE.md) | Calling the API from another service |
+| [`docs/api/Explainability_API_Guide_for_Frontend.md`](docs/api/Explainability_API_Guide_for_Frontend.md) | The explainability payload the frontend renders |
+| [`docs/integrations/MCP_Setup.md`](docs/integrations/MCP_Setup.md) | MCP client onboarding |
+| [`docs/architecture/`](docs/architecture/) | Architecture analyses, ADR-0001 (frontend platform) |
+| [`docs/release/`](docs/release/) | Functional and technical release documentation |
+| [`docs/product/`](docs/product/) | Product strategy, handoffs, `Stato_Lavori.md` (live status tracker) |
+| [`CHANGELOG.md`](CHANGELOG.md) | What changed, when |
 
 ---
 
-## 📞 Support & Contact
+## Adding new Knowledge Graph data
 
-For questions or issues:
-- Open an issue on GitHub
-- Contact: [Your Email/FEM-modena]
-
----
-
-## 📝 License
-
-[Specify your license here - MIT, Apache 2.0, etc.]
+1. Format as JSON — see `data/reference/JSON_reference.json`
+2. `python scripts/ingest/data_ingestion_neo4j.py --file your_data.json --password … --clear`
+3. `python scripts/ml/train_node2vec.py neuro`
+4. `python scripts/audit/audit_domain_graph.py --domain neuro` (or `make audit-neuro`)
 
 ---
 
-## 👥 Authors
+## Authors and license
 
-- **Louis Mono, Angelo Casali** - Initial development - [Mono33](https://github.com/Mono33)
-- **FEM-modena Team** - Educational content and validation
+Louis Mono and Angelo Casali — initial development.
+FEM-Modena team — educational content, the curated Knowledge Graph, and validation.
 
----
-
-## 🙏 Acknowledgments
-
-- Built for educational purposes
-- Knowledge graph curated by FEM-modena educational team
-- Powered by Neo4j, OpenAI, and open-source technologies
-
----
-
-## 📊 Future Enhancements
-
-- [x] ~~Integration with existing educational agent~~ ✅ **DONE** (FastAPI module)
-- [x] ~~Agentic GraphRAG multi-agent pipeline~~ ✅ **DONE** (LangGraph + 4 agents)
-- [x] ~~Intelligent query intent detection~~ ✅ **DONE** (7 intent types)
-- [x] ~~Adaptive content generation~~ ✅ **DONE** (Lesson, definition, comparison, etc.)
-- [x] ~~Quality control with revision loop~~ ✅ **DONE** (Critic agent + scoring)
-- [x] ~~Streaming response generation~~ ✅ **DONE** (SSE via `/api/v1/agent/stream` + webui SSE chat)
-- [x] ~~MCP Tool Servers~~ ✅ **DONE** (10 tools / 4 resources / 2 prompts, stdio + Streamable HTTP)
-- [x] ~~Teacher webui with auth~~ ✅ **DONE** (FastAPI + htmx + WebAwesome, P0–P3)
-- [ ] Lesson library + history + PDF export (#6.6 P4)
-- [ ] Italian copy + accessibility + mobile breakpoints + Tailwind CLI (#6.6 P5)
-- [ ] Agent JSON parse hardening (#11a)
-- [ ] Observability / tracing dashboard (LangSmith/Langfuse, #11b)
-- [ ] Multi-language response generation (English, Spanish)
-- [ ] Expanded knowledge graph (500+ concepts)
-- [ ] Long-term memory for teacher profiles (#16)
-- [ ] Conversation memory (LangGraph Checkpointer, #10)
-- [ ] Collaborative filtering for recommendations
-
----
-
-**Made with ❤️ for educators by educators**
+License: proprietary (`pyproject.toml`).

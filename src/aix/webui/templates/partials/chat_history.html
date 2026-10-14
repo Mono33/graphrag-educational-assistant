@@ -64,6 +64,15 @@
 
     </div>
 
+  {% elif msg.role == "assistant" and msg.agent_kind == "tutor" %}
+
+    {# ── A LIGHT TURN'S ANSWER — the lesson did not change ────────── #}
+    {% set pending = False %}
+    {% set turn = msg.turn_index %}
+    {% set meta = msg.meta_json %}
+    {% set answer_html = msg.content_html %}
+    {% include "partials/chat_light_card.html" with context %}
+
   {% elif msg.role == "assistant" %}
 
     {# ── ASSISTANT LESSON CARD — left-aligned, full prose ────────── #}

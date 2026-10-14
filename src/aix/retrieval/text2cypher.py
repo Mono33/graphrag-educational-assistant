@@ -16,6 +16,7 @@ from langchain_openai import ChatOpenAI
 from neo4j import GraphDatabase
 
 # Import domain configuration system
+from aix.core.prompt_cache import cacheable_lc
 from aix.domains import get_domain_config
 
 # Configure logging
@@ -37,7 +38,14 @@ class Neo4jSchemaExtractor:
     """Extract schema information from Neo4j database"""
 
     def __init__(self, uri: str, user: str, password: str):
-        self.driver = GraphDatabase.driver(uri, auth=(user, password))
+        # Fail fast rather than hang: this driver is the one the whole hybrid
+        # retrieval chain uses, and a lesson asks the graph ten questions or
+        # more. See ``Neo4jConfig.driver_kwargs``.
+        from aix.core.config import config as _app_config
+
+        kwargs = dict(_app_config.neo4j.driver_kwargs())
+        kwargs["auth"] = (user, password)
+        self.driver = GraphDatabase.driver(uri, **kwargs)
 
     def close(self):
         """Close the Neo4j connection"""
@@ -139,6 +147,7 @@ class Text2CypherConverter:
     ):
         self.schema_extractor = Neo4jSchemaExtractor(neo4j_uri, neo4j_user, neo4j_password)
         self.schema_info = None  # Set per-query (from cache or fresh extraction)
+        self.model = model
 
         # Build kwargs compatible with reasoning and standard models
         from aix.core.config import config as _cfg
@@ -532,12 +541,19 @@ Cypher: MATCH (i:IntrinsicMotivation) RETURN i, labels(i) as node_labels LIMIT 1
 
             prompt_template = Text2CypherConverter._prompt_cache[cache_key]
 
-            # Create chain for this query
-            chain = prompt_template | self.llm | self.output_parser
+            # The system message is ~100k characters and identical on every call
+            # (a lesson asks the graph about ten questions): marked as a cache
+            # block, the provider bills the repeats at a tenth. Same text, same
+            # answer; only the wording of the request changes.
+            messages = cacheable_lc(
+                prompt_template.format_messages(question=question, domain=domain),
+                model=self.model,
+            )
+            chain = self.llm | self.output_parser
 
             with get_openai_callback() as cb:
                 # Generate Cypher query using LCEL
-                result = chain.invoke({"question": question, "domain": domain})
+                result = chain.invoke(messages)
 
                 # Clean the result
                 cypher_query = self._clean_cypher_query(result)
@@ -1531,11 +1547,17 @@ class Text2CypherPipeline:
 
                 # Make name matching more tolerant
                 widened_query = re.sub(r" s\.name IN \[", " toLower(s.name) IN [", widened_query)
+                # The literal is captured so the parenthesis closes: without it
+                # every widened query was a syntax error and this retry never ran.
                 widened_query = re.sub(
-                    r" s\.name = ", " toLower(s.name) CONTAINS toLower(", widened_query
+                    r" s\.name = (\"[^\"]*\"|'[^']*')",
+                    r" toLower(s.name) CONTAINS toLower(\1)",
+                    widened_query,
                 )
                 widened_query = re.sub(
-                    r" lr\.category = ", " toLower(lr.category) CONTAINS toLower(", widened_query
+                    r" lr\.category = (\"[^\"]*\"|'[^']*')",
+                    r" toLower(lr.category) CONTAINS toLower(\1)",
+                    widened_query,
                 )
 
                 # Only retry if the query actually changed

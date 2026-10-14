@@ -41,7 +41,9 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import pathlib
 import sys
+import tempfile
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -53,11 +55,15 @@ import pytest
 # fully-populated .env. We set these BEFORE importing the app.
 os.environ.setdefault("WEBUI_AUTH_SECRET", "test-secret-for-pytest")
 os.environ.setdefault("WEBUI_CORS_ALLOW_ORIGINS", "*")
-# Make sure the DB lives in a tmp location so the test never collides with
-# the dev SQLite. The webui module reads WEBUI_DB_PATH at import.
+# Keep the tests off the developer's database. This used to set
+# ``WEBUI_DB_PATH``, which nothing in ``src/`` has ever read — ``aix.webui.db``
+# reads ``WEBUI_DATABASE_URL``. So the isolation was believed, never real, and
+# every run of this file registered a user in ``data/webui/webui.db``: on
+# 2026-09-21 it held 339 accounts, 338 of them created by test suites and one
+# belonging to an actual person.
 os.environ.setdefault(
-    "WEBUI_DB_PATH",
-    os.path.join(os.path.dirname(__file__), "..", "..", "data", "webui", "test_p7.db"),
+    "WEBUI_DATABASE_URL",
+    "sqlite+aiosqlite:///" + (pathlib.Path(tempfile.gettempdir()) / "aix_test_api.db").as_posix(),
 )
 
 
@@ -73,6 +79,7 @@ def app():
     # state (DB engine, fastapi-users wiring) is fine to share across
     # tests inside this module since each test owns its own user.
     from aix.api.main import app as live_app
+
     return live_app
 
 
@@ -80,6 +87,7 @@ def app():
 def client(app):
     """A regular httpx-based TestClient. Starlette's lifespan is exercised."""
     from fastapi.testclient import TestClient
+
     with TestClient(app) as c:
         yield c
 
@@ -221,41 +229,51 @@ async def test_agent_run_happy_path(client, fresh_user_token, monkeypatch):
     With a stubbed agent emitting planner→retriever→writer→critic→done,
     the route returns a 200 with the full ``AgentRunResponse``.
     """
-    _patch_stream(monkeypatch, [
-        {"kind": "planner", "payload": {
-            "intent": "lesson_creation",
-            "intent_label": "Creazione lezione",
-            "scope": "in_scope",
-            "scope_label": "Nel Knowledge Graph",
-            "key_concepts": ["attenzione", "memoria"],
-            "search_queries": ["strategie attenzione"],
-        }},
-        {"kind": "retriever", "payload": {
-            "nodes_count": 7,
-            "relationships_count": 12,
-            "recommendations_count": 3,
-            "media_counts": {"videos": 2, "articles": 1, "oer": 4},
-            "media": {"videos": [], "resources": []},
-            "top_concepts": ["Attenzione sostenuta"],
-            "retrieval_confidence": "HIGH",
-        }},
-        {"kind": "writer_pending", "payload": {"revision": 1}},
-        {"kind": "writer", "payload": {"revision": 1},
-         "lesson_plan_md": "# Bozza"},
-        {"kind": "critic", "payload": {"approved": True, "score": 4.5}},
-        {"kind": "done",
-         "lesson_plan_md": "# Lezione finale\n\nContenuto.",
-         "meta": {
-             "duration_seconds": 12.3,
-             "approved": True,
-             "revision_count": 0,
-             "scores": {"average_score": 4.5},
-             "nodes_count": 7,
-             "recommendations_count": 3,
-             "media_counts": {"videos": 2, "articles": 1, "oer": 4},
-             "search_queries_count": 1,
-         }},
-    ])
+    _patch_stream(
+        monkeypatch,
+        [
+            {
+                "kind": "planner",
+                "payload": {
+                    "intent": "lesson_creation",
+                    "intent_label": "Creazione lezione",
+                    "scope": "in_scope",
+                    "scope_label": "Nel Knowledge Graph",
+                    "key_concepts": ["attenzione", "memoria"],
+                    "search_queries": ["strategie attenzione"],
+                },
+            },
+            {
+                "kind": "retriever",
+                "payload": {
+                    "nodes_count": 7,
+                    "relationships_count": 12,
+                    "recommendations_count": 3,
+                    "media_counts": {"videos": 2, "articles": 1, "oer": 4},
+                    "media": {"videos": [], "resources": []},
+                    "top_concepts": ["Attenzione sostenuta"],
+                    "retrieval_confidence": "HIGH",
+                },
+            },
+            {"kind": "writer_pending", "payload": {"revision": 1}},
+            {"kind": "writer", "payload": {"revision": 1}, "lesson_plan_md": "# Bozza"},
+            {"kind": "critic", "payload": {"approved": True, "score": 4.5}},
+            {
+                "kind": "done",
+                "lesson_plan_md": "# Lezione finale\n\nContenuto.",
+                "meta": {
+                    "duration_seconds": 12.3,
+                    "approved": True,
+                    "revision_count": 0,
+                    "scores": {"average_score": 4.5},
+                    "nodes_count": 7,
+                    "recommendations_count": 3,
+                    "media_counts": {"videos": 2, "articles": 1, "oer": 4},
+                    "search_queries_count": 1,
+                },
+            },
+        ],
+    )
 
     resp = client.post(
         "/api/v1/agent/run",
@@ -284,9 +302,12 @@ async def test_agent_run_happy_path(client, fresh_user_token, monkeypatch):
 @pytest.mark.asyncio
 async def test_agent_run_propagates_runtime_error(client, fresh_user_token, monkeypatch):
     """An ``error`` StreamEvent → HTTP 502 with the message preserved."""
-    _patch_stream(monkeypatch, [
-        {"kind": "error", "error": "Knowledge Graph unreachable"},
-    ])
+    _patch_stream(
+        monkeypatch,
+        [
+            {"kind": "error", "error": "Knowledge Graph unreachable"},
+        ],
+    )
 
     resp = client.post(
         "/api/v1/agent/run",
@@ -303,16 +324,25 @@ async def test_agent_stream_serialises_events(client, fresh_user_token, monkeypa
     SSE stream emits one ``event:`` + ``data:`` pair per StreamEvent, with
     the JSON ``data`` payload matching the public envelope shape.
     """
-    _patch_stream(monkeypatch, [
-        {"kind": "planner", "payload": {"intent": "lesson_creation"}},
-        {"kind": "done",
-         "lesson_plan_md": "# Done",
-         "meta": {"duration_seconds": 1.0, "approved": True,
-                  "revision_count": 0, "nodes_count": 0,
-                  "recommendations_count": 0,
-                  "media_counts": {"videos": 0, "articles": 0, "oer": 0},
-                  "search_queries_count": 0}},
-    ])
+    _patch_stream(
+        monkeypatch,
+        [
+            {"kind": "planner", "payload": {"intent": "lesson_creation"}},
+            {
+                "kind": "done",
+                "lesson_plan_md": "# Done",
+                "meta": {
+                    "duration_seconds": 1.0,
+                    "approved": True,
+                    "revision_count": 0,
+                    "nodes_count": 0,
+                    "recommendations_count": 0,
+                    "media_counts": {"videos": 0, "articles": 0, "oer": 0},
+                    "search_queries_count": 0,
+                },
+            },
+        ],
+    )
 
     with client.stream(
         "POST",
@@ -387,7 +417,16 @@ def test_openapi_inventory_strictly_additive(client):
             if len(parts) >= 2 and parts[0] in {"GET", "POST", "PUT", "PATCH", "DELETE"}:
                 expected.append(f"{parts[0]} {parts[1]}")
 
-    missing = sorted(set(expected) - live_routes)
+    # Deliberately withdrawn since the baseline, with the reason. The baseline
+    # file stays a factual record of the old surface; a considered removal is
+    # declared here, where it shows up in a diff.
+    withdrawn = {
+        "GET /auth/logout": (
+            "state-changing GET; now POST /auth/logout under CSRF (review of 2026-09-15)"
+        ),
+    }
+
+    missing = sorted(set(expected) - live_routes - withdrawn.keys())
     assert not missing, (
         "Backward-compat regression: routes present before #7 are now missing: "
         + ", ".join(missing)
@@ -407,6 +446,7 @@ def pytest_collection_modifyitems(config, items):
     """Run async tests on a fresh event loop if pytest-asyncio is missing."""
     try:
         import pytest_asyncio  # noqa: F401
+
         return
     except ImportError:
         pass
@@ -421,3 +461,52 @@ def pytest_collection_modifyitems(config, items):
 
         item.function = _runner
         item.obj = _runner
+
+
+# ---------------------------------------------------------------------------
+# Fields we did not ask for
+# ---------------------------------------------------------------------------
+
+
+async def test_an_unknown_field_is_logged_by_name_and_the_call_proceeds(
+    client, fresh_user_token, monkeypatch, caplog
+):
+    """A misspelled field is invisible today; this is the step before refusing it.
+
+    The request is still accepted — refusing would break an integrating worker
+    on code we do not control — but the name reaches the log, so the decision
+    to switch to ``extra="forbid"`` rests on evidence rather than on a guess
+    about what callers send.
+    """
+    import logging
+
+    _patch_stream(monkeypatch, [{"kind": "done", "lesson_plan_md": "# Lezione"}])
+
+    with caplog.at_level(logging.WARNING, logger="aix.api.routes.agent"):
+        response = client.post(
+            "/api/v1/agent/run",
+            json={"query": "una lezione", "domain": "neuro", "languag": "it", "trace_id": "abc"},
+            headers={"Authorization": f"Bearer {fresh_user_token}"},
+        )
+
+    assert response.status_code != 422, "unknown fields do not break the caller yet"
+
+    named = [r.getMessage() for r in caplog.records if "does not declare" in str(r.msg)]
+    assert named, "the unknown fields must be named in the log"
+    assert "languag" in named[0] and "trace_id" in named[0]
+    assert "abc" not in named[0], "names only — a value may carry a teacher's data"
+
+
+async def test_a_declared_request_logs_nothing(client, fresh_user_token, monkeypatch, caplog):
+    import logging
+
+    _patch_stream(monkeypatch, [{"kind": "done", "lesson_plan_md": "# Lezione"}])
+
+    with caplog.at_level(logging.WARNING, logger="aix.api.routes.agent"):
+        client.post(
+            "/api/v1/agent/run",
+            json={"query": "una lezione", "domain": "neuro"},
+            headers={"Authorization": f"Bearer {fresh_user_token}"},
+        )
+
+    assert not [r for r in caplog.records if "does not declare" in str(r.msg)]

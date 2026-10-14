@@ -482,6 +482,7 @@ IMPORTANTE:
 # Upload
 # --------------------------------------------------------------------------
 
+
 def main() -> None:
     lf = Langfuse(
         secret_key=os.environ["LANGFUSE_SECRET_KEY"],
@@ -490,12 +491,12 @@ def main() -> None:
     )
 
     prompts = [
-        ("neuro.system_prompt",     NEURO_SYSTEM_PROMPT),
-        ("neuro.writer_prompt",     NEURO_SYSTEM_PROMPT),      # same text initially
+        ("neuro.system_prompt", NEURO_SYSTEM_PROMPT),
+        ("neuro.writer_prompt", NEURO_SYSTEM_PROMPT),  # same text initially
         ("neuro.response_template", NEURO_RESPONSE_TEMPLATE),
-        ("udl.system_prompt",       UDL_SYSTEM_PROMPT),
-        ("udl.writer_prompt",       UDL_SYSTEM_PROMPT),        # same text initially
-        ("udl.response_template",   UDL_RESPONSE_TEMPLATE),
+        ("udl.system_prompt", UDL_SYSTEM_PROMPT),
+        ("udl.writer_prompt", UDL_SYSTEM_PROMPT),  # same text initially
+        ("udl.response_template", UDL_RESPONSE_TEMPLATE),
     ]
 
     for name, text in prompts:

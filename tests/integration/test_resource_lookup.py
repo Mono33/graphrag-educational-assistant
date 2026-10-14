@@ -7,19 +7,22 @@ Verifies that expert-vetted resources are loaded and searchable.
 import logging
 import sys
 
+import pytest
+
+# These tests drive the real agents against Neo4j and the LLM provider, so
+# they only run where those exist. CI has neither, and skips this directory.
+pytestmark = pytest.mark.integration
+
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 
 def test_resource_lookup():
     """Test the ResourceLookup class"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST: ResourceLookup Class")
-    print("="*60)
+    print("=" * 60)
 
     try:
         from aix.agent.media import ExpertResource, ResourceCollection, ResourceLookup
@@ -34,13 +37,13 @@ def test_resource_lookup():
         stats = lookup.get_stats()
         print("\n📊 Statistics:")
         for key, value in stats.items():
-            if key != 'metadata':
+            if key != "metadata":
                 print(f"   {key}: {value}")
 
         # Test 1: Find resources by topic
-        print("\n" + "-"*40)
+        print("\n" + "-" * 40)
         print("TEST 1: Find resources by topic")
-        print("-"*40)
+        print("-" * 40)
 
         test_topics = ["metacognition", "working_memory", "attention"]
         for topic in test_topics:
@@ -51,9 +54,9 @@ def test_resource_lookup():
                 print(f"   - {r.title} ({r.type})")
 
         # Test 2: Find resources by type
-        print("\n" + "-"*40)
+        print("\n" + "-" * 40)
         print("TEST 2: Find resources by type")
-        print("-"*40)
+        print("-" * 40)
 
         test_types = ["textbook", "interactive_simulation", "course"]
         for res_type in test_types:
@@ -64,9 +67,9 @@ def test_resource_lookup():
                 print(f"   - {r.title}")
 
         # Test 3: Find resources by audience
-        print("\n" + "-"*40)
+        print("\n" + "-" * 40)
         print("TEST 3: Find resources by audience")
-        print("-"*40)
+        print("-" * 40)
 
         test_audiences = ["K-12", "teacher_training", "university"]
         for audience in test_audiences:
@@ -75,9 +78,9 @@ def test_resource_lookup():
             print(f"   Found: {len(resources)} resources")
 
         # Test 4: Generate context string
-        print("\n" + "-"*40)
+        print("\n" + "-" * 40)
         print("TEST 4: Context string generation")
-        print("-"*40)
+        print("-" * 40)
 
         resources = lookup.find_resources_for_topic("metacognition")
         context = resources.to_context_string(max_resources=3)
@@ -85,9 +88,9 @@ def test_resource_lookup():
         print(context[:500] + "..." if len(context) > 500 else context)
 
         # Test 5: Find for multiple concepts
-        print("\n" + "-"*40)
+        print("\n" + "-" * 40)
         print("TEST 5: Find for multiple concepts")
-        print("-"*40)
+        print("-" * 40)
 
         concepts = ["Working Memory", "Selective Attention", "Metacognition"]
         combined = lookup.find_resources_for_concepts(concepts, max_per_concept=2)
@@ -95,9 +98,9 @@ def test_resource_lookup():
         print(f"   Total unique: {len(combined.resources)}")
 
         # Test 6: Recommended for purpose
-        print("\n" + "-"*40)
+        print("\n" + "-" * 40)
         print("TEST 6: Recommended for purpose")
-        print("-"*40)
+        print("-" * 40)
 
         purposes = ["lesson_creation", "interactive_learning", "professional_development"]
         for purpose in purposes:
@@ -105,24 +108,25 @@ def test_resource_lookup():
             print(f"\n🎯 Purpose: '{purpose}'")
             print(f"   Found: {len(resources)} resources")
 
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("✅ All ResourceLookup tests passed!")
-        print("="*60)
+        print("=" * 60)
 
         return True
 
     except Exception as e:
         print(f"\n❌ Test failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
 
 def test_copyright_safety():
     """Verify all resources are copyright-safe"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST: Copyright Safety Check")
-    print("="*60)
+    print("=" * 60)
 
     try:
         from aix.agent.media import ResourceLookup
@@ -156,9 +160,9 @@ def test_copyright_safety():
 
 
 def main():
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("EXPERT RESOURCE LOOKUP TESTS")
-    print("="*60)
+    print("=" * 60)
 
     results = []
 
@@ -169,9 +173,9 @@ def main():
     results.append(("Copyright Safety", test_copyright_safety()))
 
     # Summary
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST SUMMARY")
-    print("="*60)
+    print("=" * 60)
 
     all_passed = True
     for name, passed in results:
@@ -180,7 +184,7 @@ def main():
         if not passed:
             all_passed = False
 
-    print("="*60)
+    print("=" * 60)
 
     if all_passed:
         print("🎉 All tests passed! ResourceLookup is ready to use.")

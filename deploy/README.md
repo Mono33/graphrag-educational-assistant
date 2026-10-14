@@ -199,6 +199,35 @@ If the new image fails its health check, compose keeps the old
 container running (Docker default behaviour). Roll back by re-checking
 out the previous SHA and rebuilding (see §6).
 
+### 4.1 Switching to pgvector — once, before the first deploy of the private-material work
+
+The upgrade flow above rebuilds only `app`. This release also changes the
+**Postgres image**, from `postgres:16-alpine` to `pgvector/pgvector:pg16`: the
+app migrates itself at startup, and the private-material migration needs the
+`vector` extension, which the Alpine image does not have. Deploying `app` alone
+leaves it failing on startup with `extension "vector" is not available`.
+
+Same Postgres major version, same data directory — but Alpine sorts text with
+musl and the pgvector image with glibc, so indexes on text columns built under
+one cannot be trusted under the other. Rebuild them once:
+
+```bash
+cd deploy/
+./scripts/backup_postgres.sh                      # 1. a backup you have checked
+docker compose -f docker-compose.prod.yml --env-file .env.prod pull postgres
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d postgres   # 2. new image, same volume
+docker compose -f docker-compose.prod.yml --env-file .env.prod exec postgres \
+  sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "REINDEX DATABASE \"$POSTGRES_DB\";"'  # 3. blocking
+GIT_SHA=$(git rev-parse --short HEAD) \
+  docker compose -f docker-compose.prod.yml --env-file .env.prod build app
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d app        # 4. migrates, creates `vector`
+```
+
+Step 3 is not optional and must finish before step 4: the app writes to the
+database as soon as it starts. What has been rehearsed locally
+(`docker-compose.local.yml`, 2026-09-25) is a bring-up on a **fresh** volume;
+these four steps on a volume created by the Alpine image have not been.
+
 ---
 
 ## 5. Backups

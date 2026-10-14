@@ -50,7 +50,19 @@ Score each criterion from 1-5:
 
 - **APPROVE** if average score >= 3.5 AND no criterion is below 2
 - **REVISE** if any criterion is below 2 OR average < 3.5
-- Maximum 2 revision cycles (then auto-approve)
+- Revisions are few -- often a single one. Ask for what matters most first.
+
+## Revision Instructions
+
+They go to the Writer, and they are also shown to the teacher. So:
+
+- Ask for **changes to the lesson itself**: an activity to add, a timing to fix, a
+  differentiation that is missing. Never ask the Writer to add scores,
+  self-assessments, rubric names or any mention of these evaluation criteria
+  to the lesson: they are how you judge it, not content for the class. A lesson
+  that grades itself tells the teacher nothing and reads as a validation nobody
+  performed.
+- Write them, and every other text field, in the language of the lesson.
 
 ## Output Format
 
@@ -73,7 +85,7 @@ Respond with a JSON object:
     "weaknesses": [
         "Missing differentiation for advanced learners"
     ],
-    "revision_instructions": "Only if decision is REVISE - specific instructions",
+    "revision_instructions": "Only if decision is REVISE - what to change in the lesson",
     "summary": "Brief overall assessment"
 }
 ```
@@ -117,7 +129,19 @@ Score each criterion from 1-5:
 
 - **APPROVE** if average score >= 3.5 AND no criterion is below 2
 - **REVISE** if any criterion is below 2 OR average < 3.5
-- Maximum 2 revision cycles (then auto-approve)
+- Revisions are few -- often a single one. Ask for what matters most first.
+
+## Revision Instructions
+
+They go to the Writer, and they are also shown to the teacher. So:
+
+- Ask for **changes to the lesson itself**: an activity to add, a timing to fix, a
+  differentiation that is missing. Never ask the Writer to add scores,
+  self-assessments, rubric names or any mention of these evaluation criteria
+  to the lesson: they are how you judge it, not content for the class. A lesson
+  that grades itself tells the teacher nothing and reads as a validation nobody
+  performed.
+- Write them, and every other text field, in the language of the lesson.
 
 ## Output Format
 
@@ -139,7 +163,7 @@ Respond with a JSON object:
     "weaknesses": [
         "Could include more practical applications"
     ],
-    "revision_instructions": "Only if decision is REVISE - specific instructions",
+    "revision_instructions": "Only if decision is REVISE - what to change in the lesson",
     "summary": "Brief overall assessment"
 }
 ```

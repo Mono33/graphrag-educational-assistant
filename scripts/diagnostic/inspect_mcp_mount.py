@@ -56,10 +56,6 @@ for route in app.routes:
     path = getattr(route, "path", "") or ""
     if any(k in path for k in ("/mcp", "/auth", "/api/v1")):
         kind = type(route).__name__
-        target = (
-            getattr(route, "app", None)
-            or getattr(route, "endpoint", None)
-            or "<router>"
-        )
+        target = getattr(route, "app", None) or getattr(route, "endpoint", None) or "<router>"
         target_label = type(target).__name__ if hasattr(target, "__class__") else repr(target)
         print(f"  {kind:14s} {path:35s} -> {target_label}")

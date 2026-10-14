@@ -38,6 +38,7 @@ from aix.core.config import config as app_config
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _fake_response(text: str) -> SimpleNamespace:
     """Mimic the bits of the OpenAI completion response that the agents read."""
     msg = SimpleNamespace(content=text, reasoning_content=None)
@@ -70,6 +71,7 @@ def _patch_critic_client(critic: CriticAgent, completion_text: str) -> MagicMock
 # 1. json_mode forwarding
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_planner_forwards_json_mode_to_client(monkeypatch):
     """The Planner must request ``response_format={"type": "json_object"}``
@@ -86,12 +88,14 @@ async def test_planner_forwards_json_mode_to_client(monkeypatch):
     planner = PlannerAgent(model="gpt-4o")
     fake_create = _patch_planner_client(
         planner,
-        json.dumps({
-            "query_intent": "lesson_creation",
-            "key_concepts": ["a"],
-            "search_queries": ["a"],
-            "lesson_type": "full_lesson",
-        }),
+        json.dumps(
+            {
+                "query_intent": "lesson_creation",
+                "key_concepts": ["a"],
+                "search_queries": ["a"],
+                "lesson_type": "full_lesson",
+            }
+        ),
     )
 
     await planner.plan("test query", domain="neuro", language="it")
@@ -111,14 +115,16 @@ async def test_critic_forwards_json_mode_to_client():
     critic = CriticAgent(model="gpt-4o")
     fake_create = _patch_critic_client(
         critic,
-        json.dumps({
-            "scores": {"a": 4},
-            "average_score": 4.0,
-            "decision": "APPROVE",
-            "strengths": [],
-            "weaknesses": [],
-            "summary": "ok",
-        }),
+        json.dumps(
+            {
+                "scores": {"a": 4},
+                "average_score": 4.0,
+                "decision": "APPROVE",
+                "strengths": [],
+                "weaknesses": [],
+                "summary": "ok",
+            }
+        ),
     )
 
     await critic.critique(
@@ -135,14 +141,14 @@ async def test_critic_forwards_json_mode_to_client():
     fake_create.assert_awaited_once()
     kwargs = fake_create.await_args.kwargs
     assert kwargs.get("response_format") == {"type": "json_object"}, (
-        f"Critic did not opt into json_mode (got response_format="
-        f"{kwargs.get('response_format')!r})"
+        f"Critic did not opt into json_mode (got response_format={kwargs.get('response_format')!r})"
     )
 
 
 # ---------------------------------------------------------------------------
 # 2. Default (legacy) parse-error fallback is preserved bit-for-bit
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_critic_parse_error_default_path_is_legacy_approve(monkeypatch):
@@ -188,6 +194,7 @@ async def test_planner_parse_error_default_path_is_legacy_fallback():
 # 3. Opt-in "revise" mode forces a revision pass instead of silent approve
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_critic_parse_error_revise_mode_forces_revision(monkeypatch):
     """With ``AIX_CRITIC_PARSE_ERROR_BEHAVIOR=revise`` the failure is
@@ -217,6 +224,7 @@ async def test_critic_parse_error_revise_mode_forces_revision(monkeypatch):
 # 4. 5-run smoke: check that valid JSON never trips the fallback path
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_critic_5_run_smoke_no_parse_error_when_response_is_valid(monkeypatch):
     """5 runs against a deterministic mocked client that always returns
@@ -225,14 +233,16 @@ async def test_critic_5_run_smoke_no_parse_error_when_response_is_valid(monkeypa
     summary='Approved due to parsing error')."""
     monkeypatch.delenv("AIX_CRITIC_PARSE_ERROR_BEHAVIOR", raising=False)
 
-    valid_payload = json.dumps({
-        "scores": {"clarity": 4, "evidence": 4},
-        "average_score": 4.0,
-        "decision": "APPROVE",
-        "strengths": ["good"],
-        "weaknesses": [],
-        "summary": "looks fine",
-    })
+    valid_payload = json.dumps(
+        {
+            "scores": {"clarity": 4, "evidence": 4},
+            "average_score": 4.0,
+            "decision": "APPROVE",
+            "strengths": ["good"],
+            "weaknesses": [],
+            "summary": "looks fine",
+        }
+    )
 
     for run_idx in range(5):
         critic = CriticAgent(model="gpt-4o")

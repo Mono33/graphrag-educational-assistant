@@ -1,0 +1,164 @@
+# Golden cases for the private material retrieval.
+#
+# Each case is one request a teacher could make, written the way the system
+# actually searches: the lesson topic and the Planner's subject concepts, joined
+# by "·" (see ``_private_search_query`` in aix/agent/graph/nodes.py). The
+# expectations are pages of the real documents, read page by page on 2026-09-18,
+# not guesses.
+#
+# ``expect``  — pages that answer the request. Recall is measured against these.
+# ``forbid``  — pages that must not reach the top of the ranking. The English
+#               PDF's Common Core standards (p6) and its bibliography (p7)
+#               mention every Cold War keyword and contain no history; they took
+#               two of the first eight places in the first real run.
+#
+# Corpus: data/eval/corpus/rag/ (git-ignored, populated from the documents used
+# in the 2026-09-16 test). Regenerate with:
+#   python scripts/eval/run_private_rag.py --report
+
+corpus: data/eval/corpus/rag
+
+forbid_always:
+  - document: Cold-War.pdf
+    pages: [6, 7]   # Common Core standards list, and the sources bibliography
+
+cases:
+  # ── Coverage of a long document, which is a different job from relevance ──
+  #
+  # A teacher attached a 114-page magazine and asked for a list of topics worth
+  # a future lesson. The answer named two — the AI energy piece, the German
+  # election — and said it could not see their content. That was **true**: the
+  # search returns eight passages out of 280, one of them the cover, so the
+  # model had the titles and nothing else. It reported the gap instead of
+  # inventing, which is right, and the gap was ours (2026-09-22).
+  #
+  # ``indicazioni_nazionali_dm254_2012.pdf`` is the same shape at a size that
+  # fits the corpus: 68 pages, an index on p3, and the subjects spread far apart.
+  # Each subject opens on a page of its own: Italian 28, history 41, geography
+  # 46, mathematics 49, science 54, music 58, art 60, physical education 63,
+  # technology 66.
+  #
+  # CORRECTED 2026-09-25. The first version expected pages 20, 38, 46, 51, 60,
+  # 63, calling 20 "music" -- it is about infant-school routines; music opens at
+  # 58 -- and taking 38 and 51 from inside a subject rather than where it opens.
+  # Found while building the format corpus from the same document, by reading
+  # each page's first line instead of trusting a keyword search for "MUSICA",
+  # which matches any page that mentions music. A label is a claim about the
+  # document, and this one was checked less carefully than the code.
+  #
+  # ``survey`` cases ask for breadth: the pages below are deliberately scattered,
+  # so a ranking that returns eight neighbours of one good match scores badly
+  # however relevant those eight are. The focused cases above measure the
+  # opposite, and a change has to answer to both.
+
+  # MEASURED, and still failing. Three attempts, all recorded because the next
+  # person will have the same three ideas:
+  #
+  #   top-k 8 -> 24   recall 0.00 -> 0.17. Three times the passages and three
+  #                   times the prompt cost, for one page of six.
+  #   a cap of two    no change at all. It does replace a third chunk of one
+  #     per page      page with another page -- which is right -- but the page
+  #                   it lets in is another front-matter page.
+  #   one search per  recall@3 across every case 0.86 -> 0.79, boilerplate 0.04
+  #     concept,      -> 0.10, search 0.14s -> 1.20s. The premise was wrong: the
+  #     fused by RRF  terms of a survey request are not "music", "geography",
+  #                   "mathematics" but four phrasings of the same
+  #                   meta-question, and splitting one blur gives four blurs.
+  #
+  # None of them is the fix, because none of them is the problem. A page about
+  # music does not resemble "which subjects does this document cover"; it
+  # resembles a question about music. The index page is the honest best match
+  # for that request, and the search returns it. What the case below needs is a
+  # second pass -- name the topics from the index, then search for each one --
+  # which is work for the agent, not for the ranking. The case is kept failing
+  # so that the day someone builds it, there is something to measure it with.
+  - id: survey-quali-discipline
+    survey: true
+    query: "indicazioni nazionali · quali discipline tratta il documento · panoramica delle aree disciplinari · elenco degli insegnamenti"
+    expect:
+      - document: indicazioni_nazionali_dm254_2012.pdf
+        pages: [28, 41, 49, 58, 60, 63]
+
+  - id: survey-un-argomento-solo-nell-indice
+    query: "educazione fisica · obiettivi di apprendimento · competenze motorie"
+    expect:
+      - document: indicazioni_nazionali_dm254_2012.pdf
+        pages: [63]
+
+  - id: yalta
+    query: "guerra fredda · Conferenza di Yalta · cortina di ferro · sfere di influenza"
+    expect:
+      - document: guerra-fredda-def.pdf
+        pages: [1]
+
+  - id: due-blocchi
+    query: "guerra fredda · capitalismo vs comunismo · USA e URSS · due blocchi contrapposti"
+    expect:
+      - document: guerra-fredda-def.pdf
+        pages: [1]
+      - document: Cold-War.pdf
+        pages: [1]
+
+  - id: piano-marshall
+    query: "guerra fredda · Piano Marshall · ricostruzione dell'Europa · Piano Molotov"
+    expect:
+      - document: guerra-fredda-def.pdf
+        pages: [1]
+
+  - id: dottrina-truman
+    query: "guerra fredda · dottrina Truman · containment · aiuti ai popoli liberi"
+    expect:
+      - document: Cold-War.pdf
+        pages: [2]
+
+  - id: muro-di-berlino
+    query: "guerra fredda · divisione della Germania · muro di Berlino · Berlino Est"
+    expect:
+      - document: guerra-fredda-def.pdf
+        pages: [2]
+
+  - id: nato-patto-varsavia
+    query: "guerra fredda · NATO · Patto di Varsavia · alleanze militari contrapposte"
+    expect:
+      - document: guerra-fredda-def.pdf
+        pages: [2]
+
+  - id: equilibrio-del-terrore
+    query: "guerra fredda · equilibrio del terrore · arsenale nucleare · deterrenza"
+    expect:
+      - document: guerra-fredda-def.pdf
+        pages: [2]
+
+  - id: bandung-terzo-mondo
+    query: "guerra fredda · conferenza di Bandung · paesi non allineati · terzo mondo"
+    expect:
+      - document: guerra-fredda-def.pdf
+        pages: [2]
+
+  - id: guerra-di-corea
+    query: "guerra fredda · guerra di Corea · 38° parallelo · armistizio"
+    expect:
+      - document: guerra-fredda-def.pdf
+        pages: [3]
+
+  - id: crisi-di-cuba
+    query: "guerra fredda · crisi di Cuba · missili sovietici · Kennedy e Krusciov"
+    expect:
+      - document: guerra-fredda-def.pdf
+        pages: [3]
+      - document: Cold-War.pdf
+        pages: [3]
+
+  - id: fine-della-guerra-fredda
+    query: "guerra fredda · Gorbaciov · perestrojka e glasnost · dissoluzione dell'URSS"
+    expect:
+      - document: guerra-fredda-def.pdf
+        pages: [3]
+      - document: Cold-War.pdf
+        pages: [4]
+
+  - id: discorso-cortina-di-ferro
+    query: "guerra fredda · discorso di Churchill · iron curtain speech · fonte primaria"
+    expect:
+      - document: Cold-War.pdf
+        pages: [5]

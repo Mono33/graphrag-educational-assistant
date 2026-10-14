@@ -11,15 +11,12 @@ import re
 from dataclasses import dataclass
 from typing import Optional
 
-# Fast, cheap model for the Critic — it only outputs ~300 tokens of structured
-# JSON; using the full LLM_MODEL is overkill and adds 25+ seconds of prefill.
-# Defaults to TEXT2CYPHER_MODEL (already google/gemini-2.5-flash in .env.example)
-# then falls back to LLM_MODEL so existing deployments stay unbroken.
-_CRITIC_MODEL: Optional[str] = (
-    os.getenv("AIX_CRITIC_MODEL")
-    or os.getenv("TEXT2CYPHER_MODEL")
-    or None  # None → build_completion_kwargs uses self.model (LLM_MODEL)
-)
+#: A fast model for the Critic: it writes ~300 tokens of JSON. Chosen on
+#: 2026-09-30 (``scripts/eval/compare_role_models.py critic``): on 8 real lessons
+#: and 9 broken on purpose, 3.5 Flash-Lite caught 5 defects to 2.5 Flash's 1,
+#: approved 6 of 8 good lessons, and was the fastest and the steadiest.
+DEFAULT_CRITIC_MODEL = "google/gemini-3.5-flash-lite"
+_CRITIC_MODEL: Optional[str] = os.getenv("AIX_CRITIC_MODEL") or DEFAULT_CRITIC_MODEL
 
 # Critic reads back the lesson it just received — truncate to avoid massive
 # prefill cost.  Strategy: keep head (objectives + first activities) AND tail
@@ -48,6 +45,7 @@ from aix.agent.prompts.critic_prompt import (
     get_critic_prompts,
     is_lesson_intent,
 )
+from aix.agent.prompts.today import today_note
 from aix.core.concurrency import guarded_chat_completion
 from aix.core.config import config as app_config
 from aix.core.config import extract_response_content
@@ -111,6 +109,40 @@ class CritiqueResult:
         return self.decision == "APPROVE"
 
 
+def teacher_material_note(items: Optional[list]) -> str:
+    """What the Critic must know about the teacher's own documents (§8.8).
+
+    Without this the Critic reads a lesson built on an attached handout, finds
+    claims it cannot trace to the Knowledge Graph, and reports «contenuto da
+    fonte esterna» as a weakness — penalising the feature for working.
+
+    So it is told three things: that the passages exist, that they are
+    ``teacher_asserted`` (the teacher vouched for them by uploading them; they
+    are not KG-verified, and the Critic is not being asked to treat them as if
+    they were), and that a reference like «(dispensa.pdf, p. 7)» is a real
+    citation. The passages themselves are not repeated here — the Critic already
+    reads them inside the lesson, and a second copy is prefill we pay for twice.
+    """
+    if not items:
+        return ""
+
+    documents = len({item.get("source_id") for item in items if isinstance(item, dict)})
+    return (
+        f"\n\n---\nMATERIALE DELLA DOCENTE: la lezione può basarsi anche su "
+        f"{len(items)} passaggi tratti da {documents} documento/i caricati dalla "
+        "docente stessa.\n"
+        "- Questi contenuti sono `teacher_asserted`: la docente li ha forniti, "
+        "non provengono dal Knowledge Graph e NON devono essere valutati come "
+        "«non supportati dalle fonti» solo perché non li ritrovi nel contesto "
+        "recuperato.\n"
+        "- I riferimenti in forma «(nomefile.pdf, p. 7)» sono citazioni "
+        "legittime e verificabili dalla docente: contale come evidenza, non "
+        "come affermazioni prive di fonte.\n"
+        "- Resta invece un difetto, e va segnalato, un contenuto disciplinare "
+        "che non viene né dal Knowledge Graph né dai documenti citati."
+    )
+
+
 class CriticAgent:
     """
     Critic Agent - Reviews and evaluates lesson plans.
@@ -148,6 +180,7 @@ class CriticAgent:
         domain: str = "neuro",
         language: str = "it",
         query_intent: str = "lesson_creation",
+        material_items: Optional[list] = None,
     ) -> CritiqueResult:
         """
         Critique content and decide whether to approve.
@@ -161,6 +194,9 @@ class CriticAgent:
             domain: Knowledge domain
             language: Language of the content
             query_intent: Detected query intent for appropriate evaluation
+            material_items: Passages retrieved from the teacher's own documents,
+                if any. See :func:`teacher_material_note` — only their number is
+                used, not their text.
 
         Returns:
             CritiqueResult with scores, decision, and feedback
@@ -173,8 +209,10 @@ class CriticAgent:
             f"[CriticAgent] Reviewing {content_type} (revision {revision_count}/{max_revisions})..."
         )
 
-        # Auto-approve if max revisions reached
-        if revision_count >= max_revisions:
+        # ``revision_count`` is the number of revisions already made: at the limit
+        # the last draft is still reviewed, so its verdict is real; only past it
+        # (never reached by the graph) is it waved through.
+        if revision_count > max_revisions:
             logger.info("[CriticAgent] Max revisions reached, auto-approving")
             return CritiqueResult(
                 scores={"auto": 4},
@@ -239,6 +277,9 @@ class CriticAgent:
                 domain=domain,
                 language="Italian" if language == "it" else "English",
             )
+
+        user_prompt += teacher_material_note(material_items)
+        user_prompt += today_note()
 
         try:
             # Change #1 — fast model for the Critic.

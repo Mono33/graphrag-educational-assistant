@@ -114,6 +114,12 @@ async def _acquire_with_timeout(sem: asyncio.Semaphore, timeout: float) -> bool:
     exactly as the timeout fires: in that case we release it back so capacity
     never silently shrinks.
     """
+    if not sem.locked():
+        # A free permit is taken at once. With a zero window the 1 ms timer
+        # below could otherwise fire before the acquire ran (seen on Windows),
+        # shedding a run while a slot was free.
+        await sem.acquire()
+        return True
     task = asyncio.ensure_future(sem.acquire())
     try:
         await asyncio.wait_for(asyncio.shield(task), timeout if timeout > 0 else 0.001)
@@ -147,9 +153,7 @@ async def acquire_run_slot(label: str = "") -> None:
             _run_capacity,
             timeout,
         )
-        raise AtCapacity(
-            f"All {_run_capacity} generation slots are busy (waited {timeout:.1f}s)."
-        )
+        raise AtCapacity(f"All {_run_capacity} generation slots are busy (waited {timeout:.1f}s).")
     _run_active += 1
     logger.info(
         "[concurrency] run slot acquired%s (active=%d/%d)",

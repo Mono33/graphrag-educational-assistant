@@ -5,7 +5,7 @@
 #   - Windows: `scoop install make` or `choco install make`, or run the
 #     underlying commands directly (see `make help`).
 
-.PHONY: help install api streamlit agent test test-int test-unit \
+.PHONY: help install api streamlit agent test test-all test-int test-unit \
         ingest-neuro ingest-udl audit-neuro compile clean
 
 PY  ?= python
@@ -19,12 +19,13 @@ help:
 	@echo "  make install        - pip install requirements.txt"
 	@echo ""
 	@echo "  Runtime entry points:"
-	@echo "    make api          - Run FastAPI on http://localhost:8000 (uvicorn --reload)"
+	@echo "    make api          - Run FastAPI on http://localhost:8765 (uvicorn --reload)"
 	@echo "    make streamlit    - Run Streamlit UI at http://localhost:8501"
 	@echo "    make agent        - Run interactive Agent CLI (apps/cli/run_agent.py)"
 	@echo ""
 	@echo "  Tests:"
-	@echo "    make test         - Run all tests under tests/"
+	@echo "    make test         - Run tests/ without tests/integration (the everyday run)"
+	@echo "    make test-all     - Run everything, integration included (needs Neo4j + LLM)"
 	@echo "    make test-int     - Run integration tests only (tests/integration/)"
 	@echo "    make test-unit    - Run unit tests only (tests/unit/)"
 	@echo ""
@@ -42,7 +43,10 @@ install:
 	$(PIP) install -r requirements.txt
 
 api:
-	uvicorn aix.api.main:app --reload --port 8000
+	# 8765, like the Dockerfile, the compose healthcheck and the Caddyfile.
+	# --app-dir puts src/ on sys.path, not src/aix: the latter would make the
+	# internal aix.mcp package importable as plain `mcp` and shadow the SDK.
+	uvicorn aix.api.main:app --reload --port 8765 --app-dir src
 
 streamlit:
 	streamlit run apps/streamlit/main.py
@@ -51,6 +55,11 @@ agent:
 	$(PY) apps/cli/run_agent.py
 
 test:
+	# The everyday run. tests/integration is excluded on purpose: it needs a
+	# live Neo4j and spends real money on LLM calls. Use `make test-all` for it.
+	$(PY) -m pytest tests/ --ignore=tests/integration
+
+test-all:
 	$(PY) -m pytest tests/
 
 test-int:

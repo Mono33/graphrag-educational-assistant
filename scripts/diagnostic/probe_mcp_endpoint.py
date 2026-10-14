@@ -18,7 +18,9 @@ import urllib.request
 BASE = "http://127.0.0.1:8765"
 
 
-def _probe(method: str, path: str, body: bytes | None = None, headers: dict[str, str] | None = None) -> tuple[int, str]:
+def _probe(
+    method: str, path: str, body: bytes | None = None, headers: dict[str, str] | None = None
+) -> tuple[int, str]:
     req = urllib.request.Request(
         f"{BASE}{path}",
         method=method,
