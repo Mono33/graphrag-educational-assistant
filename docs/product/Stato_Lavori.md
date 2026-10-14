@@ -2997,3 +2997,22 @@ dall'API, per un'app esterna che alimenterà dei chatbot — documenti caricati 
 volta e riusati per id (RAG privato via API), sessioni con la conversazione
 tenuta dall'API, risposte veloci con il rimando alla lezione nuova, spiegabilità
 completa, export PDF/Word/scaletta, guida per chi integra.
+
+### 2026-10-14 — API per i chatbot, passo 0: chi possiede cosa
+
+Ogni tabella della WebUI (lezioni, documenti, passaggi, collegamenti) è legata a
+`owner_id → user.id`, e ogni lettura filtra su quello: è ciò che fissano i test
+IDOR. L'API riusa la stessa regola invece di inventarne una seconda: chi chiama
+**agisce come un utente**.
+
+- Un utente della WebUI con il suo JWT è sé stesso; quello che crea via API lo
+  vede anche nella WebUI.
+- Il service account (Basic, `GRAPH_API_USERNAME`) è un'applicazione che serve
+  molte persone: indica per chi agisce con un `end_user_id` opaco, e ciascuno
+  diventa un suo utente, creato alla prima chiamata. Due utenti dello stesso
+  client, o lo stesso id da due client, sono proprietari diversi.
+- Questi utenti non possono entrare nella WebUI (indirizzo sul dominio riservato
+  `.invalid`, password = hash di un segreto casuale mai salvato) e l'id del
+  client non resta in chiaro (è dentro un hash).
+
+`src/aix/api/principals.py` (`owner_for`), test `test_api_principals.py` (8).
