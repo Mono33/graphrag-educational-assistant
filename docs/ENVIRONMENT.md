@@ -102,6 +102,7 @@ dimenticata serviva il prodotto vecchio senza che nessuno se ne accorgesse.
 | `AIX_CORRECTIVE_RAG_ENABLED` | `false` | Nodo che giudica il recupero e riprova |
 | `AIX_CORRECTIVE_RAG_MAX_ATTEMPTS` | `2` | Quante volte può riprovare (limitata fra 1 e 4) |
 | `AIX_EXPORT_PDF_ENABLED` | `true` | Bottone PDF (server-side) |
+| `AIX_EXPORT_DOCX_ENABLED` | `true` | Bottone Word: la lezione come documento modificabile (.docx), dallo stesso modello del PDF |
 | `AIX_EXPORT_OUTLINE_ENABLED` | `true` | Bottone Scaletta |
 
 ### Parsing e OCR (solo con il parser acceso)

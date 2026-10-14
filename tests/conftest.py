@@ -49,7 +49,11 @@ FEATURE_FLAGS_OFF = {
 }
 
 #: On by default since before 2026-10-05, and tested at their default.
-FEATURE_FLAGS_AT_DEFAULT = ("AIX_EXPORT_PDF_ENABLED", "AIX_EXPORT_OUTLINE_ENABLED")
+FEATURE_FLAGS_AT_DEFAULT = (
+    "AIX_EXPORT_PDF_ENABLED",
+    "AIX_EXPORT_OUTLINE_ENABLED",
+    "AIX_EXPORT_DOCX_ENABLED",
+)
 
 
 @pytest.fixture(autouse=True)

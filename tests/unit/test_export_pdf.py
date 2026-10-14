@@ -319,7 +319,7 @@ def test_markdown_and_text_are_unchanged(client, fmt):
 
 
 def test_an_unknown_format_names_the_supported_ones(client):
-    response = _export(client, "docx")
+    response = _export(client, "odt")
 
     assert response.status_code == 400
     assert "pdf" in response.json()["detail"]

@@ -13,7 +13,7 @@ itself runs with them off (``tests/conftest.py``).
   pypdf;
 * conditional retrieval and the light follow-up turns;
 * the PDF and outline exports, additive slices Louis accepted (MD, TXT and
-  ``/print`` are untouched).
+  ``/print`` are untouched), and the Word export added on 2026-10-14.
 
 The functions are registered as Jinja globals, so a template asks the same
 question the server does instead of keeping its own list of extensions in sync.
@@ -38,6 +38,11 @@ def upload_parser_enabled() -> bool:
 
 def export_pdf_enabled() -> bool:
     return _flag("AIX_EXPORT_PDF_ENABLED", default=True)
+
+
+def export_docx_enabled() -> bool:
+    """The Word download: the lesson as an editable document. On by default."""
+    return _flag("AIX_EXPORT_DOCX_ENABLED", default=True)
 
 
 def export_outline_enabled() -> bool:
@@ -83,3 +88,4 @@ def register(templates) -> None:
     templates.env.globals["light_turns_enabled"] = light_turns_enabled
     templates.env.globals["export_pdf_enabled"] = export_pdf_enabled
     templates.env.globals["export_outline_enabled"] = export_outline_enabled
+    templates.env.globals["export_docx_enabled"] = export_docx_enabled

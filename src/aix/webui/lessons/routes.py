@@ -116,6 +116,7 @@ from aix.webui.auth.models import User
 from aix.webui.db import get_async_session
 from aix.webui.errors import report
 from aix.webui.features import (
+    export_docx_enabled,
     export_outline_enabled,
     export_pdf_enabled,
 )
@@ -2313,7 +2314,7 @@ async def lesson_export(
     session: AsyncSession = Depends(get_async_session),
     user: Optional[User] = Depends(optional_current_user),
 ) -> Response:
-    """Download the lesson plan as markdown or plain text."""
+    """Download the lesson: Markdown, plain text, PDF, Word or the outline."""
     if user is None:
         raise HTTPException(status_code=401)
 
@@ -2369,11 +2370,13 @@ async def lesson_export(
             },
         )
 
-    if format in ("pdf", "outline"):
+    if format in ("pdf", "docx", "outline"):
         # A hidden button is not a closed door: the route checks the flag too,
         # or a bookmarked URL would still render what the pilot switched off.
-        if (format == "pdf" and not export_pdf_enabled()) or (
-            format == "outline" and not export_outline_enabled()
+        if (
+            (format == "pdf" and not export_pdf_enabled())
+            or (format == "docx" and not export_docx_enabled())
+            or (format == "outline" and not export_outline_enabled())
         ):
             raise HTTPException(status_code=404, detail="Questo formato di export non è attivo.")
 
@@ -2402,6 +2405,22 @@ async def lesson_export(
                 },
             )
 
+        if format == "docx":
+            from aix.export.word import render_docx
+
+            # Off the event loop, like the PDF.
+            document = await asyncio.to_thread(render_docx, ir)
+            return Response(
+                content=document.content,
+                media_type=(
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                ),
+                headers={
+                    "Content-Disposition": f'attachment; filename="{slug}.docx"',
+                    AI_GENERATED_HEADER: AI_GENERATED_HEADER_VALUE,
+                },
+            )
+
         from aix.export.pdf import render_pdf
 
         # Off the event loop: rendering is CPU work, and a request thread
@@ -2418,7 +2437,7 @@ async def lesson_export(
 
     raise HTTPException(
         status_code=400,
-        detail="Formato non supportato. Usa ?format=md, txt, pdf oppure outline",
+        detail="Formato non supportato. Usa ?format=md, txt, pdf, docx oppure outline",
     )
 
 

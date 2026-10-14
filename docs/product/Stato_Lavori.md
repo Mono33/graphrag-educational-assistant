@@ -2925,3 +2925,28 @@ conversazione una risposta di due lettere è una risposta vera. Tolto il minimo
 nei due campi della chat e nel controllo del server; resta solo che il messaggio
 non sia vuoto, e il massimo di 2.000 caratteri. Test:
 `test_light_turns.py::test_a_two_letter_reply_is_sent`.
+
+### 2026-10-14 — Scaricare la lezione in Word
+
+Tra i formati di download mancava Word: la docente adatta la lezione prima di
+usarla, e il PDF è fatto per la stampa, non per modificarla. Ora c'è il pulsante
+**Word** accanto a PDF (`?format=docx`).
+
+- `src/aix/export/word.py` (`render_docx`, python-docx, già fra le dipendenze)
+  legge lo stesso modello del PDF (`ExportIRV1`): stesse sezioni, stesse fonti
+  già risolte con i nomi dei documenti, stesso avviso Art. 50.
+- Struttura di Word, non testo formattato: i `##` diventano Titolo 1 (riquadro di
+  spostamento e sommario funzionano), elenchi puntati con i loro livelli, tabelle
+  vere con l'intestazione ripetuta a ogni pagina, link cliccabili solo per
+  http/https/mailto. Gli elenchi numerati portano il numero nel testo: lo stile
+  numerato di Word continua la numerazione fra elenchi separati.
+- Avviso IA nell'intestazione di ogni pagina, piè di pagina con avviso e numero
+  di pagina, e nelle proprietà del documento (con l'id della lezione e l'hash del
+  contenuto, come il PDF).
+- A differenza del PDF non serve filtrare i caratteri: Word sostituisce da sé il
+  font per frecce, ≤ ≥ ed emoji. Vengono tolti solo i caratteri di controllo,
+  che un file Word non può contenere.
+- Flag `AIX_EXPORT_DOCX_ENABLED`, acceso di default come gli altri export; la
+  rotta lo controlla anche lei.
+
+Test: `tests/unit/test_export_docx.py` (12).

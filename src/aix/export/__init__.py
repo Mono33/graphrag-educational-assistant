@@ -7,7 +7,8 @@ The pipeline follows §10.1 of the implementation guide::
       → LessonDocumentV1
       → ExportIRV1            (export_ir.py)
           ├─ OutlineTextRenderer (outline.py)
-          └─ PdfRenderer         (pdf.py)
+          ├─ PdfRenderer         (pdf.py)
+          └─ WordRenderer        (word.py)
 
 Markdown and plain text keep their existing renderers in the route: the guide
 requires them not to change, and they do not need a document model to work.

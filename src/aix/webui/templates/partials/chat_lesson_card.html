@@ -181,6 +181,14 @@
               PDF
             </a>
             {% endif %}
+            {# Word: the lesson as a document the teacher can edit (2026-10-14). #}
+            {% if export_docx_enabled() %}
+            <a href="/webui/lesson/{{ lesson.id }}/export?format=docx" download
+               class="aix-btn aix-btn-outline aix-btn-sm">
+              <wa-icon name="file-word" class="aix-btn-icon"></wa-icon>
+              Word
+            </a>
+            {% endif %}
             {% if export_outline_enabled() %}
             <a href="/webui/lesson/{{ lesson.id }}/export?format=outline" download
                class="aix-btn aix-btn-outline aix-btn-sm">
