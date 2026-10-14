@@ -131,6 +131,29 @@ def test_reuses_when_the_turn_adds_no_new_concept(_on):
     assert should_retrieve(_followup()) == "reuse"
 
 
+def test_a_turn_that_leaves_the_graph_searches_for_its_outside_sources(_on):
+    """2026-10-14: an in-scope list, then «crea una lezione» on the Cold War."""
+    state = _followup(scope_status="partial_scope", requires_new_retrieval=False)
+
+    assert should_retrieve(state) == "retrieve"
+
+
+def test_outside_sources_already_on_the_thread_can_be_reused(_on):
+    state = _followup(
+        scope_status="partial_scope",
+        requires_new_retrieval=False,
+        external_resources={"wikipedia": [{"title": "Guerra fredda"}]},
+    )
+
+    assert should_retrieve(state) == "reuse"
+
+
+def test_the_teacher_s_no_search_still_wins_out_of_scope(_on):
+    state = _followup(scope_status="partial_scope", force_retrieval=False)
+
+    assert should_retrieve(state) == "reuse"
+
+
 def test_retrieves_when_the_turn_introduces_a_new_concept(_on):
     state = _followup(key_concepts=["memoria di lavoro", "carico cognitivo"])
     assert should_retrieve(state) == "retrieve"

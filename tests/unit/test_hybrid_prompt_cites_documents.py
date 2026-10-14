@@ -34,6 +34,40 @@ def test_the_hybrid_prompts_make_the_documents_the_source_and_keep_their_markers
     assert "cited in the body with their [[material:…]] markers" in WRITER_USER_TEMPLATE_HYBRID
 
 
+def test_an_out_of_scope_lesson_without_outside_sources_is_written_not_failed():
+    """The hybrid template, filled with «nothing found», instead of a KeyError (2026-10-14)."""
+    from tests.unit.agent_doubles import _plan, _retrieval_result
+
+    captured: dict = {}
+
+    async def _fake(_client, *, messages, **_kw):
+        captured["messages"] = messages
+        message = SimpleNamespace(content="# Lezione")
+        return SimpleNamespace(choices=[SimpleNamespace(message=message, finish_reason="stop")])
+
+    plan = _plan()
+    plan.scope_status = "partial_scope"
+
+    async def _run():
+        with (
+            patch.object(WriterAgent, "_get_client", return_value=object()),
+            patch("aix.agent.agents.writer_agent.guarded_chat_completion", _fake),
+        ):
+            return await WriterAgent().write(
+                teacher_query="crea una lezione partendo da questa lista",
+                plan=plan,
+                retrieval_result=_retrieval_result(),
+                external_resources=None,
+            )
+
+    import asyncio
+
+    assert asyncio.run(_run())
+    user = next(m["content"] for m in captured["messages"] if m["role"] == "user")
+    assert "Create a lesson plan for a topic OUTSIDE the Knowledge Graph domain" in user
+    assert "Nessun contenuto Wikipedia disponibile." in user
+
+
 def test_a_history_lesson_with_a_deck_gets_the_hybrid_prompt_and_the_passages():
     from tests.unit.agent_doubles import _plan, _retrieval_result
 

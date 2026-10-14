@@ -534,12 +534,15 @@ class WriterAgent:
             else:
                 edu_profile_section += f"\n## Pedagogical Intent\n- {pedagogical_intent}\n"
 
-        # NEW Phase A: Handle HYBRID mode (out-of-scope with external resources)
-        if is_hybrid and intent in ("lesson_creation", "activity_design"):
-            # is_hybrid requires has_external which requires external_resources to be non-None
-            assert external_resources is not None
+        # NEW Phase A: Handle HYBRID mode (out-of-scope with external resources).
+        # Keyed on the template, not on the resources: ``get_writer_prompts`` picks
+        # the hybrid one for any partly or wholly out-of-scope lesson, and that
+        # template needs its fields filled even when no outside source came back
+        # (the teacher waived the search, or the sources found nothing). It used to
+        # fall to the standard branch and fail on ``{wikipedia_content}``.
+        if user_template is WRITER_USER_TEMPLATE_HYBRID:
             wikipedia_content, papers_content, oer_content = format_external_resources(
-                external_resources
+                external_resources or {}
             )
 
             user_prompt = WRITER_USER_TEMPLATE_HYBRID.format(
@@ -558,7 +561,7 @@ class WriterAgent:
 
             logger.info(
                 "[WriterAgent] Using HYBRID mode prompt with external resources (OER: %d textbooks)",
-                len(external_resources.get("oer_textbooks", [])),
+                len((external_resources or {}).get("oer_textbooks", [])),
             )
 
         # Standard mode: Format user prompt based on intent

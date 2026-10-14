@@ -1156,6 +1156,17 @@ def should_retrieve(state: AgentState) -> str:
         logger.info("[Router] no corpus on this thread yet → retrieve")
         return "retrieve"
 
+    # A turn partly or wholly outside the graph takes its subject from outside
+    # sources, and a thread that began in scope never fetched any. Reusing would
+    # hand the Writer the hybrid prompt with nothing in it: on 2026-10-14 «crea
+    # una lezione partendo da questa lista», after an in-scope list on the Cold
+    # War, failed in the Writer. The teacher's own «don't search» still wins.
+    if state.get("scope_status") in ("partial_scope", "out_of_scope") and not any(
+        (state.get("external_resources") or {}).values()
+    ):
+        logger.info("[Router] the turn needs outside sources the thread never fetched → retrieve")
+        return "retrieve"
+
     verdict = state.get("requires_new_retrieval")
     if verdict is not None:
         reason = (state.get("plan") or {}).get("retrieval_reason") or "no reason given"

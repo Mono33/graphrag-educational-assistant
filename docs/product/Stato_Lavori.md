@@ -2950,3 +2950,23 @@ usarla, e il PDF è fatto per la stampa, non per modificarla. Ora c'è il pulsan
   rotta lo controlla anche lei.
 
 Test: `tests/unit/test_export_docx.py` (12).
+
+### 2026-10-14 — Una lezione fuori ambito dopo un turno in ambito: errore corretto
+
+Prova di Angelo su `feature/section-edits-optional` (il difetto è più vecchio, ed
+è su entrambi i branch). Turno 1: «elenco di argomenti principali» su un PDF
+della Guerra fredda; il pianificatore lo giudica **in ambito** (UDL), quindi
+nessuna fonte esterna. Turno 2: «crea una lezione partendo da questa lista»; ora
+è **in parte fuori ambito**, ma il pianificatore dice anche di riusare la
+ricerca del turno prima. Lo scrittore sceglie il prompt «ibrido», che vuole il
+testo di Wikipedia, e cade su `KeyError: 'wikipedia_content'` (codice 438471).
+
+- **La ricerca:** un turno in parte o del tutto fuori ambito, in un thread che
+  non ha mai cercato fonti esterne, ora cerca invece di riusare
+  (`should_retrieve`). Resta vincente il «non cercare» scelto dalla docente.
+- **Lo scrittore:** il ramo ibrido si sceglie dal prompt, non dalla presenza di
+  fonti esterne. Se non ce ne sono, il prompt dice «Nessun contenuto Wikipedia
+  disponibile» e la lezione si scrive dai documenti e dal grafo, invece di fallire.
+
+Test: tre casi in `test_conditional_retrieval.py`, uno in
+`test_hybrid_prompt_cites_documents.py`.
