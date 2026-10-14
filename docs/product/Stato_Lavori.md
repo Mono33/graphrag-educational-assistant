@@ -3012,3 +3012,22 @@ Dalla prova, tre cose sistemate:
   lezione: …» con il link.
 
 Test: `test_resource_library_links.py` (4). Suite: 1.059 verdi.
+
+### 2026-10-14 — Online su staging
+
+- PR #11 (`feature/advanced-input-and-export` → `main`) e #12 (`main` → `staging`),
+  CI verde; immagine `:staging` pubblicata dal workflow di deploy.
+- Sulla VM (passi eseguiti da Angelo): `cloud-infra` aggiornato, `api` e
+  `api-staging` ricreati. `/health`: `code_version` `f3dbb60`, `db_revision`
+  `ac54b8d1e902` (le due migrazioni di Louis), Neo4j collegato.
+- Modelli nel `.env` condiviso (`cloud-infra` `b431549`, decisione di Angelo):
+  `LLM_MODEL=anthropic/claude-haiku-5.5`, pianificatore e controllo delle citazioni
+  su Sonnet 5.5, `AIX_PLANNER_ESCALATE=false`. Prima lo staging usava
+  `claude-sonnet-5` per tutto. Il `.env` vale anche per la produzione, che gira
+  l'immagine di maggio.
+- Libreria dei documenti: audit dello storage `healthy: True` (5 lezioni, 3 file),
+  nessun vecchio allegato da migrare; `AIX_MATERIAL_LIBRARY_ENABLED=true` solo per
+  `api-staging` (`cloud-infra` `bb92022`).
+- Da sistemare fuori da questo rilascio: il workflow `sync-to-fem` fallisce a ogni
+  push su `main` da luglio (il repo di destinazione non esiste più); in
+  `cloud-infra` c'è una chiave privata di `progetto-pinot` sotto versione.
