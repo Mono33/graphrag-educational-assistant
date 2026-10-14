@@ -265,6 +265,11 @@ This is the section an integrating team lives in. Source:
 | --- | --- | --- |
 | `POST` | `/api/v1/agent/run` | One `AgentRunResponse` JSON object, after the whole pipeline drains |
 | `POST` | `/api/v1/agent/stream` | `text/event-stream` of JSON events |
+| `POST` `GET` `DELETE` | `/api/v1/materials[/{id}]` | The end user's documents: upload once, poll `processing → ready`, use by id |
+| `POST` `GET` `DELETE` | `/api/v1/sessions[/{id}]` | A conversation about a lesson, kept by the API (a `Lesson` row) |
+| `POST` | `/api/v1/sessions/{id}/turns[/stream]` | One turn: `lesson`, `answer` or `handoff` |
+| `GET` | `/api/v1/sessions/{id}/export`, `/media` | The lesson as md/txt/pdf/docx/outline; live resources |
+| `GET` | `/api/v1/catalog` | The codes and labels the WebUI offers |
 | `POST` | `/auth/jwt/login` | A Bearer token (form-encoded `username` / `password`) |
 | `POST` | `/auth/jwt/logout` | — |
 | `GET` | `/api/v1/health` | Liveness plus `neo4j_connected`, `version`, `code_version`, `db_revision` |
@@ -272,6 +277,16 @@ This is the section an integrating team lives in. Source:
 
 `/docs` is a working test bench: authorize once with a Bearer token and "Try it
 out" drives the real pipeline.
+
+**For conversational clients (chatbots), read
+[`docs/api/Chatbot_API_Guide.md`](api/Chatbot_API_Guide.md).** Since 2026-10-14
+the materials, sessions and turns endpoints are the WebUI's own logic behind a
+JSON face: a service account acts for an `X-End-User-Id`, provisioned as its own
+`User` (`aix.api.principals`), so the owner filter of every table is the
+authorization; a turn is accepted and driven by `aix.webui.agent.turns`, the
+same functions the WebUI routes call; the cards are the WebUI's payloads
+validated into `PlannerInfo` / `RetrieverInfo` / `CriticInfo`
+(`aix.api.explain`), kept complete by `tests/unit/test_api_webui_parity.py`.
 
 ### Authentication
 
@@ -441,15 +456,14 @@ without translation, and do not expect a stable machine-readable code in it.
 
 ### What the API will not do for you
 
-- **It cannot see the teacher's uploaded documents.** The private RAG registers
-  its search function per WebUI session (`material_source`). An API run
-  registers none, so `retrieve_private` finds nothing and the lesson is written
-  from the Knowledge Graph alone. `teacher_provided_context` is the API's only
-  channel for teacher material, and it is a plain 48 k-character paste into the
-  Writer prompt — no retrieval, no citations, no ranking.
-- **It does not persist anything.** `stream_agent_events` has no `Lesson` row and
-  no database session. The only thing that survives a call is the LangGraph
-  checkpoint under your `session_id`.
+- **`/agent/run` and `/agent/stream` cannot see uploaded documents.** These
+  one-shot endpoints register no search function (`material_source`), so
+  `retrieve_private` finds nothing; `teacher_provided_context` is a plain paste.
+  **Sessions can**: documents uploaded to `/api/v1/materials` and bound to a
+  session are searched and cited exactly as in the WebUI.
+- **`/agent/run` does not persist anything.** `stream_agent_events` has no
+  `Lesson` row; only the LangGraph checkpoint under your `session_id` survives.
+  Sessions persist their turns, lesson and documents.
 - **It does not stream tokens.** The agents call the LLM non-streamingly, so
   phase-level granularity is the ceiling on this path.
 - **It does not do the subject matter.** See §1: the KG is pedagogy.
@@ -887,15 +901,14 @@ it and a dependency override for `get_async_session`.
 already does exactly this and is the pattern to copy; the API and MCP suites are
 the ones that do not.
 
-### Two known Windows-only test failures
+### Two Windows-only test failures — fixed 2026-10-13
 
 Two tests in
 [`tests/unit/test_concurrency_limits.py`](../tests/unit/test_concurrency_limits.py)
-fail on Windows and pass on Linux. The cause is timer resolution, not
-`aix/core/concurrency.py` — the file is not touched by the change that first
-surfaced them, and the failure reads `waited 0.0s`. They are not marked
-`skipif`, so a Windows developer sees a red suite that CI sees green. Treat
-"742 passed, 2 known Windows failures" as the expected local result.
+used to fail on Windows. They were right: with a zero queue window the 1 ms
+timer could fire before the semaphore acquire ran, shedding a run while a slot
+was free. `_acquire_with_timeout` now takes a free permit at once; the suite is
+green on Windows too.
 
 (Separately, 2 OCR tests skip on Windows when Tesseract is not installed. That
 is a skip, not a failure.)

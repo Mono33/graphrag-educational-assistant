@@ -3122,3 +3122,20 @@ Il corpo della rotta di download della WebUI è passato in
 stessi file (citazioni risolte ai nomi dei documenti, avviso IA in ogni formato,
 stessi flag). Rifiuti con codice: `no_lesson_yet`, `unsupported_format`,
 `format_disabled`. Test: un download per formato e i due rifiuti.
+
+### 2026-10-14 — API per i chatbot, passo 6: la guardia di parità e la guida
+
+- `tests/unit/test_api_webui_parity.py`: costruisce ogni payload come lo fa la
+  WebUI (pianificatore, ricerca, Critic, riepilogo, risposta veloce) e pretende
+  che ogni chiave sia un campo dell'API oppure stia in `WEBUI_ONLY` con il
+  motivo (oggi tre: l'emoji del voto, il contatore della scheda, il marcatore
+  interno della risposta). Un campo nuovo della WebUI fa fallire il test finché
+  non arriva anche all'API.
+- `docs/api/Chatbot_API_Guide.md` (inglese, per chi integra): il flusso in
+  quattro chiamate, autenticazione e utenti finali, documenti, sessioni, turni
+  (`lesson` / `answer` / `handoff`) e streaming, cosa accompagna una lezione,
+  download, catalogo, tabella degli errori con i codici, limiti (10 turni al
+  minuto per utente, 6 generazioni insieme, 100 MB e 1000 pagine per documento).
+- `docs/ARCHITECTURE.md` §3: gli endpoint nuovi, come sono fatti dentro, e che le
+  sessioni vedono i documenti (i vecchi `/agent/run` no). Aggiornata anche la
+  nota sui due test che fallivano su Windows, corretti il 13/10.
