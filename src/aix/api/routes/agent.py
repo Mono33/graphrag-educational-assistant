@@ -39,16 +39,14 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-import secrets
 import uuid
 from collections.abc import AsyncIterator
 from typing import Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Response, status
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from sse_starlette.sse import EventSourceResponse
 
+from aix.api.principals import require_caller
 from aix.api.schemas import (
     AgentRunMeta,
     AgentRunRequest,
@@ -68,7 +66,6 @@ from aix.core.concurrency import (
     run_slot,
 )
 from aix.webui.agent.service import StreamEvent, stream_agent_events
-from aix.webui.auth.dependencies import optional_current_user
 from aix.webui.auth.models import User
 
 logger = logging.getLogger(__name__)
@@ -84,25 +81,9 @@ router = APIRouter(prefix="/agent", tags=["agent"])
 # AixLearning's existing GraphRagService wrapper for /api/v1/context.
 # ---------------------------------------------------------------------------
 
-_basic_security = HTTPBasic(auto_error=False)
-
-
-async def _require_caller(
-    basic: Optional[HTTPBasicCredentials] = Depends(_basic_security),
-    user: Optional[User] = Depends(optional_current_user),
-) -> User | str:
-    """Authenticate via JWT/cookie (browser/webui) OR Basic Auth (service account)."""
-    if basic is not None:
-        svc_user = os.getenv("GRAPH_API_USERNAME", "")
-        svc_pwd = os.getenv("GRAPH_API_PWD", "")
-        if svc_user and svc_pwd:
-            user_ok = secrets.compare_digest(basic.username.encode(), svc_user.encode())
-            pwd_ok = secrets.compare_digest(basic.password.encode(), svc_pwd.encode())
-            if user_ok and pwd_ok:
-                return "service_account"
-    if user is not None:
-        return user
-    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+# Authentication lives in ``aix.api.principals``; the old name stays for the
+# tests and callers that override the dependency by it.
+_require_caller = require_caller
 
 
 # ---------------------------------------------------------------------------

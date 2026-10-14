@@ -3038,3 +3038,27 @@ Le rotte della WebUI sono ora adattatori HTML (−424 righe). La scheda
 dell'intento resta della WebUI; l'API passerà l'intento nel profilo
 (`ask_intent=False`). **Nessun test della WebUI è cambiato** e la suite è verde;
 `test_turns.py` (6) fissa ciò su cui conta l'API.
+
+### 2026-10-14 — API per i chatbot, passo 2: documenti caricati una volta, usati per id
+
+Nella WebUI un documento si allega a una lezione: caricamento, collegamento e
+lettura in un solo gesto. Una piattaforma di chatbot carica un documento una
+volta e lo usa in molte conversazioni, quindi le due metà vanno separate. Erano
+già entrambe nel codice (`store_and_queue`, ora estratto da `record_upload`, e
+`BindingRepository.bind`); `src/aix/webui/materials/library.py` le offre staccate.
+
+- `POST /api/v1/materials` (multipart): stessi formati e controlli della WebUI
+  (magic bytes, macro, cifrati, dimensione misurata prima di leggere). Risponde
+  subito `202` con `status: processing`.
+- `GET /api/v1/materials/{id}`: `processing` → `ready` (cercabile; passaggi,
+  qualità della lettura, pagine non lette, OCR) oppure `failed` con `error_code`.
+  `GET /api/v1/materials` (elenco con le sessioni che li usano), `DELETE` (tolto
+  dalla ricerca e dalla libreria, nell'ordine §12.3).
+- Per chi: intestazione `X-End-User-Id` (passo 0). Un utente finale non vede mai
+  i documenti di un altro (404, senza dire di chi sono).
+- Errori con `{"code", "message"}`: `magic_mismatch`, `too_large`,
+  `materials_disabled`, `unknown_material`…
+- L'autenticazione (`require_caller`) e «per conto di chi» (`current_owner`) ora
+  stanno in `aix.api.principals`, condivise da tutte le rotte nuove.
+
+Test: `test_api_materials.py` (6), con il worker vero e un embedding finto.

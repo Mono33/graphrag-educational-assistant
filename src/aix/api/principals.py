@@ -28,12 +28,15 @@ import re
 import secrets
 from typing import Optional, Union
 
-from fastapi import HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from aix.webui.auth.dependencies import optional_current_user
 from aix.webui.auth.models import User
+from aix.webui.db import get_async_session
 
 #: What ``_require_caller`` returns for the HTTP Basic service account.
 SERVICE_ACCOUNT = "service_account"
@@ -45,6 +48,27 @@ API_EMAIL_DOMAIN = "api.invalid"
 END_USER_ID_MAX = 200
 
 _SLUG = re.compile(r"[^a-z0-9]+")
+
+
+_basic_security = HTTPBasic(auto_error=False)
+
+
+async def require_caller(
+    basic: Optional[HTTPBasicCredentials] = Depends(_basic_security),
+    user: Optional[User] = Depends(optional_current_user),
+) -> User | str:
+    """Authenticate via JWT/cookie (browser/webui) OR Basic Auth (service account)."""
+    if basic is not None:
+        svc_user = os.getenv("GRAPH_API_USERNAME", "")
+        svc_pwd = os.getenv("GRAPH_API_PWD", "")
+        if svc_user and svc_pwd:
+            user_ok = secrets.compare_digest(basic.username.encode(), svc_user.encode())
+            pwd_ok = secrets.compare_digest(basic.password.encode(), svc_pwd.encode())
+            if user_ok and pwd_ok:
+                return SERVICE_ACCOUNT
+    if user is not None:
+        return user
+    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
 
 def _client_name() -> str:
@@ -119,3 +143,16 @@ async def owner_for(
         return (await session.execute(select(User).where(User.email == email))).scalar_one()
     await session.refresh(user)
     return user
+
+
+#: The header that names the end user a service account acts for.
+END_USER_HEADER = "X-End-User-Id"
+
+
+async def current_owner(
+    caller: Union[User, str] = Depends(require_caller),
+    end_user_id: Optional[str] = Header(default=None, alias=END_USER_HEADER),
+    session: AsyncSession = Depends(get_async_session),
+) -> User:
+    """The user every resource route acts as: one dependency, one rule (see the module docstring)."""
+    return await owner_for(session, caller, end_user_id)

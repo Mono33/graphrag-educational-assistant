@@ -56,6 +56,74 @@ def _media_type_for(filename: str) -> str:
     return MIME_FOR_EXT.get(Path(filename).suffix.lower(), "application/octet-stream")
 
 
+async def store_and_queue(
+    *,
+    owner_id: uuid.UUID,
+    filename: str,
+    content: bytes,
+    lesson_id: Optional[uuid.UUID] = None,
+) -> dict[str, Any]:
+    """Store the bytes as a material, bind it to the lesson if any, queue the parse.
+
+    The core of :func:`record_upload`, without its safety net: it raises. The
+    WebUI calls it through ``record_upload``, after the legacy path has already
+    kept the teacher's file; the API (``materials.library``) calls it directly,
+    where a failure must be an answer, not a silence.
+    """
+    from aix.webui.db import async_session_maker
+
+    storage = get_storage_backend()
+    async with async_session_maker() as session:
+        service = MaterialService(session, storage)
+        material, version = await service.store_new_material(
+            content,
+            owner_id=owner_id,
+            display_name=Path(filename).name[:240] or "materiale",
+            media_type=_media_type_for(filename),
+        )
+        await session.commit()
+
+    # Fase 2 · PR 6 — now the binding is honest. In shadow mode it would
+    # have said a lesson *uses* a material while the Writer was still being
+    # fed the manifest excerpt; with the private retriever on, the binding is
+    # exactly what the retrieval is authorized against (§8.5).
+    if lesson_id is not None and private_rag_enabled():
+        async with async_session_maker() as session:
+            bound = await BindingRepository(session).bind(
+                lesson_id=lesson_id,
+                material_id=material.id,
+                owner_id=owner_id,
+                selected_version_id=version.id,
+                created_by=owner_id,
+            )
+            await session.commit()
+        if bound is None:
+            logger.warning(
+                "[private-rag] lesson=%s refused the binding for material=%s",
+                lesson_id,
+                material.id,
+            )
+
+    job = await JobDispatcher(async_session_maker).enqueue(
+        owner_id=owner_id,
+        material_version_id=version.id,
+        parser_profile_version=PARSER_PROFILE,
+    )
+
+    logger.info(
+        "[shadow] material=%s version=%s job=%s queued for %s",
+        material.id,
+        version.id,
+        job.id if job else "already-queued",
+        PARSER_PROFILE,
+    )
+    return {
+        "material_id": str(material.id),
+        "material_version_id": str(version.id),
+        "processing_status": "processing",
+    }
+
+
 async def record_upload(
     *,
     owner_id: uuid.UUID,
@@ -74,58 +142,9 @@ async def record_upload(
         return None
 
     try:
-        from aix.webui.db import async_session_maker
-
-        storage = get_storage_backend()
-        async with async_session_maker() as session:
-            service = MaterialService(session, storage)
-            material, version = await service.store_new_material(
-                content,
-                owner_id=owner_id,
-                display_name=Path(filename).name[:240] or "materiale",
-                media_type=_media_type_for(filename),
-            )
-            await session.commit()
-
-        # Fase 2 · PR 6 — now the binding is honest. In shadow mode it would
-        # have said a lesson *uses* a material while the Writer was still being
-        # fed the manifest excerpt; with the private retriever on, the binding is
-        # exactly what the retrieval is authorized against (§8.5).
-        if lesson_id is not None and private_rag_enabled():
-            async with async_session_maker() as session:
-                bound = await BindingRepository(session).bind(
-                    lesson_id=lesson_id,
-                    material_id=material.id,
-                    owner_id=owner_id,
-                    selected_version_id=version.id,
-                    created_by=owner_id,
-                )
-                await session.commit()
-            if bound is None:
-                logger.warning(
-                    "[private-rag] lesson=%s refused the binding for material=%s",
-                    lesson_id,
-                    material.id,
-                )
-
-        job = await JobDispatcher(async_session_maker).enqueue(
-            owner_id=owner_id,
-            material_version_id=version.id,
-            parser_profile_version=PARSER_PROFILE,
+        return await store_and_queue(
+            owner_id=owner_id, filename=filename, content=content, lesson_id=lesson_id
         )
-
-        logger.info(
-            "[shadow] material=%s version=%s job=%s queued for %s",
-            material.id,
-            version.id,
-            job.id if job else "already-queued",
-            PARSER_PROFILE,
-        )
-        return {
-            "material_id": str(material.id),
-            "material_version_id": str(version.id),
-            "processing_status": "processing",
-        }
     except Exception as exc:  # noqa: BLE001 — the legacy upload must still succeed
         report(exc, context=f"shadow upload owner={owner_id}")
         return None

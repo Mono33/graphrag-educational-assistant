@@ -449,6 +449,16 @@ try:
 except Exception as exc:  # noqa: BLE001
     logger.warning("⚠️ Agent JSON+SSE API not loaded (skipping): %s", exc)
 
+# The chatbot API (2026-10-14): the caller's documents, uploaded once and used
+# by id. Same guard as the agent routes: a failure here never takes /context down.
+try:
+    from aix.api.routes import materials_router
+
+    app.include_router(materials_router, prefix="/api/v1")
+    logger.info("✅ Materials API mounted at /api/v1/materials")
+except Exception as exc:  # noqa: BLE001
+    logger.warning("⚠️ Materials API not loaded (skipping): %s", exc)
+
 # Path C webui — internal HTML+SSE surface for agent end-to-end testing.
 # Mounts at /webui/* (not /api/v1/*), so the public JSON contract used by the
 # DEV team is unaffected. See docs/architecture/Frontend_Platform_Evaluation.md
