@@ -83,6 +83,30 @@ def test_class_size_bounds_the_groups(section):
     assert "cooperative groups must not exceed 5" in section
 
 
+def test_the_grouping_comes_worked_out_and_is_applied_silently(section):
+    """22 pupils on staging (2026-10-16): «4 gruppi: 3 da 5 e 1 da 7 non ammesso» in the lesson."""
+    assert "A grouping that works: 5 groups of 5." in section
+    assert "never write the arithmetic" in section
+
+
+@pytest.mark.parametrize(
+    ("students", "split"),
+    [
+        (22, "2 groups of 5 and 3 groups of 4"),
+        (25, "5 groups of 5"),
+        (23, "3 groups of 5 and 2 groups of 4"),
+        (6, "2 groups of 3"),
+        (11, "2 groups of 4 and 1 group of 3"),
+        (5, ""),
+        (1, ""),
+    ],
+)
+def test_group_split(students, split):
+    from aix.agent.prompts.profile_renderer import group_split
+
+    assert group_split(students) == split
+
+
 def test_constraints_are_imperative_not_key_value(section):
     assert CONSTRAINTS_HEADER in section
     assert "own_device" not in section

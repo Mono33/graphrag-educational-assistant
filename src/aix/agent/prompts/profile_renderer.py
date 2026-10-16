@@ -176,12 +176,40 @@ def render_classroom_constraints(profile: Any) -> list[str]:
 
     students = group.get("students_number")
     if isinstance(students, int) and students > 0:
-        lines.append(
+        line = (
             f"The class has {students} students: every grouping must account for all "
             f"{students}, and cooperative groups must not exceed {MAX_GROUP_SIZE} members."
         )
+        if split := group_split(students):
+            line += (
+                f" A grouping that works: {split}. State the grouping you use as a plain "
+                "fact; never write the arithmetic, the options you discarded or this rule "
+                "in the lesson."
+            )
+        lines.append(line)
 
     return lines
+
+
+def group_split(students: int, max_size: int = MAX_GROUP_SIZE) -> str:
+    """The most even split of the class into groups of at most ``max_size``.
+
+    Handed to the model ready-made because the arithmetic leaked into the
+    lesson. The staging lesson of 2026-10-16 (22 pupils) read «Gruppi di 4–5
+    studenti (5 gruppi da 4 e 1 da 2, oppure 4 gruppi: 3 da 5 e 1 da 7 non
+    ammesso; usare 5 gruppi da 4 e 1 da 2 oppure 2 gruppi da 5 e 3 da 4…)»: the
+    rule, worked out in front of the teacher. ``""`` below two groups.
+    """
+    if students <= max_size:
+        return ""
+    count = -(-students // max_size)
+    small, larger = divmod(students, count)
+    parts = []
+    if larger:
+        parts.append(f"{larger} group{'s' if larger > 1 else ''} of {small + 1}")
+    if count - larger:
+        parts.append(f"{count - larger} group{'s' if count - larger > 1 else ''} of {small}")
+    return " and ".join(parts)
 
 
 def render_profile_section(profile: Any) -> str:
