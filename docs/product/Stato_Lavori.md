@@ -3242,3 +3242,15 @@ dell'architettura (commit di documentazione `b736ef2`): import non ordinati,
 `typing` al posto di `collections.abc`, uno `zip` senza `strict`. Corretti e
 formattati; nessun cambio di comportamento (lo `zip` sui segmenti consecutivi è
 volutamente di lunghezze diverse: `strict=False`).
+
+### 2026-10-16 — Analisi dell'integrazione con AIxLearning
+
+`docs/product/Analisi_Integrazione_AIxLearning.md`: il repo della piattaforma
+(`FEM-modena/aixlearning`) letto contro la nostra API e contro il documento di
+Louis del 3/10. La direzione regge; otto incompatibilità concrete nel contratto
+(codici BES SC/CL, classi con 0 studenti, campi aula a tre stati, più istanze
+con un solo account, tentativi Dramatiq senza idempotenza, credenziali in
+produzione, streaming a token, storia rimandata a ogni turno), quattro decisioni
+(anonimizzazione — resta, da scegliere se lato piattaforma o lato nostro —,
+quali strumenti, crediti, export). Ordine: profilo della classe, token
+streaming, idempotenza e tenant; lo staging per i dev aspetta.
