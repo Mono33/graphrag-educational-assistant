@@ -53,7 +53,10 @@ _USER_CHARS = 1500
 _ANSWER_CHARS = 2500
 #: The graph's evidence, as kept with the lesson (``kg_evidence.MAX_CHARS``).
 _GRAPH_CHARS = 9000
-_MAX_TOKENS = int(os.getenv("AIX_CHAT_MAX_TOKENS", "3000"))
+#: The model's reasoning counts against it too: a regenerated turn 2 of the
+#: staging lesson («esploriamo che cosa hai trovato nel grafo», 2026-10-16) used
+#: all 3000 -- about 1700 thinking, 1300 of answer -- and was cut mid-list.
+_MAX_TOKENS = int(os.getenv("AIX_CHAT_MAX_TOKENS", "4500"))
 _MARKER = re.compile(r"\[\[material:[^\]]*\]\]")
 
 

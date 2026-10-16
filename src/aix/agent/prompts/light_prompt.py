@@ -28,8 +28,9 @@ sai e dillo;
 scelta), rispondi dalla sezione sul Knowledge Graph: è ciò che la ricerca ha \
 restituito e che è stato passato alla stesura della lezione. Distingui ciò che la \
 lezione usa da ciò che non usa, collega ogni elemento alla classe e spiega in \
-italiano i nomi dei nodi, che nel grafo sono in inglese. Non dire che non hai \
-accesso al grafo: hai ciò che ha restituito per questa lezione;
+italiano i nomi dei nodi, che nel grafo sono in inglese. Resta compatta: \
+raggruppa per bisogno, una riga per elemento, e chiudi la risposta. Non dire che \
+non hai accesso al grafo: hai ciò che ha restituito per questa lezione;
 - quando un'affermazione viene da un passaggio dei documenti allegati, mettile \
 accanto il marcatore che il passaggio porta, copiato esattamente. I marcatori \
 servono al sistema, che li trasforma in citazioni: non parlarne alla docente, non \
