@@ -300,7 +300,7 @@ un decimo del prezzo.
 | 4 | **Forma della lezione guidata dall'intento**: struttura per indagine quando l'argomento è scientifico, «assunzioni da verificare», 2 opzioni di valutazione e una domanda finale alla docente | medio-alto | medio | medio: nuove sezioni |
 | 5 | **text2cypher**: togliere i nodi d'esempio dal prompt di schema (l'ancora «Group till 15»); non mandare l'argomento disciplinare (scienze, CICLO DELL'ACQUA) al grafo di pedagogia quando lo scope è parziale; per i bisogni del profilo, query deterministiche (`MATCH (n:Adhd)-[r]-(m)`) invece del Cypher scritto dal modello | alto sulla precisione del retrieval | medio | medio: va misurato con `query_metrics` |
 | 6 | **Qualità dei dati del grafo**: descrizioni attribuite al nodo sbagliato (Debate ha quella del GBL; i nodi `Context` hanno quella della metodologia; «Difficulty sustaining focus suggests Universal Design for Learning.»), refusi (Poject, Gammification, UniversaryTool, sustaints), nomi troncati («L2).»), doppi spazi, quasi-duplicati (Chunking / Chunking instructions / Chunking tasks into smaller steps) | medio | medio: lavoro editoriale | basso |
-| 7 | **Storia dei turni veloci**: `_ANSWER_CHARS = 2500` taglia la risposta precedente. Nella rigenerazione, al turno 3 il modello ha concluso che «la risposta precedente era incompleta». Alzare il limite per le risposte, oppure riassumerle | medio | basso: qualche token in più per turno | basso |
+| 7 | **Fatto il 16/10 (§7)** — **Storia dei turni veloci**: `_ANSWER_CHARS = 2500` taglia la risposta precedente. Nella rigenerazione, al turno 3 il modello ha concluso che «la risposta precedente era incompleta». Alzare il limite per le risposte, oppure riassumerle | medio | basso: qualche token in più per turno | basso |
 | 8 | **Strumenti del turno veloce** (`AIX_LIGHT_TOOLS_ENABLED`): con il materiale salvato a disposizione, `cerca_nel_grafo` può servire per approfondimenti mirati («e per la discalculia?»). Da misurare prima di accendere | medio | basso | basso |
 | 9 | **Media**: i video curati parlano delle metodologie (Station Rotation, che cos'è l'UDL), non del ciclo dell'acqua. Valutare la ricerca live sull'argomento disciplinare | medio | medio | basso |
 | 10 | **Badge di copertura UDL**: `_extract_meta` conta etichette con «REPRESENT/ACTION/ENGAGE», che nel grafo non esistono, quindi il badge non compare mai. Va contato su Checkpoint e Guideline risalendo al loro principio | basso | basso | basso |
@@ -323,3 +323,81 @@ un decimo del prezzo.
 
 6 generazioni, tutte Haiku 5.5: 2 lezioni e 4 risposte veloci, **$0,0144** in totale.
 Nessuna chiamata a Sonnet. Trace e grafo letti senza costo per i modelli.
+
+---
+
+## 7. Prova dal vero e il dominio neuro (16/10, dopo il report)
+
+### 7.1 La catena completa sullo stack locale
+
+Lo stack locale (`aix-cachetest`) è stato portato su questo branch e il caso è stato
+rigenerato con la catena completa, planner e retriever compresi, attraverso l'API
+delle sessioni: stessa richiesta, profilo con ADHD e alunni non italofoni, 22
+alunni, 60 minuti, più le due domande di follow-up della docente.
+
+| | staging (prima) | UDL, questo branch | neuro, prima del §7.2 | neuro, dopo il §7.2 |
+|---|---|---|---|---|
+| concetti in testa | Group till 15/20/30, Cohesive… | Multisensory Activities, Self-Regulated Learning, Peer to Peer… | Students' Independent Metacognitive Development, Adaptive Strategies, Sustained Engagement, Predictability, Reduced Anxiety (effetti) | Visual Aids, Structured Routines, Step-by-step Instruction, Concrete Manipulatives |
+| Station Rotation (sconsigliata dal grafo) | attività centrale | assente | assente | assente |
+| ambiente | assente | dai nodi Colour, Lighting, Acoustics | generico, non dal grafo | dai nodi External Distractions, Salient Stimuli, Supportive Classroom Environment |
+| turno 2 «esploriamo il grafo» | «non ho accesso al grafo» | elenco per bisogno, usato / non usato | elenco con effetti presentati come strategie | difficoltà ADHD con il loro perché, neuromiti da evitare, nessun nodo per gli alunni non italofoni (detto apertamente) |
+| turno 3 | «documento senza marcatori ``» | «No, non sono solo sei» | «la mia risposta precedente si è interrotta» (falso) | corretto |
+| durata | 60 | **55** | **55** | **53** |
+
+### 7.2 Il grafo neuro è fatto diversamente
+
+Letto in sola lettura il 16/10:
+
+- **Cosa dice cos'è un nodo.** Nel grafo neuro ogni concetto ha una sua etichetta, spesso
+  con un solo nodo; il tipo sta nella proprietà `category`: «ADHD», «Dyslexia»,
+  «Dyscalculia», «Autism Spectrum», «Tourette's Disorder» (le difficoltà); «Teaching
+  Practices», «Support Systems», «LearningStrategies», «Feedback» (cosa fare);
+  «Educational Results», «Pedagogical Strategies», «Developmental Outcomes»,
+  «Evidence-based» (effetti: «Reduced Anxiety», «Learning Gains»); «External
+  Influences» (l'ambiente); «Neuromyths».
+- **Neuromiti archiviati come pratiche.** Diversi miti sono archiviati come «Teaching
+  Practices»: «Pseudoscientific exercises» (Brain Gym), «Modality preference myth»
+  (stili di apprendimento), «Hydration myth», «Music-IQ myth». Una classificazione per
+  sola categoria li avrebbe messi in testa alle strategie.
+- **Nessun percorso da difficoltà a strategia.** Le difficoltà ADHD non portano a
+  strategie, nemmeno in due passi. Portano a ciò che comportano: «Difficulty
+  Managing Frustration or Stress» scatena «Anxiety»; «Inefficient Rehearsal or
+  Organization» compromette «Encoding and Transfer of Knowledge»; «High Creativity»
+  favorisce il problem solving. È il *perché* di una scelta, non la scelta.
+- **Nessun nodo per gli alunni non italofoni.**
+- **Descrizioni con errori.** Molte descrizioni sono copiate da un arco a più nodi
+  («X leads to Y, reflecting the interconnected nature…»), e «Reduced Stigma» e
+  «Improved Engagement» sono archiviati come pratiche.
+
+Implementato (`25ec05a`):
+
+- `kg_evidence.kind` riconosce prima i miti, poi i nodi neuro per categoria;
+- i bisogni portano «→ nel KG: scatena Anxiety; …»;
+- gli effetti finiscono in una sezione «motivazioni, non attività»;
+- i miti non sono mai proposti come nodi da usare. Arrivano al Writer solo quelli in cui
+  una lezione per questa classe potrebbe cadere (stili di apprendimento sempre; con
+  l'ADHD zucchero, acqua, multitasking, Brain Gym), al massimo 6;
+- `RetrieverAgent.fetch_neuro_class_evidence` legge direttamente i bisogni della
+  classe con i loro effetti, i neuromiti e, quando serve, l'ambiente, come
+  `fetch_learning_environment` fa per UDL. Lo spegne lo stesso flag
+  `AIX_KG_ENVIRONMENT_ENABLED`;
+- il prompt del Writer ha tre regole per queste sezioni. Nella lezione rigenerata:
+  «il suono è pensato per sostenere la memoria, non come stile di apprendimento».
+
+Corretto anche (`bdc7f80`) il punto 7 del §5. Nella cronologia l'ultima risposta veloce
+resta intera; le precedenti, se tagliate, dicono che il taglio è nostro. Il «…»
+faceva dire al modello che la sua risposta si era interrotta.
+
+### 7.3 Ancora aperto
+
+- **Durata.** Tutte e quattro le lezioni rigenerate arrivano a 53–55 minuti su 60, e il
+  Critic dà 5/5. Le proposte 2 e 3 del §5 diventano le prime da fare.
+- **Strategie attribuite al grafo sbagliato.** «Focus Tasks» è citato sotto il Knowledge
+  Graph in una lezione neuro, ma è un nodo del grafo UDL. La risposta veloce lo ha
+  ammesso al turno 3.
+- **Alunni non italofoni.** Il grafo neuro non ha nulla su di loro, e la lezione lo
+  compensa con scelte proprie (dichiarate come tali al turno 2).
+- **Video in UDL.** Una lezione UDL ha proposto come video un link a una ricerca su
+  YouTube.
+
+Costo delle prove dal vero: 4 lezioni e 8 risposte veloci con Haiku 5.5, meno di $0,05.

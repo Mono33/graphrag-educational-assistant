@@ -3383,3 +3383,28 @@ l'aderenza al grafo e la durata (tutte e tre le lezioni viste arrivano a 55 minu
 60); pulizia di text2cypher (l'ancora «Group till 15» nel prompt di schema) e dei
 dati del grafo; confermare che «Group till N» significhi «classe fino a N»; provare
 le modifiche sul set di prova prima del deploy.
+
+### 2026-10-16 — Qualità delle risposte: prova dal vero e il grafo neuro
+
+Il branch `feature/response-quality-improvement` è stato provato con la catena
+completa sullo stack locale, ripetendo il caso «ciclo dell'acqua» su UDL e neuro con
+le due domande di follow-up della docente.
+
+UDL regge: i concetti in testa sono strategie, niente Station Rotation (che il grafo
+sconsiglia), l'ambiente viene dai nodi del grafo, il turno 3 risponde «No, non sono
+solo sei».
+
+Su neuro la logica UDL non bastava, perché quel grafo dice cos'è un nodo con
+`category` e archivia diversi neuromiti come «Teaching Practices». `25ec05a` gli
+insegna il grafo neuro:
+
+- i bisogni (ADHD…) con ciò che comportano;
+- gli effetti come motivazioni, non come attività;
+- i neuromiti pertinenti come «da evitare», mai come strategie;
+- lettura diretta di bisogni, miti e ambiente.
+
+`bdc7f80`: nella cronologia della risposta veloce l'ultima risposta resta intera.
+Il «…» faceva dire al modello che si era interrotta.
+
+Resta aperta la durata: 53–55 minuti su 60 in tutte le lezioni, e il Critic
+approva. Dettagli in `Analisi_Qualita_Risposte.md` §7.
