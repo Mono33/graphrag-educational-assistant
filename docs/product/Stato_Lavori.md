@@ -3043,3 +3043,13 @@ l'organizzazione: a ogni push su `main` faceva un force push verso
 rossa. Lo scopo non esiste più, quindi il file è tolto. Fra i secret del repo
 `FEM_MODENA_PAT` non c'è (solo `SCW_SECRET_KEY`, quello del deploy): il token
 probabilmente non è mai stato impostato qui, e già quello faceva fallire il push.
+
+### 2026-10-16 — `writer-stream` controlla il proprietario
+
+Trovato lavorando allo streaming dell'API su `chore/repo-reorg` e portato qui
+per lo staging: `GET /webui/lesson/{id}/writer-stream` (il typewriter della
+WebUI) controllava solo il login, non che la lezione fosse dell'utente. Un
+docente autenticato che avesse l'id di una lezione altrui poteva leggerne il
+testo mentre veniva scritto. Ora risponde 404 come le altre rotte; il test
+`test_bruno_cannot_follow_annas_lesson_as_it_is_written` fallisce senza la
+correzione.

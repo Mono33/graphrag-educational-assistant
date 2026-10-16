@@ -2213,6 +2213,7 @@ async def lesson_stream(
 async def lesson_writer_stream(
     request: Request,
     lesson_id: uuid.UUID,
+    session: AsyncSession = Depends(get_async_session),
     user: Optional[User] = Depends(optional_current_user),
 ) -> Response:
     """Thin SSE endpoint that forwards live Writer tokens to the browser.
@@ -2227,6 +2228,14 @@ async def lesson_writer_stream(
     """
     if user is None:
         return Response(status_code=401)
+    # The text being written is the lesson: only its owner reads it. This route
+    # checked the login alone, so any teacher who had a lesson's id could follow
+    # someone else's lesson as it was written (2026-10-16).
+    owned = await session.scalar(
+        select(Lesson.id).where(Lesson.id == lesson_id, Lesson.owner_id == user.id)
+    )
+    if owned is None:
+        return Response(status_code=404)
 
     from aix.agent.graph import write_stream as _ws
 
