@@ -106,6 +106,7 @@ async def test_class_profile_nodes_are_not_listed_as_concepts():
     listed = user.split("### Altri nodi recuperati", 1)[1]
 
     assert "Group till  15" not in listed
+    assert "Long Frontal Lesson" not in listed, "advised against for ADHD: in the map, not here"
     assert "**Focus Tasks** [InstructionalTechnique]\n  One short task, one goal" in listed
 
 

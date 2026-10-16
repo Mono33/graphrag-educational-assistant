@@ -162,17 +162,22 @@ def rank_recommendations(
     recommendations: Optional[list[dict[str, Any]]],
     nodes: Optional[list[dict[str, Any]]] = None,
 ) -> list[dict[str, Any]]:
-    """Most relevant first; a recommendation that is a class-profile node goes last.
+    """Strategies first, in the nodes' tiers; the most relevant first within a tier.
 
     «Apply Group till 15 with appropriate adaptations» is not a strategy, and on
-    2026-10-16 four of the Writer's ten «Teaching Methodologies» were that.
+    2026-10-16 four of the Writer's ten «Teaching Methodologies» were that. By
+    relevance alone the head was five assessment designs (score 1.0), so the
+    tier of the recommendation's node comes first.
     """
-    context = {_name(n) for n in nodes or [] if isinstance(n, dict) and kind(n) == "context"}
+    tiers = {_name(n): _TIER[kind(n)] for n in nodes or [] if isinstance(n, dict)}
     items = [r for r in recommendations or [] if isinstance(r, dict)]
 
     def _key(rec: dict[str, Any]) -> tuple[int, float]:
-        is_context = _name(rec) in context or "contesto" in _norm(rec.get("category") or "")
-        return (1 if is_context else 0, -_score(rec, "relevance_score", "score"))
+        if "contesto" in _norm(rec.get("category") or ""):
+            tier = _TIER["context"]
+        else:
+            tier = tiers.get(_name(rec), _TIER["other"])
+        return (tier, -_score(rec, "relevance_score", "score"))
 
     return sorted(items, key=_key)
 
@@ -279,6 +284,34 @@ def _links(
             if other not in bucket:
                 bucket.append(other)
     return suggests, avoid
+
+
+def advised_against(
+    nodes: Optional[list[dict[str, Any]]],
+    relationships: Optional[list[dict[str, Any]]],
+    profile: Any = None,
+) -> set[str]:
+    """What the graph advises against for this class's needs and class profile.
+
+    «Long Frontal Lesson» for ADHD, «Station Rotation» for a class of 22: names
+    no reader should offer as strategies to pick.
+    """
+    ranked = rank_nodes(nodes)
+    by_name: dict[str, dict[str, Any]] = {}
+    for node in ranked:
+        by_name.setdefault(_name(node), node)
+    edges = _edges(relationships)
+    wanted = class_need_labels(profile)
+    sources = [
+        node
+        for node in ranked
+        if kind(node) == "need" and (not wanted or any(label in wanted for label in _labels(node)))
+    ]
+    sources += _matching_context([n for n in ranked if kind(n) == "context"], profile)
+    names: set[str] = set()
+    for node in sources:
+        names.update(_links(_name(node), edges, by_name)[1])
+    return names
 
 
 def _short(text: Any, limit: int = _DESC_CHARS) -> str:

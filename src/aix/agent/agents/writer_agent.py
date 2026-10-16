@@ -17,6 +17,7 @@ from openai import AsyncOpenAI
 from aix.agent.agents.planner_agent import RetrievalPlan
 from aix.agent.agents.retriever_agent import RetrievalResult
 from aix.agent.kg_evidence import (
+    advised_against,
     environment_needed,
     guidance_by_name,
     is_context_recommendation,
@@ -521,7 +522,9 @@ class WriterAgent:
             include_strategies=False,
         )
         nodes_text = self._format_nodes(
-            retrieval_result.nodes, recommendations=retrieval_result.recommendations
+            retrieval_result.nodes,
+            recommendations=retrieval_result.recommendations,
+            exclude=advised_against(retrieval_result.nodes, relationships, educational_profile),
         )
         if evidence:
             nodes_text = evidence + "\n\n### Altri nodi recuperati\n" + nodes_text
@@ -1003,6 +1006,7 @@ class WriterAgent:
         nodes: list,
         max_nodes: int = 20,
         recommendations: Optional[list] = None,
+        exclude: Optional[set[str]] = None,
     ) -> str:
         """Format retrieved nodes for the prompt.
 
@@ -1010,14 +1014,22 @@ class WriterAgent:
         in the evidence map with what the graph suggests for them, and the rest
         («Group till 15» for a class of 22) are not about this class. Until
         2026-10-16 they were eight of these twenty lines, without a description.
-        A node without a description takes its recommendation's guidance.
+        So are the ``exclude`` names: what the graph advises against for this
+        class is in the map, under its need, not among the concepts to use. A
+        node without a description takes its recommendation's guidance.
         """
         if not nodes:
             return "No nodes retrieved"
 
         guidance = guidance_by_name(recommendations)
+        skip = {" ".join(str(name).split()) for name in exclude or ()}
+        listed = [
+            n
+            for n in nodes
+            if kind(n) != "context" and " ".join(str(n.get("name") or "").split()) not in skip
+        ]
         lines = []
-        for node in [n for n in nodes if kind(n) != "context"][:max_nodes]:
+        for node in listed[:max_nodes]:
             name = node.get("name", "Unknown")
             labels = node.get("labels", [])
             desc = str(node.get("description") or guidance.get(name) or "")[:150]

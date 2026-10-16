@@ -110,7 +110,8 @@ def test_recommendations_that_are_class_profile_nodes_go_last():
     ]
     names = [r["name"] for r in rank_recommendations(recs, NODES)]
 
-    assert names == ["Chunking", "Cooperative Learning", "Motivated", "Group till  15"]
+    # A strategy node first; one with no node after it, however relevant.
+    assert names == ["Cooperative Learning", "Chunking", "Motivated", "Group till  15"]
 
 
 def test_the_needs_of_this_class_with_what_the_graph_suggests_and_advises_against():
@@ -152,6 +153,14 @@ def test_a_strategy_advised_against_for_this_class_is_not_offered_as_one():
     assert "Station Rotation" not in strategies
     assert "**Focus Tasks** (strategia)" in strategies
     assert "**Glossaries** (strumento)" in strategies
+
+
+def test_advised_against_for_this_class():
+    from aix.agent.kg_evidence import advised_against
+
+    assert advised_against(NODES, RELS, PROFILE) == {"Long Frontal Lesson", "Station Rotation"}
+    # Without a profile the class-size band is unknown: only the needs speak.
+    assert advised_against(NODES, RELS, None) == {"Long Frontal Lesson"}
 
 
 def test_a_node_without_description_takes_the_recommendation_guidance():

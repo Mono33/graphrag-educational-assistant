@@ -133,8 +133,9 @@ when you choose the format of the activities.
 - Prefer the graph's strategies to generic ones. A strategy the graph did not \
 return is your own choice: do not list it under the Knowledge Graph in `*Fonti:*`.
 - Write this as plain prose, with no brackets, tags or labels such as «(KG)».
-- In `*Fonti:*`, list under the Knowledge Graph the nodes you actually used, with \
-the names the graph gives them.
+- In `*Fonti:*`, list under the Knowledge Graph only the nodes the lesson actually \
+applies (in an activity or in Differenziazione), with the names the graph gives \
+them — not every node you were given.
 """
 
 # Added to the user prompt only when the class's needs call for it (ADHD, autism,
