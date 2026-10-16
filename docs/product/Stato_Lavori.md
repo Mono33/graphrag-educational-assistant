@@ -3408,3 +3408,15 @@ Il «…» faceva dire al modello che si era interrotta.
 
 Resta aperta la durata: 53–55 minuti su 60 in tutte le lezioni, e il Critic
 approva. Dettagli in `Analisi_Qualita_Risposte.md` §7.
+
+### 2026-10-16 — La durata torna, e il grafo giusto nelle Fonti
+
+Le lezioni rigenerate duravano 53–55 minuti su 60. Il controllo della durata è
+spento per impostazione predefinita e tollera il 10%, e il prompt chiedeva già una
+durata esatta. Ora il Writer riceve la ripartizione già sommata, come per i gruppi:
+UDL e neuro rigenerate danno **60 su 60**. Il parser dei minuti (validatore ed
+export) accetta anche «10′».
+
+«Focus Tasks» citato nelle lezioni neuro veniva dall'esempio scritto nel prompt,
+che è un nodo UDL: l'esempio ora non nomina nodi. Dettagli in
+`Analisi_Qualita_Risposte.md` §7.4.

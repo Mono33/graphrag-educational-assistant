@@ -219,3 +219,35 @@ def test_keys_the_renderer_does_not_know_are_ignored():
 
     assert "accorcia" not in section
     assert "Subject: Scienze" in section
+
+
+@pytest.mark.parametrize(
+    ("duration", "parts"),
+    [(60, (10, 40, 10)), (45, (5, 35, 5)), (90, (15, 60, 15)), (120, (20, 80, 20))],
+)
+def test_the_duration_comes_with_a_split_that_adds_up(duration, parts):
+    """Every lesson regenerated on 2026-10-16 came out 5-7 minutes short of 60."""
+    from aix.agent.prompts.profile_renderer import time_plan
+
+    plan = time_plan(duration)
+    intro, activities, closing = parts
+
+    assert intro + activities + closing == duration
+    assert (
+        f"Introduzione {intro} minuti + Attività {activities} minuti + Valutazione {closing} minuti = {duration} minuti"
+        in plan
+    )
+
+
+def test_a_short_or_missing_duration_has_no_split():
+    from aix.agent.prompts.profile_renderer import time_plan
+
+    assert time_plan(15) == "" and time_plan(None) == ""
+
+
+def test_a_section_timed_with_a_prime_is_counted():
+    """«## Introduzione (10′)»: the notation a Writer copied from the time plan."""
+    from aix.agent.validation.rules import section_minutes
+
+    lesson = "# L\n\n## Introduzione (10′)\n\n## Attività (40′)\n\n## Valutazione (10 minuti)\n"
+    assert [m for _t, m in section_minutes(lesson)] == [10, 40, 10]

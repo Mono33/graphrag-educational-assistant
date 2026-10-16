@@ -102,7 +102,8 @@ _PROJECTION_PHRASES = ("proietta", "proiezione", "alla lim", "sulla lim", "proje
 _BES_CODES = ("DSA", "ADHD", "DOP", "DCGL", "DCGM", "DCGS", "DLDS")
 
 _HEADING = re.compile(r"^(#{1,6})\s+(.*)$")
-_MINUTES = re.compile(r"(\d{1,3})\s*(?:min\b|min\.|minut|minute)", re.IGNORECASE)
+#: «10 min», «10 minuti», «10 minutes» and «10′» (a Writer copies the notation it is shown).
+_MINUTES = re.compile(r"(\d{1,3})\s*(?:min\b|min\.|minut|minute|′)", re.IGNORECASE)
 _GROUP_SIZE = re.compile(r"gruppi?\s+(?:da|di)\s+(\d{1,2})|groups?\s+of\s+(\d{1,2})", re.IGNORECASE)
 
 

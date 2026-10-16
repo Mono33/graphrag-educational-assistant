@@ -212,6 +212,33 @@ def group_split(students: int, max_size: int = MAX_GROUP_SIZE) -> str:
     return " and ".join(parts)
 
 
+def _five(minutes: float) -> int:
+    return max(5, int(round(minutes / 5.0)) * 5)
+
+
+def time_plan(duration: Any) -> str:
+    """A split of the duration that adds up, for the Writer to fill in.
+
+    «The total MUST equal the Duration exactly» was in the prompt, and every
+    lesson regenerated on 2026-10-16 still came out at 53–55 minutes of 60: the
+    model does not add. The group split came worked out for the same reason (see
+    ``render_classroom_constraints``) and the arithmetic left the lesson; so does this.
+    The proportions are a starting point the Writer may move, as long as the sum
+    stays exact.
+    """
+    if not isinstance(duration, int) or duration < 20:
+        return ""
+    intro = _five(duration * 0.15)
+    closing = _five(duration * 0.15)
+    activities = duration - intro - closing
+    return (
+        f"Time plan: Introduzione {intro} minuti + Attività {activities} minuti + Valutazione {closing} minuti "
+        f"= {duration} minuti. The minutes of the activities inside «Attività» add up to "
+        f"{activities}; move minutes between sections if the lesson needs it, but the "
+        f"section timings must add up to exactly {duration}."
+    )
+
+
 def render_profile_section(profile: Any) -> str:
     """The profile section for the Writer's prompt, or ``""`` when there is none.
 
@@ -248,6 +275,8 @@ def render_profile_section(profile: Any) -> str:
     duration = ep.get("time_available_minutes") or ep.get("lesson_duration")
     if duration:
         facts.append(f"- Duration: {duration} minutes")
+        if plan := time_plan(duration):
+            facts.append(f"- {plan}")
 
     constraints = render_classroom_constraints(ep)
 

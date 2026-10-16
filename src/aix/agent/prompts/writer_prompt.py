@@ -124,9 +124,12 @@ WRITER_KG_EVIDENCE_RULES = """
 THIS class to the strategies the graph suggests for it and the ones it advises \
 against. Build **Differenziazione** on it: for each need of the class apply at \
 least one strategy the graph suggests, call it by the graph's name, and say in a \
-few plain words which difficulty it addresses (e.g. «Focus Tasks: compiti brevi \
-con un solo obiettivo, per la difficoltà a mantenere l'attenzione»). Do not use \
-what the graph advises against for a need of the class.
+few plain words which difficulty it addresses (e.g. «<nome del nodo>: compiti \
+brevi con un solo obiettivo, per la difficoltà a mantenere l'attenzione» — the \
+name is always one from the evidence above, never one from this example). Do not \
+use what the graph advises against for a need of the class. Under the Knowledge \
+Graph in `*Fonti:*`, a name that is not in the evidence above is not a node of \
+this graph.
 - «Profilo della classe nel Knowledge Graph» says what the graph suggests and \
 advises against for a class like this one (its size, its features): follow it \
 when you choose the format of the activities.

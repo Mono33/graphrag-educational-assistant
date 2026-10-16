@@ -401,3 +401,21 @@ faceva dire al modello che la sua risposta si era interrotta.
   YouTube.
 
 Costo delle prove dal vero: 4 lezioni e 8 risposte veloci con Haiku 5.5, meno di $0,05.
+
+### 7.4 Durata e nomi del grafo (16/10, sera)
+
+- **Durata.** Il controllo esisteva (`rule_duration_mismatch`), ma è spento per
+  impostazione predefinita (`AIX_VALIDATOR_ENABLED=false`) e tollera il 10% per
+  scelta: 53–55 su 60 passavano. Il prompt chiedeva già una durata «esatta». Ora il
+  profilo passa al Writer una ripartizione già sommata («Introduzione 10 minuti +
+  Attività 40 minuti + Valutazione 10 minuti = 60 minuti»), come per i gruppi.
+  Rigenerate UDL e neuro: **60 su 60** tutte e due, con le attività che sommano 40.
+  Il parser dei minuti ora accetta anche «10′», la notazione che il Writer aveva
+  copiato da una prima versione della ripartizione.
+- **«Focus Tasks» nelle lezioni neuro.** Veniva dall'esempio scritto nelle regole del
+  prompt: un nome di nodo UDL. L'esempio ora non nomina nessun nodo, e la regola dice
+  che sotto il Knowledge Graph vanno solo nomi presenti nell'evidenza. Nella lezione
+  neuro rigenerata non compare più.
+- Resta da decidere se accendere il validatore su staging (§5, proposte 2–3): con la
+  ripartizione il caso tipico non lo fa più scattare, quindi il costo di un secondo
+  passaggio del Writer sarebbe raro.
