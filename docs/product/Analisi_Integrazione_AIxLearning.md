@@ -261,7 +261,7 @@ vale l'ultima versione pronta.
 | --- | --- | --- |
 | 1 | Profilo della classe compatibile con la piattaforma (§3 A, B, C) | fatto, 16/10 |
 | 2 | Streaming dei token nell'SSE delle sessioni (§3 G) | fatto, 16/10 |
-| 3 | Idempotenza e tenant (§3 D, E) | da fare |
+| 3 | Idempotenza e tenant (§3 D, E) | fatto, 16/10 |
 | 4 | Staging pronto per i dev: `chore/repo-reorg` su staging, credenziali solo su `api-staging`, lista di IP, `/docs` protetto | in attesa (Angelo) |
 | 5 | Anonimizzazione (§4.1): scegliere tra strada 1 (piattaforma, Markdown per pagina) e strada 2 (nostra API, dopo la verifica della memoria) | da decidere |
 | 6 | Riunione con i dev: §4, §5.3, §15 di Louis | dopo il 4 |

@@ -27,7 +27,11 @@ A runnable version of this flow: `scripts/eval/api_smoke.py`.
 ## 2. Authentication and end users
 
 - **Service account** (an application): HTTP Basic with the credentials the AI team
-  gives you (`GRAPH_API_USERNAME` / `GRAPH_API_PWD` on the server).
+  gives you. **Each instance of your platform gets its own** (production,
+  corporate, staging…): the account is part of every end user's identity, so the
+  same `X-End-User-Id` from two instances is two different people. Use the
+  instance's credentials, never another's (server side: `GRAPH_API_USERNAME` /
+  `GRAPH_API_PWD` and `AIX_API_CLIENTS`).
 - **End user**: send `X-End-User-Id: <your opaque id>` on every call. Each id is a
   separate owner: one end user never sees another's documents or sessions (a
   `404`, which does not say whose they are). Without the header, everything
@@ -36,6 +40,28 @@ A runnable version of this flow: `scripts/eval/api_smoke.py`.
   opaque string (up to 200 printable characters) works.
 - A WebUI teacher calling with their own login (JWT cookie) acts as themselves;
   their API sessions also appear in their WebUI.
+
+### Retries: `Idempotency-Key`
+
+Send `Idempotency-Key: <a unique id for this attempt's job>` on
+`POST /sessions`, `POST /sessions/{id}/turns` (and `/turns/stream`) and
+`POST /materials`, and **reuse the same key when you retry the same job**. For
+example, a Dramatiq message id plus the turn number.
+
+| Situation | Answer |
+| --- | --- |
+| First request with the key | Runs normally. |
+| Same key, first request **still running** | `409 idempotency_in_progress` with `Retry-After`. Wait and retry with the same key, or read `GET /sessions/{id}`. |
+| Same key, first request **succeeded** | The first answer again, with `Idempotent-Replayed: true`: no second lesson, no second cost. A session or a document comes back as it is **now** (a document may be `ready` by then). |
+| Same key, first request **failed** | Runs again: a failure is not kept. |
+| Same key, **different body** | `422 idempotency_key_reused`: a bug in the client. |
+
+- Keys are per end user and per operation, and are kept for 24 hours.
+- `/turns` and `/turns/stream` share their keys, so a retry may switch from one
+  to the other and still get the first turn. The stream then sends just the
+  `result` frame.
+- Without a key every request is new, as before: a retry of a finished turn
+  writes a second lesson.
 
 ## 3. Documents (private RAG)
 

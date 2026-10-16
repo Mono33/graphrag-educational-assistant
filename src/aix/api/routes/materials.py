@@ -13,15 +13,28 @@ person. Uploads, versions, attach and detach need ``AIX_MATERIAL_LIBRARY_ENABLED
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import uuid
 from typing import Optional
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    Header,
+    HTTPException,
+    Response,
+    UploadFile,
+    status,
+)
+from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from aix.api import idempotency
 from aix.api.principals import current_owner
 from aix.api.schemas.materials import (
     MaterialAttachRequest,
@@ -191,7 +204,8 @@ async def upload_material(
     lesson_id: Optional[uuid.UUID] = Form(None),
     user: User = Depends(current_owner),
     session: AsyncSession = Depends(get_async_session),
-) -> MaterialResponse:
+    idempotency_key: Optional[str] = Header(default=None, alias=idempotency.HEADER),
+) -> Response:
     if not material_library_enabled():
         raise _error(404, "library_disabled", LIBRARY_OFF)
     purpose = purpose.strip().lower()
@@ -211,6 +225,50 @@ async def upload_material(
             )
 
     content, filename, media_type = await _accepted_upload(file)
+    claim = await idempotency.begin(
+        session,
+        owner_id=user.id,
+        scope="material",
+        key=idempotency_key,
+        fingerprint=idempotency.request_hash(
+            hashlib.sha256(content).hexdigest(), display_name, purpose, lesson_id
+        ),
+    )
+    if isinstance(claim, idempotency.Replay):
+        # The document as it is now: "processing" then may be "ready" today.
+        stored = await MaterialRepository(session).get(
+            uuid.UUID(str(claim.body["id"])), owner_id=user.id
+        )
+        body = (
+            (await _serialize_material(session, stored, owner_id=user.id)).model_dump(mode="json")
+            if stored is not None
+            else claim.body
+        )
+        return JSONResponse(
+            body, status_code=claim.status_code, headers={idempotency.REPLAYED_HEADER: "true"}
+        )
+    try:
+        out = await _store_upload(
+            session, user, lesson, content, filename, media_type, display_name, purpose
+        )
+    except Exception:
+        await idempotency.abandon(session, claim)
+        raise
+    body = out.model_dump(mode="json")
+    await idempotency.finish(session, claim, 201, body)
+    return JSONResponse(body, status_code=201)
+
+
+async def _store_upload(
+    session: AsyncSession,
+    user: User,
+    lesson: Optional[Lesson],
+    content: bytes,
+    filename: str,
+    media_type: str,
+    display_name: Optional[str],
+    purpose: str,
+) -> MaterialResponse:
     material, version = await MaterialService(session, get_storage_backend()).store_new_material(
         content,
         owner_id=user.id,

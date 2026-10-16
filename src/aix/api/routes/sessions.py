@@ -24,11 +24,13 @@ import uuid
 from collections.abc import AsyncIterator
 from typing import Any, Optional, Union
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+import anyio
+from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
 
+from aix.api import idempotency
 from aix.api.explain import (
     cited_documents,
     critic_info,
@@ -140,9 +142,34 @@ def _summary(lesson: Lesson) -> dict[str, Any]:
 )
 async def create_session(
     payload: SessionCreate,
+    response: Response,
     owner: User = Depends(current_owner),
     session: AsyncSession = Depends(get_async_session),
+    idempotency_key: Optional[str] = Header(default=None, alias=idempotency.HEADER),
 ) -> SessionOut:
+    claim = await idempotency.begin(
+        session,
+        owner_id=owner.id,
+        scope="session",
+        key=idempotency_key,
+        fingerprint=idempotency.request_hash(payload.model_dump(mode="json")),
+    )
+    if isinstance(claim, idempotency.Replay):
+        # The session as it is now, not as it was: it may have had turns since.
+        response.headers[idempotency.REPLAYED_HEADER] = "true"
+        return await _session_out(
+            session, await _lesson(session, owner, claim.body["session_id"]), owner
+        )
+    try:
+        out = await _create_session(session, owner, payload)
+    except Exception:
+        await idempotency.abandon(session, claim)
+        raise
+    await idempotency.finish(session, claim, 201, {"session_id": out.session_id})
+    return out
+
+
+async def _create_session(session: AsyncSession, owner: User, payload: SessionCreate) -> SessionOut:
     profile = (
         payload.educational_profile.model_dump(mode="json", exclude_none=True)
         if payload.educational_profile is not None
@@ -484,15 +511,43 @@ async def send_turn(
     response: Response,
     owner: User = Depends(current_owner),
     session: AsyncSession = Depends(get_async_session),
+    idempotency_key: Optional[str] = Header(default=None, alias=idempotency.HEADER),
 ) -> TurnResult:
     lesson = await _lesson(session, owner, session_id)
-    result: Optional[TurnResult] = None
-    async for item in _turn_events(session, lesson, owner, payload):
-        if isinstance(item, TurnResult):
-            result = item
-    assert result is not None
     response.headers[AI_GENERATED_HEADER] = AI_GENERATED_HEADER_VALUE
+    claim = await _claim_turn(session, owner, lesson, payload, idempotency_key)
+    if isinstance(claim, idempotency.Replay):
+        response.headers[idempotency.REPLAYED_HEADER] = "true"
+        return TurnResult.model_validate(claim.body)
+    result: Optional[TurnResult] = None
+    try:
+        async for item in _turn_events(session, lesson, owner, payload):
+            if isinstance(item, TurnResult):
+                result = item
+    except Exception:
+        await idempotency.abandon(session, claim)
+        raise
+    assert result is not None
+    await idempotency.finish(session, claim, 200, result.model_dump(mode="json"))
     return result
+
+
+async def _claim_turn(
+    session: AsyncSession,
+    owner: User,
+    lesson: Lesson,
+    payload: TurnRequest,
+    key: Optional[str],
+) -> Optional[Union[idempotency.Replay, idempotency.Claim]]:
+    """A turn's key: the same for ``/turns`` and ``/turns/stream``, so a client may
+    switch between the two on a retry and still get the first answer."""
+    return await idempotency.begin(
+        session,
+        owner_id=owner.id,
+        scope=f"turn:{lesson.id}",
+        key=key,
+        fingerprint=idempotency.request_hash(payload.model_dump(mode="json")),
+    )
 
 
 @router.post(
@@ -514,10 +569,25 @@ async def stream_turn(
     payload: TurnRequest,
     owner: User = Depends(current_owner),
     session: AsyncSession = Depends(get_async_session),
+    idempotency_key: Optional[str] = Header(default=None, alias=idempotency.HEADER),
 ) -> EventSourceResponse:
     lesson = await _lesson(session, owner, session_id)
+    headers = {AI_GENERATED_HEADER: AI_GENERATED_HEADER_VALUE}
+    # Claimed before the stream opens, so "in progress" and "reused" are real
+    # HTTP statuses a client's retry logic can see.
+    claim = await _claim_turn(session, owner, lesson, payload, idempotency_key)
+    if isinstance(claim, idempotency.Replay):
+        body = {"kind": "result", "result": claim.body}
+
+        async def replay():
+            yield {"event": "result", "data": json.dumps(body, ensure_ascii=False)}
+
+        return EventSourceResponse(
+            replay(), headers={**headers, idempotency.REPLAYED_HEADER: "true"}
+        )
 
     async def frames():
+        finished = False
         try:
             async for item in with_text(
                 _turn_events(session, lesson, owner, payload), str(lesson.id)
@@ -528,6 +598,8 @@ async def stream_turn(
                     body = {"kind": "draft_end", "draft": item.draft}
                 elif isinstance(item, TurnResult):
                     body = {"kind": "result", "result": item.model_dump(mode="json")}
+                    await idempotency.finish(session, claim, 200, body["result"])
+                    finished = True
                 else:
                     body = {
                         "kind": item.kind,
@@ -539,5 +611,11 @@ async def stream_turn(
             detail = exc.detail if isinstance(exc.detail, dict) else {"message": str(exc.detail)}
             body = {"kind": "error", "status": exc.status_code, **detail}
             yield {"event": "error", "data": json.dumps(body, ensure_ascii=False)}
+        finally:
+            if not finished:
+                # Failed, refused, or the client went away: the key is free for a
+                # retry. Shielded, because a disconnect cancels this generator.
+                with anyio.CancelScope(shield=True):
+                    await idempotency.abandon(session, claim)
 
-    return EventSourceResponse(frames(), headers={AI_GENERATED_HEADER: AI_GENERATED_HEADER_VALUE})
+    return EventSourceResponse(frames(), headers=headers)

@@ -3307,3 +3307,33 @@ contrario («rifiutano con la stessa query filtrata»). Ora risponde 404 come le
 altre rotte; il test `test_bruno_cannot_follow_annas_lesson_as_it_is_written`
 fallisce senza la correzione. È anche su staging e produzione (stesso codice):
 va portato su advanced.
+
+### 2026-10-16 — Un service account per istanza, e i tentativi ripetuti non rigenerano
+
+Terzo punto dell'analisi d'integrazione (§3 D, E).
+
+**Tenant.** AIxLearning ha più istanze (produzione, corporate, corporate-staging,
+staging) con id utente numerici indipendenti: con un solo account, l'utente 42
+di corporate e quello di produzione erano lo stesso proprietario qui.
+`AIX_API_CLIENTS` (JSON `{"nome": "password"}`) aggiunge un service account per
+istanza. Il nome dell'account entra nell'identità di ogni utente finale, quindi
+lo stesso `X-End-User-Id` da due istanze è due persone. `GRAPH_API_USERNAME` /
+`GRAPH_API_PWD` restano validi e gli utenti già creati non cambiano.
+
+**Idempotenza.** Il worker Dramatiq della piattaforma ripete un job fallito fino
+a 3 volte: senza chiave, un turno scaduto lato client ma finito da noi veniva
+rigenerato (seconda lezione, secondo costo). Con `Idempotency-Key` su
+`POST /sessions`, `/turns`, `/turns/stream` e `POST /materials`:
+
+- un tentativo ripetuto di una richiesta riuscita riceve la prima risposta
+  (`Idempotent-Replayed: true`);
+- mentre è in corso risponde `409 idempotency_in_progress` con `Retry-After`;
+- un fallimento libera la chiave;
+- la stessa chiave per una richiesta diversa è `422 idempotency_key_reused`.
+
+Sessioni e documenti ripetuti tornano come sono *ora*, perché nel frattempo un
+documento può essere diventato `ready`. Chiavi per utente finale e operazione,
+24 ore; un record `running` da più di 15 minuti è di un processo morto e la
+chiave si libera. Nuova tabella `api_idempotency_key`, migrazione additiva
+`d41f7a2c9b13`. Test: `test_api_idempotency.py`, `test_api_tenants.py`, e
+l'upload ripetuto in `test_api_materials.py`.

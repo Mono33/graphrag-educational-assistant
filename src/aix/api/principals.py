@@ -14,6 +14,14 @@ second authorization: an API caller acts **as a user**.
   from two clients, never see each other's sessions or documents, because they
   are different owners.
 
+**One service account per platform instance** (2026-10-16). AIxLearning runs
+several instances -- production, corporate, staging -- each with its own
+numeric user ids, so user 42 of one is not user 42 of another. Each instance
+gets its own credentials (``AIX_API_CLIENTS``), and the client name is part of
+every end user's identity: the same ``end_user_id`` from two clients is two
+people. ``GRAPH_API_USERNAME`` / ``GRAPH_API_PWD`` remain one of the clients,
+with the identities they already provisioned.
+
 The provisioned users cannot sign in to the WebUI: the address is under the
 reserved ``.invalid`` domain, and the password is the hash of a random secret
 that is never stored or shown. ``end_user_id`` is hashed into the address, so the
@@ -23,6 +31,8 @@ client's identifiers -- possibly personal -- are not kept in clear.
 from __future__ import annotations
 
 import hashlib
+import json
+import logging
 import os
 import re
 import secrets
@@ -38,8 +48,49 @@ from aix.webui.auth.dependencies import optional_current_user
 from aix.webui.auth.models import User
 from aix.webui.db import get_async_session
 
+logger = logging.getLogger(__name__)
+
 #: What ``_require_caller`` returns for the HTTP Basic service account.
 SERVICE_ACCOUNT = "service_account"
+
+
+class ServiceCaller(str):
+    """A service account, and which client it is.
+
+    Equal to :data:`SERVICE_ACCOUNT`, so code that only asks "is this the
+    service account?" keeps working; ``client`` names the instance.
+    """
+
+    client: str
+
+    def __new__(cls, client: str) -> ServiceCaller:
+        caller = super().__new__(cls, SERVICE_ACCOUNT)
+        caller.client = client
+        return caller
+
+
+def service_clients() -> dict[str, str]:
+    """Client name → password: ``GRAPH_API_USERNAME``/``GRAPH_API_PWD``, plus
+    ``AIX_API_CLIENTS``, a JSON object such as ``{"aixl-corporate": "…"}``."""
+    clients: dict[str, str] = {}
+    name, password = os.getenv("GRAPH_API_USERNAME", ""), os.getenv("GRAPH_API_PWD", "")
+    if name and password:
+        clients[name] = password
+    raw = os.getenv("AIX_API_CLIENTS", "").strip()
+    if raw:
+        try:
+            extra = json.loads(raw)
+        except ValueError:
+            logger.error("[api] AIX_API_CLIENTS is not JSON: no extra clients")
+            extra = {}
+        if not isinstance(extra, dict):
+            logger.error("[api] AIX_API_CLIENTS must be an object of name → password")
+            extra = {}
+        for client, secret in extra.items():
+            if isinstance(client, str) and isinstance(secret, str) and client and secret:
+                clients.setdefault(client, secret)
+    return clients
+
 
 #: RFC 2606: a domain that can never receive mail, so these are never real addresses.
 API_EMAIL_DOMAIN = "api.invalid"
@@ -59,13 +110,16 @@ async def require_caller(
 ) -> User | str:
     """Authenticate via JWT/cookie (browser/webui) OR Basic Auth (service account)."""
     if basic is not None:
-        svc_user = os.getenv("GRAPH_API_USERNAME", "")
-        svc_pwd = os.getenv("GRAPH_API_PWD", "")
-        if svc_user and svc_pwd:
-            user_ok = secrets.compare_digest(basic.username.encode(), svc_user.encode())
-            pwd_ok = secrets.compare_digest(basic.password.encode(), svc_pwd.encode())
+        matched: Optional[str] = None
+        # Every client is compared, matched or not, so the time taken does not
+        # say which names exist.
+        for name, password in service_clients().items():
+            user_ok = secrets.compare_digest(basic.username.encode(), name.encode())
+            pwd_ok = secrets.compare_digest(basic.password.encode(), password.encode())
             if user_ok and pwd_ok:
-                return SERVICE_ACCOUNT
+                matched = name
+        if matched is not None:
+            return ServiceCaller(matched)
     if user is not None:
         return user
     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
@@ -122,7 +176,8 @@ async def owner_for(
     if caller != SERVICE_ACCOUNT:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
-    email = api_email(_client_name(), check_end_user_id(end_user_id))
+    client = caller.client if isinstance(caller, ServiceCaller) else _client_name()
+    email = api_email(client, check_end_user_id(end_user_id))
     existing = (await session.execute(select(User).where(User.email == email))).scalar_one_or_none()
     if existing is not None:
         return existing

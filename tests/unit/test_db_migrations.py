@@ -108,6 +108,7 @@ async def test_fresh_database_is_created_from_the_migrations(db_url):
         "lesson_media_snapshot",
         "saved_profile",
         "saved_resource",
+        "api_idempotency_key",
         "agent_run",
     } <= tables
     assert "alembic_version" in tables

@@ -131,3 +131,27 @@ def test_without_credentials_there_is_no_library(api):
     client, _ = api
 
     assert client.get("/api/v1/materials").status_code == 401
+
+
+async def test_a_retried_upload_is_the_same_document_as_it_is_now(api, tmp_path):
+    """The platform's worker retries a failed job: one document, not two."""
+    client, maker = api
+    headers = {**_as("anna"), "Idempotency-Key": "job-88-upload"}
+    content = _docx()  # once: a DOCX carries its creation time, and a retry sends the same bytes
+
+    def upload():
+        return client.post(
+            "/api/v1/materials",
+            files={"file": ("programma.docx", content, DOCX_MIME)},
+            headers=headers,
+        )
+
+    first = upload()
+    await _drain_one(maker, tmp_path)
+    again = upload()
+
+    assert (first.status_code, again.status_code) == (201, 201)
+    assert again.json()["id"] == first.json()["id"]
+    assert again.headers["idempotent-replayed"] == "true"
+    assert again.json()["status"] == "ready", "the replay says how the document is now"
+    assert client.get("/api/v1/materials", headers=_as("anna")).json()["total"] == 1

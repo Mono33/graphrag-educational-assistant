@@ -156,6 +156,7 @@ dimenticata serviva il prodotto vecchio senza che nessuno se ne accorgesse.
 | `WEBUI_TOKEN_LIFETIME_SECONDS` | `86400` | Durata della sessione |
 | `WEBUI_CORS_ALLOW_ORIGINS` | `*` | Origini ammesse sull'API |
 | `GRAPH_API_USERNAME` · `GRAPH_API_PWD` | vuoti | Basic Auth per i servizi che chiamano `/api/v1` |
+| `AIX_API_CLIENTS` | vuoto | Altri service account, uno per istanza della piattaforma: oggetto JSON `{"nome": "password"}`. Ogni nome è uno spazio di utenti finali separato (`aix.api.principals`). Un JSON non valido viene ignorato con un errore nel log |
 | `ENVIRONMENT` | `production` | `development` allenta alcune protezioni |
 | `CODE_VERSION` | — | Scritta nell'immagine al build; compare in `/api/v1/health` |
 | `SENTRY_DSN` | vuoto | Invio degli errori |
