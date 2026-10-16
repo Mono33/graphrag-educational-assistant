@@ -3337,3 +3337,49 @@ documento può essere diventato `ready`. Chiavi per utente finale e operazione,
 chiave si libera. Nuova tabella `api_idempotency_key`, migrazione additiva
 `d41f7a2c9b13`. Test: `test_api_idempotency.py`, `test_api_tenants.py`, e
 l'upload ripetuto in `test_api_materials.py`.
+
+### 2026-10-16 — Qualità delle risposte: la lezione costruita su ciò che il grafo dice della classe
+
+Branch `feature/response-quality-improvement` (da `chore/repo-reorg`). Analisi
+completa in `docs/product/Analisi_Qualita_Risposte.md`, sul caso di staging «ciclo
+dell'acqua» (2 alunni con ADHD, 2 ispanofoni).
+
+**Diagnosi.** Il retriever univa i risultati nell'ordine delle ricerche, e ogni
+lettore prendeva la testa della lista. Di 85 nodi, 56 raccomandazioni e 213 relazioni,
+al Writer sono arrivati 20 nodi (8 del profilo classe senza testo, 0 bisogni), 10
+raccomandazioni senza testo (il formatter leggeva un campo che non esiste) e 15
+relazioni, tutte sulla numerosità della classe. Le 12 difficoltà ADHD e degli alunni
+non italofoni, con le strategie collegate e quelle sconsigliate, sono rimaste fuori.
+Il turno veloce non vedeva nulla del retrieval («Non ho accesso diretto al grafo»;
+`b6cda33` non c'entra). Wikipedia ha restituito «Sam Neill» per *water cycle*. La
+nota di fondo diceva «neuroscienze» anche per l'UDL.
+
+**Fatto** (10 commit, `8602b0c`…`79e8a97`, più il documento in `96fec51`):
+
+- `aix.agent.kg_evidence`: ordinamento unico (prima le strategie, in fondo il
+  profilo classe) e una mappa *bisogno della classe → che cosa il grafo suggerisce /
+  sconsiglia*, con i nodi del profilo che corrispondono a questa classe;
+- il Writer la legge per prima, e il prompt chiede una strategia del grafo per ogni
+  bisogno;
+- i nodi d'ambiente (Colour, Lighting, Acoustics, Furniture) e i checkpoint UDL si
+  leggono dal grafo quando la classe ha ADHD, autismo o elementi di disturbo; la
+  lezione ha un punto «Ambiente di apprendimento». Si spegne con
+  `AIX_KG_ENVIRONMENT_ENABLED=false`;
+- il messaggio del Writer conserva `kg_digest`, e il turno veloce lo legge (nella
+  parte in cache);
+- i gruppi arrivano già divisi; la nota di fondo dice il dominio giusto; il marcatore
+  non lascia più «``»; Wikipedia scarta i risultati fuori tema e ripiega su en; i
+  bisogni del profilo si cercano per etichetta; il tetto del turno veloce passa a
+  4 500 token.
+
+Rigenerata con Haiku 5.5 (6 chiamate, $0,014): la Differenziazione nomina 8 strategie
+del grafo legate ai bisogni, rispetta ciò che il grafo sconsiglia, ha l'ambiente; il
+turno veloce elenca per bisogno che cosa la lezione usa e che cosa no. Costo del
+Writer per lezione: $0,0024 → $0,0029. Test: 1 180 passati, ruff pulito.
+
+**Da fare** (proposte, §5 del documento): archi bisogno → checkpoint UDL nel grafo
+(con l'esperta) e un blocco «barriere e linee guida»; un Critic che controlli
+l'aderenza al grafo e la durata (tutte e tre le lezioni viste arrivano a 55 minuti su
+60); pulizia di text2cypher (l'ancora «Group till 15» nel prompt di schema) e dei
+dati del grafo; confermare che «Group till N» significhi «classe fino a N»; provare
+le modifiche sul set di prova prima del deploy.
