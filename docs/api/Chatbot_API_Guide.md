@@ -145,6 +145,27 @@ Server-Sent Events. Each `data:` frame is JSON with a `kind`:
 last frame is `{"kind": "result", "result": {…the same body /turns returns…}}`.
 A refusal or failure is a frame `{"kind": "error", "status": …, "code": …, "message": …}`.
 
+The text arrives while it is written, for lessons and answers alike:
+
+```text
+{"kind": "text", "text": "# La cellula\n\nLa cellula è", "draft": 1}
+{"kind": "text", "text": " l'unità della vita…", "draft": 1}
+{"kind": "draft_end", "draft": 1}
+{"kind": "critic", "data": {"approved": false, …}}
+{"kind": "text", "text": "# La cellula\n\n…", "draft": 2}
+```
+
+- Append `text` to what you show.
+- When `draft` grows, the Critic asked for a revision: **clear the text and start
+  over**.
+- The text is a **preview**. The final `result.markdown` has passed the checks:
+  tidied, unsupported citations removed, citations resolved to document names.
+  **Replace** the preview with it.
+- The internal `[[material:…]]` citation markers never appear in the preview.
+- On a `light_escalate` (hand-off), discard the preview.
+- A piece can be a few characters or a few words. Show it as it comes; if you
+  relay it (for example through Mercure), batching a few pieces is fine.
+
 ## 6. What a lesson comes with
 
 - `markdown`: the lesson. Citations of the user's documents are written as

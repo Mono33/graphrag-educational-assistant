@@ -50,6 +50,7 @@ from aix.api.schemas.sessions import (
     TurnRequest,
     TurnResult,
 )
+from aix.api.token_stream import DraftEnd, TextDelta, with_text
 from aix.core.ai_marking import AI_GENERATED_HEADER, AI_GENERATED_HEADER_VALUE
 from aix.export.service import ExportRefused, render_lesson_export
 from aix.webui.agent.service import StreamEvent
@@ -499,9 +500,13 @@ async def send_turn(
     summary="Send a message and follow the turn as Server-Sent Events",
     description=(
         "Each ``data:`` frame is JSON. Phase events carry ``kind`` (planner, retriever, "
-        "writer_pending, writer, critic, light_pending, …) and ``data``; the last frame is "
-        "``kind: result``, the body ``/turns`` returns under ``result``. A refusal or a failure is a "
-        "frame ``kind: error`` with ``code`` and ``message``."
+        "writer_pending, writer, critic, light_pending, …) and ``data``. While the text is "
+        "written, ``kind: text`` frames carry the next piece (``text``) and the ``draft`` it "
+        "belongs to; ``kind: draft_end`` closes a draft, and a higher ``draft`` means the "
+        "Critic asked for a revision: start the text over. The text is a preview: the last "
+        "frame is ``kind: result``, the body ``/turns`` returns under ``result``, whose "
+        "``markdown`` replaces it. A refusal or a failure is a frame ``kind: error`` with "
+        "``code`` and ``message``."
     ),
 )
 async def stream_turn(
@@ -514,8 +519,14 @@ async def stream_turn(
 
     async def frames():
         try:
-            async for item in _turn_events(session, lesson, owner, payload):
-                if isinstance(item, TurnResult):
+            async for item in with_text(
+                _turn_events(session, lesson, owner, payload), str(lesson.id)
+            ):
+                if isinstance(item, TextDelta):
+                    body = {"kind": "text", "text": item.text, "draft": item.draft}
+                elif isinstance(item, DraftEnd):
+                    body = {"kind": "draft_end", "draft": item.draft}
+                elif isinstance(item, TurnResult):
                     body = {"kind": "result", "result": item.model_dump(mode="json")}
                 else:
                     body = {

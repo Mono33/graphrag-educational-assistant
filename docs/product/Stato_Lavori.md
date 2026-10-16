@@ -3278,3 +3278,21 @@ avevano default `NO`, e `students_number` 20. Un'aula con la sola LIM diceva al
 modello «niente dispositivi, banchi fissi, 20 studenti». Ora un campo non
 compilato non produce nessuna riga, come il renderer già prometteva. I profili
 già salvati non cambiano. Test: `test_profile_from_the_platform.py`.
+
+### 2026-10-16 — Il testo del turno in streaming, nella stessa connessione
+
+Secondo punto dell'analisi d'integrazione (§3 G). `POST /sessions/{id}/turns/stream`
+manda ora anche il testo mentre viene scritto, per le lezioni e per le risposte
+veloci: frame `kind: text` con il pezzo e il numero di `draft`, e `draft_end`
+alla fine di ogni bozza. Quando il Critic chiede una revisione, `draft` cresce e
+il client ricomincia il testo. Il testo è un'anteprima: il `result.markdown`
+finale (ripulito, citazioni verificate e risolte) lo sostituisce.
+
+Come: la coda per lezione su cui Writer e risposta veloce già scrivono
+(`write_stream`, la stessa del typewriter della WebUI) viene unita agli eventi
+del turno in `aix.api.token_stream.with_text`. Il testo pronto esce sempre prima
+dell'evento successivo, quindi un `critic` non sorpassa la bozza che giudica. I
+marcatori interni `[[material:…]]` non arrivano mai all'anteprima: trattenuti
+finché incompleti, tolti quando completi. Il ragionamento del modello (`think`)
+non viene inoltrato. `POST /turns` senza streaming non cambia.
+Test: `test_api_token_stream.py`.
