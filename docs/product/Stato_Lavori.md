@@ -3296,3 +3296,14 @@ marcatori interni `[[material:…]]` non arrivano mai all'anteprima: trattenuti
 finché incompleti, tolti quando completi. Il ragionamento del modello (`think`)
 non viene inoltrato. `POST /turns` senza streaming non cambia.
 Test: `test_api_token_stream.py`.
+
+### 2026-10-16 — `writer-stream` controlla il proprietario
+
+Trovato lavorando allo streaming dell'API: `GET /webui/lesson/{id}/writer-stream`
+(il typewriter della WebUI) controllava solo il login, non che la lezione fosse
+dell'utente. Un docente autenticato che avesse l'id di una lezione altrui poteva
+leggerne il testo mentre veniva scritto. Il commento di `test_idor.py` diceva il
+contrario («rifiutano con la stessa query filtrata»). Ora risponde 404 come le
+altre rotte; il test `test_bruno_cannot_follow_annas_lesson_as_it_is_written`
+fallisce senza la correzione. È anche su staging e produzione (stesso codice):
+va portato su advanced.

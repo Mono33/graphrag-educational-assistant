@@ -126,9 +126,9 @@ def client(_database):
 #:
 #: The two SSE endpoints (``/stream`` and ``/writer-stream``) are absent
 #: deliberately: reaching them as the owner opens a stream that does not end,
-#: so the "and Anna still can" half of each case could not be written. They
-#: reject the same way — through the same owner-filtered query — and their
-#: behaviour is covered where that query is.
+#: so the "and Anna still can" half of each case could not be written. Bruno's
+#: half can: see ``test_bruno_cannot_follow_annas_lesson_as_it_is_written``
+#: (``/writer-stream`` checked the login only, until 2026-10-16).
 READS = [
     ("GET", "/webui/lesson/{lesson}", {}),
     ("GET", "/webui/lesson/{lesson}/card-fragment", {}),
@@ -178,6 +178,22 @@ def test_anna_still_can(client, method, path, kwargs):
 @pytest.mark.parametrize("method, path, kwargs", WRITES, ids=[w[1] for w in WRITES])
 def test_bruno_cannot_change_annas_lesson(client, method, path, kwargs):
     assert _call(client, BRUNO_LOGIN, method, path, kwargs).status_code == 404
+
+
+def test_bruno_cannot_follow_annas_lesson_as_it_is_written(client):
+    """Anna's lesson is being written: its live text is Anna's, like the lesson."""
+    from aix.agent.graph import write_stream
+
+    bus = write_stream.register(str(ANNA_LESSON))
+    bus.put_nowait(("content", SECRET))
+    bus.put_nowait(None)
+    try:
+        response = _call(client, BRUNO_LOGIN, "GET", "/webui/lesson/{lesson}/writer-stream")
+    finally:
+        write_stream.deregister(str(ANNA_LESSON))
+
+    assert response.status_code == 404
+    assert SECRET not in response.text
 
 
 def test_and_the_lesson_is_untouched_afterwards(client):
