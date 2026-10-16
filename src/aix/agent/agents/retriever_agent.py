@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from aix.agent.agents.planner_agent import RetrievalPlan
+from aix.agent.kg_evidence import rank_nodes, rank_recommendations
 from aix.agent.tools.graphrag_tool import GraphRAGResult, GraphRAGTool
 
 # Optional media lookup - fails gracefully if not available
@@ -331,6 +332,14 @@ class RetrieverAgent:
                 if rec.get("name") not in existing_recs:
                     result.recommendations.append(rec)
                     existing_recs.add(rec.get("name"))
+
+        # Merged in the order the searches ran, the head of the list was whatever
+        # the first search found -- on 2026-10-16 eight class-profile nodes
+        # («Group till 15», «Cohesive»…), which the card showed as the «most
+        # relevant concepts» and the Writer read before any strategy. Every
+        # reader takes the head, so the order is decided once, here.
+        result.nodes = rank_nodes(result.nodes)
+        result.recommendations = rank_recommendations(result.recommendations, result.nodes)
 
         # Determine overall confidence
         confidences = [r.confidence for r in result.search_results if r.confidence]
