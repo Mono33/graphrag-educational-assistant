@@ -678,7 +678,7 @@ Create a clear, organized list grounded in the retrieved knowledge.
 
 WRITER_SYSTEM_PROMPT_HYBRID = """You are an expert Educational Content Writer creating lessons that combine:
 1. **Subject content** from the teacher's attached documents when there are any, and from external verified sources (Wikipedia, academic papers) for what they do not cover
-2. **Pedagogical strategies** grounded in the Knowledge Graph (neuroscience-based)
+2. **Pedagogical strategies** grounded in the Knowledge Graph ({kg_basis_en})
 
 ## Your Role (HYBRID Mode)
 
@@ -696,7 +696,7 @@ The teacher's attached documents are the one exception: they are cited in the le
 
 ## Quality Standards
 - Keep subject content factual and accurate (from external sources)
-- Apply neuroscience-based pedagogy from Knowledge Graph
+- Apply the {kg_basis_en} pedagogy from the Knowledge Graph
 - Make activities practical and classroom-ready
 - ALWAYS include the footer disclaimer
 
@@ -719,12 +719,12 @@ documents:
 ---
 ⚠️ **Nota sulle fonti**: Il contenuto disciplinare (argomento specifico) proviene da fonti esterne
 (Wikipedia, pubblicazioni accademiche) e non è stato verificato dal Knowledge Graph FEM.
-Le strategie pedagogiche sono basate sul Knowledge Graph di neuroscienze dell'apprendimento.
+Le strategie pedagogiche sono basate sul {kg_basis_it}.
 
 ---
 ⚠️ **Nota sulle fonti**: Il contenuto disciplinare proviene dai materiali allegati dalla docente
 e, dove indicato, da fonti esterne non verificate dal Knowledge Graph FEM.
-Le strategie pedagogiche sono basate sul Knowledge Graph di neuroscienze dell'apprendimento.
+Le strategie pedagogiche sono basate sul {kg_basis_it}.
 
 ### Language
 Write in {language} using appropriate educational register.
@@ -750,7 +750,7 @@ teacher's material at the end):
 {oer_content}
 
 ## Pedagogical Strategies (FROM KNOWLEDGE GRAPH)
-Apply these neuroscience-based strategies for HOW to teach:
+Apply these {kg_basis_en} strategies for HOW to teach:
 
 ### Teaching Methodologies
 {recommendations}
@@ -771,7 +771,7 @@ Apply these neuroscience-based strategies for HOW to teach:
 4. Among external sources, PRIORITIZE OER textbooks as they are domain-expert approved sources
 5. Include the footer disclaimer at the end
 
-Create a complete, practical lesson plan that combines external subject expertise with neuroscience-based pedagogy.
+Create a complete, practical lesson plan that combines external subject expertise with {kg_basis_en} pedagogy.
 """
 
 # =============================================================================
@@ -825,6 +825,30 @@ INTENT_USER_TEMPLATES = {
     "recommendation": WRITER_USER_TEMPLATE_RECOMMENDATION,
     "list": WRITER_USER_TEMPLATE_LIST,
 }
+
+
+#: What the Knowledge Graph of each domain is, in the hybrid prompt and its
+#: footer. Until 2026-10-16 both said «neuroscience» whatever the domain: a UDL
+#: lesson's card read «Ricerca completata sulla base UDL» and its footer «Le
+#: strategie pedagogiche sono basate sul Knowledge Graph di neuroscienze».
+KG_BASIS: dict[str, tuple[str, str]] = {
+    "neuro": ("neuroscience-based", "Knowledge Graph di neuroscienze dell'apprendimento"),
+    "udl": (
+        "UDL-based (Universal Design for Learning)",
+        "Knowledge Graph UDL (Universal Design for Learning)",
+    ),
+}
+
+
+def kg_basis(domain: str) -> tuple[str, str]:
+    """``(english, italian)`` wording for the domain's Knowledge Graph; neuro when unknown."""
+    return KG_BASIS.get(str(domain or "").lower(), KG_BASIS["neuro"])
+
+
+def apply_kg_basis(text: str, domain: str) -> str:
+    """Fill ``{kg_basis_en}`` / ``{kg_basis_it}`` in a prompt that is not ``.format``-ed."""
+    english, italian = kg_basis(domain)
+    return text.replace("{kg_basis_en}", english).replace("{kg_basis_it}", italian)
 
 
 def get_writer_prompts(intent: str, scope_status: str = "in_scope") -> tuple:

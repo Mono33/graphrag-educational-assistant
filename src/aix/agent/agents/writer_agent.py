@@ -34,8 +34,10 @@ from aix.agent.prompts.writer_prompt import (
     WRITER_TEACHER_UPLOADS_APPENDIX,
     WRITER_USER_TEMPLATE_HYBRID,
     WRITER_USER_TEMPLATE_RECOMMENDATION,
+    apply_kg_basis,
     format_external_resources,
     get_writer_prompts,
+    kg_basis,
 )
 from aix.core import prompt_cache
 from aix.core.concurrency import guarded_chat_completion, llm_slot
@@ -587,6 +589,7 @@ class WriterAgent:
                 target_grade=plan.target_grade or "Not specified",
                 time_constraints=plan.time_constraints or "Not specified",
                 language="Italian" if language == "it" else "English",
+                kg_basis_en=kg_basis(domain)[0],
             )
 
             logger.info(
@@ -700,6 +703,7 @@ class WriterAgent:
         system_prompt = system_prompt.replace(
             "{language}", "Italian" if language == "it" else "English"
         )
+        system_prompt = apply_kg_basis(system_prompt, domain)
         if is_lesson:
             system_prompt += WRITER_KG_EVIDENCE_RULES
 
