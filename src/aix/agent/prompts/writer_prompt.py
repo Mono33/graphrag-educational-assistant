@@ -110,6 +110,51 @@ documento — le affermazioni si citano dai passaggi.
 {maps}
 """
 
+# 2026-10-16 — the Writer had the graph's nodes but not what to do with them.
+# On the staging lesson (two pupils with ADHD, two Spanish speakers) the
+# differentiation was the model's own knowledge: none of the strategies the graph
+# links to those needs was named, and the lesson recommended Station Rotation,
+# which the graph advises against for a class of that size. Appended to the
+# system prompt of the lesson intents; the text is the same on every lesson, so
+# it stays in the cached prefix.
+WRITER_KG_EVIDENCE_RULES = """
+
+## Using the Knowledge Graph evidence
+- «Bisogni della classe → che cosa indica il Knowledge Graph» maps each need of \
+THIS class to the strategies the graph suggests for it and the ones it advises \
+against. Build **Differenziazione** on it: for each need of the class apply at \
+least one strategy the graph suggests, call it by the graph's name, and say in a \
+few plain words which difficulty it addresses (e.g. «Focus Tasks: compiti brevi \
+con un solo obiettivo, per la difficoltà a mantenere l'attenzione»). Do not use \
+what the graph advises against for a need of the class.
+- «Profilo della classe nel Knowledge Graph» says what the graph suggests and \
+advises against for a class like this one (its size, its features): follow it \
+when you choose the format of the activities.
+- Prefer the graph's strategies to generic ones. A strategy the graph did not \
+return is your own choice: do not list it under the Knowledge Graph in `*Fonti:*`.
+- Write this as plain prose, with no brackets, tags or labels such as «(KG)».
+- In `*Fonti:*`, list under the Knowledge Graph the nodes you actually used, with \
+the names the graph gives them.
+"""
+
+# Added to the user prompt only when the class's needs call for it (ADHD, autism,
+# a class with disruptive elements; see ``kg_evidence.environment_needed``). The
+# UDL expert's point on the same lesson: for a pupil with ADHD the room must not
+# be overloaded with stimuli — neutral, orderly — and neither our lesson nor a
+# competitor's said a word about the environment.
+WRITER_LEARNING_ENVIRONMENT_NOTE = """
+
+## Learning environment
+The class includes pupils whose attention or sensory load depends on the room. \
+In **Differenziazione** add one bullet **Ambiente di apprendimento** with 2–4 \
+concrete actions to set up the room before and during the lesson — few visual \
+stimuli on the walls and the board, a neutral and orderly space, where those \
+pupils sit, noise and light — compatible with the Classroom Constraints. If the \
+Knowledge Graph evidence has a section «Ambiente di apprendimento (nodi del KG)», \
+base the actions on those nodes and name them in `*Fonti:*`; otherwise do not \
+attribute them to the Knowledge Graph.
+"""
+
 # =============================================================================
 # SYSTEM PROMPTS BY INTENT
 # =============================================================================

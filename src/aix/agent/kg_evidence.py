@@ -289,7 +289,7 @@ def _short(text: Any, limit: int = _DESC_CHARS) -> str:
 _BOILERPLATE = re.compile(r"^Apply .+ with appropriate adaptations$", re.IGNORECASE)
 
 
-def _guidance(recommendations: Optional[list[dict[str, Any]]]) -> dict[str, str]:
+def guidance_by_name(recommendations: Optional[list[dict[str, Any]]]) -> dict[str, str]:
     """A recommendation's guidance by name, for nodes that came without a description."""
     guidance: dict[str, str] = {}
     for rec in recommendations or []:
@@ -310,9 +310,12 @@ def render_evidence(
     recommendations: Optional[list[dict[str, Any]]] = None,
     *,
     max_chars: int = MAX_CHARS,
+    include_strategies: bool = True,
 ) -> str:
     """The retrieved graph as the lesson can use it, in Italian, bounded.
 
+    ``include_strategies=False`` leaves out the flat list of strategies, for a
+    reader that lists the nodes itself (the Writer does, for every domain).
     Empty when nothing was retrieved.
     """
     ranked = rank_nodes(nodes)
@@ -322,7 +325,7 @@ def render_evidence(
     for node in ranked:
         by_name.setdefault(_name(node), node)
     edges = _edges(relationships)
-    guidance = _guidance(recommendations)
+    guidance = guidance_by_name(recommendations)
     advised_against: set[str] = set()
     sections: list[str] = []
 
@@ -401,7 +404,7 @@ def render_evidence(
     # graph advises against for this class is listed above, under its need, and
     # not here: «Long Frontal Lesson» is not a strategy to pick for ADHD.
     strategy_lines = []
-    for node in ranked:
+    for node in ranked if include_strategies else []:
         if kind(node) not in ("strategy", "tool") or _name(node) in advised_against:
             continue
         if len(strategy_lines) >= _MAX_STRATEGIES:

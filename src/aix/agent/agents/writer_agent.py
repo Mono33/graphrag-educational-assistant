@@ -16,9 +16,18 @@ from openai import AsyncOpenAI
 
 from aix.agent.agents.planner_agent import RetrievalPlan
 from aix.agent.agents.retriever_agent import RetrievalResult
+from aix.agent.kg_evidence import (
+    environment_needed,
+    guidance_by_name,
+    is_context_recommendation,
+    kind,
+    render_evidence,
+)
 from aix.agent.prompts.profile_renderer import render_profile_section
 from aix.agent.prompts.today import today_note
 from aix.agent.prompts.writer_prompt import (
+    WRITER_KG_EVIDENCE_RULES,
+    WRITER_LEARNING_ENVIRONMENT_NOTE,
     WRITER_MATERIAL_MAPS_BLOCK,
     WRITER_MATERIAL_PASSAGES_APPENDIX,
     WRITER_REVISION_TEMPLATE,
@@ -302,6 +311,10 @@ def _format_relationships(relationships: Optional[list], max_relations: int = 15
     Retrieved on every search and, until 2026-10-13, never shown to the Writer:
     it saw node names and descriptions but not that, say, an ADHD profile
     SUGGESTS movement breaks. A few lines carry the structure of the graph.
+
+    ``VECTOR_SIMILAR`` is left out (2026-10-16): it is an embedding neighbourhood,
+    not something the graph claims, and on the staging lesson five of the fifteen
+    lines were «Group till 15 —VECTOR_SIMILAR→ Group till 20».
     """
     lines: list[str] = []
     seen: set[tuple[str, str, str]] = set()
@@ -313,7 +326,7 @@ def _format_relationships(relationships: Optional[list], max_relations: int = 15
             str(rel.get("type") or rel.get("relationship") or "").strip(),
             str(rel.get("target") or "").strip(),
         )
-        if not all(triple) or triple in seen:
+        if not all(triple) or triple in seen or triple[1].upper() == "VECTOR_SIMILAR":
             continue
         seen.add(triple)
         lines.append(f"- {triple[0]} —{triple[1]}→ {triple[2]}")
@@ -493,11 +506,28 @@ class WriterAgent:
         # Get intent-specific prompts (with scope awareness for hybrid mode)
         system_prompt, user_template = get_writer_prompts(intent, scope_status)
 
-        # Format retrieved nodes for prompt
-        nodes_text = self._format_nodes(retrieval_result.nodes)
+        # Format retrieved nodes for prompt. The evidence map comes first: each
+        # need of this class with what the graph suggests and advises against,
+        # the class-profile nodes that match it, the learning environment and
+        # the UDL checkpoints when retrieved. See ``aix.agent.kg_evidence``.
+        relationships = getattr(retrieval_result, "relationships", None)
+        evidence = render_evidence(
+            retrieval_result.nodes,
+            relationships,
+            educational_profile,
+            retrieval_result.recommendations,
+            include_strategies=False,
+        )
+        nodes_text = self._format_nodes(
+            retrieval_result.nodes, recommendations=retrieval_result.recommendations
+        )
+        if evidence:
+            nodes_text = evidence + "\n\n### Altri nodi recuperati\n" + nodes_text
         if graph_relations_enabled():
-            nodes_text += _format_relationships(getattr(retrieval_result, "relationships", None))
-        recommendations_text = self._format_recommendations(retrieval_result.recommendations)
+            nodes_text += _format_relationships(relationships)
+        recommendations_text = self._format_recommendations(
+            retrieval_result.recommendations, nodes=retrieval_result.nodes
+        )
         key_concepts_text = ", ".join(plan.key_concepts) if plan.key_concepts else "Not specified"
 
         # NEW Phase 2: Format curated media if available
@@ -596,6 +626,10 @@ class WriterAgent:
                 language="Italian" if language == "it" else "English",
             )
 
+        is_lesson = intent in ("lesson_creation", "activity_design")
+        if is_lesson and environment_needed(educational_profile):
+            user_prompt += WRITER_LEARNING_ENVIRONMENT_NOTE
+
         # SAM refinement instruction — prepend so the model's first frame
         # is "improve the previous lesson in this specific direction".
         if refinement_instruction and refinement_instruction.strip():
@@ -666,6 +700,8 @@ class WriterAgent:
         system_prompt = system_prompt.replace(
             "{language}", "Italian" if language == "it" else "English"
         )
+        if is_lesson:
+            system_prompt += WRITER_KG_EVIDENCE_RULES
 
         # NEW Phase B: Add domain-specific extensions
         if DOMAIN_EXTENSIONS_AVAILABLE:
@@ -958,41 +994,66 @@ class WriterAgent:
             logger.error(f"[WriterAgent] Revision failed: {e}")
             raise
 
-    def _format_nodes(self, nodes: list, max_nodes: int = 20) -> str:
-        """Format retrieved nodes for the prompt"""
+    def _format_nodes(
+        self,
+        nodes: list,
+        max_nodes: int = 20,
+        recommendations: Optional[list] = None,
+    ) -> str:
+        """Format retrieved nodes for the prompt.
+
+        Class-profile nodes are left out: the ones that describe this class are
+        in the evidence map with what the graph suggests for them, and the rest
+        («Group till 15» for a class of 22) are not about this class. Until
+        2026-10-16 they were eight of these twenty lines, without a description.
+        A node without a description takes its recommendation's guidance.
+        """
         if not nodes:
             return "No nodes retrieved"
 
+        guidance = guidance_by_name(recommendations)
         lines = []
-        for node in nodes[:max_nodes]:
+        for node in [n for n in nodes if kind(n) != "context"][:max_nodes]:
             name = node.get("name", "Unknown")
             labels = node.get("labels", [])
-            desc = node.get("description", "")[:150]
+            desc = str(node.get("description") or guidance.get(name) or "")[:150]
 
             label_str = f" [{', '.join(labels)}]" if labels else ""
             lines.append(f"- **{name}**{label_str}")
             if desc:
                 lines.append(f"  {desc}")
 
-        return "\n".join(lines)
+        return "\n".join(lines) or "No nodes retrieved"
 
-    def _format_recommendations(self, recommendations: list, max_recs: int = 10) -> str:
-        """Format recommendations for the prompt"""
+    def _format_recommendations(
+        self, recommendations: list, max_recs: int = 10, nodes: Optional[list] = None
+    ) -> str:
+        """Format recommendations for the prompt.
+
+        The text of a recommendation is its ``implementation_guidance``: the
+        context builder never writes a ``description``, so until 2026-10-16 the
+        Writer read ten bare names («### Cooperative Learning (Confidence:
+        VERY_HIGH)») and nothing about them. Class-profile entries and the
+        builder's boilerplate («Apply X with appropriate adaptations») are left
+        out.
+        """
         if not recommendations:
             return "No specific recommendations"
 
         lines = []
-        for rec in recommendations[:max_recs]:
+        for rec in [r for r in recommendations if not is_context_recommendation(r, nodes)][
+            :max_recs
+        ]:
             name = rec.get("name", "Unknown")
             confidence = rec.get("confidence", "MEDIUM")
-            desc = rec.get("description", "")[:200]
+            desc = guidance_by_name([rec]).get(" ".join(str(name).split()), "")[:200]
 
             lines.append(f"### {name} (Confidence: {confidence})")
             if desc:
                 lines.append(desc)
             lines.append("")
 
-        return "\n".join(lines)
+        return "\n".join(lines) or "No specific recommendations"
 
     def _format_media(self, curated_media: Optional[dict[str, Any]]) -> str:
         """
