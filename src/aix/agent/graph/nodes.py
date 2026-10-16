@@ -450,9 +450,15 @@ async def retrieve_node(state: AgentState) -> dict[str, Any]:
             profile_terms.append(ep["specific_topic"])
         if ep.get("subject_area") and ep["subject_area"] != ep.get("specific_topic"):
             profile_terms.append(ep["subject_area"])
+        # The need's label, not its code: «DLDS» was searched as it is on
+        # 2026-10-16 and text2cypher wrote ``CONTAINS "dlds"``, which matches
+        # nothing. «Difficoltà linguistiche (straniero/a)» is translated and found.
+        from aix.api.schemas.educational_profile import DISABILITY_LABELS
+
         for d in (ep.get("group") or {}).get("disabilities") or []:
             if d:
-                profile_terms.append(d)
+                code = str(getattr(d, "value", d))
+                profile_terms.append(DISABILITY_LABELS.get(code, code))
         if profile_terms:
             existing_lower = {q.lower() for q in plan.search_queries}
             for pt in profile_terms:

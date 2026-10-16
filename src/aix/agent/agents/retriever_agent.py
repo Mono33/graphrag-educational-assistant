@@ -689,8 +689,15 @@ class RetrieverAgent:
             # Fetch all external sources in parallel across concepts.
             # Each concept triggers 3 API calls (Wikipedia, Scholar, OER)
             # simultaneously instead of sequentially — saves ~(N-1)×slowest_api.
+            async def _wikipedia(concept: str):
+                # The Planner's subject concepts are English ("water cycle"):
+                # the Italian Wikipedia first, the English one when it has no
+                # page on it (2026-10-16 -- see ``_wikipedia_search``).
+                found = await external_api.get_wikipedia_summary(concept, language="it")
+                return found or await external_api.get_wikipedia_summary(concept, language="en")
+
             async def _fetch_for_concept(concept: str):
-                wiki_task = external_api.get_wikipedia_summary(concept, language="it")
+                wiki_task = _wikipedia(concept)
                 scholar_task = external_api.search_openalex(
                     query=f"{concept} education teaching",
                     max_results=3,
