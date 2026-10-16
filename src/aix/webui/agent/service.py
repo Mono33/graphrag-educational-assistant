@@ -1705,12 +1705,19 @@ async def run_agent_stream(
         lesson.lesson_plan_md = lesson_plan_md
         await session.commit()
 
+        # What the graph returned, kept with the lesson for the light turns:
+        # until 2026-10-16 a follow-up could only say «Non ho accesso diretto al
+        # grafo», because nothing of the retrieval outlived the run. Saved with
+        # the message, not sent on the ``done`` event, which does not need it.
+        from aix.agent.kg_evidence import digest as kg_digest
+
+        kept = kg_digest(final_state)
         await _persist_assistant_turn(
             session=session,
             lesson_id=lesson.id,
             owner_id=lesson.owner_id,
             content_md=lesson_plan_md,
-            meta=meta,
+            meta={**meta, "kg_digest": kept} if kept else meta,
             curated_media=final_state.get("curated_media") or {},
         )
 
