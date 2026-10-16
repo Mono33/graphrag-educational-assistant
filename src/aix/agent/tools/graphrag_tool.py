@@ -210,6 +210,25 @@ class GraphRAGTool:
             logger.error(traceback.format_exc())
             raise
 
+    async def read(self, cypher: str, **params: Any) -> list[dict[str, Any]]:
+        """Run one read-only Cypher query on the graph the searches use.
+
+        For the lookups that need no translation and no model: the same driver,
+        in a read transaction, off the event loop.
+        """
+        import asyncio
+
+        self._ensure_initialized()
+        driver = self._retriever.neo4j_driver
+
+        def _run() -> list[dict[str, Any]]:
+            with driver.session() as session:
+                return session.execute_read(
+                    lambda tx: [record.data() for record in tx.run(cypher, **params)]
+                )
+
+        return await asyncio.to_thread(_run)
+
     def search_sync(self, query: str) -> GraphRAGResult:
         """
         Synchronous version of search for non-async contexts.

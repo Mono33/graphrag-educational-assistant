@@ -787,6 +787,69 @@ class RetrieverAgent:
             logger.warning(f"[RetrieverAgent] External resource fetch failed: {e}")
             return {}
 
+    async def fetch_learning_environment(self, *, sensory: bool = False) -> list[dict[str, Any]]:
+        """The graph's nodes on the physical classroom, and the UDL checkpoints about it.
+
+        No search finds them: the Planner plans queries about strategies and
+        needs, never about the room, and on 2026-10-16 none of the 85 nodes of a
+        lesson for two pupils with ADHD was about light, colour or noise -- yet
+        the UDL graph has them (Colour «Neutral tones»: «Neutral colours reduce
+        overstimulation, aiding focus»; Acoustics, Lighting, Furniture) and the
+        checkpoint «address distractions». So they are read directly, by label,
+        when the class needs them (``kg_evidence.environment_needed``).
+
+        ``sensory`` adds smells and textures, which matter for the autism
+        spectrum more than for attention. Empty on any failure: the lesson is
+        written without them, as before.
+        """
+        labels = ["Colour", "Lighting", "Acoustics", "Furniture"]
+        if sensory:
+            labels += ["Smells", "Textures"]
+        environment = """
+            MATCH (n)
+            WHERE n.domain = $domain AND any(l IN labels(n) WHERE l IN $labels)
+            RETURN n.name AS name, labels(n) AS labels, n.description AS description
+            ORDER BY labels(n)[0], n.name
+            LIMIT 40
+        """
+        checkpoints = """
+            MATCH (g:Guideline)-[:MENTIONS]-(c:Checkpoint)
+            WHERE c.domain = $domain AND any(word IN $words
+                WHERE toLower(coalesce(c.description, '')) CONTAINS word)
+            RETURN c.name AS name, labels(c) AS labels, c.description AS description,
+                   g.name AS guideline
+            ORDER BY c.name
+            LIMIT 8
+        """
+        try:
+            tool = self._get_tool()
+            rows = await tool.read(environment, domain=self.domain, labels=labels)
+            rows += await tool.read(
+                checkpoints, domain=self.domain, words=["environment", "distraction", "movement"]
+            )
+        except Exception as exc:  # noqa: BLE001 — the lesson does not depend on it
+            logger.warning(
+                "[RetrieverAgent] learning environment not read (%s: %s)", type(exc).__name__, exc
+            )
+            return []
+        nodes = []
+        for row in rows:
+            if not row.get("name"):
+                continue
+            node = {
+                "id": f"{(row.get('labels') or ['?'])[0]}:{row['name']}",
+                "name": row["name"],
+                "labels": row.get("labels") or [],
+                "description": row.get("description") or "",
+                "retrieval_stage": "learning_environment",
+                "rank_score": 1.0,
+            }
+            if row.get("guideline"):
+                node["guideline"] = row["guideline"]
+            nodes.append(node)
+        logger.info("[RetrieverAgent] learning environment: %d node(s)", len(nodes))
+        return nodes
+
     async def retrieve_single(self, query: str) -> RetrievalResult:
         """
         Execute a single GraphRAG search.

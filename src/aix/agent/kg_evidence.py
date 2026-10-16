@@ -30,6 +30,7 @@ This module is the one place that decides:
 
 from __future__ import annotations
 
+import os
 import re
 from typing import Any, Optional
 
@@ -93,7 +94,7 @@ _CLASS_SIZE = re.compile(r"till\s*(\d+)", re.IGNORECASE)
 
 #: Bounds: the Writer reads the evidence on every lesson and the light turn on
 #: every follow-up, so it is kept to a few thousand characters (~1.5k tokens).
-MAX_CHARS = 7000
+MAX_CHARS = 9000
 _MAX_STRATEGIES = 24
 _DESC_CHARS = 160
 
@@ -418,11 +419,18 @@ def render_evidence(
     if strategy_lines:
         sections.append("### Strategie e strumenti recuperati\n" + "\n".join(strategy_lines))
 
+    # Cut line by line, not section by section: a section too long for what is
+    # left keeps its first lines (the best ranked) instead of vanishing. A
+    # heading with no line under it is dropped.
     text = ""
     for section in sections:
-        if len(text) + len(section) + 2 > max_chars:
-            break
-        text += ("\n\n" if text else "") + section
+        lines = section.split("\n")
+        start = len(text)
+        for number, line in enumerate(lines):
+            piece = ("\n\n" if text and number == 0 else "\n" if text else "") + line
+            if len(text) + len(piece) > max_chars:
+                return text[:start] if number <= 1 else text
+            text += piece
     return text
 
 
@@ -450,6 +458,14 @@ def digest(state: dict[str, Any], profile: Any = None) -> Optional[dict[str, Any
         "recommendations": len(state.get("recommendations") or []),
         "text": text,
     }
+
+
+def environment_lookup_enabled() -> bool:
+    """``AIX_KG_ENVIRONMENT_ENABLED``: read the graph's classroom nodes when needed. On by default."""
+    raw = os.getenv("AIX_KG_ENVIRONMENT_ENABLED")
+    if raw is None or not raw.strip():
+        return True
+    return raw.strip().lower() in ("1", "true", "yes", "on")
 
 
 def environment_needed(profile: Any) -> bool:

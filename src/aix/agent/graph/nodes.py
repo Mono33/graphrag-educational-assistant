@@ -467,6 +467,25 @@ async def retrieve_node(state: AgentState) -> dict[str, Any]:
 
         result = await retriever.retrieve(plan)
 
+        # The room, when the class needs it: no planned search asks about it.
+        # See ``RetrieverAgent.fetch_learning_environment``.
+        from aix.agent import kg_evidence
+
+        fetch_environment = getattr(retriever, "fetch_learning_environment", None)
+        if (
+            domain == "udl"
+            and fetch_environment is not None
+            and kg_evidence.environment_lookup_enabled()
+            and kg_evidence.environment_needed(ep)
+        ):
+            extra = await fetch_environment(
+                sensory="AutismSpectrum" in kg_evidence.class_need_labels(ep)
+            )
+            known = {node.get("name") for node in result.nodes}
+            result.nodes = kg_evidence.rank_nodes(
+                result.nodes + [node for node in extra if node.get("name") not in known]
+            )
+
         # Log hybrid retrieval if applicable
         if result.is_hybrid:
             logger.info("[Node: Retrieve] ⚠️ HYBRID mode: KG pedagogy + external resources")
