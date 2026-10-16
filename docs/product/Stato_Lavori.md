@@ -3254,3 +3254,27 @@ produzione, streaming a token, storia rimandata a ogni turno), quattro decisioni
 (anonimizzazione — resta, da scegliere se lato piattaforma o lato nostro —,
 quali strumenti, crediti, export). Ordine: profilo della classe, token
 streaming, idempotenza e tenant; lo staging per i dev aspetta.
+
+### 2026-10-16 — Il profilo della classe come lo salva la piattaforma
+
+Primo punto dell'analisi d'integrazione (§3 A–C). `EducationalProfile` accetta
+il `Party` e il `Classroom` di AIxLearning così come sono oggi:
+
+- **i codici BES attuali** (`SC` elaborazione cognitiva, `CL` competenze
+  linguistiche, con le parole della piattaforma); `DCGL`, `DCGM`, `DCGS`, `DLDS`
+  restano accettati per i profili già salvati, ma i selettori della WebUI e il
+  catalogo non li offrono più (salvo su un profilo che ne ha già uno, per non
+  perderlo salvando);
+- **le domande sull'aula a tre stati** (`YES` / `NO` / `UNKNOWN`, e il `"none"`
+  di default degli arredi): *non so* diventa `None`;
+- **una classe di 0 studenti** è una classe di cui nessuno ha scritto il numero;
+  il massimo sale da 40 a 500;
+- **dove si fa lezione**: `environment_type`, `participation_type`,
+  `prevalent_modality_type`, resi nel prompt come vincoli (a distanza, ibrida,
+  asincrona).
+
+Corretto lungo la strada, anche per la WebUI: `own_device` e `forniture_mobility`
+avevano default `NO`, e `students_number` 20. Un'aula con la sola LIM diceva al
+modello «niente dispositivi, banchi fissi, 20 studenti». Ora un campo non
+compilato non produce nessuna riga, come il renderer già prometteva. I profili
+già salvati non cambiano. Test: `test_profile_from_the_platform.py`.

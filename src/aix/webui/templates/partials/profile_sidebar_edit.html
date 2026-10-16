@@ -131,7 +131,7 @@
 
       {% set _disabilities = group.get('disabilities') or [] %}
       <wa-select name="group_disabilities" label="BES" size="small" multiple>
-        {% for code, label in DISABILITY_LABELS.items() %}
+        {% for code, label in DISABILITY_LABELS.items() if code not in LEGACY_DISABILITY_CODES or code in _disabilities %}
           <wa-option value="{{ code }}" {% if code in _disabilities %}selected{% endif %}>{{ label }}</wa-option>
         {% endfor %}
       </wa-select>

@@ -16,11 +16,16 @@ from fastapi import APIRouter, Depends
 from aix.api.principals import require_caller
 from aix.api.schemas.educational_profile import (
     CLASS_FEATURE_LABELS,
+    DISABILITY_CHOICES,
     DISABILITY_LABELS,
+    ENVIRONMENT_TYPE_LABELS,
     FORNITURE_MOBILITY_LABELS,
     GRADE_LABELS,
+    LEGACY_DISABILITY_CODES,
     OWN_DEVICE_LABELS,
+    PARTICIPATION_TYPE_LABELS,
     PEDAGOGICAL_INTENT_OPTIONS,
+    PREVALENT_MODALITY_LABELS,
     STUDENT_ATTR_LABELS,
 )
 from aix.webui.agent.turns import MAX_QUERY_CHARS, REFINEMENT_LABELS
@@ -61,11 +66,21 @@ async def catalog(_caller=Depends(require_caller)) -> dict[str, Any]:
         "turn_modes": TURN_MODES,
         "profile": {
             "grade": GRADE_LABELS,
-            "disabilities": DISABILITY_LABELS,
+            "disabilities": DISABILITY_CHOICES,
+            # Still accepted (saved profiles carry them), no longer offered.
+            "disabilities_legacy": {
+                code: DISABILITY_LABELS[code] for code in sorted(LEGACY_DISABILITY_CODES)
+            },
             "class_features": CLASS_FEATURE_LABELS,
             "student_attributes": STUDENT_ATTR_LABELS,
             "forniture_mobility": FORNITURE_MOBILITY_LABELS,
             "own_device": OWN_DEVICE_LABELS,
+            "environment_type": ENVIRONMENT_TYPE_LABELS,
+            "participation_type": PARTICIPATION_TYPE_LABELS,
+            "prevalent_modality_type": PREVALENT_MODALITY_LABELS,
+            # Classroom yes/no questions take true/false or, as the platform
+            # stores them, YES / NO / UNKNOWN; UNKNOWN and omitted mean "not said".
+            "three_state": ["YES", "NO", "UNKNOWN"],
         },
         "materials": {
             "extensions": sorted(allowed_extensions()),

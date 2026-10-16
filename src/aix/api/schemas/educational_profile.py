@@ -15,12 +15,44 @@ field translation is required when the FEM platform consumes this schema:
 
 Source: ported from `FEM-modena/graphrag-aixlearning` branch `Angelo`,
     file `api/schemas/educational_profile.py` (original author: AG).
+
+The platform's models moved on after the port, and a profile it sends today must
+still validate (2026-10-16, `docs/product/Analisi_Integrazione_AIxLearning.md` §3):
+
+* the BES codes are its current eight (``SC`` and ``CL`` replaced the four
+  cognitive and language codes, which stay accepted for profiles already saved);
+* the classroom questions are three-state: ``YES`` / ``NO`` / ``UNKNOWN``, and a
+  furniture default of ``"none"``. *Non so* is not *no*: it becomes ``None``, so
+  the prompt says nothing rather than forbidding something;
+* a class of ``0`` students is a class whose size nobody entered;
+* the classroom says where the lesson happens: in presence, remote, hybrid.
 """
 
 from enum import Enum
-from typing import Optional
+from typing import Annotated, Any, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, BeforeValidator, Field
+
+#: The values the platform stores for "the teacher did not say".
+_UNSAID = {"", "UNKNOWN", "NONE", "NULL"}
+
+
+def _unsaid_to_none(value: Any) -> Any:
+    if isinstance(value, str) and value.strip().upper() in _UNSAID:
+        return None
+    return value
+
+
+def _three_state(value: Any) -> Any:
+    """``YES`` / ``NO`` / ``UNKNOWN`` (the platform) or a bool (the WebUI)."""
+    value = _unsaid_to_none(value)
+    if isinstance(value, str):
+        return {"YES": True, "SI": True, "SÌ": True, "NO": False}.get(value.strip().upper(), value)
+    return value
+
+
+#: A classroom yes/no question; ``None`` when unanswered.
+ThreeState = Annotated[Optional[bool], BeforeValidator(_three_state)]
 
 # ============================================================================
 # GRADE LEVELS (6 options) — party.models.Party.grade
@@ -39,23 +71,34 @@ class GradeLevel(str, Enum):
 
 
 # ============================================================================
-# DISABILITIES / BES (10 options) — party.models.StudentDisabilities
+# DISABILITIES / BES — party.models.StudentDisabilities
 # ============================================================================
 
 
 class DisabilityType(str, Enum):
-    """BES (Bisogni Educativi Speciali) types matching `party.models.StudentDisabilities`."""
+    """BES (Bisogni Educativi Speciali) types matching `party.models.StudentDisabilities`.
 
-    DSA = "DSA"  # Disturbi specifici dell'apprendimento
-    ADHD = "ADHD"  # Disturbo dell'attenzione
-    DOP = "DOP"  # Disturbo oppositivo provocatorio
-    DF = "DF"  # Disabilità fisica
+    The platform's current eight, then four it no longer offers (still accepted:
+    lessons and saved profiles carry them).
+    """
+
+    DSA = "DSA"  # Elaborazione del testo
+    ADHD = "ADHD"  # Focus e autoregolazione
+    DOP = "DOP"  # Coinvolgimento e motivazione
+    DF = "DF"  # Accessibilità motoria e sensoriale
+    SC = "SC"  # Elaborazione cognitiva
+    PD = "PD"  # Alto potenziale
+    SA = "SA"  # Stili di interazione (spettro autistico)
+    CL = "CL"  # Competenze linguistiche
+    # No longer offered by the platform (SC and CL took their place).
     DCGL = "DCGL"  # Disabilità cognitiva di grado lieve
     DCGM = "DCGM"  # Disabilità cognitiva di grado medio
     DCGS = "DCGS"  # Disabilità cognitiva di grado severo
     DLDS = "DLDS"  # Difficoltà linguistiche (studente straniero/a)
-    PD = "PD"  # Plusdotazione
-    SA = "SA"  # Disturbo dello spettro autistico
+
+
+#: Accepted, never offered: a picker shows them only on a profile that has one.
+LEGACY_DISABILITY_CODES: frozenset[str] = frozenset({"DCGL", "DCGM", "DCGS", "DLDS"})
 
 
 # ============================================================================
@@ -121,6 +164,35 @@ class OwnDevicePolicy(str, Enum):
 
 
 # ============================================================================
+# WHERE THE LESSON HAPPENS — classroom.models.Classroom (2026-10-16)
+# ============================================================================
+
+
+class EnvironmentType(str, Enum):
+    """`classroom.models.ModalityType`."""
+
+    LOCAL = "LOCAL"
+    REMOTE = "REMOTE"
+    HYBRID = "HYBRID"
+
+
+class ParticipationType(str, Enum):
+    """`classroom.models.ParticipationType`: how remote students take part."""
+
+    SYNC = "SYNC"
+    ASYNC = "ASYNC"
+    MIXED = "MIXED"
+
+
+class PrevalentModality(str, Enum):
+    """`classroom.models.PrevalentModalityType` (``BILANCED`` as the platform spells it)."""
+
+    MOSTLY_REMOTE = "MOSTLY_REMOTE"
+    MOSTLY_LOCAL = "MOSTLY_LOCAL"
+    BILANCED = "BILANCED"
+
+
+# ============================================================================
 # EDUCATIONAL GROUP — party.models.Party
 # ============================================================================
 
@@ -132,11 +204,14 @@ class EducationalGroup(BaseModel):
         None,
         description="Group / class name (e.g. '3A Liceo Scientifico').",
     )
-    students_number: int = Field(
-        default=20,
+    students_number: Annotated[
+        Optional[int], BeforeValidator(lambda v: None if v in (0, "0") else _unsaid_to_none(v))
+    ] = Field(
+        default=None,
         ge=1,
-        le=40,
-        description="Number of students in the group.",
+        le=500,
+        description="Number of students in the group. Omitted, or 0, when unknown: "
+        "the prompt then says nothing about class size.",
     )
     grade: Optional[GradeLevel] = Field(
         None,
@@ -180,29 +255,52 @@ class ClassroomEnvironment(BaseModel):
         None,
         description="Classroom name / identifier (e.g. 'Aula 101').",
     )
-    forniture_mobility: FornitureMobility = Field(
-        default=FornitureMobility.NO,
-        description="Whether furniture can be moved / rearranged.",
+    # Unanswered is None, not NO: a default of NO made the prompt forbid moving
+    # the desks and using devices for every class whose teacher skipped the
+    # question (2026-10-16).
+    forniture_mobility: Annotated[Optional[FornitureMobility], BeforeValidator(_unsaid_to_none)] = (
+        Field(
+            default=None,
+            description="Whether furniture can be moved / rearranged. UNKNOWN or omitted: not said.",
+        )
     )
-    has_lim: Optional[bool] = Field(
+    has_lim: ThreeState = Field(
         None,
-        description="Has Interactive Whiteboard (LIM).",
+        description="Has Interactive Whiteboard (LIM). true/false, or YES/NO/UNKNOWN.",
     )
-    has_wifi: Optional[bool] = Field(
+    has_wifi: ThreeState = Field(
         None,
-        description="Has WiFi connection.",
+        description="Has WiFi connection. true/false, or YES/NO/UNKNOWN.",
     )
-    has_suite: Optional[bool] = Field(
+    has_suite: ThreeState = Field(
         None,
-        description="Has Office Suite (Google Workspace / Microsoft 365).",
+        description="Has Office Suite (Google Workspace / Microsoft 365). true/false, or YES/NO/UNKNOWN.",
     )
-    pc_station: Optional[bool] = Field(
+    pc_station: ThreeState = Field(
         None,
-        description="Has PC workstations.",
+        description="Has PC workstations. true/false, or YES/NO/UNKNOWN.",
     )
-    own_device: OwnDevicePolicy = Field(
-        default=OwnDevicePolicy.NO,
-        description="Student personal-device policy (BYOD).",
+    own_device: Annotated[Optional[OwnDevicePolicy], BeforeValidator(_unsaid_to_none)] = Field(
+        default=None,
+        description="Student personal-device policy (BYOD). UNKNOWN or omitted: not said.",
+    )
+    environment_type: Annotated[Optional[EnvironmentType], BeforeValidator(_unsaid_to_none)] = (
+        Field(
+            default=None,
+            description="Where the lesson happens: LOCAL (in presence), REMOTE, HYBRID.",
+        )
+    )
+    participation_type: Annotated[Optional[ParticipationType], BeforeValidator(_unsaid_to_none)] = (
+        Field(
+            default=None,
+            description="For REMOTE or HYBRID: SYNC (live), ASYNC (recorded), MIXED.",
+        )
+    )
+    prevalent_modality_type: Annotated[
+        Optional[PrevalentModality], BeforeValidator(_unsaid_to_none)
+    ] = Field(
+        default=None,
+        description="For HYBRID: MOSTLY_LOCAL, MOSTLY_REMOTE, BILANCED.",
     )
 
     class Config:
@@ -310,12 +408,21 @@ DISABILITY_LABELS: dict[str, str] = {
     "ADHD": "Disturbo dell'attenzione (ADHD)",
     "DOP": "Disturbo oppositivo provocatorio (DOP)",
     "DF": "Disabilità fisica",
+    # The platform's own words for its two new codes.
+    "SC": "Elaborazione cognitiva – necessità di istruzioni graduate o tempi estesi",
+    "PD": "Plusdotazione",
+    "SA": "Disturbo dello spettro autistico",
+    "CL": "Competenze linguistiche – partecipanti non madrelingua o con supporto linguistico in corso",
+    # Legacy (``LEGACY_DISABILITY_CODES``): still rendered for profiles that have them.
     "DCGL": "Disabilità cognitiva lieve",
     "DCGM": "Disabilità cognitiva media",
     "DCGS": "Disabilità cognitiva severa",
     "DLDS": "Difficoltà linguistiche (straniero/a)",
-    "PD": "Plusdotazione",
-    "SA": "Disturbo dello spettro autistico",
+}
+
+#: The codes a picker offers: the platform's current eight, in its order.
+DISABILITY_CHOICES: dict[str, str] = {
+    code: label for code, label in DISABILITY_LABELS.items() if code not in LEGACY_DISABILITY_CODES
 }
 
 CLASS_FEATURE_LABELS: dict[str, str] = {
@@ -345,6 +452,24 @@ OWN_DEVICE_LABELS: dict[str, str] = {
     "YES": "Sì",
     "NO": "No",
     "BES": "Solo studenti con BES",
+}
+
+ENVIRONMENT_TYPE_LABELS: dict[str, str] = {
+    "LOCAL": "In presenza",
+    "REMOTE": "Da remoto",
+    "HYBRID": "Ibrido",
+}
+
+PARTICIPATION_TYPE_LABELS: dict[str, str] = {
+    "SYNC": "Sincrona: tutti collegati insieme",
+    "ASYNC": "Asincrona: contenuti registrati",
+    "MIXED": "Mista",
+}
+
+PREVALENT_MODALITY_LABELS: dict[str, str] = {
+    "MOSTLY_REMOTE": "Principalmente da remoto",
+    "MOSTLY_LOCAL": "Principalmente in presenza",
+    "BILANCED": "Bilanciata",
 }
 
 # ============================================================================
@@ -404,6 +529,9 @@ __all__ = [
     "StudentAttribute",
     "FornitureMobility",
     "OwnDevicePolicy",
+    "EnvironmentType",
+    "ParticipationType",
+    "PrevalentModality",
     # Models
     "EducationalGroup",
     "ClassroomEnvironment",
@@ -411,10 +539,15 @@ __all__ = [
     # Labels
     "GRADE_LABELS",
     "DISABILITY_LABELS",
+    "DISABILITY_CHOICES",
+    "LEGACY_DISABILITY_CODES",
     "CLASS_FEATURE_LABELS",
     "STUDENT_ATTR_LABELS",
     "FORNITURE_MOBILITY_LABELS",
     "OWN_DEVICE_LABELS",
+    "ENVIRONMENT_TYPE_LABELS",
+    "PARTICIPATION_TYPE_LABELS",
+    "PREVALENT_MODALITY_LABELS",
     "PEDAGOGICAL_INTENT_OPTIONS",
     "PEDAGOGICAL_INTENT_BY_CODE",
 ]

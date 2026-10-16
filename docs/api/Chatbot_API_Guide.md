@@ -88,6 +88,17 @@ library_disabled`).
   codes and their labels in `GET /catalog` → `profile`. Set
   `pedagogical_intent` here: the API does not ask for it with a card, as the
   WebUI does.
+- The profile takes the AIxLearning platform's `Party` and `Classroom` values as
+  they are stored:
+  - the eight BES codes (`DSA`, `ADHD`, `DOP`, `DF`, `SC`, `PD`, `SA`, `CL`); the
+    older `DCGL`, `DCGM`, `DCGS` and `DLDS` are still accepted;
+  - classroom questions as `true`/`false` or `YES` / `NO` / `UNKNOWN`;
+  - `environment_type` (`LOCAL`, `REMOTE`, `HYBRID`), `participation_type` and
+    `prevalent_modality_type`.
+
+  `UNKNOWN`, `"none"`, an omitted field and `students_number: 0` all mean *not
+  said*: the lesson then makes no assumption about it, instead of ruling
+  something out. A code the API does not know is refused with `422`.
 - `material_ids`: documents the session's turns may search. More can be bound
   later with `POST /sessions/{id}/materials` or in a turn.
 

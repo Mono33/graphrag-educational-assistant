@@ -87,6 +87,7 @@ from aix.api.schemas.educational_profile import (
     DISABILITY_LABELS,
     FORNITURE_MOBILITY_LABELS,
     GRADE_LABELS,
+    LEGACY_DISABILITY_CODES,
     OWN_DEVICE_LABELS,
     PEDAGOGICAL_INTENT_OPTIONS,
     STUDENT_ATTR_LABELS,
@@ -189,6 +190,9 @@ def _label_dicts() -> dict[str, Any]:
     return {
         "GRADE_LABELS": GRADE_LABELS,
         "DISABILITY_LABELS": DISABILITY_LABELS,
+        # Pickers offer the platform's current codes; a legacy one only where a
+        # profile already has it, so saving the form does not drop it.
+        "LEGACY_DISABILITY_CODES": LEGACY_DISABILITY_CODES,
         "CLASS_FEATURE_LABELS": CLASS_FEATURE_LABELS,
         "STUDENT_ATTR_LABELS": STUDENT_ATTR_LABELS,
         "FORNITURE_MOBILITY_LABELS": FORNITURE_MOBILITY_LABELS,

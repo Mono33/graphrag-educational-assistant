@@ -87,6 +87,11 @@ def _labels(codes: Any, labels: dict[str, str]) -> list[str]:
     return [label for code in codes if (label := _label(code, labels))]
 
 
+def _code(value: Any) -> str:
+    """An enum or its stored string, as the bare code (``""`` when unset)."""
+    return str(getattr(value, "value", value) or "")
+
+
 def render_classroom_constraints(profile: Any) -> list[str]:
     """The classroom facts as constraint sentences, one per line.
 
@@ -130,6 +135,31 @@ def render_classroom_constraints(profile: Any) -> list[str]:
 
     if room.get("has_suite") is False:
         lines.append("No office suite (Google Workspace / Microsoft 365) is available.")
+
+    # Where the lesson happens: a remote class cannot pass a sheet around, and a
+    # hybrid one must not leave the students at home watching the others work.
+    where = _code(room.get("environment_type"))
+    participation = _code(room.get("participation_type"))
+    if where == "REMOTE":
+        lines.append(
+            "The lesson is held REMOTELY: no activity may require physical presence, "
+            "shared physical materials or moving around a room."
+        )
+    elif where == "HYBRID":
+        prevalence = {
+            "MOSTLY_LOCAL": " Most students are in the room.",
+            "MOSTLY_REMOTE": " Most students are connected remotely.",
+        }.get(_code(room.get("prevalent_modality_type")), "")
+        lines.append(
+            "The lesson is HYBRID: some students are in the room and some are connected "
+            "remotely. Every activity must work for both, and groups must be able to "
+            f"include remote students.{prevalence}"
+        )
+    if where in ("REMOTE", "HYBRID") and participation == "ASYNC":
+        lines.append(
+            "Remote students follow ASYNCHRONOUSLY (recorded content): no activity for them "
+            "may depend on live interaction with the teacher or classmates."
+        )
 
     mobility = str(
         getattr(room.get("forniture_mobility"), "value", room.get("forniture_mobility")) or ""
