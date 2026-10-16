@@ -123,15 +123,24 @@ class EscalationGate:
         return head
 
 
-def _turn_line(msg: Any, lesson_md: str) -> Optional[str]:
+#: Says that a cut in the history is ours. A bare «…» read as an answer that had
+#: broken off: on 2026-10-16 the model told the teacher «la mia risposta
+#: precedente si è interrotta» about a 3,500-character answer she had read whole.
+_CLIPPED_NOTE = " […accorciata qui; la docente l'ha letta intera]"
+
+
+def _turn_line(msg: Any, lesson_md: str, *, whole: bool = False) -> Optional[str]:
+    """One turn of the history. ``whole``: the latest answer, which the new
+    question is usually about, is kept entire."""
     text = (msg.content_md or "").strip()
     if not text:
         return None
     if msg.role == "user":
         return f"**Docente:** {text[:_USER_CHARS]}"
     if msg.agent_kind == "tutor":
-        clipped = text[:_ANSWER_CHARS] + ("…" if len(text) > _ANSWER_CHARS else "")
-        return f"**Tu:** {clipped}"
+        if whole or len(text) <= _ANSWER_CHARS:
+            return f"**Tu:** {text}"
+        return f"**Tu:** {text[:_ANSWER_CHARS]}{_CLIPPED_NOTE}"
     if text == lesson_md.strip():
         return "**Tu:** (la lezione: è il documento di lavoro qui sopra)"
     return "**Tu:** (una versione precedente della lezione)"
@@ -151,7 +160,13 @@ async def _history(session: Any, lesson: Any, before_turn: int) -> str:
             .order_by(LessonMessage.turn_index, LessonMessage.created_at)
         )
     ).scalars()
-    lines = [line for msg in rows if (line := _turn_line(msg, lesson.lesson_plan_md or ""))]
+    messages = list(rows)
+    latest_answer = next((m for m in reversed(messages) if m.agent_kind == "tutor"), None)
+    lines = [
+        line
+        for msg in messages
+        if (line := _turn_line(msg, lesson.lesson_plan_md or "", whole=msg is latest_answer))
+    ]
     return "\n## La conversazione finora\n\n" + "\n\n".join(lines) + "\n" if lines else ""
 
 
