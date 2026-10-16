@@ -3420,3 +3420,22 @@ export) accetta anche «10′».
 «Focus Tasks» citato nelle lezioni neuro veniva dall'esempio scritto nel prompt,
 che è un nodo UDL: l'esempio ora non nomina nodi. Dettagli in
 `Analisi_Qualita_Risposte.md` §7.4.
+
+### 2026-10-16 — Valutazione prima/dopo: il branch qualità su 8 casi
+
+`scripts/eval/quality_ab.py`: le stesse 8 richieste (UDL e neuro, bisogni e durate
+diversi, più una domanda sul grafo) mandate attraverso l'API a due build.
+
+| Misura | staging | branch qualità |
+|---|---|---|
+| minuti esatti | 1/7 | 7/7 |
+| ambiente quando serve | 0/4 | 4/4 |
+| prompt che trapela | 3/8 | 0/8 |
+| grafo giusto nella nota | 4/8 | 8/8 |
+| «non ho accesso al grafo» | 3/8 | 0/8 |
+| nodi del grafo citati (media) | 8,6 | 14,5 |
+
+Un peggioramento («Group till 30» mostrato alla docente) è stato corretto: i nodi
+del profilo classe ora sono in italiano. Il Critic approva 8/8 in entrambe le
+build. Lettura alla cieca da fare prima del deploy. Dettagli in
+`Analisi_Qualita_Risposte.md` §7.5.

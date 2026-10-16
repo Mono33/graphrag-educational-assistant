@@ -136,10 +136,10 @@ def test_only_the_class_profile_nodes_of_this_class():
     # 22 pupils: the «till 30» band, and the feature the teacher ticked. The
     # graph's names carry double spaces («Group  till 30»); they are collapsed.
     assert (
-        "**Group till 30** (profilo della classe) → suggerisce: Cooperative Learning; sconsiglia: Station Rotation"
+        "**Classe fino a 30 alunni** (profilo della classe) → suggerisce: Cooperative Learning; sconsiglia: Station Rotation"
         in text
     )
-    assert "**Split in groups**" in text
+    assert "**Classe divisa in gruppi**" in text
     assert "Group till 15" not in text
     assert "Motivated" not in text
     assert "VECTOR_SIMILAR" not in text

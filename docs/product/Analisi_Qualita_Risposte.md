@@ -419,3 +419,42 @@ Costo delle prove dal vero: 4 lezioni e 8 risposte veloci con Haiku 5.5, meno di
 - Resta da decidere se accendere il validatore su staging (§5, proposte 2–3): con la
   ripartizione il caso tipico non lo fa più scattare, quindi il costo di un secondo
   passaggio del Writer sarebbe raro.
+
+### 7.5 Valutazione prima/dopo su 8 casi (16/10)
+
+`scripts/eval/quality_ab.py` manda le stesse richieste a due build attraverso l'API
+delle sessioni: una lezione con il profilo della classe, poi una domanda sul grafo.
+Misura in automatico ciò che non richiede una persona e prepara la lettura alla
+cieca. Gli 8 casi coprono UDL e neuro, ADHD, DSA, alunni non italofoni, autismo,
+plusdotazione, una classe senza bisogni dichiarati e durate da 45 a 90 minuti.
+
+Le due build:
+
+- **staging**: `615f7af` (`chore/repo-reorg`), lo stesso agente dello staging;
+- **nuovo**: questo branch.
+
+| Misura | staging | nuovo |
+|---|---|---|
+| minuti esatti (lezioni a tempo) | 1/7 | **7/7** |
+| nodi del grafo citati nelle fonti (media) | 8,6 | **14,5** |
+| ambiente quando la classe lo richiede | 0/4 | **4/4** |
+| testo del prompt che arriva alla docente | 3/8 | **0/8** |
+| grafo giusto nella nota finale | 4/8 | **8/8** |
+| «non ho accesso al grafo» nel follow-up | 3/8 | **0/8** |
+| neuromiti proposti | 0/8 | 0/8 |
+| Critic: approvate | 8/8 | 8/8 |
+| secondi per lezione (media) | 34,5 | 37,9 |
+
+- **Un peggioramento, corretto.** «Group till 30» compariva alla docente in 3 casi
+  su 8, contro 1 su 8. Veniva dalla nuova mappa dell'evidenza, che mostrava i nodi
+  del profilo classe con il nome grezzo. Ora sono resi in italiano («Classe fino a
+  30 alunni»). Ripetuti i 3 casi: 0 su 3.
+- **Il Critic approva tutto in entrambe le versioni.** Non distingue una lezione
+  dall'altra: la proposta 2 del §5 resta la prossima.
+- **Caso 7, nessuna sezione a tempo.** La richiesta «come imposto una lezione…» è
+  stata classificata come consiglio di strategie anche con `mode: lesson`, e il
+  documento non ha sezioni a tempo. È una questione d'intento, da guardare a parte.
+- **Lettura alla cieca.** La pagina (fuori dal repo, in `C:/axl/qab`) è da far
+  leggere ad Angelo e all'esperta UDL prima del deploy.
+
+Costo: 19 lezioni e 19 risposte veloci, intorno a $0,15.

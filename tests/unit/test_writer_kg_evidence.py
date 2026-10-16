@@ -90,7 +90,7 @@ async def test_the_needs_map_reaches_the_writer():
         "**ADHD · Difficulty sustaining focus** → il KG suggerisce: Focus Tasks; sconsiglia: Long Frontal Lesson"
         in user
     )
-    assert "**Group till 30** (profilo della classe) → suggerisce: Focus Tasks" in user
+    assert "**Classe fino a 30 alunni** (profilo della classe) → suggerisce: Focus Tasks" in user
 
 
 async def test_recommendations_carry_their_guidance_and_no_class_profile():

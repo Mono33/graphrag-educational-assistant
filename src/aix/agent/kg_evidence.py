@@ -301,6 +301,27 @@ def class_need_labels(profile: Any) -> set[str]:
     return labels
 
 
+#: The class-profile nodes as a teacher would say them. «Group till 30» reached
+#: the teacher verbatim, in the sources and in the follow-up answers, in 3 of 8
+#: lessons of the 2026-10-16 evaluation (``scripts/eval/quality_ab.py``).
+_CONTEXT_LABELS: dict[str, str] = {
+    "cohesive": "Classe coesa",
+    "split in groups": "Classe divisa in gruppi",
+    "with disruptive elements": "Classe con elementi di disturbo",
+    "motivated": "Classe motivata",
+    "gender gap": "Classe con divario di genere",
+}
+
+
+def context_label(node: dict[str, Any]) -> str:
+    """A class-profile node's name in Italian («Group till 30» -> «Classe fino a 30 alunni»)."""
+    name = _name(node)
+    size = _CLASS_SIZE.search(name)
+    if size:
+        return f"Classe fino a {size.group(1)} alunni"
+    return _CONTEXT_LABELS.get(_norm(name), name)
+
+
 #: Profile need codes -> the teacher's names of the needs (``need_group``).
 PROFILE_NEED_GROUPS: dict[str, set[str]] = {
     "ADHD": {"ADHD"},
@@ -569,7 +590,7 @@ def render_evidence(
         if not suggests and not avoid:
             continue
         advised_against.update(avoid)
-        line = f"- **{_name(node)}** (profilo della classe)"
+        line = f"- **{context_label(node)}** (profilo della classe)"
         if suggests:
             line += f" → suggerisce: {', '.join(suggests)}"
         if avoid:

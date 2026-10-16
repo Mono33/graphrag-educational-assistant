@@ -185,3 +185,12 @@ def test_the_profile_codes_name_the_needs_of_both_graphs():
         "Dislessia",
         "Discalculia",
     }
+
+
+def test_a_class_profile_node_reaches_the_teacher_in_italian():
+    """«Group till 30» reached the teacher verbatim in 3 of 8 evaluated lessons."""
+    from aix.agent.kg_evidence import context_label
+
+    assert context_label({"name": "Group till 30"}) == "Classe fino a 30 alunni"
+    assert context_label({"name": "Split in groups"}) == "Classe divisa in gruppi"
+    assert context_label({"name": "Something else"}) == "Something else"
