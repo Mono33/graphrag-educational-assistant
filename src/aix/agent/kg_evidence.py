@@ -26,6 +26,19 @@ This module is the one place that decides:
 * :func:`digest` -- the same text, bounded, kept with the lesson so a follow-up
   turn can talk about what the graph returned (until 2026-10-16 it could not:
   «Non ho accesso diretto al grafo»).
+
+**Two graphs, two ways of saying what a node is.** The UDL graph says it with
+labels (``Adhd``, ``Colour``, ``Context``…). The neuroscience graph has one
+label per concept, often for a single node, and says what a node is with its
+``category`` property: «ADHD» (the difficulties), «Teaching Practices» and
+«Support Systems» (what to do), «Educational Results» and «Pedagogical
+Strategies» (effects: «Reduced Anxiety», «Learning Gains» -- the neuro lesson of
+2026-10-16 offered them as strategies), «External Influences» (the room),
+«Neuromyths». And several myths are filed under «Teaching Practices»
+(«Pseudoscientific exercises» is Brain Gym, «Modality preference myth» the
+learning styles): read as categories alone, the reordering would have put them
+at the head of the strategies. So a myth is recognised first, and only ever
+shown as something not to do.
 """
 
 from __future__ import annotations
@@ -80,6 +93,30 @@ ENVIRONMENT_LABELS: frozenset[str] = frozenset(
 UDL_LABELS: frozenset[str] = frozenset({"Principle", "Guideline", "Checkpoint"})
 CONTEXT_LABEL = "Context"
 
+#: The neuroscience graph's ``category`` values (lowercased), by what they hold.
+#: Verified on the graph on 2026-10-16; none of them is a UDL category.
+NEURO_NEED_CATEGORIES: dict[str, str] = {
+    "adhd": "ADHD",
+    "dyslexia": "Dislessia",
+    "dyscalculia": "Discalculia",
+    "autism spectrum": "Spettro autistico",
+    "tourette": "Sindrome di Tourette",  # stored as «Tourette’s Disorder»
+}
+NEURO_STRATEGY_CATEGORIES: frozenset[str] = frozenset(
+    {"teaching practices", "teachingpractices", "support systems", "learningstrategies", "feedback"}
+)
+NEURO_OUTCOME_CATEGORIES: frozenset[str] = frozenset(
+    {"pedagogical strategies", "educational results", "developmental outcomes", "evidence-based"}
+)
+NEURO_ENVIRONMENT_CATEGORIES: frozenset[str] = frozenset({"external influences"})
+NEURO_ENVIRONMENT_NAMES: frozenset[str] = frozenset(
+    {"educational environment", "supportive classroom environment", "mistake-friendly classroom"}
+)
+#: «Not evidence-based» holds the concepts a myth claims to improve («Retention»,
+#: «Focus»), carrying the myth's description: neither a strategy nor a myth to name.
+NEURO_NOISE_CATEGORIES: frozenset[str] = frozenset({"not evidence-based"})
+_MYTH = re.compile(r"\bmyths?\b|pseudoscien|debunked", re.IGNORECASE)
+
 #: Edges that say «use this» / «do not use this». VECTOR_SIMILAR is an embedding
 #: neighbourhood, not a pedagogical claim: «Group till 15 —VECTOR_SIMILAR→ With
 #: disruptive elements» tells a teacher nothing.
@@ -112,22 +149,63 @@ def _norm(text: str) -> str:
     return " ".join(str(text or "").lower().split())
 
 
+def _category(node: dict[str, Any]) -> str:
+    return _norm(node.get("category") or "")
+
+
+def neuro_need(node: dict[str, Any]) -> Optional[str]:
+    """The need a neuroscience node describes («ADHD»), or ``None``."""
+    category = _category(node)
+    for prefix, group in NEURO_NEED_CATEGORIES.items():
+        if category.startswith(prefix):
+            return group
+    # The node «Adhd» itself sits under «Neurodevelopmental Processes».
+    return "ADHD" if _norm(_name(node)) == "adhd" else None
+
+
+def is_myth(node: dict[str, Any]) -> bool:
+    """A neuromyth, whatever category the graph filed it under."""
+    if _category(node) == "neuromyths":
+        return True
+    return bool(_MYTH.search(_name(node)))
+
+
 def kind(node: dict[str, Any]) -> str:
-    """``strategy``, ``tool``, ``need``, ``environment``, ``udl``, ``context`` or ``other``."""
+    """``strategy``, ``tool``, ``need``, ``environment``, ``udl``, ``context``,
+    ``outcome``, ``myth``, ``noise`` or ``other``. See the module docstring."""
     labels = _labels(node)
     if CONTEXT_LABEL in labels:
         return "context"
-    if any(label in NEED_GROUPS for label in labels):
+    if is_myth(node):
+        return "myth"
+    if any(label in NEED_GROUPS for label in labels) or neuro_need(node):
         return "need"
-    if any(label in ENVIRONMENT_LABELS for label in labels):
+    category = _category(node)
+    if (
+        any(label in ENVIRONMENT_LABELS for label in labels)
+        or category in NEURO_ENVIRONMENT_CATEGORIES
+        or _norm(_name(node)) in NEURO_ENVIRONMENT_NAMES
+    ):
         return "environment"
     if any(label in UDL_LABELS for label in labels):
         return "udl"
     if any(_TOOL.search(label) for label in labels):
         return "tool"
-    if any(_STRATEGY.search(label) for label in labels):
+    if category in NEURO_NOISE_CATEGORIES:
+        return "noise"
+    if category in NEURO_OUTCOME_CATEGORIES:
+        return "outcome"
+    if category in NEURO_STRATEGY_CATEGORIES or any(_STRATEGY.search(label) for label in labels):
         return "strategy"
     return "other"
+
+
+def need_group(node: dict[str, Any]) -> Optional[str]:
+    """The teacher's name for the need a node describes, in either graph."""
+    for label in _labels(node):
+        if label in NEED_GROUPS:
+            return NEED_GROUPS[label]
+    return neuro_need(node)
 
 
 _TIER = {
@@ -136,8 +214,11 @@ _TIER = {
     "environment": 1,
     "need": 2,
     "tool": 3,
+    "outcome": 4,
     "other": 4,
     "context": 5,
+    "myth": 6,
+    "noise": 7,
 }
 
 
@@ -220,6 +301,29 @@ def class_need_labels(profile: Any) -> set[str]:
     return labels
 
 
+#: Profile need codes -> the teacher's names of the needs (``need_group``).
+PROFILE_NEED_GROUPS: dict[str, set[str]] = {
+    "ADHD": {"ADHD"},
+    "DLDS": {"Alunni non italofoni"},
+    "CL": {"Alunni non italofoni"},
+    "SA": {"Spettro autistico"},
+    "DSA": {"Dislessia", "Discalculia"},
+    "PD": {"Plusdotazione"},
+}
+
+
+def class_need_groups(profile: Any) -> set[str]:
+    """The class's declared needs, by the names ``need_group`` gives them."""
+    group = _profile_group(profile)
+    raw = group.get("disabilities")
+    if not raw and isinstance(profile, dict):
+        raw = profile.get("disabilities")
+    groups: set[str] = set()
+    for code in _codes(raw):
+        groups |= PROFILE_NEED_GROUPS.get(code, set())
+    return groups
+
+
 def _matching_context(context_nodes: list[dict[str, Any]], profile: Any) -> list[dict[str, Any]]:
     """The class-profile nodes that describe this class: its size band and its features."""
     group = _profile_group(profile)
@@ -286,6 +390,65 @@ def _links(
     return suggests, avoid
 
 
+_MAX_MYTHS = 6
+
+#: Words that make a myth relevant: to any differentiation, and to a need.
+_MYTH_ALWAYS = ("style", "modality", "vark")
+_MYTH_BY_NEED = {
+    "ADHD": (
+        "sugar",
+        "hyperactiv",
+        "water",
+        "hydration",
+        "attention",
+        "multitask",
+        "movement",
+        "brain gym",
+        "pseudoscien",
+    ),
+    "Dislessia": ("dyslexia", "overlay", "coloured", "reading", "water"),
+    "Spettro autistico": ("sensory", "music", "mozart"),
+}
+
+
+def _myth_relevance(node: dict[str, Any], needs: set[str]) -> int:
+    text = _norm(f"{_name(node)} {node.get('description') or ''}")
+    score = sum(2 for word in _MYTH_ALWAYS if word in text)
+    for need in needs:
+        score += sum(1 for word in _MYTH_BY_NEED.get(need, ()) if word in text)
+    return score
+
+
+#: The neuroscience graph's relations, as the Writer reads them.
+_EFFECT_VERBS = {
+    "TRIGGERS": "scatena",
+    "LEADS_TO": "porta a",
+    "REDUCES": "riduce",
+    "IMPAIRS": "compromette",
+    "INTERFERES_WITH": "interferisce con",
+    "UNDERMINES": "indebolisce",
+    "DISRUPTS": "disturba",
+    "FACILITATES": "favorisce",
+    "SUPPORTS": "sostiene",
+    "ENHANCES": "potenzia",
+    "IMPROVES": "migliora",
+}
+
+
+def _effects(name: str, edges: list[tuple[str, str, str]], limit: int = 5) -> list[str]:
+    """What a neuroscience need node brings about, in a few words each."""
+    found: list[str] = []
+    for source, rel, target in edges:
+        if source != name or rel not in _EFFECT_VERBS:
+            continue
+        phrase = f"{_EFFECT_VERBS[rel]} {target}"
+        if phrase not in found:
+            found.append(phrase)
+        if len(found) >= limit:
+            break
+    return found
+
+
 def advised_against(
     nodes: Optional[list[dict[str, Any]]],
     relationships: Optional[list[dict[str, Any]]],
@@ -293,24 +456,28 @@ def advised_against(
 ) -> set[str]:
     """What the graph advises against for this class's needs and class profile.
 
-    «Long Frontal Lesson» for ADHD, «Station Rotation» for a class of 22: names
-    no reader should offer as strategies to pick.
+    «Long Frontal Lesson» for ADHD, «Station Rotation» for a class of 22, and in
+    the neuroscience graph its myths («Pseudoscientific exercises» is Brain Gym):
+    names no reader should offer as strategies to pick.
     """
     ranked = rank_nodes(nodes)
     by_name: dict[str, dict[str, Any]] = {}
     for node in ranked:
         by_name.setdefault(_name(node), node)
     edges = _edges(relationships)
-    wanted = class_need_labels(profile)
+    wanted = class_need_groups(profile)
     sources = [
         node
         for node in ranked
-        if kind(node) == "need" and (not wanted or any(label in wanted for label in _labels(node)))
+        if kind(node) == "need" and (not wanted or need_group(node) in wanted)
     ]
     sources += _matching_context([n for n in ranked if kind(n) == "context"], profile)
     names: set[str] = set()
     for node in sources:
         names.update(_links(_name(node), edges, by_name)[1])
+    # Never offered as something to use: a myth, and the concepts a myth claims
+    # to improve, which carry the myth's description (see the module docstring).
+    names.update(_name(node) for node in ranked if kind(node) in ("myth", "noise"))
     return names
 
 
@@ -363,24 +530,30 @@ def render_evidence(
     advised_against: set[str] = set()
     sections: list[str] = []
 
-    # 1. The class's needs -> what the graph suggests and advises against.
-    wanted = class_need_labels(profile)
+    # 1. The class's needs -> what the graph suggests and advises against. The
+    # neuroscience graph links a need to what it brings about rather than to
+    # strategies («Difficulty Managing Frustration or Stress» TRIGGERS «Anxiety»):
+    # that is the «why» of a choice, and is rendered as such.
+    wanted = class_need_groups(profile)
     need_lines: list[str] = []
     for node in ranked:
         if kind(node) != "need":
             continue
-        group = next(label for label in _labels(node) if label in NEED_GROUPS)
+        group = need_group(node) or ""
         if wanted and group not in wanted:
             continue
         suggests, avoid = _links(_name(node), edges, by_name)
-        if not suggests and not avoid:
+        effects = [] if (suggests or avoid) else _effects(_name(node), edges)
+        if not suggests and not avoid and not effects:
             continue
         advised_against.update(avoid)
-        line = f"- **{NEED_GROUPS[group]} · {_name(node)}**"
+        line = f"- **{group} · {_name(node)}**"
         if suggests:
             line += f" → il KG suggerisce: {', '.join(suggests)}"
         if avoid:
             line += f"; sconsiglia: {', '.join(avoid)}"
+        if effects:
+            line += f" → nel KG: {'; '.join(effects)}"
         need_lines.append(line)
     if need_lines:
         sections.append(
@@ -405,12 +578,33 @@ def render_evidence(
     if context_lines:
         sections.append("### Profilo della classe nel Knowledge Graph\n" + "\n".join(context_lines))
 
+    # 2b. The neuromyths retrieved: what must not be proposed, and why. The few
+    # that a lesson for this class could slip into come first (learning styles
+    # in any differentiation; sugar, water, multitasking, Brain Gym with ADHD).
+    myth_lines = []
+    # Only those: «Music-IQ myth» in a lesson on the water cycle is space taken
+    # from the evidence, not a warning anyone needs.
+    myths = sorted(
+        (node for node in ranked if kind(node) == "myth" and _myth_relevance(node, wanted) > 0),
+        key=lambda node: -_myth_relevance(node, wanted),
+    )
+    for node in myths[:_MAX_MYTHS]:
+        line = f"- **{_name(node)}**"
+        if node.get("description"):
+            line += f": {_short(node['description'], 150)}"
+        myth_lines.append(line)
+    if myth_lines:
+        sections.append("### Da evitare: neuromiti (nodi del KG)\n" + "\n".join(myth_lines))
+
     # 3. The learning environment, when it was retrieved.
     env_lines = []
     for node in ranked:
         if kind(node) != "environment":
             continue
-        label = next(label for label in _labels(node) if label in ENVIRONMENT_LABELS)
+        label = next(
+            (label for label in _labels(node) if label in ENVIRONMENT_LABELS),
+            "Ambiente",
+        )
         line = f"- {label} · **{_name(node)}**"
         if node.get("description"):
             line += f": {_short(node['description'], 130)}"
@@ -451,6 +645,14 @@ def render_evidence(
         strategy_lines.append(line)
     if strategy_lines:
         sections.append("### Strategie e strumenti recuperati\n" + "\n".join(strategy_lines))
+
+    # 6. What the strategies are expected to bring about, per the graph. Not
+    # activities: «Reduced Anxiety» is the reason for a routine, not a step.
+    outcomes = [_name(n) for n in ranked if kind(n) == "outcome"][:10]
+    if outcomes:
+        sections.append(
+            "### Effetti attesi secondo il KG (motivazioni, non attività)\n- " + ", ".join(outcomes)
+        )
 
     # Cut line by line, not section by section: a section too long for what is
     # left keeps its first lines (the best ranked) instead of vanishing. A

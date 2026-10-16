@@ -857,6 +857,113 @@ class RetrieverAgent:
         logger.info("[RetrieverAgent] learning environment: %d node(s)", len(nodes))
         return nodes
 
+    async def fetch_neuro_class_evidence(
+        self, *, needs: set[str], environment: bool = False
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """What the neuroscience graph says about this class, read directly.
+
+        The neuroscience graph files a need's difficulties under a ``category``
+        («ADHD»: «Need for Structure and Scaffolding», «Difficulty Managing
+        Frustration or Stress» → TRIGGERS «Anxiety», «High Creativity»…), and the
+        planned searches, about strategies and topics, rarely reach them: on
+        2026-10-16 the neuro lesson for two pupils with ADHD had none of them.
+        So, as ``fetch_learning_environment`` does for the UDL graph, they are
+        read by category, with what each brings about; with them the graph's
+        neuromyths, which a lesson must never propose (several are filed under
+        «Teaching Practices»), and, when the class needs it, what the graph says
+        about the room («External Distractions», «Salient Stimuli»).
+
+        ``needs`` are teacher names (``kg_evidence.class_need_groups``). Returns
+        nodes and relationships; empty on any failure.
+        """
+        from aix.agent import kg_evidence
+
+        categories = sorted(
+            prefix for prefix, group in kg_evidence.NEURO_NEED_CATEGORIES.items() if group in needs
+        )
+        need_query = """
+            MATCH (n)
+            WHERE n.domain = $domain AND (
+                any(c IN $categories WHERE toLower(coalesce(n.category, '')) STARTS WITH c)
+                OR ('adhd' IN $categories AND toLower(n.name) = 'adhd'))
+            OPTIONAL MATCH (n)-[r]->(m)
+            WHERE m.domain = $domain
+            RETURN n.name AS name, labels(n) AS labels, n.category AS category,
+                   n.description AS description,
+                   collect({type: type(r), target: m.name})[0..6] AS effects
+            LIMIT 30
+        """
+        myth_query = """
+            MATCH (n)
+            WHERE n.domain = $domain AND (
+                toLower(coalesce(n.category, '')) = 'neuromyths'
+                OR toLower(n.name) =~ '.*\\\\bmyths?\\\\b.*'
+                OR toLower(n.name) CONTAINS 'pseudoscien')
+            RETURN n.name AS name, labels(n) AS labels, n.category AS category,
+                   n.description AS description, [] AS effects
+            ORDER BY n.name
+            LIMIT 20
+        """
+        environment_query = """
+            MATCH (n)
+            WHERE n.domain = $domain AND (
+                toLower(coalesce(n.category, '')) IN $env_categories
+                OR toLower(n.name) IN $env_names)
+            RETURN n.name AS name, labels(n) AS labels, n.category AS category,
+                   n.description AS description, [] AS effects
+            ORDER BY n.name
+            LIMIT 12
+        """
+        try:
+            tool = self._get_tool()
+            rows = []
+            if categories:
+                rows += await tool.read(need_query, domain=self.domain, categories=categories)
+            rows += await tool.read(myth_query, domain=self.domain)
+            if environment:
+                rows += await tool.read(
+                    environment_query,
+                    domain=self.domain,
+                    env_categories=sorted(kg_evidence.NEURO_ENVIRONMENT_CATEGORIES),
+                    env_names=sorted(kg_evidence.NEURO_ENVIRONMENT_NAMES),
+                )
+        except Exception as exc:  # noqa: BLE001 — the lesson does not depend on it
+            logger.warning(
+                "[RetrieverAgent] neuro class evidence not read (%s: %s)", type(exc).__name__, exc
+            )
+            return [], []
+        nodes: list[dict[str, Any]] = []
+        relationships: list[dict[str, Any]] = []
+        for row in rows:
+            if not row.get("name"):
+                continue
+            nodes.append(
+                {
+                    "id": f"{(row.get('labels') or ['?'])[0]}:{row['name']}",
+                    "name": row["name"],
+                    "labels": row.get("labels") or [],
+                    "category": row.get("category") or "",
+                    "description": row.get("description") or "",
+                    "retrieval_stage": "neuro_class_evidence",
+                    "rank_score": 1.0,
+                }
+            )
+            for effect in row.get("effects") or []:
+                if effect.get("type") and effect.get("target"):
+                    relationships.append(
+                        {
+                            "relationship": effect["type"],
+                            "source": row["name"],
+                            "target": effect["target"],
+                        }
+                    )
+        logger.info(
+            "[RetrieverAgent] neuro class evidence: %d node(s), %d relation(s)",
+            len(nodes),
+            len(relationships),
+        )
+        return nodes, relationships
+
     async def retrieve_single(self, query: str) -> RetrievalResult:
         """
         Execute a single GraphRAG search.

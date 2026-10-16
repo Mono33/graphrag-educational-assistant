@@ -136,6 +136,15 @@ return is your own choice: do not list it under the Knowledge Graph in `*Fonti:*
 - In `*Fonti:*`, list under the Knowledge Graph only the nodes the lesson actually \
 applies (in an activity or in Differenziazione), with the names the graph gives \
 them — not every node you were given.
+- A need line ending in «→ nel KG: …» says what that \
+difficulty brings about («scatena Anxiety», «compromette Encoding…»): use it as \
+the reason for the Differenziazione choice, in plain words, and keep any strength \
+it names (e.g. creativity) as something to build on.
+- «Da evitare: neuromiti» lists practices the graph marks as myths: never propose \
+them, nor frame an activity in their terms (no «alunni visivi/uditivi/cinestetici», \
+no Brain Gym exercises).
+- «Effetti attesi secondo il KG» are reasons, not activities: do not present them \
+as strategies, and do not list them as strategies in `*Fonti:*`.
 """
 
 # Added to the user prompt only when the class's needs call for it (ADHD, autism,

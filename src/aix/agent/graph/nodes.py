@@ -492,6 +492,28 @@ async def retrieve_node(state: AgentState) -> dict[str, Any]:
                 result.nodes + [node for node in extra if node.get("name") not in known]
             )
 
+        # The neuroscience graph's side of the same: the class's needs with what
+        # they bring about, its neuromyths, and the room when the class needs it.
+        # See ``RetrieverAgent.fetch_neuro_class_evidence``.
+        fetch_neuro = getattr(retriever, "fetch_neuro_class_evidence", None)
+        if (
+            domain == "neuro"
+            and fetch_neuro is not None
+            and kg_evidence.environment_lookup_enabled()
+        ):
+            found = await fetch_neuro(
+                needs=kg_evidence.class_need_groups(ep),
+                environment=kg_evidence.environment_needed(ep),
+            )
+            # A (nodes, relationships) pair; anything else adds nothing.
+            if isinstance(found, tuple) and len(found) == 2:
+                extra, extra_relationships = found
+                known = {node.get("name") for node in result.nodes}
+                result.nodes = kg_evidence.rank_nodes(
+                    result.nodes + [node for node in extra if node.get("name") not in known]
+                )
+                result.relationships = list(result.relationships or []) + list(extra_relationships)
+
         # Log hybrid retrieval if applicable
         if result.is_hybrid:
             logger.info("[Node: Retrieve] ⚠️ HYBRID mode: KG pedagogy + external resources")
