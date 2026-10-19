@@ -119,3 +119,28 @@ def test_the_judge_is_in_the_chain_only_when_switched_on(monkeypatch, flag, pres
     monkeypatch.setenv("AIX_JUDGE_ENABLED", flag)
 
     assert ("judge" in build_lesson_planner_graph().get_graph().nodes) is present
+
+
+def test_the_review_notes_are_shown_under_the_lesson_only_when_there_are_some():
+    from pathlib import Path
+
+    from jinja2 import Environment, FileSystemLoader
+
+    root = Path(__file__).resolve().parents[2] / "src" / "aix" / "webui" / "templates"
+    template = Environment(loader=FileSystemLoader(str(root))).get_template(
+        "partials/review_notes.html"
+    )
+    note = {
+        "check": "esempi_lingua",
+        "severity": "minore",
+        "quote": "«foglia/moglie»",
+        "why": "stesso suono",
+        "fix": "«foglia/folla»",
+        "kind": "sostituzione",
+    }
+
+    html = template.render(notes=[note])
+
+    assert "Note di revisione (1)" in html and "Esempi di lingua" in html
+    assert "«foglia/folla»" in html and "aix-review-note--minor" in html
+    assert template.render(notes=[]).strip() == ""

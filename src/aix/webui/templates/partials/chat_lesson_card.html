@@ -147,6 +147,11 @@
         {{ lesson_plan_html | safe }}
       </article>
 
+      {# The judge's notes for the teacher, when it ran (AIX_JUDGE_ENABLED). #}
+      {% with notes = m.get('review_notes') or [] %}
+        {% include "partials/review_notes.html" %}
+      {% endwith %}
+
       {# F6: "What's Next?" adjacent KG concepts panel (only on completed lessons) #}
       {% if adjacent_concepts is defined and adjacent_concepts %}
         {% include "partials/what_next_panel.html" with context %}

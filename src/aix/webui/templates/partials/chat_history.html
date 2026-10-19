@@ -184,6 +184,10 @@
             {{ msg.content_html | safe }}
           </article>
 
+          {% with notes = m.get('review_notes') or [] %}
+            {% include "partials/review_notes.html" %}
+          {% endwith %}
+
           {% if msg.turn_index == latest.lesson_turn and lesson.status != "running" %}
             <footer class="aix-lesson-footer">
               {% include "partials/lesson_downloads.html" %}
