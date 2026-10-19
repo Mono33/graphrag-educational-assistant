@@ -81,6 +81,8 @@ CHECKS: dict[str, str] = {
 
 #: A problem the teacher must fix before using the lesson, or one worth fixing.
 SEVERITIES = ("bloccante", "minore")
+#: How it is fixed: the quote replaced by the fix, or the section around it revised.
+KINDS = ("sostituzione", "revisione")
 
 _SYSTEM = """Sei un revisore esperto di didattica e delle discipline scolastiche. \
 Ricevi una lezione preparata per una docente, con la sua richiesta e il profilo \
@@ -96,12 +98,16 @@ un rischio per gli alunni o una risorsa per la docente data agli alunni; \
 (al massimo 200 caratteri). Senza citazione esatta il problema non viene \
 considerato;
 - «why»: perché è sbagliata, in una frase;
-- «fix»: il testo corretto da mettere al suo posto, pronto da usare.
+- «fix»: il testo corretto da mettere al posto della citazione, pronto da usare;
+- «kind»: «sostituzione» se basta mettere «fix» al posto della citazione (un \
+esempio, una data, una soluzione, una frase); «revisione» se va cambiata la \
+sezione intorno (gruppi e ruoli che non tornano, un'attività da ripensare): in \
+questo caso «fix» descrive in breve la correzione.
 
 Non segnalare ciò che è corretto, né scelte didattiche diverse dalle tue ma \
 legittime. Se non trovi problemi, la lista è vuota. Rispondi solo con JSON:
-{"issues": [{"check": "...", "severity": "...", "quote": "...", "why": "...", \
-"fix": "..."}]}"""
+{"issues": [{"check": "...", "severity": "...", "kind": "...", "quote": "...", \
+"why": "...", "fix": "..."}]}"""
 
 _USER = """## Richiesta della docente
 {request}
@@ -123,6 +129,7 @@ class Issue:
     quote: str
     why: str
     fix: str
+    kind: str = "sostituzione"
 
 
 @dataclass
@@ -197,6 +204,9 @@ def parse_issues(raw: str) -> list[Issue]:
             continue
         check = str(item.get("check") or "").strip()
         severity = str(item.get("severity") or "").strip().lower()
+        # Unknown or missing: a revision, the cautious way (no blind replacement).
+        kind = str(item.get("kind") or "").strip().lower()
+        kind = kind if kind in KINDS else "revisione"
         issues.append(
             Issue(
                 check=check if check in CHECKS else "altro",
@@ -204,6 +214,7 @@ def parse_issues(raw: str) -> list[Issue]:
                 quote=str(item.get("quote") or "").strip(),
                 why=str(item.get("why") or "").strip(),
                 fix=str(item.get("fix") or "").strip(),
+                kind=kind,
             )
         )
     return issues
