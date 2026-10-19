@@ -89,8 +89,18 @@ def locate(quote: str, lesson: str) -> Optional[tuple[int, int]]:
 
 
 @dataclass
+class Change:
+    """One change the repair made: the text before and after, and why."""
+
+    before: str
+    after: str
+    issues: list[Issue]
+
+
+@dataclass
 class RepairResult:
     lesson: str
+    changes: list[Change] = field(default_factory=list)
     replaced: list[Issue] = field(default_factory=list)
     revised: list[Issue] = field(default_factory=list)
     #: Blocking problems the repair did not fix: they become notes.
@@ -122,9 +132,11 @@ def apply_replacements(lesson: str, issues: list[Issue]) -> RepairResult:
             left.append(issue)
     result = RepairResult(lesson=lesson, left=left)
     for start, end, issue in sorted(spans, key=lambda s: s[0], reverse=True):
+        result.changes.append(Change(result.lesson[start:end], issue.fix.strip(), [issue]))
         result.lesson = result.lesson[:start] + issue.fix.strip() + result.lesson[end:]
         result.replaced.append(issue)
     result.replaced.reverse()
+    result.changes.reverse()  # in the order of the text, as the problems are
     return result
 
 
@@ -236,6 +248,7 @@ async def revise_units(
             continue
         # Keep the block's own spacing to the next one.
         trailing = unit[len(unit.rstrip()) :]
+        result.changes.append(Change(unit.rstrip(), new.rstrip(), list(group)))
         result.lesson = result.lesson[:start] + new.rstrip() + trailing + result.lesson[end:]
         result.revised.extend(group)
     return result

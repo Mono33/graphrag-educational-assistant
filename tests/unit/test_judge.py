@@ -13,7 +13,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from aix.agent.validation.judge import CHECKS, judge_lesson, parse_issues, quote_in
+from aix.agent.validation.judge import CHECKS, Issue, judge_lesson, parse_issues, quote_in
 
 pytestmark = pytest.mark.unit
 
@@ -113,3 +113,20 @@ def test_a_wrong_fact_is_blocking_whatever_the_model_says():
     )
 
     assert [i.severity for i in issues] == ["bloccante", "minore"]
+
+
+async def test_each_change_gets_its_verdict_and_a_failure_keeps_them_all():
+    from aix.agent.validation.judge import verify_changes
+    from aix.agent.validation.repair import Change
+
+    issue = Issue("esempi_lingua", "bloccante", "«ga-to»", "gatto si divide gat-to", "«gat-to»")
+    changes = [Change("«ga-to»", "«gat-to»", [issue]), Change("1792", "1798", [issue])]
+    answer = json.dumps(
+        {"verdicts": [{"id": 1, "verdict": "ok"}, {"id": 2, "verdict": "errata", "why": "1789"}]}
+    )
+
+    verdict = await verify_changes(changes, client=_Client(answer), model="x/y")
+    down = await verify_changes(changes, client=_Client("", fail=True), model="x/y")
+
+    assert verdict.ok == [True, False] and verdict.reasons[1] == "1789"
+    assert down.ok == [True, True] and "provider down" in down.error

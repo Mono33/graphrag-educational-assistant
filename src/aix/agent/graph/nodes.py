@@ -971,28 +971,18 @@ async def critique_node(state: AgentState) -> dict[str, Any]:
         return {"error": str(e), "current_step": "error"}
 
 
-def _in_lines_written(quote: str, before: str, after: str) -> bool:
-    """Whether ``quote`` is in a line of ``after`` that ``before`` did not have."""
-    from aix.agent.validation.judge import quote_in
-
-    old = {line.strip() for line in before.splitlines()}
-    written = "\n".join(line for line in after.splitlines() if line.strip() not in old)
-    return bool(written.strip()) and quote_in(quote, written)
-
-
 async def judge_node(state: AgentState) -> dict[str, Any]:
     """Review the lesson with the judge and fix what is wrong where it is.
 
     Replacements in code, revisions of the block around a problem only, then
-    the judge again on the repaired lesson. A repair that leaves more blocking
-    problems than it found is undone: the lesson goes out as it was, with the
-    problems as notes. Whatever is not fixed -- minor problems, and blocking
-    ones no repair could make safely -- becomes a note for the teacher. See
+    each change verified: a change judged wrong is put back, and its problem
+    becomes a note. Whatever is not fixed -- minor problems, and blocking ones
+    no repair could make safely -- becomes a note for the teacher. See
     ``validation.judge`` and ``validation.repair``.
     """
     from dataclasses import asdict
 
-    from aix.agent.validation.judge import judge_lesson
+    from aix.agent.validation.judge import judge_lesson, quote_in, verify_changes
     from aix.agent.validation.repair import apply_replacements, revise_units
 
     draft = state.get("final_lesson_plan") or state.get("lesson_plan_draft") or ""
@@ -1008,8 +998,8 @@ async def judge_node(state: AgentState) -> dict[str, Any]:
         "blocking": len(first.blocking),
         "replaced": 0,
         "revised": 0,
-        "second_check": False,
-        "undone": False,
+        "verified": 0,
+        "reverted": 0,
         "cost": first.cost or 0.0,
         "seconds": first.seconds,
     }
@@ -1032,29 +1022,27 @@ async def judge_node(state: AgentState) -> dict[str, Any]:
     )
     notes = [i for i in first.issues if i.severity != "bloccante"] + revised.left
 
-    if lesson != draft:
-        second = await judge_lesson(lesson, request=request, profile=profile)
-        summary.update(
-            second_check=True,
-            cost=summary["cost"] + (second.cost or 0.0),
-            seconds=round(summary["seconds"] + second.seconds, 1),
-        )
-        # Undone only when the repair wrote something wrong: a blocking problem
-        # quoted from a line the repair wrote. The judge notices different
-        # things on each reading -- comparing counts undid good fixes (8 of 33
-        # on 2026-10-19) because of problems in text nobody had touched; those
-        # were already there, and become notes.
-        introduced = [
-            issue for issue in second.blocking if _in_lines_written(issue.quote, draft, lesson)
-        ]
-        if not second.error and introduced:
-            logger.warning(
-                "[Node: Judge] the repair wrote %d blocking problem(s): undone", len(introduced)
-            )
-            lesson, notes = draft, list(first.issues)
-            summary.update(undone=True, replaced=0, revised=0)
-        elif not second.error:
-            notes = list(second.issues)
+    # Each change is checked, not the whole lesson again (see ``verify_changes``);
+    # a change judged wrong is put back as it was, and its problem becomes a note.
+    changes = replaced.changes + revised.changes
+    verdict = await verify_changes(changes, request=request)
+    summary.update(
+        verified=len(changes),
+        cost=summary["cost"] + (verdict.cost or 0.0),
+        seconds=round(summary["seconds"] + verdict.seconds, 1),
+    )
+    reverted = []
+    for change, ok, reason in zip(changes, verdict.ok, verdict.reasons, strict=True):
+        if ok or change.after not in lesson:
+            continue
+        lesson = lesson.replace(change.after, change.before, 1)
+        reverted.append({"before": change.before[:200], "after": change.after[:200], "why": reason})
+        notes.extend(change.issues)
+    if reverted:
+        logger.warning("[Node: Judge] %d change(s) judged wrong: put back", len(reverted))
+    summary.update(reverted=len(reverted), reverted_changes=reverted)
+    # A minor problem whose sentence a fix rewrote is no longer about the lesson.
+    notes = [n for n in notes if n.severity == "bloccante" or quote_in(n.quote, lesson)]
 
     logger.info(
         "[Node: Judge] %d found (%d blocking): %d replaced, %d revised, %d notes",

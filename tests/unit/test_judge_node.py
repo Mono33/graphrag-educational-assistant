@@ -10,7 +10,7 @@ from aix.agent.graph.nodes import (
     should_continue_to_revision,
 )
 from aix.agent.validation import judge as judge_module
-from aix.agent.validation.judge import Issue, JudgeReport
+from aix.agent.validation.judge import Issue, JudgeReport, Verification
 
 pytestmark = pytest.mark.unit
 
@@ -27,14 +27,21 @@ def _report(*issues, error=""):
 
 @pytest.fixture
 def judged(monkeypatch):
-    """The judge returns the reports given, one per call."""
+    """The judge returns the reports given, one per call; the verification says
+    «ok» to every change unless ``verdicts`` lists what to say."""
     answers: list[JudgeReport] = []
+    verdicts: list[bool] = []
 
     async def fake(lesson, **kwargs):
         return answers.pop(0)
 
+    async def fake_verify(changes, **kwargs):
+        ok = verdicts[: len(changes)] or [True] * len(changes)
+        return Verification(ok=ok, reasons=["sbagliata"] * len(changes), cost=0.002, seconds=1.0)
+
     monkeypatch.setattr(judge_module, "judge_lesson", fake)
-    return answers
+    monkeypatch.setattr(judge_module, "verify_changes", fake_verify)
+    return answers, verdicts
 
 
 # --- the router -----------------------------------------------------------------
@@ -69,33 +76,47 @@ def test_with_the_judge_on_the_critic_no_longer_rewrites_the_lesson(monkeypatch,
 
 
 async def test_a_wrong_example_is_fixed_in_place_and_the_minor_problems_stay_as_notes(judged):
+    answers, _ = judged
     minor = _issue("La divisione di gatto", "-", severity="minore", kind="revisione")
-    judged += [_report(_issue("«ga-to»", "«gat-to»"), minor), _report(minor)]
+    answers.append(_report(_issue("«ga-to»", "«gat-to»"), minor))
 
     out = await judge_node({"final_lesson_plan": DRAFT, "teacher_query": "sillabe"})
 
     assert out["final_lesson_plan"] == DRAFT.replace("«ga-to»", "«gat-to»")
     assert [n["severity"] for n in out["review_notes"]] == ["minore"]
     summary = out["judge_summary"]
-    assert (summary["replaced"], summary["second_check"], summary["undone"]) == (1, True, False)
-    assert summary["cost"] == pytest.approx(0.02)
+    assert (summary["replaced"], summary["verified"], summary["reverted"]) == (1, 1, 0)
+    assert summary["cost"] == pytest.approx(0.012)
 
 
-async def test_a_repair_that_leaves_more_blocking_problems_is_undone(judged):
-    judged += [
-        _report(_issue("«ga-to»", "«gat-to»")),
-        _report(_issue("«gat-to»", "x"), _issue("Attività 1", "y")),
-    ]
+async def test_a_change_judged_wrong_is_put_back_and_becomes_a_note(judged):
+    answers, verdicts = judged
+    answers.append(_report(_issue("«ga-to»", "«g-atto»")))
+    verdicts.append(False)
 
     out = await judge_node({"final_lesson_plan": DRAFT})
 
     assert out["final_lesson_plan"] == DRAFT
-    assert out["judge_summary"]["undone"] is True
+    assert out["judge_summary"]["reverted"] == 1
     assert [n["quote"] for n in out["review_notes"]] == ["«ga-to»"]
 
 
+async def test_only_the_wrong_change_is_put_back(judged):
+    """Two fixes: the right one stays, the wrong one goes back."""
+    answers, verdicts = judged
+    draft = DRAFT + "- La Bastiglia fu presa nel 1792.\n"
+    answers.append(_report(_issue("«ga-to»", "«gat-to»"), _issue("nel 1792", "nel 1798")))
+    verdicts.extend([True, False])
+
+    out = await judge_node({"final_lesson_plan": draft})
+
+    assert "«gat-to»" in out["final_lesson_plan"] and "nel 1792" in out["final_lesson_plan"]
+    assert [n["quote"] for n in out["review_notes"]] == ["nel 1792"]
+
+
 async def test_a_judge_that_fails_leaves_the_lesson_as_it_was(judged):
-    judged.append(_report(error="RuntimeError: provider down"))
+    answers, _ = judged
+    answers.append(_report(error="RuntimeError: provider down"))
 
     out = await judge_node({"final_lesson_plan": DRAFT})
 
@@ -104,12 +125,13 @@ async def test_a_judge_that_fails_leaves_the_lesson_as_it_was(judged):
 
 
 async def test_nothing_found_nothing_changed(judged):
-    judged.append(_report())
+    answers, _ = judged
+    answers.append(_report())
 
     out = await judge_node({"lesson_plan_draft": DRAFT})
 
     assert out["final_lesson_plan"] == DRAFT
-    assert out["judge_summary"]["second_check"] is False
+    assert out["judge_summary"]["verified"] == 0
 
 
 @pytest.mark.parametrize(("flag", "present"), [("false", False), ("true", True)])
@@ -144,16 +166,3 @@ def test_the_review_notes_are_shown_under_the_lesson_only_when_there_are_some():
     assert "Note di revisione (1)" in html and "Esempi di lingua" in html
     assert "«foglia/folla»" in html and "aix-review-note--minor" in html
     assert template.render(notes=[]).strip() == ""
-
-
-async def test_a_problem_found_later_in_untouched_text_does_not_undo_a_good_fix(judged):
-    """The judge notices different things on each reading: 8 of 33 good repairs
-    were undone by comparing counts (2026-10-19)."""
-    elsewhere = _issue("# Le sillabe", "titolo più chiaro")
-    judged += [_report(_issue("«ga-to»", "«gat-to»")), _report(elsewhere)]
-
-    out = await judge_node({"final_lesson_plan": DRAFT})
-
-    assert "«gat-to»" in out["final_lesson_plan"]
-    assert out["judge_summary"]["undone"] is False
-    assert [n["quote"] for n in out["review_notes"]] == ["# Le sillabe"]

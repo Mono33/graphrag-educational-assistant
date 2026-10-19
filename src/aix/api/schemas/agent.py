@@ -242,8 +242,9 @@ class AgentRunMeta(BaseModel):
     )
     judge: Optional[dict[str, Any]] = Field(
         default=None,
-        description="What the judge did: found, blocking, replaced, revised, second_check, "
-        "undone, cost, seconds. Null when the judge is off.",
+        description="What the judge did: found, blocking, replaced, revised, verified, "
+        "reverted (changes judged wrong and put back), cost, seconds. Null when the judge "
+        "is off.",
     )
 
 

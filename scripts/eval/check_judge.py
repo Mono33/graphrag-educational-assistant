@@ -334,7 +334,7 @@ def summarise_repair(rows: list[dict]) -> dict:
         "errors put in, fixed in the text": f"{sum(1 for r in injected if r['resolved'])}/{len(injected)}",
         "replaced (code)": sum(s.get("replaced", 0) for s in summaries),
         "revised (block)": sum(s.get("revised", 0) for s in summaries),
-        "undone": sum(1 for s in summaries if s.get("undone")),
+        "changes put back (judged wrong)": sum(s.get("reverted", 0) for s in summaries),
         "changed besides the fix, median": statistics.median(
             [r["changed_elsewhere"] for r in injected]
         )

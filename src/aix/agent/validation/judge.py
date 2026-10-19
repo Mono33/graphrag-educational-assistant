@@ -286,3 +286,90 @@ async def judge_lesson(
         logger.warning("[judge] %s", report.error)
     report.seconds = round(time.monotonic() - started, 1)
     return report
+
+
+_VERIFY_SYSTEM = """Sei un revisore esperto di didattica e delle discipline \
+scolastiche. Una lezione è stata corretta in alcuni punti. Per ogni modifica ricevi \
+il testo prima, il testo dopo e il problema che doveva risolvere.
+
+Per ciascuna rispondi:
+- «ok» se il testo nuovo è corretto nei contenuti e non introduce errori;
+- «errata» SOLO se il testo nuovo contiene un errore di contenuto (un fatto, un \
+esempio, una soluzione sbagliati), un rischio per gli alunni, o non ha senso.
+
+Un problema risolto solo in parte, o una scelta didattica diversa dalla tua, è \
+«ok». Rispondi solo con JSON: {"verdicts": [{"id": 1, "verdict": "ok", "why": "..."}]}"""
+
+
+@dataclass
+class Verification:
+    """Per change, whether it may stay: ``ok[i]`` for ``changes[i]``."""
+
+    ok: list[bool] = field(default_factory=list)
+    reasons: list[str] = field(default_factory=list)
+    cost: Optional[float] = None
+    seconds: float = 0.0
+    error: str = ""
+
+
+async def verify_changes(
+    changes: list[Any],
+    *,
+    request: str = "",
+    model: Optional[str] = None,
+    client: Any = None,
+) -> Verification:
+    """Ask, for each change the repair made, whether the new text is right.
+
+    Not the whole checklist again: on 2026-10-19 a second full review undid good
+    repairs -- it quoted the corrected answer key for a pedagogical remark, and a
+    rewritten line while saying its examples were correct. Asked only about the
+    changes, the question is the one that matters: is the new text wrong? On a
+    failure every change stays (``ok`` all true) and ``error`` says why.
+    """
+    from aix.core.config import config as app_config
+    from aix.core.config import reasoning_extra_body
+
+    result = Verification(ok=[True] * len(changes), reasons=[""] * len(changes))
+    if not changes:
+        return result
+    model = model or judge_model()
+    blocks = []
+    for n, change in enumerate(changes, 1):
+        problems = "; ".join(i.why for i in change.issues if i.why) or "-"
+        blocks.append(
+            f"### Modifica {n}\nProblema: {problems}\n\nPrima:\n{change.before}\n\n"
+            f"Dopo:\n{change.after}"
+        )
+    messages = [
+        {"role": "system", "content": _VERIFY_SYSTEM},
+        {
+            "role": "user",
+            "content": f"## Richiesta della docente\n{request or '(non indicata)'}\n\n"
+            + "\n\n".join(blocks),
+        },
+    ]
+    extra = dict(reasoning_extra_body(model) or {})
+    if routing := _provider_routing(model):
+        extra["provider"] = routing
+    extra["usage"] = {"include": True}
+    started = time.monotonic()
+    try:
+        client = client or app_config.openai.get_async_client()
+        response = await client.chat.completions.create(
+            model=model, messages=messages, max_tokens=1500, temperature=0, extra_body=extra
+        )
+        raw = response.choices[0].message.content or ""
+        cost = getattr(getattr(response, "usage", None), "cost", None)
+        result.cost = float(cost) if isinstance(cost, (int, float)) else None
+        match = re.search(r"\{.*\}", raw, re.DOTALL)
+        for item in json.loads(match.group(0) if match else "{}").get("verdicts") or []:
+            index = int(item.get("id", 0)) - 1
+            if 0 <= index < len(changes):
+                result.ok[index] = str(item.get("verdict", "ok")).strip().lower() != "errata"
+                result.reasons[index] = str(item.get("why") or "")
+    except Exception as exc:  # noqa: BLE001 — the changes stay; the judge never breaks a lesson
+        result.error = f"{type(exc).__name__}: {exc}"[:300]
+        logger.warning("[judge] verification failed: %s", result.error)
+    result.seconds = round(time.monotonic() - started, 1)
+    return result
