@@ -3519,3 +3519,48 @@ sfuggiti a tutti. Per esempio «pe-lu-ria» data come esempio del suono /ʎ/,
 «foglia/moglie» come coppia di suoni da distinguere, quattro fasi negli obiettivi
 contro tre nell'attività. Prossimo passo: come trasformare le segnalazioni in
 correzioni.
+
+### 2026-10-19 — Il giudice in catena: corregge solo ciò che non va
+
+Commit `e35ae5f`, `00b59fa`, `3288807`, `cd98b39`, `76bd850` e il successivo, sul
+branch `feature/response-quality-improvement` (non pubblicati). Dietro
+`AIX_JUDGE_ENABLED` (spento per default): dopo il Critic la lezione va al giudice,
+non a una riscrittura. Il Critic riscrive solo se manca una parte (documenti non
+usati).
+
+- **Sostituzione in codice** (`aix.agent.validation.repair`): per i problemi
+  bloccanti con un testo corretto pronto, la citazione esatta viene sostituita e
+  nient'altro. Si rinuncia se la citazione non è unica, se la correzione è troppo
+  lunga, se taglia un grassetto o se rompe la riga (ripete le parole vicine, o due
+  punti dopo un punto).
+- **Revisione del solo blocco** (Haiku 5.5): per gruppi, ruoli e attività da
+  ripensare, solo l'attività intorno al problema; il titolo e i minuti restano
+  uguali. Il blocco finisce dove iniziano le fonti.
+- **Verifica di ogni modifica**: una chiamata breve chiede, per ogni modifica
+  (la riga intera prima e dopo), se il testo nuovo è sbagliato. Solo quelle
+  sbagliate tornano com'erano, e il problema diventa una nota. Rileggere tutta
+  la lezione una seconda volta annullava le correzioni buone (23 su 33).
+- **Note di revisione**: i problemi minori, e quelli bloccanti non corretti,
+  compaiono sotto la lezione, chiusi, nella WebUI e nella cronologia
+  (`review_notes` e `judge` nei meta dell'API).
+
+Misura (`check_judge.py --repair`, 17 lezioni con un errore inserito e 16 senza):
+
+| | errori corretti | modifiche rimesse | righe rotte | $ totale | s mediani |
+|---|---|---|---|---|---|
+| giudice ripetuto, conteggio bloccanti | 11/17 | 8 | — | 1,30 | 16 |
+| giudice ripetuto, righe scritte | 6/17 | 23 | — | 1,30 | 16 |
+| verifica per modifica | 15/17 | 10 (3 con motivazione «ok») | — | 0,84 | 10 |
+| + motivazione prima del verdetto | 16/17 | 2 | 4, e una sezione Fonti persa | 0,86 | 12 |
+| + riga intera, giunture, fonti | 15/17 | 5, tutte giuste | 0 | 0,79 | 10 |
+
+Il testo cambiato fuori dal punto corretto ha una mediana del 3% e un massimo
+dell'8%. Non corretti nell'ultima misura: `pizza_confusa`, minore per scelta, e
+`acqua_aria`. Questo il giudice l'ha visto e corretto bene, ma l'ha classificato
+come «minore»: resta una nota. Sulle 16 lezioni senza errori inseriti le modifiche
+sono quasi tutte vere correzioni (2/6 con 4/12, «Stato Llano», gruppi che non
+tornano con 26 e 21 alunni, acqua calda in mano ai bambini, quiz del 1792 senza
+risposta).
+
+Prossimo passo: giudice acceso sullo stack locale e `quality_ab.py` con il giudice
+acceso contro spento, poi una lettura alla cieca.

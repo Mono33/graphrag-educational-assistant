@@ -130,3 +130,15 @@ async def test_each_change_gets_its_verdict_and_a_failure_keeps_them_all():
 
     assert verdict.ok == [True, False] and verdict.reasons[1] == "1789"
     assert down.ok == [True, True] and "provider down" in down.error
+
+
+def test_a_change_is_shown_to_the_verifier_as_the_whole_line_it_sits_in():
+    from aix.agent.validation.judge import in_lines
+
+    lesson = "# T\n- l'insegnante mostra il vapore e mostra il vapore e le gocce.\n- Fine.\n"
+
+    before, after = in_lines("fa toccare il coperchio", "mostra il vapore e le gocce", lesson)
+
+    assert after == "- l'insegnante mostra il vapore e mostra il vapore e le gocce."
+    assert before == "- l'insegnante mostra il vapore e fa toccare il coperchio."
+    assert in_lines("a", "assente", lesson) == ("a", "assente")

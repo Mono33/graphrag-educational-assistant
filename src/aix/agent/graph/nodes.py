@@ -1025,7 +1025,7 @@ async def judge_node(state: AgentState) -> dict[str, Any]:
     # Each change is checked, not the whole lesson again (see ``verify_changes``);
     # a change judged wrong is put back as it was, and its problem becomes a note.
     changes = replaced.changes + revised.changes
-    verdict = await verify_changes(changes, request=request)
+    verdict = await verify_changes(changes, lesson=lesson, request=request)
     summary.update(
         verified=len(changes),
         cost=summary["cost"] + (verdict.cost or 0.0),

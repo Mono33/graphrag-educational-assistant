@@ -100,7 +100,11 @@ un rischio per gli alunni o una risorsa per la docente data agli alunni; \
 (al massimo 200 caratteri). Senza citazione esatta il problema non viene \
 considerato;
 - «why»: perché è sbagliata, in una frase;
-- «fix»: il testo corretto da mettere al posto della citazione, pronto da usare;
+- «fix»: il testo corretto da mettere al posto della citazione, pronto da usare: \
+copre la stessa parte della citazione (se citi mezza frase, riscrivi quella mezza \
+frase) e non è mai un'istruzione per chi corregge («Eliminare…», «Sostituire…», \
+due alternative con «oppure»): se la correzione non si scrive come testo, è una \
+«revisione»;
 - «kind»: «sostituzione» se basta mettere «fix» al posto della citazione (un \
 esempio, una data, una soluzione, una frase); «revisione» se va cambiata la \
 sezione intorno (gruppi e ruoli che non tornano, un'attività da ripensare): in \
@@ -295,10 +299,18 @@ il testo prima, il testo dopo e il problema che doveva risolvere.
 Per ciascuna rispondi:
 - «ok» se il testo nuovo è corretto nei contenuti e non introduce errori;
 - «errata» SOLO se il testo nuovo contiene un errore di contenuto (un fatto, un \
-esempio, una soluzione sbagliati), un rischio per gli alunni, o non ha senso.
+esempio, una soluzione sbagliati), un rischio per gli alunni, o non ha senso: \
+una frase rotta o che si ripete, o un'istruzione per chi corregge al posto del \
+testo («Eliminare la sezione…», due alternative con «oppure»).
 
-Un problema risolto solo in parte, o una scelta didattica diversa dalla tua, è \
-«ok». Rispondi solo con JSON: {"verdicts": [{"id": 1, "verdict": "ok", "why": "..."}]}"""
+Ricevi la riga intera com'era e com'è ora, non solo il pezzo cambiato.
+
+Il testo nuovo si confronta con il testo prima, non con una lezione ideale: se è \
+meglio di prima o uguale, è «ok». Un problema risolto solo in parte, un problema \
+che c'era già prima, o una scelta didattica diversa dalla tua sono «ok».
+
+Prima scrivi il perché in una o due frasi, poi il verdetto che ne segue. Rispondi \
+solo con JSON: {"verdicts": [{"id": 1, "why": "...", "verdict": "ok"}]}"""
 
 
 @dataclass
@@ -312,9 +324,21 @@ class Verification:
     error: str = ""
 
 
+def in_lines(before: str, after: str, lesson: str) -> tuple[str, str]:
+    """``before`` and ``after`` widened to the whole lines ``after`` sits in."""
+    at = lesson.find(after) if lesson and after else -1
+    if at < 0:
+        return before, after
+    start = lesson.rfind("\n", 0, at) + 1
+    end = lesson.find("\n", at + len(after))
+    line = lesson[start : len(lesson) if end == -1 else end]
+    return line.replace(after, before, 1), line
+
+
 async def verify_changes(
     changes: list[Any],
     *,
+    lesson: str = "",
     request: str = "",
     model: Optional[str] = None,
     client: Any = None,
@@ -326,6 +350,9 @@ async def verify_changes(
     rewritten line while saying its examples were correct. Asked only about the
     changes, the question is the one that matters: is the new text wrong? On a
     failure every change stays (``ok`` all true) and ``error`` says why.
+
+    With ``lesson`` (the repaired one), each change is shown as the whole lines
+    it sits in: a fix that broke its sentence is visible only there.
     """
     from aix.core.config import config as app_config
     from aix.core.config import reasoning_extra_body
@@ -337,9 +364,9 @@ async def verify_changes(
     blocks = []
     for n, change in enumerate(changes, 1):
         problems = "; ".join(i.why for i in change.issues if i.why) or "-"
+        before, after = in_lines(change.before, change.after, lesson)
         blocks.append(
-            f"### Modifica {n}\nProblema: {problems}\n\nPrima:\n{change.before}\n\n"
-            f"Dopo:\n{change.after}"
+            f"### Modifica {n}\nProblema: {problems}\n\nPrima:\n{before}\n\nDopo:\n{after}"
         )
     messages = [
         {"role": "system", "content": _VERIFY_SYSTEM},

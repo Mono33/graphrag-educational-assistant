@@ -75,11 +75,60 @@ def test_an_unsafe_or_non_blocking_replacement_is_not_made(issue):
     assert result.left == ([issue] if issue.severity == "bloccante" else [])
 
 
+@pytest.mark.parametrize(
+    ("line", "quote", "fix"),
+    [
+        # 2026-10-19: half a sentence quoted, the whole sentence written as the fix.
+        (
+            "- Mostrare il video (5 minuti) oppure, se il tempo non basta, presentare "
+            "l'idea in due frasi: la capacità cresce.",
+            "Mostrare il video (5 minuti) oppure",
+            "Guardare il video prima e presentare agli alunni l'idea in due frasi:",
+        ),
+        (
+            "- con la pentola calda, l'insegnante mostra il vapore e fa toccare il coperchio "
+            "freddo. Gli alunni ripetono.",
+            "fa toccare il coperchio freddo",
+            "mostra il vapore e le gocce sul coperchio tenuto dall'insegnante",
+        ),
+        (
+            "- Spiega che il cervello legge le lettere e che richiede tempo: è normale fare "
+            "fatica.",
+            "Spiega che il cervello legge le lettere e che richiede tempo",
+            "Spiega che il cervello collega le lettere ai suoni, sempre più veloce.",
+        ),
+    ],
+)
+def test_a_fix_that_would_break_its_line_goes_to_the_block_revision(line, quote, fix):
+    lesson = LESSON + line + "\n"
+
+    result = apply_replacements(lesson, [_issue(quote, fix)])
+
+    assert result.lesson == lesson and [i.quote for i in result.left] == [quote]
+
+
+def test_a_fix_that_fits_its_line_is_made():
+    lesson = LESSON + "- La Bastiglia fu presa nel 1792, dal popolo di Parigi.\n"
+
+    result = apply_replacements(lesson, [_issue("nel 1792", "nel 1789")])
+
+    assert "fu presa nel 1789, dal popolo" in result.lesson
+
+
 def test_a_block_is_the_activity_around_the_problem():
     start, end = unit_bounds(LESSON, LESSON.index("5 ruoli"))
 
     assert LESSON[start:end].startswith("**Attività 1 – Coppie di suoni (15 min)**")
     assert "Dettato" not in LESSON[start:end]
+
+
+def test_the_last_block_stops_where_the_sources_begin():
+    """A revision of «Differenziazione» once dropped the whole «Fonti» section."""
+    lesson = LESSON + "\n---\n*Fonti:*\n- *Knowledge Graph:* Chunking.\n"
+
+    start, end = unit_bounds(lesson, lesson.index("Osservazione"))
+
+    assert lesson[start:end].startswith("## Valutazione") and "Fonti" not in lesson[start:end]
 
 
 class _Client:

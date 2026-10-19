@@ -42,6 +42,36 @@ _MINUTES = re.compile(r"(\d{1,3})\s*(?:min|′)", re.IGNORECASE)
 _HEADING = re.compile(r"^#{1,6}\s")
 #: A bold line standing alone, as the Writer titles its activities.
 _BOLD_TITLE = re.compile(r"^\*\*[^*\n]+\*\*\s*$")
+#: Where the lesson body ends and the sources begin: a rule, or the «Fonti» line.
+_BODY_END = re.compile(r"^(?:-{3,}|\*{3,}|_{3,}|[*_]{0,2}Fonti\b.*)$", re.IGNORECASE)
+_WORD = re.compile(r"[\w']+")
+
+
+def _broken_seam(lesson: str, start: int, end: int, fix: str) -> bool:
+    """Whether putting ``fix`` in place of ``lesson[start:end]`` breaks the line.
+
+    The judge sometimes quotes half a sentence and writes the whole sentence as
+    the fix (2026-10-19, four cases in 33 lessons): the line then repeats itself
+    -- «mostra il vapore e mostra il vapore e» -- or two sentence ends meet --
+    «più veloce.: è normale». Such a fix goes to the block revision instead.
+    """
+    line_start = lesson.rfind("\n", 0, start) + 1
+    line_end = lesson.find("\n", end)
+    before = lesson[line_start:start]
+    after = lesson[end : len(lesson) if line_end == -1 else line_end]
+    if re.search(r"[.!?;:]\s*$", fix) and re.match(r"\s*[.,;:!?]", after):
+        return True
+    words = _WORD.findall(fix.lower())
+    if len(words) < 3:
+        return False
+
+    def grams(text: str) -> set[tuple[str, ...]]:
+        found = _WORD.findall(text.lower())
+        return {tuple(found[i : i + 3]) for i in range(len(found) - 2)}
+
+    return tuple(words[:3]) in grams(" ".join(_WORD.findall(before.lower())[-15:])) or tuple(
+        words[-3:]
+    ) in grams(" ".join(_WORD.findall(after.lower())[:15]))
 
 
 def repair_model() -> str:
@@ -124,6 +154,7 @@ def apply_replacements(lesson: str, issues: list[Issue]) -> RepairResult:
             and len(fix) <= max(_MAX_FIX_CHARS, 3 * len(issue.quote))
             # An emphasis cut in half would leave a stray «**» in the lesson.
             and lesson[span[0] : span[1]].count("**") % 2 == 0
+            and not _broken_seam(lesson, span[0], span[1], fix)
             and not any(span[0] < end and start < span[1] for start, end, _ in spans)
         )
         if safe:
@@ -142,12 +173,13 @@ def apply_replacements(lesson: str, issues: list[Issue]) -> RepairResult:
 
 def unit_bounds(lesson: str, position: int) -> tuple[int, int]:
     """The block around ``position``: from the title above it (a heading, or a bold
-    line standing alone, as activities are titled) to the next one."""
+    line standing alone, as activities are titled) to the next one. The last
+    block stops where the sources begin, so a revision cannot drop them."""
     starts = [0]
     offset = 0
     for line in lesson.splitlines(keepends=True):
         stripped = line.strip()
-        if _HEADING.match(stripped) or _BOLD_TITLE.match(stripped):
+        if _HEADING.match(stripped) or _BOLD_TITLE.match(stripped) or _BODY_END.match(stripped):
             starts.append(offset)
         offset += len(line)
     starts = sorted(set(starts))
