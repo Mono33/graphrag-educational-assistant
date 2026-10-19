@@ -458,3 +458,48 @@ Le due build:
   leggere ad Angelo e all'esperta UDL prima del deploy.
 
 Costo: 19 lezioni e 19 risposte veloci, intorno a $0,15.
+
+### 7.6 La risposta mediana: fasi 1 e 2 (19/10)
+
+Dalla lettura alla cieca (`Specifica_Risposta_Mediana.md`): la pipeline del branch,
+più uno strato editoriale. Stessi 8 casi, staging contro build finale (`7d29964`;
+il caso 4 rifatto con la regola sulle classi senza bisogni):
+
+| Misura | staging | finale |
+|---|---|---|
+| minuti esatti | 1/7 | 7/7 |
+| ambiente quando serve | 0/4 | 4/4 |
+| prompt che trapela | 3/8 | 0/8 |
+| grafo giusto nella nota | 4/8 | 8/8 |
+| «non ho accesso al grafo» | 3/8 | 0/8 |
+| etichette di confidenza | 2/8 | 0/8 |
+| gruppo da 1 / fase da 0 minuti | 2/8 | 0/8 |
+| gergo («nodo», «KG») per caso | 2,4 | 1,5 |
+| riferimenti fuori tema (prima versione del branch: 5) | 0 | 0 |
+| follow-up oltre 25 righe (prima versione: 4/8) | 0/8 | 1/8 (26 righe) |
+| sconsigliate dal grafo ma usate | — | 0/8 |
+| Critic: approvate | 8/8 | 8/8 |
+| secondi per lezione | 34,5 | 37,8 |
+
+Che cosa è cambiato, oltre ai numeri:
+
+- **Differenziazione.** Una riga per bisogno: bisogno → strategia (in italiano, il nome
+  del grafo tra parentesi) → che cosa fa la docente, quando, con che cosa → in quale
+  attività. Esempio: «ADHD → compiti brevi (Chunking): nell'Attività 2 le istruzioni
+  arrivano una alla volta su cartellino, spuntato dall'alunno».
+- **Obiettivi.** Livelli di Bloom scelti nel codice in base all'intento e al grado,
+  con un tetto per i più piccoli; i verbi li sceglie il Writer. Per esempio
+  «Elencare / Riordinare / Applicare» in seconda primaria, «Nominare / Spiegare con
+  parole proprie / Usare» per le frazioni.
+- **Follow-up «cosa hai trovato nel grafo».** Riceve l'uso calcolato con la lezione:
+  usate, suggerite e non usate, sconsigliate ed evitate, neuromiti evitati, il resto
+  in un numero. Il follow-up del caso 2 è quasi identico all'esempio della specifica.
+- **Ciò che il grafo sconsiglia.** Una Station Rotation era rientrata sotto il nome
+  «Le fasi a stazioni». La mappa ora dice che aspetto ha ciò che è sconsigliato, e il
+  calcolo dell'uso lo riconosce anche in italiano.
+- **Una classe senza bisogni dichiarati** riceve opzioni per tutti, non diagnosi
+  inventate (prima: ADHD, autismo, dislessia, plusdotazione in una lezione di storia
+  «accessibile a tutti»).
+
+Ancora aperto: il Critic approva tutto (fase 3); l'esattezza disciplinare
+(«ga-to») non ha ancora un controllo; alcuni nomi restano solo in inglese.

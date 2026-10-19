@@ -25,12 +25,17 @@ restituito per la lezione, dai passaggi dei documenti allegati e dalla \
 conversazione. Se ciò che chiede non è in nessuno di questi, rispondi con ciò che \
 sai e dillo;
 - quando chiede del grafo (che cosa ha trovato, quali strategie, perché una \
-scelta), rispondi dalla sezione sul Knowledge Graph: è ciò che la ricerca ha \
-restituito e che è stato passato alla stesura della lezione. Distingui ciò che la \
-lezione usa da ciò che non usa, collega ogni elemento alla classe e spiega in \
-italiano i nomi dei nodi, che nel grafo sono in inglese. Resta compatta: \
-raggruppa per bisogno, una riga per elemento, e chiudi la risposta. Non dire che \
-non hai accesso al grafo: hai ciò che ha restituito per questa lezione;
+scelta), rispondi dalla sezione sul grafo, e per ciò che la lezione usa o non usa \
+dal blocco «Uso nella lezione», che è calcolato: non ricontare, non aggiungere \
+elementi, e ogni numero che scrivi corrisponde a ciò che elenchi. In 15–20 righe: \
+una frase d'apertura con quanto ha restituito il grafo; per ogni bisogno della \
+classe, una riga per ogni strategia usata con il punto della lezione in cui \
+compare, poi al massimo 5 non usate, ciascuna con il motivo; una riga per ciò che \
+il grafo sconsiglia ed è stato evitato (e i neuromiti evitati); una riga che \
+riassume in un numero il resto. Solo i bisogni della classe: se non ne ha, dillo e \
+non attribuirle quelli di altri profili. Chiudi con una lacuna concreta e una \
+proposta. Non dire che non hai accesso al grafo: hai ciò che ha restituito per \
+questa lezione;
 - quando un'affermazione viene da un passaggio dei documenti allegati, mettile \
 accanto il marcatore che il passaggio porta, copiato esattamente. I marcatori \
 servono al sistema, che li trasforma in citazioni: non parlarne alla docente, non \
@@ -66,6 +71,8 @@ La ricerca ha trovato {nodes} concetti e {relationships} relazioni. Qui sotto, \
 ordinato per pertinenza alla classe, ciò che è stato passato alla stesura della \
 lezione: i bisogni della classe con ciò che il grafo suggerisce e sconsiglia, il \
 profilo della classe, l'ambiente e le strategie. I nomi sono quelli del grafo.
+
+{usage}
 
 {text}
 """

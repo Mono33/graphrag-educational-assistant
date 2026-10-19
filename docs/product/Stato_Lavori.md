@@ -3456,3 +3456,21 @@ salvata oggi): la pipeline del branch qualità, più uno strato editoriale. Fase
   non è più obbligato a citare i riferimenti curati (`435a8dc`).
 - **`quality_ab.py`** ha i controlli della specifica §4 (`c37c096`). Rimisurati sui
   due giri del 16/10, ritrovano ciò che la lettura aveva visto.
+
+### 2026-10-19 — Risposta mediana, fase 2: azioni pratiche, Bloom, follow-up calcolato
+
+- **Strategie in azioni.** In Differenziazione ogni strategia del grafo diventa
+  un'azione concreta, legata a un'attività (`7114a20`).
+- **Obiettivi alla Bloom.** I livelli li sceglie il codice, in base a intento e grado
+  (`7114a20`).
+- **Follow-up calcolato.** La risposta sul grafo legge l'uso calcolato con la lezione:
+  15–20 righe, conteggi che tornano (`b7d3fc3`).
+- **Sconsigliato dal grafo.** Ciò che il grafo sconsiglia è rifiutato in ogni forma e
+  riconosciuto anche in italiano (`151d606`, `7d29964`).
+- **DSA.** Vale il disturbo che la richiesta nomina (`151d606`).
+- **Classi senza bisogni dichiarati.** Ricevono opzioni per tutti, non diagnosi
+  inventate.
+
+Su 8 casi, contro lo staging: tutte le misure migliorano, e il follow-up rientra
+nelle 25 righe (7 su 8). Il Critic approva ancora tutto: è la fase 3. Dettagli in
+`Analisi_Qualita_Risposte.md` §7.6.

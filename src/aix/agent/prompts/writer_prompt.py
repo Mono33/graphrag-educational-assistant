@@ -122,14 +122,24 @@ WRITER_KG_EVIDENCE_RULES = """
 ## Using the Knowledge Graph evidence
 - «Bisogni della classe → che cosa indica il Knowledge Graph» maps each need of \
 THIS class to the strategies the graph suggests for it and the ones it advises \
-against. Build **Differenziazione** on it: for each need of the class apply at \
-least one strategy the graph suggests, call it by the graph's name, and say in a \
-few plain words which difficulty it addresses (e.g. «<nome del nodo>: compiti \
-brevi con un solo obiettivo, per la difficoltà a mantenere l'attenzione» — the \
-name is always one from the evidence above, never one from this example). Do not \
-use what the graph advises against for a need of the class. Under the Knowledge \
-Graph in `*Fonti:*`, a name that is not in the evidence above is not a node of \
-this graph.
+against. Build **Differenziazione** on it, one line per need of the class, in \
+this shape: **<bisogno>** → <strategia in italiano> (<graph's name>): what the \
+teacher does, when, and with which material — concrete enough to do tomorrow, \
+not a principle — and in which activity it happens (e.g. «**ADHD** → compiti \
+brevi (<graph's name>): nell'Attività 2 dà una consegna alla volta su un \
+cartellino e la spunta con l'alunno prima della successiva»; the name is always \
+one from the evidence above, never one from this example). Every strategy you \
+name there must also be visible in the steps of that activity. A strategy you \
+cannot turn into a concrete action is not named at all. Do not use what the \
+graph advises against for a need of the class or for this class's profile — \
+neither by its name nor in its form under another name: if it advises against \
+Station Rotation, no activity has groups rotating between stations. When the \
+class has no declared or named need (no «Bisogni della classe» section above), \
+do not invent pupils with ADHD, dyslexia, autism or any other need: \
+**Differenziazione** then offers options for every pupil — more than one way to \
+take in the content, to take part, to show what they learned — each tied to an \
+activity. Under the Knowledge Graph in `*Fonti:*`, a name that is not in the \
+evidence above is not a node of this graph.
 - «Profilo della classe nel Knowledge Graph» says what the graph suggests and \
 advises against for a class like this one (its size, its features): follow it \
 when you choose the format of the activities.
@@ -142,7 +152,8 @@ labels («VERY_HIGH», «confidenza media») or scores: the graph is named only 
 English name in brackets the first time it appears.
 - In `*Fonti:*`, list under the Knowledge Graph only the nodes the lesson actually \
 applies (in an activity or in Differenziazione), with the names the graph gives \
-them — not every node you were given.
+them — not every node you were given, and not the ones you left out, not even to \
+say they were excluded.
 - A need line ending in «→ nel KG: …» says what that \
 difficulty brings about («scatena Anxiety», «compromette Encoding…»): use it as \
 the reason for the Differenziazione choice, in plain words, and keep any strength \

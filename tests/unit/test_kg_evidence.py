@@ -299,3 +299,78 @@ def test_the_graph_s_typos_never_reach_the_writer():
 
     assert "Gamification" in text and "Gammification" not in text
     assert "Project" in text and "Poject" not in text
+
+
+def test_the_lesson_s_use_of_the_graph_is_computed_not_asked():
+    """The follow-up's counts did not match what it listed (spec §3)."""
+    from aix.agent.kg_evidence import render_usage, usage
+
+    lesson = (
+        "## Attività 1\nCompiti brevi (Focus Tasks) con un solo obiettivo.\n"
+        "## Attività 2\nApprendimento cooperativo (Cooperative Learning) a gruppi di 4."
+    )
+    found = usage(NODES, RELS, PROFILE, lesson)
+
+    assert set(found["used"]) >= {"Focus Tasks", "Cooperative Learning"}
+    assert "Station Rotation" in found["advised_against_avoided"]
+    assert found["advised_against_used"] == []
+    assert any(item.startswith("Glossaries") for item in found["unused_for_needs"])
+    text = render_usage(found)
+    assert f"Usati nella lezione ({len(found['used'])})" in text
+    assert "ATTENZIONE" not in text
+
+
+def test_a_strategy_the_graph_advises_against_is_flagged_when_used():
+    from aix.agent.kg_evidence import render_usage, usage
+
+    found = usage(NODES, RELS, PROFILE, "Rotazione tra postazioni (Station Rotation).")
+
+    assert found["advised_against_used"] == ["Station Rotation"]
+    assert "ATTENZIONE, sconsigliati dal grafo ma presenti nella lezione: Station Rotation" in (
+        render_usage(found)
+    )
+
+
+def test_a_station_rotation_under_an_italian_name_is_still_flagged():
+    """«Le fasi a stazioni»: groups rotating over four cartellini-stazione (2026-10-19)."""
+    from aix.agent.kg_evidence import usage
+
+    lesson = "**Attività 1 – Le fasi a stazioni**\nOgni gruppo ruota su 4 cartellini-stazione."
+    found = usage(NODES, RELS, PROFILE, lesson)
+
+    assert found["advised_against_used"] == ["Station Rotation"]
+
+
+def test_what_the_graph_advises_against_says_what_it_looks_like():
+    text = render_evidence(NODES, RELS, PROFILE)
+
+    assert "Station Rotation (gruppi che ruotano tra stazioni o postazioni)" in text
+
+
+@pytest.mark.parametrize(
+    ("request_text", "expected"),
+    [
+        ("un alunno con DSA (discalculia)", {"Discalculia"}),
+        ("un alunno con DSA, dislessico", {"Dislessia"}),
+        ("un alunno con DSA", {"Dislessia", "Discalculia"}),
+    ],
+)
+def test_dsa_is_the_specific_disorder_the_request_names(request_text, expected):
+    from aix.agent.kg_evidence import class_need_groups
+
+    assert class_need_groups({"group": {"disabilities": ["DSA"]}}, request_text) == expected
+
+
+@pytest.mark.parametrize(
+    "lesson",
+    [
+        # Every group at its own table: the title says «a stazioni», nothing rotates.
+        "**Attività 2 — Caccia alle fasi a stazioni**\nOgni gruppo riordina le carte al suo banco.",
+        # Named only to say it was left out, in the sources.
+        "## Attività\nLavoro a coppie.\n\n*Fonti:*\n- Station Rotation (non applicata, esclusa).",
+    ],
+)
+def test_no_false_alarm_for_station_rotation(lesson):
+    from aix.agent.kg_evidence import usage
+
+    assert usage(NODES, RELS, PROFILE, lesson)["advised_against_used"] == []

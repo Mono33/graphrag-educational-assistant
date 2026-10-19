@@ -185,10 +185,19 @@ def _env(path: Path) -> dict[str, str]:
 
 def _kg_sources(lesson: str) -> int:
     """Names listed under the Knowledge Graph in the sources (0 when none)."""
-    for line in lesson.splitlines():
+    lines = lesson.splitlines()
+    for i, line in enumerate(lines):
         if "knowledge graph" in line.lower() and ":" in line and "nota" not in line.lower():
             names = line.split(":", 1)[1]
-            return len([n for n in re.split(r"[;,]", names) if n.strip(" .*")])
+            count = len([n for n in re.split(r"[;,]", names) if n.strip(" .*")])
+            # Or a heading with the names as bullets under it, up to the next heading.
+            for below in lines[i + 1 :]:
+                stripped = below.strip()
+                if not stripped.startswith(("-", "*", "•")) or stripped.startswith("**"):
+                    break
+                # One name per bullet, or several separated by «;» (commas are prose).
+                count += stripped.count(";") + 1
+            return count
     return 0
 
 
@@ -231,7 +240,9 @@ def measure(domain: str, profile: dict, lesson: str, answer: str, request: str =
         "foreign_needs": sorted(
             need
             for need, pattern in _NEEDS_IN_TEXT.items()
-            if pattern.search(answer) and need not in class_need_groups(profile, request)
+            # «DSA» alone names no specific disorder: only the words count here.
+            if re.search(pattern.pattern.replace(r"|\bdsa\b", ""), answer, re.I)
+            and need not in class_need_groups(profile, request)
         ),
         "followup_lines": len([line for line in answer.splitlines() if line.strip()]),
         "offtopic_refs": sum(1 for line in _sources(lesson) if off_topic({"title": line}, profile)),
@@ -271,6 +282,18 @@ def run(args: argparse.Namespace) -> int:
         answer = second.json().get("markdown", "") if second.status_code == 200 else ""
         lesson = lesson_turn.get("markdown") or ""
         critic = lesson_turn.get("critic") or {}
+        # What the lesson uses of the graph, computed with the lesson and kept in
+        # its turn's meta (``kg_evidence.usage``); absent on builds without it.
+        detail = client.get(f"/api/v1/sessions/{sid}").json()
+        kept = next(
+            (
+                (t.get("meta") or {}).get("kg_digest") or {}
+                for t in detail.get("turns", [])
+                if t.get("kind") == "lesson"
+            ),
+            {},
+        )
+        usage = kept.get("usage") if isinstance(kept, dict) else None
         row = {
             "case": n,
             "domain": domain,
@@ -283,6 +306,7 @@ def run(args: argparse.Namespace) -> int:
             **measure(domain, profile, lesson, answer, request),
             "lesson": lesson,
             "answer": answer,
+            "advised_used": (usage or {}).get("advised_against_used") if usage else None,
         }
         results.append(row)
         print(
@@ -322,6 +346,10 @@ def _summary(rows: list[dict]) -> dict:
             f"{sum(1 for r in rows if r.get('followup_lines', 0) > FOLLOW_UP_MAX_LINES)}/{len(rows)}"
         ),
         "riferimenti fuori tema nelle fonti": sum(r.get("offtopic_refs", 0) for r in rows),
+        "sconsigliate dal grafo ma usate": (
+            f"{sum(1 for r in rows if r.get('advised_used'))}/"
+            f"{sum(1 for r in rows if r.get('advised_used') is not None)}"
+        ),
         "Critic: approvate": share("critic_approved"),
         "secondi (media)": round(sum(r["seconds"] for r in rows) / max(1, len(rows)), 1),
     }

@@ -1711,7 +1711,7 @@ async def run_agent_stream(
         # the message, not sent on the ``done`` event, which does not need it.
         from aix.agent.kg_evidence import digest as kg_digest
 
-        kept = kg_digest(final_state)
+        kept = kg_digest(final_state, lesson=lesson_plan_md)
         await _persist_assistant_turn(
             session=session,
             lesson_id=lesson.id,

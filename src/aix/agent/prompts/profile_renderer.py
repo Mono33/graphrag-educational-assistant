@@ -239,6 +239,52 @@ def time_plan(duration: Any) -> str:
     )
 
 
+#: Bloom's levels in Italian, lowest first.
+BLOOM_LEVELS = ("ricordare", "comprendere", "applicare", "analizzare", "valutare", "creare")
+
+#: The levels a lesson's objectives should use, by pedagogical intent.
+_BLOOM_BY_INTENT: dict[str, tuple[str, ...]] = {
+    "intro": ("ricordare", "comprendere", "applicare"),
+    "deepening": ("applicare", "analizzare", "valutare"),
+    "misconception": ("comprendere", "analizzare", "valutare"),
+    "assessment": ("ricordare", "comprendere", "applicare"),
+    "practice": ("applicare", "analizzare"),
+    "interdisciplinary": ("comprendere", "analizzare", "creare"),
+}
+_BLOOM_BY_GRADE: dict[str, tuple[str, ...]] = {
+    "INFANZIA": ("ricordare", "comprendere"),
+    "PRIMARIA": ("ricordare", "comprendere", "applicare"),
+    "SECONDARIA_I_GRADO": ("comprendere", "applicare", "analizzare"),
+    "SECONDARIA_II_GRADO": ("applicare", "analizzare", "valutare"),
+    "UNIVERSITA": ("analizzare", "valutare", "creare"),
+    "FORMAZIONE_SUL_LAVORO": ("applicare", "analizzare", "valutare"),
+}
+#: Young pupils: no higher than this, whatever the intent says.
+_BLOOM_CEILING = {"INFANZIA": "comprendere", "PRIMARIA": "applicare"}
+
+
+def bloom_levels(profile: Any) -> tuple[str, ...]:
+    """The Bloom levels for this lesson's objectives: from the intent, else the grade.
+
+    The blind read of 2026-10-16 preferred the lesson whose objectives climbed
+    Bloom's levels (ricordare, comprendere, applicare, esprimere) -- but not as a
+    formula repeated in every lesson: the levels follow what the teacher wants
+    (an introduction remembers and understands, a deepening analyses and judges)
+    and how old the pupils are. The Writer chooses the verbs.
+    """
+    ep = _as_dict(profile)
+    group = ep.get("group") or {}
+    grade = _code(group.get("grade"))
+    intent = str(ep.get("pedagogical_intent") or "").split(":", 1)[0].strip()
+    levels = _BLOOM_BY_INTENT.get(intent) or _BLOOM_BY_GRADE.get(grade) or ()
+    ceiling = _BLOOM_CEILING.get(grade)
+    if ceiling:
+        top = BLOOM_LEVELS.index(ceiling)
+        levels = tuple(level for level in levels if BLOOM_LEVELS.index(level) <= top)
+        levels = levels or (ceiling,)
+    return levels
+
+
 def render_profile_section(profile: Any) -> str:
     """The profile section for the Writer's prompt, or ``""`` when there is none.
 
@@ -277,6 +323,15 @@ def render_profile_section(profile: Any) -> str:
         facts.append(f"- Duration: {duration} minutes")
         if plan := time_plan(duration):
             facts.append(f"- {plan}")
+
+    if levels := bloom_levels(ep):
+        facts.append(
+            "- Learning objectives: 2–4, observable, each opening with a verb of these "
+            f"levels of Bloom's taxonomy, lowest first: {', '.join(levels)}. Choose the "
+            "verbs for this lesson (ricordare → elencare, nominare; comprendere → spiegare "
+            "con parole proprie, riordinare; applicare → usare in un caso nuovo…), and do "
+            "not go beyond what the request asks."
+        )
 
     constraints = render_classroom_constraints(ep)
 

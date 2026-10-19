@@ -223,6 +223,7 @@ async def _graph_digest(session: Any, lesson: Any) -> str:
     return GRAPH_TEMPLATE.format(
         nodes=kept.get("nodes", "?"),
         relationships=kept.get("relationships", "?"),
+        usage=str(kept.get("usage_text") or "").strip(),
         text=str(kept["text"]).strip()[:_GRAPH_CHARS],
     )
 

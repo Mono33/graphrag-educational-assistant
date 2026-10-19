@@ -251,3 +251,46 @@ def test_a_section_timed_with_a_prime_is_counted():
 
     lesson = "# L\n\n## Introduzione (10′)\n\n## Attività (40′)\n\n## Valutazione (10 minuti)\n"
     assert [m for _t, m in section_minutes(lesson)] == [10, 40, 10]
+
+
+@pytest.mark.parametrize(
+    ("profile", "levels"),
+    [
+        (
+            {"pedagogical_intent": "intro", "group": {"grade": "PRIMARIA"}},
+            ("ricordare", "comprendere", "applicare"),
+        ),
+        (
+            {"pedagogical_intent": "deepening", "group": {"grade": "SECONDARIA_II_GRADO"}},
+            ("applicare", "analizzare", "valutare"),
+        ),
+        # A deepening in primary school still stops at «applicare».
+        ({"pedagogical_intent": "deepening", "group": {"grade": "PRIMARIA"}}, ("applicare",)),
+        ({"group": {"grade": "SECONDARIA_I_GRADO"}}, ("comprendere", "applicare", "analizzare")),
+        (
+            {"pedagogical_intent": "misconception: l'acqua sparisce"},
+            ("comprendere", "analizzare", "valutare"),
+        ),
+        ({}, ()),
+    ],
+)
+def test_the_objectives_climb_the_bloom_levels_this_lesson_needs(profile, levels):
+    from aix.agent.prompts.profile_renderer import bloom_levels
+
+    assert bloom_levels(profile) == levels
+
+
+def test_the_bloom_levels_reach_the_writer_and_are_not_a_fixed_list():
+    section = render_profile_section(
+        {
+            "pedagogical_intent": "intro",
+            "group": {"grade": "PRIMARIA"},
+            "time_available_minutes": 60,
+        }
+    )
+    deeper = render_profile_section(
+        {"pedagogical_intent": "deepening", "group": {"grade": "SECONDARIA_II_GRADO"}}
+    )
+
+    assert "levels of Bloom's taxonomy, lowest first: ricordare, comprendere, applicare" in section
+    assert "applicare, analizzare, valutare" in deeper

@@ -170,7 +170,7 @@ che renda il markdown non si vede. Per questo è escluso dai controlli.
    - refusi del grafo e gergo;
    - riferimenti fuori tema filtrati prima del Writer;
    - i controlli del §4 in `quality_ab.py`.
-2. **Il cuore:**
+2. **Il cuore** (fatto il 19/10: `b7d3fc3`, `7114a20`, `151d606`, `7d29964`; misure in `Analisi_Qualita_Risposte.md` §7.6):
    - strategie del grafo → azioni pratiche (§2.9);
    - obiettivi alla Bloom (§2.5);
    - il follow-up del §3, con l'elenco usate / non usate calcolato nel codice, non dal

@@ -365,7 +365,65 @@ def class_need_groups(profile: Any, request: str = "") -> set[str]:
     for need, pattern in _NEEDS_IN_TEXT.items():
         if request and pattern.search(request):
             groups.add(need)
+    # «DSA» covers dyslexia and dyscalculia; «un alunno con DSA (discalculia)» is
+    # one of them. The follow-up of 2026-10-19 gave the class a dyslexia it had
+    # not declared, and a «lacuna» about it.
+    specific = {
+        need
+        for need, word in (("Dislessia", "dislessi"), ("Discalculia", "discalculi"))
+        if word in request.lower()
+    }
+    if specific:
+        groups -= {"Dislessia", "Discalculia"} - specific
     return groups
+
+
+#: What the graph advises against, as a lesson would describe it in Italian:
+#: the gloss tells the Writer what the format is, the pattern finds it in a lesson
+#: that renamed it. On 2026-10-19 a lesson for a class the graph says should not
+#: rotate between stations had «Le fasi a stazioni»: groups rotating over four
+#: «cartellini-stazione», and nothing caught it under the Italian name.
+ADVISED_GLOSSES: dict[str, tuple[str, re.Pattern[str]]] = {
+    "station rotation": (
+        "gruppi che ruotano tra stazioni o postazioni",
+        # Something has to rotate: «Caccia alle fasi a stazioni» with every group
+        # working at its own table is not a rotation (a false alarm of 2026-10-19).
+        re.compile(
+            r"(?:ruot|rotazion|girano|si spostano|cambiano)\w*[^.\n]{0,40}(?:stazion|postazion)"
+            r"|(?:stazion|postazion)\w*[^.\n]{0,40}(?:a rotazione|ruot|girano)",
+            re.IGNORECASE,
+        ),
+    ),
+    "long frontal lesson": (
+        "spiegazione frontale lunga",
+        re.compile(r"lezione frontale (?:lunga|di \d{2})|spiegazione frontale di \d{2}", re.I),
+    ),
+    "passive learning": (
+        "ascolto passivo prolungato",
+        re.compile(r"ascolto passivo|apprendimento passivo", re.IGNORECASE),
+    ),
+}
+
+
+def _with_gloss(name: str) -> str:
+    gloss = ADVISED_GLOSSES.get(_norm(name))
+    return f"{name} ({gloss[0]})" if gloss else name
+
+
+_SOURCES = re.compile(r"\*Fonti:?\*|^#+ Fonti|nota sulle fonti", re.IGNORECASE | re.MULTILINE)
+
+
+def _advised_in_lesson(name: str, lesson: str) -> bool:
+    """Whether the lesson uses ``name``, by its graph name or as a lesson describes it.
+
+    Only the body counts: «Station Rotation (non applicata, … esclusa)» in the
+    sources is the opposite of using it.
+    """
+    lesson = _SOURCES.split(lesson, maxsplit=1)[0]
+    if _in_lesson(name, _norm(lesson)):
+        return True
+    gloss = ADVISED_GLOSSES.get(_norm(name))
+    return bool(gloss and gloss[1].search(lesson))
 
 
 def _matching_context(context_nodes: list[dict[str, Any]], profile: Any) -> list[dict[str, Any]]:
@@ -618,7 +676,7 @@ def _render_evidence(
         if suggests:
             line += f" → il KG suggerisce: {', '.join(suggests)}"
         if avoid:
-            line += f"; sconsiglia: {', '.join(avoid)}"
+            line += f"; sconsiglia: {', '.join(_with_gloss(n) for n in avoid)}"
         if effects:
             line += f" → nel KG: {'; '.join(effects)}"
         need_lines.append(line)
@@ -640,7 +698,7 @@ def _render_evidence(
         if suggests:
             line += f" → suggerisce: {', '.join(suggests)}"
         if avoid:
-            line += f"; sconsiglia: {', '.join(avoid)}"
+            line += f"; sconsiglia: {', '.join(_with_gloss(n) for n in avoid)}"
         context_lines.append(line)
     if context_lines:
         sections.append("### Profilo della classe nel Knowledge Graph\n" + "\n".join(context_lines))
@@ -736,7 +794,100 @@ def _render_evidence(
     return text
 
 
-def digest(state: dict[str, Any], profile: Any = None) -> Optional[dict[str, Any]]:
+#: How many suggested-but-unused elements a follow-up lists (the spec's «at most 5»).
+_MAX_UNUSED = 5
+
+
+def _in_lesson(name: str, lesson_lower: str) -> bool:
+    words = _norm(fix_graph_typos(name))
+    return bool(words) and words in lesson_lower
+
+
+def usage(
+    nodes: Optional[list[dict[str, Any]]],
+    relationships: Optional[list[dict[str, Any]]],
+    profile: Any,
+    lesson: str,
+    request: str = "",
+) -> dict[str, Any]:
+    """Which of the graph's elements the lesson uses, computed rather than asked.
+
+    A follow-up asked «what did the graph find?» used to work it out from the
+    evidence and the lesson, and its counts did not match what it listed
+    (``docs/product/Specifica_Risposta_Mediana.md`` §3). Matched on the graph's
+    name in the lesson's text: the Writer names a strategy in Italian with the
+    graph's name in brackets, so a strategy applied without its name is counted
+    as unused -- the safe side.
+    """
+    ranked = rank_nodes(nodes)
+    lesson_lower = _norm(lesson)
+    by_name: dict[str, dict[str, Any]] = {}
+    for node in ranked:
+        by_name.setdefault(_name(node), node)
+    edges = _edges(relationships)
+    wanted = class_need_groups(profile, request)
+    avoid = advised_against(nodes, relationships, profile, request)
+
+    usable = [n for n in ranked if kind(n) in ("strategy", "tool", "environment", "udl")]
+    used = [_name(n) for n in usable if _in_lesson(_name(n), lesson_lower)]
+
+    unused: list[str] = []
+    for node in ranked:
+        if kind(node) != "need" or need_group(node) not in wanted:
+            continue
+        for name in _links(_name(node), edges, by_name)[0]:
+            label = f"{name} ({need_group(node)})"
+            if name not in used and name not in avoid and label not in unused:
+                unused.append(label)
+    myths = [_name(n) for n in ranked if kind(n) == "myth"]
+    advised = sorted(name for name in avoid if name not in myths)
+    return {
+        "used": used,
+        "unused_for_needs": unused[:_MAX_UNUSED],
+        "advised_against_used": sorted(
+            name for name in advised if _advised_in_lesson(name, lesson)
+        ),
+        "advised_against_avoided": [n for n in advised if not _advised_in_lesson(n, lesson)],
+        "myths_avoided": [n for n in myths if not _in_lesson(n, lesson_lower)][:_MAX_MYTHS],
+        "needs": sorted(wanted),
+        "other": max(0, len(ranked) - len(used) - min(len(unused), _MAX_UNUSED)),
+    }
+
+
+def render_usage(found: dict[str, Any]) -> str:
+    """:func:`usage` as the follow-up reads it."""
+    if not found:
+        return ""
+    lines = ["### Uso nella lezione (calcolato dal sistema, non da stimare)"]
+    needs = ", ".join(found.get("needs") or []) or "nessuno dichiarato né nominato"
+    lines.append(f"- Bisogni della classe: {needs}")
+    lines.append(f"- Usati nella lezione ({len(found['used'])}): {', '.join(found['used']) or '—'}")
+    if found.get("unused_for_needs"):
+        lines.append(
+            "- Suggeriti dal grafo per i bisogni della classe e non usati: "
+            + ", ".join(found["unused_for_needs"])
+        )
+    if found.get("advised_against_avoided"):
+        lines.append(
+            "- Sconsigliati dal grafo per questa classe ed evitati: "
+            + ", ".join(found["advised_against_avoided"])
+        )
+    if found.get("advised_against_used"):
+        lines.append(
+            "- ATTENZIONE, sconsigliati dal grafo ma presenti nella lezione: "
+            + ", ".join(found["advised_against_used"])
+        )
+    if found.get("myths_avoided"):
+        lines.append("- Neuromiti evitati: " + ", ".join(found["myths_avoided"]))
+    lines.append(
+        f"- Altri elementi restituiti, non usati o non pertinenti: {found.get('other', 0)}"
+    )
+    return fix_graph_typos("\n".join(lines))
+
+
+def digest(
+    state: dict[str, Any], profile: Any = None, lesson: str = ""
+) -> Optional[dict[str, Any]]:
     """What the graph returned for the turn, small enough to keep with the lesson.
 
     ``None`` when nothing was retrieved. Kept in the Writer message's
@@ -754,8 +905,22 @@ def digest(state: dict[str, Any], profile: Any = None) -> Optional[dict[str, Any
     )
     if not text:
         return None
+    lesson = lesson or str(state.get("final_lesson_plan") or state.get("lesson_plan_draft") or "")
+    found = (
+        usage(
+            nodes,
+            state.get("retrieved_relationships") or [],
+            profile if profile is not None else state.get("educational_profile"),
+            lesson,
+            request=str(state.get("raw_user_turn") or state.get("teacher_query") or ""),
+        )
+        if lesson
+        else {}
+    )
     return {
-        "version": 1,
+        "version": 2,
+        "usage": found,
+        "usage_text": render_usage(found),
         "nodes": len(nodes),
         "relationships": len(state.get("retrieved_relationships") or []),
         "recommendations": len(state.get("recommendations") or []),
