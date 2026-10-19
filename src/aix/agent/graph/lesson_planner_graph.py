@@ -35,6 +35,7 @@ from aix.agent.graph.nodes import (
     _corrective_rag_enabled,
     _private_rag_enabled,
     critique_node,
+    documents_check_node,
     # CORE 2 #9 — Corrective RAG (Retrieval Grading). Imported eagerly so
     # an import error fails fast even when the feature flag is off; the
     # nodes are only added to the topology when the flag is on.
@@ -124,7 +125,6 @@ def _build_workflow() -> StateGraph:
     # instead of two and the environment cannot change what is wired to what.
     # No retry policy: it makes no network call, so there is nothing to retry.
     workflow.add_node("validate", validate_node)
-    workflow.add_node("critique", critique_node, retry_policy=LLM_RETRY_POLICY)
 
     workflow.set_entry_point("plan")
 
@@ -206,24 +206,29 @@ def _build_workflow() -> StateGraph:
     # The rewrite carries only the remediation, through the existing
     # ``refinement_instruction`` channel, and spends the validator's own budget
     # rather than the Critic's.
+    # With the judge on (2026-10-19) the Critic is not in the chain: the judge
+    # fixes the lesson in place, and the one check that still sends a lesson
+    # back to the Writer -- attached documents left unused -- is code. See
+    # ``documents_check_node`` and ``judge_node``.
+    from aix.agent.validation.judge import judge_enabled
+
+    review = "check_documents" if judge_enabled() else "critique"
     workflow.add_edge("write", "validate")
     workflow.add_conditional_edges(
         "validate",
         should_retry_after_validation,
-        {"rewrite": "write", "critique": "critique"},
+        {"rewrite": "write", "critique": review},
     )
-
-    # Add conditional edge for revision loop. With the judge on (2026-10-19),
-    # the Critic's verdict goes to the judge, which fixes the lesson in place
-    # instead of sending it back to be rewritten whole; see ``judge_node``.
-    from aix.agent.validation.judge import judge_enabled
 
     routes = {"revise": "write", "finish": END, "error": END}
     if judge_enabled():
+        workflow.add_node("check_documents", documents_check_node)
         workflow.add_node("judge", judge_node, retry_policy=LLM_RETRY_POLICY)
         workflow.add_edge("judge", END)
         routes["judge"] = "judge"
-    workflow.add_conditional_edges("critique", should_continue_to_revision, routes)
+    else:
+        workflow.add_node("critique", critique_node, retry_policy=LLM_RETRY_POLICY)
+    workflow.add_conditional_edges(review, should_continue_to_revision, routes)
     return workflow
 
 

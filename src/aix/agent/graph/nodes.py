@@ -984,6 +984,33 @@ async def critique_node(state: AgentState) -> dict[str, Any]:
         return {"error": str(e), "current_step": "error"}
 
 
+async def documents_check_node(state: AgentState) -> dict[str, Any]:
+    """With the judge on, what is left of the Critic: are the attached documents used?
+
+    The Critic's scores approved 15 lessons out of 16 and no longer decided
+    anything once the judge was in the chain (third blind read, 2026-10-19); it
+    cost a call and about ten seconds. The one decision that still needs a
+    rewrite -- the teacher attached documents and the lesson ignores them -- is
+    code, as it already was inside the Critic (see ``_ignores_the_documents``).
+    """
+    if state.get("error"):
+        return {"current_step": "error"}
+    revisions = state.get("revision_count", 0)
+    if _ignores_the_documents(state) and revisions < state.get("max_revisions", 1):
+        logger.info("[Node: Documents] the draft cites none of the attached documents: revising")
+        return {
+            "approved": False,
+            "revision_instructions": DOCUMENTS_UNUSED_INSTRUCTION,
+            "revision_count": revisions + 1,
+            "current_step": "documents_unused",
+        }
+    return {
+        "approved": True,
+        "final_lesson_plan": state.get("lesson_plan_draft"),
+        "current_step": "documents_checked",
+    }
+
+
 async def judge_node(state: AgentState) -> dict[str, Any]:
     """Review the lesson with the judge and fix what is wrong where it is.
 

@@ -111,6 +111,9 @@ PHASE_LABELS: dict[str, str] = {
     # The judge (2026-10-19): when it is on, its diff carries the repaired lesson
     # and the review notes, and a dropped diff would ship the lesson unrepaired.
     "judge": "Revisione mirata delle correzioni",
+    # With the judge on it replaces the Critic: its diff says whether the lesson
+    # goes back to the Writer for the attached documents.
+    "check_documents": "Controllo dei documenti allegati",
 }
 
 
@@ -1658,18 +1661,24 @@ async def run_agent_stream(
                         payload={"revision": write_revision_idx},
                         lesson_plan_md=final_state.get("lesson_plan_draft") or "",
                     )
-                    yield StreamEvent(
-                        kind="critic_pending",
-                        payload={"write_revision": write_revision_idx},
-                    )
+                    # With the judge on there is no Critic, and a pending card
+                    # would spin for the rest of the run.
+                    from aix.agent.validation.judge import judge_enabled
 
-                elif node_name == "critique":
-                    _critic_pl = _build_critic_payload(final_state)
-                    _critic_pl["write_revision"] = write_revision_idx
-                    yield StreamEvent(
-                        kind="critic",
-                        payload=_critic_pl,
-                    )
+                    if not judge_enabled():
+                        yield StreamEvent(
+                            kind="critic_pending",
+                            payload={"write_revision": write_revision_idx},
+                        )
+
+                elif node_name in ("critique", "check_documents"):
+                    if node_name == "critique":
+                        _critic_pl = _build_critic_payload(final_state)
+                        _critic_pl["write_revision"] = write_revision_idx
+                        yield StreamEvent(
+                            kind="critic",
+                            payload=_critic_pl,
+                        )
                     from aix.agent.graph.nodes import should_continue_to_revision
 
                     # Same router as the graph: with the judge on, a rejection
@@ -2034,11 +2043,12 @@ async def stream_agent_events(
                         lesson_plan_md=final_state.get("lesson_plan_draft") or "",
                     )
 
-                elif node_name == "critique":
-                    yield StreamEvent(
-                        kind="critic",
-                        payload=_build_critic_payload(final_state),
-                    )
+                elif node_name in ("critique", "check_documents"):
+                    if node_name == "critique":
+                        yield StreamEvent(
+                            kind="critic",
+                            payload=_build_critic_payload(final_state),
+                        )
                     from aix.agent.graph.nodes import should_continue_to_revision
 
                     # Same router as the graph: with the judge on, a rejection

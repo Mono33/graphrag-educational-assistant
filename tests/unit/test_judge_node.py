@@ -135,12 +135,43 @@ async def test_nothing_found_nothing_changed(judged):
 
 
 @pytest.mark.parametrize(("flag", "present"), [("false", False), ("true", True)])
-def test_the_judge_is_in_the_chain_only_when_switched_on(monkeypatch, flag, present):
+def test_the_judge_takes_the_critic_s_place_only_when_switched_on(monkeypatch, flag, present):
     from aix.agent.graph.lesson_planner_graph import build_lesson_planner_graph
 
     monkeypatch.setenv("AIX_JUDGE_ENABLED", flag)
 
-    assert ("judge" in build_lesson_planner_graph().get_graph().nodes) is present
+    nodes = build_lesson_planner_graph().get_graph().nodes
+    assert ("judge" in nodes) is present and ("check_documents" in nodes) is present
+    assert ("critique" in nodes) is not present
+
+
+async def test_without_the_critic_a_lesson_that_ignores_the_documents_goes_back_once():
+    from aix.agent.graph.nodes import documents_check_node
+
+    state = {
+        "lesson_plan_draft": DRAFT,
+        "material_context_items": [{"score": 0.8, "text": "passaggio"}],
+        "revision_count": 0,
+        "max_revisions": 1,
+    }
+
+    first = await documents_check_node(state)
+    assert first["revision_instructions"] == DOCUMENTS_UNUSED_INSTRUCTION
+    assert should_continue_to_revision({**state, **first}) == "revise"
+
+    second = await documents_check_node({**state, **first})
+    assert second["approved"] and second["final_lesson_plan"] == DRAFT
+
+
+async def test_a_lesson_without_documents_goes_straight_to_the_judge(monkeypatch):
+    from aix.agent.graph.nodes import documents_check_node
+
+    monkeypatch.setenv("AIX_JUDGE_ENABLED", "true")
+    state = {"lesson_plan_draft": DRAFT}
+
+    out = await documents_check_node(state)
+
+    assert should_continue_to_revision({**state, **out}) == "judge"
 
 
 def test_the_review_notes_are_shown_under_the_lesson_only_when_there_are_some():

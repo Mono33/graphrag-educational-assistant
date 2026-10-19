@@ -3649,3 +3649,15 @@ lezioni sono state generate prima della correzione.
 Le misure sulle liste e sui conti del follow-up restano approssimate (leggono
 prosa libera con espressioni regolari): servono a trovare i casi, poi i casi si
 leggono.
+
+### 2026-10-19 — Con il giudice acceso il Critic esce dalla catena
+
+Il Critic approvava 39 lezioni su 40 e, con il giudice acceso, non decideva più
+nulla, ma costava una chiamata e circa 10 s. Con `AIX_JUDGE_ENABLED=true` la
+catena è ora scrittura → validatore → controllo dei documenti → giudice. Il
+controllo dei documenti è solo codice: se la docente ha allegato documenti e la
+lezione non ne cita nessuno, la lezione torna una volta al Writer, come prima.
+Con il giudice spento non cambia nulla.
+
+Nella WebUI, con il giudice acceso, non compare più la scheda del Critic, che
+altrimenti resterebbe «in corso» per sempre.
