@@ -3447,27 +3447,27 @@ salvata oggi): la pipeline del branch qualità, più uno strato editoriale. Fase
 
 - **Bisogni della classe** = profilo + quelli nominati nella richiesta. Se non ce n'è
   nessuno, non se ne mostra nessuno: nel caso 4 il follow-up attribuiva alla classe
-  ADHD, autismo e alunni non italofoni (`5870542`).
+  ADHD, autismo e alunni non italofoni (`2ee3d1c`).
 - **Niente gergo** («nodo», «KG», confidenza) nei prompt di Writer e risposta veloce.
   Le strategie si nominano prima in italiano. I refusi del grafo («Gammification»)
-  sono corretti nel testo mostrato (`698c550`).
+  sono corretti nel testo mostrato (`2ee3d1c`).
 - **Riferimenti scientifici** che non possono sostenere la lezione (animali, modelli
   linguistici, studenti universitari per una scuola) scartati prima del Writer, che
-  non è più obbligato a citare i riferimenti curati (`435a8dc`).
-- **`quality_ab.py`** ha i controlli della specifica §4 (`c37c096`). Rimisurati sui
+  non è più obbligato a citare i riferimenti curati (`2ee3d1c`).
+- **`quality_ab.py`** ha i controlli della specifica §4 (`2ee3d1c`). Rimisurati sui
   due giri del 16/10, ritrovano ciò che la lettura aveva visto.
 
 ### 2026-10-19 — Risposta mediana, fase 2: azioni pratiche, Bloom, follow-up calcolato
 
 - **Strategie in azioni.** In Differenziazione ogni strategia del grafo diventa
-  un'azione concreta, legata a un'attività (`7114a20`).
+  un'azione concreta, legata a un'attività (`fc95208`).
 - **Obiettivi alla Bloom.** I livelli li sceglie il codice, in base a intento e grado
-  (`7114a20`).
+  (`fc95208`).
 - **Follow-up calcolato.** La risposta sul grafo legge l'uso calcolato con la lezione:
-  15–20 righe, conteggi che tornano (`b7d3fc3`).
+  15–20 righe, conteggi che tornano (`fc95208`).
 - **Sconsigliato dal grafo.** Ciò che il grafo sconsiglia è rifiutato in ogni forma e
-  riconosciuto anche in italiano (`151d606`, `7d29964`).
-- **DSA.** Vale il disturbo che la richiesta nomina (`151d606`).
+  riconosciuto anche in italiano (`fc95208`).
+- **DSA.** Vale il disturbo che la richiesta nomina (`fc95208`).
 - **Classi senza bisogni dichiarati.** Ricevono opzioni per tutti, non diagnosi
   inventate.
 

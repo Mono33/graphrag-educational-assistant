@@ -462,7 +462,7 @@ Costo: 19 lezioni e 19 risposte veloci, intorno a $0,15.
 ### 7.6 La risposta mediana: fasi 1 e 2 (19/10)
 
 Dalla lettura alla cieca (`Specifica_Risposta_Mediana.md`): la pipeline del branch,
-più uno strato editoriale. Stessi 8 casi, staging contro build finale (`7d29964`;
+più uno strato editoriale. Stessi 8 casi, staging contro build finale (`fc95208`;
 il caso 4 rifatto con la regola sulle classi senza bisogni):
 
 | Misura | staging | finale |
@@ -513,17 +513,17 @@ e dal calcolo dell'uso, non dalle sue regole:
 - **Usi dichiarati ma inesistenti.** «Stem» risultava usato perché il confronto lo
   trovava dentro «system» del commento IA, e «Service Learning» per il titolo di un
   video. Ora il confronto usa parole intere, solo nel corpo della lezione, senza
-  commento, link e fonti (`748c68b`).
+  commento, link e fonti (`e11139f`).
 - **Conteggi.** Il «resto» ora è tutto ciò che il follow-up non elenca. La risposta
   veloce elenca tutti gli usati e non scrive altri numeri. Non nomina mai «il
-  registro» (`748c68b`, `072c4c4`).
+  registro» (`e11139f`).
 - **Risorse imposte.** Il video «What is Service Learning?» compariva in due lezioni
   perché il Writer era istruito a includere le risorse curate. Ora sono facoltative,
-  e i video di pedagogia sono per la docente (`748c68b`).
+  e i video di pedagogia sono per la docente (`e11139f`).
 - **Gruppi, tempi, sicurezza.**
   - Ogni attività dice quanti alunni per gruppo e quanti minuti dura.
   - I ruoli non sono più dei membri del gruppo più piccolo e non si ripetono.
-  - In infanzia e primaria nessun bambino maneggia acqua calda o fiamme (`748c68b`).
+  - In infanzia e primaria nessun bambino maneggia acqua calda o fiamme (`e11139f`).
 
 Terzo giro, stessi 8 casi, contro lo staging: minuti esatti **8/8** (ora anche il
 caso 7); gergo da 2,4 a **0,2** per caso; 0/8 per bisogni inventati, follow-up oltre
