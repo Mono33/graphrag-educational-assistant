@@ -251,3 +251,12 @@ def test_a_judge_that_failed_says_so_on_its_card():
     )
 
     assert "non eseguita" in done and "senza correzioni" in done
+
+
+def test_the_writer_can_have_its_own_model(monkeypatch):
+    from aix.agent.agents.writer_agent import writer_model
+
+    monkeypatch.delenv("AIX_WRITER_MODEL", raising=False)
+    assert writer_model() is None
+    monkeypatch.setenv("AIX_WRITER_MODEL", "anthropic/claude-sonnet-5.5")
+    assert writer_model() == "anthropic/claude-sonnet-5.5"

@@ -68,6 +68,15 @@ logger = logging.getLogger(__name__)
 # mid-sentence cut. Override with AIX_WRITER_MAX_TOKENS env var.
 _WRITER_MAX_TOKENS = int(os.getenv("AIX_WRITER_MAX_TOKENS", "8000"))
 
+
+def writer_model() -> Optional[str]:
+    """``AIX_WRITER_MODEL``: the Writer's own model, or ``None`` for ``LLM_MODEL``.
+
+    The Writer used ``LLM_MODEL``, which also drives the judge's repairs and the
+    light turns: comparing writers meant changing all three (2026-10-19).
+    """
+    return (os.getenv("AIX_WRITER_MODEL") or "").strip() or None
+
 # Floor for the retry after a reasoning model spends its whole budget thinking
 # and returns nothing. Retrying under the same ceiling — which is what happened
 # on 2026-09-16 with AIX_WRITER_MAX_TOKENS=2000 — asks the model to do again
@@ -757,6 +766,7 @@ class WriterAgent:
             completion_kwargs = app_config.openai.build_completion_kwargs(
                 temperature=0.7,
                 max_tokens=_WRITER_MAX_TOKENS,
+                model_override=writer_model(),
             )
             # The system prompt (intent, domain knowledge, constraints: ~3-4k
             # tokens) is the same for every teacher of a domain: marked, the
@@ -794,6 +804,7 @@ class WriterAgent:
                         temperature=0.7,
                         max_tokens=retry_max_tokens,
                         include_reasoning=False,
+                        model_override=writer_model(),
                     )
                     content, last_finish_reason = await self._stream_completion(
                         client,
@@ -956,6 +967,7 @@ class WriterAgent:
             completion_kwargs = app_config.openai.build_completion_kwargs(
                 temperature=0.5,
                 max_tokens=_WRITER_MAX_TOKENS,
+                model_override=writer_model(),
             )
             messages: list[Any] = prompt_cache.cacheable(
                 [
