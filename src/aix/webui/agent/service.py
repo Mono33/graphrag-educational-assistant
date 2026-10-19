@@ -1253,6 +1253,25 @@ def _build_critic_payload(state: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _build_judge_payload(state: dict[str, Any], write_revision: int = 1) -> dict[str, Any]:
+    """Shape the judge's summary into its card: what it found, fixed, left to the teacher."""
+    summary = state.get("judge_summary") or {}
+    notes = state.get("review_notes") or []
+    return {
+        "write_revision": write_revision,
+        "found": int(summary.get("found") or 0),
+        "blocking": int(summary.get("blocking") or 0),
+        "replaced": int(summary.get("replaced") or 0),
+        "revised": int(summary.get("revised") or 0),
+        "reverted": int(summary.get("reverted") or 0),
+        "fixed": summary.get("fixed") or [],
+        "notes": len(notes),
+        "notes_blocking": sum(1 for n in notes if n.get("severity") == "bloccante"),
+        "seconds": summary.get("seconds"),
+        "error": summary.get("error") or "",
+    }
+
+
 def _extract_meta(final_state: dict[str, Any]) -> dict[str, Any]:
     """Run summary used by the final lesson card and the run-complete banner."""
     media = final_state.get("curated_media") or {}
@@ -1695,6 +1714,19 @@ async def run_agent_stream(
                                 ).strip(),
                             },
                         )
+                    elif should_continue_to_revision(final_state) == "judge":
+                        # The judge's card, while it reads and corrects: like
+                        # every other phase, the teacher sees what runs.
+                        yield StreamEvent(
+                            kind="judge_pending",
+                            payload={"write_revision": write_revision_idx},
+                        )
+
+                elif node_name == "judge":
+                    yield StreamEvent(
+                        kind="judge",
+                        payload=_build_judge_payload(final_state, write_revision_idx),
+                    )
 
         # ── Run finished cleanly ─────────────────────────────────────────────
         elapsed = time.monotonic() - started_at

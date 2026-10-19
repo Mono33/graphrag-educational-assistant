@@ -197,3 +197,57 @@ def test_the_review_notes_are_shown_under_the_lesson_only_when_there_are_some():
     assert "Note di revisione (1)" in html and "Esempi di lingua" in html
     assert "«foglia/folla»" in html and "aix-review-note--minor" in html
     assert template.render(notes=[]).strip() == ""
+
+
+def _render(name, payload):
+    from pathlib import Path
+
+    from jinja2 import Environment, FileSystemLoader
+
+    root = Path(__file__).resolve().parents[2] / "src" / "aix" / "webui" / "templates"
+    env = Environment(loader=FileSystemLoader(str(root)))
+    return env.get_template(f"partials/{name}").render(payload=payload)
+
+
+def test_the_judge_has_its_card_while_it_works_and_after():
+    from aix.webui.agent.service import _build_judge_payload
+
+    state = {
+        "judge_summary": {
+            "found": 4,
+            "blocking": 2,
+            "replaced": 1,
+            "revised": 1,
+            "reverted": 0,
+            "seconds": 12.5,
+            "fixed": [
+                {
+                    "check": "esempi_lingua",
+                    "why": "gatto si divide gat-to",
+                    "before": "«ga-to»",
+                    "after": "«gat-to»",
+                    "kind": "sostituzione",
+                }
+            ],
+        },
+        "review_notes": [{"severity": "minore"}, {"severity": "minore"}],
+    }
+
+    pending = _render("chat_judge_pending_card.html", {"write_revision": 1})
+    done = " ".join(_render("chat_judge_card.html", _build_judge_payload(state, 1)).split())
+
+    assert 'id="judge-card-rev1"' in pending and "Verifica di ogni correzione" in pending
+    assert 'id="judge-card-rev1" hx-swap-oob="outerHTML"' in done
+    assert "trovato 4 problemi" in done and "1 correzione" in done
+    assert "«gat-to»" in done and "2 punti da verificare" in done
+
+
+def test_a_judge_that_failed_says_so_on_its_card():
+    from aix.webui.agent.service import _build_judge_payload
+
+    done = _render(
+        "chat_judge_card.html",
+        _build_judge_payload({"judge_summary": {"error": "RuntimeError: down"}}),
+    )
+
+    assert "non eseguita" in done and "senza correzioni" in done

@@ -1071,16 +1071,27 @@ async def judge_node(state: AgentState) -> dict[str, Any]:
         cost=summary["cost"] + (verdict.cost or 0.0),
         seconds=round(summary["seconds"] + verdict.seconds, 1),
     )
-    reverted = []
+    reverted, fixed = [], []
     for change, ok, reason in zip(changes, verdict.ok, verdict.reasons, strict=True):
         if ok or change.after not in lesson:
+            # What the judge's card shows the teacher it corrected.
+            fixed.extend(
+                {
+                    "check": issue.check,
+                    "why": issue.why[:240],
+                    "before": change.before[:160],
+                    "after": change.after[:160],
+                    "kind": "sostituzione" if change in replaced.changes else "revisione",
+                }
+                for issue in change.issues
+            )
             continue
         lesson = lesson.replace(change.after, change.before, 1)
         reverted.append({"before": change.before[:200], "after": change.after[:200], "why": reason})
         notes.extend(change.issues)
     if reverted:
         logger.warning("[Node: Judge] %d change(s) judged wrong: put back", len(reverted))
-    summary.update(reverted=len(reverted), reverted_changes=reverted)
+    summary.update(reverted=len(reverted), reverted_changes=reverted, fixed=fixed)
     # A minor problem whose sentence a fix rewrote is no longer about the lesson.
     notes = [n for n in notes if n.severity == "bloccante" or quote_in(n.quote, lesson)]
 

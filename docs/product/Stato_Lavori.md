@@ -3661,3 +3661,15 @@ Con il giudice spento non cambia nulla.
 
 Nella WebUI, con il giudice acceso, non compare più la scheda del Critic, che
 altrimenti resterebbe «in corso» per sempre.
+
+**La scheda del giudice nella WebUI.** Come le altre fasi, mentre il giudice
+lavora compare una scheda «Revisione mirata · rilettura in corso», con la
+checklist di ciò che controlla. Quando finisce, la scheda dice:
+
+- quanti problemi ha trovato e quanti erano da correggere;
+- quanti ne ha corretti nel testo, con il prima → dopo in un elenco da aprire;
+- quante correzioni ha scartato;
+- quanti punti da verificare ha lasciato nelle note sotto la lezione.
+
+Il riepilogo del giudice (`judge_summary.fixed`) porta ora anche le correzioni
+mantenute.

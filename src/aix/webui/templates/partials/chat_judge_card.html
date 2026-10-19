@@ -1,0 +1,102 @@
+{#
+  Judge card (2026-10-19): what the targeted review did, replacing its pending
+  card in place (same id, hx-swap-oob).
+
+  Required context (``_build_judge_payload`` in service.py):
+    payload = {
+      write_revision, found, blocking, replaced, revised, reverted,
+      fixed: [{check, why, before, after, kind}], notes, notes_blocking,
+      seconds, error
+    }
+#}
+
+{% set p = payload or {} %}
+{% set fixed = p.get('fixed') or [] %}
+{% set _labels = {
+    "esempi_lingua": "Esempi di lingua",
+    "fatti": "Contenuti",
+    "esercizi": "Esercizi",
+    "esempi_chiari": "Chiarezza degli esempi",
+    "perimetro": "Perimetro della richiesta",
+    "sicurezza": "Sicurezza",
+    "risorse": "Risorse",
+    "classe": "Adatto alla classe",
+} %}
+
+<div id="judge-card-rev{{ p.get('write_revision', 1) }}" hx-swap-oob="outerHTML" class="aix-agent-shell">
+
+  <div class="aix-agent-avatar aix-agent-avatar--critic">
+    <wa-icon name="clipboard-check"></wa-icon>
+  </div>
+
+  <div class="aix-agent-body">
+    <article class="aix-agent-card aix-agent-card--critic aix-card-stripe-critic">
+
+      <header class="aix-agent-card-header aix-agent-card-header--critic">
+        <div class="aix-agent-card-title">
+          <strong>Revisione mirata</strong>
+          {% if p.get('seconds') %}<span class="aix-agent-card-role">· {{ p.seconds }} s</span>{% endif %}
+        </div>
+        <span class="aix-arched-phase">Quality Assurance</span>
+        {% if p.get('error') %}
+          <span class="aix-pill aix-pill-warning">
+            <wa-icon name="triangle-exclamation" class="aix-fs-xs"></wa-icon>
+            non eseguita
+          </span>
+        {% elif fixed %}
+          <span class="aix-pill aix-pill-success">
+            <wa-icon name="circle-check" class="aix-fs-xs"></wa-icon>
+            {{ fixed | length }} {{ 'correzione' if fixed | length == 1 else 'correzioni' }}
+          </span>
+        {% else %}
+          <span class="aix-pill aix-pill-success">
+            <wa-icon name="circle-check" class="aix-fs-xs"></wa-icon>
+            nessuna correzione
+          </span>
+        {% endif %}
+      </header>
+
+      <div class="aix-agent-card-body aix-col-12">
+
+        {% if p.get('error') %}
+          <p class="aix-color-secondary aix-fs-13 m-0">
+            La revisione non è riuscita: la lezione è quella scritta, senza correzioni.
+          </p>
+        {% else %}
+          <p class="aix-color-primary aix-fs-13 m-0">
+            Ha riletto la lezione intera e trovato {{ p.get('found', 0) }}
+            {{ 'problema' if p.get('found', 0) == 1 else 'problemi' }}
+            ({{ p.get('blocking', 0) }} da correggere).
+            {% if fixed %}Ne ha corretti {{ fixed | length }} nel testo, senza riscrivere il resto.{% endif %}
+            {% if p.get('reverted') %}{{ p.reverted }} {{ 'correzione è stata scartata' if p.reverted == 1 else 'correzioni sono state scartate' }} perché non convincente.{% endif %}
+            {% if p.get('notes') %}{{ 'Un punto da verificare è' if p.notes == 1 else p.notes ~ ' punti da verificare sono' }} nelle note sotto la lezione.{% endif %}
+          </p>
+
+          {% if fixed %}
+            <details>
+              <summary class="aix-section-label aix-clickable">Mostra le correzioni</summary>
+              <ul class="aix-review-notes-list">
+                {% for f in fixed %}
+                  <li class="aix-review-note aix-review-note--minor">
+                    <span class="aix-review-note-kind">{{ _labels.get(f.check, "Altro") }}{% if f.kind == 'revisione' %} · attività rivista{% endif %}</span>
+                    {% if f.why %}<span class="aix-review-note-why">{{ f.why }}</span>{% endif %}
+                    {% if f.kind != 'revisione' %}
+                      <span class="aix-review-note-fix"><s>{{ f.before }}</s> → {{ f.after }}</span>
+                    {% endif %}
+                  </li>
+                {% endfor %}
+              </ul>
+            </details>
+          {% endif %}
+        {% endif %}
+
+      </div>
+
+    </article>
+    <div class="aix-agent-footer-label">
+      <wa-icon name="clipboard-check" class="aix-fs-sm"></wa-icon>
+      <span>Revisione · {% if p.get('error') %}non eseguita{% else %}completata{% endif %}</span>
+    </div>
+  </div>
+
+</div>

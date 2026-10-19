@@ -2053,6 +2053,18 @@ def _stream_event_to_sse(
             ),
         }
 
+    if event.kind in ("judge_pending", "judge"):
+        # The judge (AIX_JUDGE_ENABLED): its pending card, then the result
+        # replacing it in place (same id, ``hx-swap-oob``), as the Critic's did.
+        return {
+            "event": "card",
+            "data": _render_partial(
+                request,
+                f"partials/chat_{event.kind}_card.html",
+                {"payload": event.payload},
+            ),
+        }
+
     if event.kind == "done":
         # Send a small placeholder; chat_pane.html's htmx:sseClose handler
         # fetches the full lesson card via GET /card-fragment (no SSE size limit).
