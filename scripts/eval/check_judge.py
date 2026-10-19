@@ -280,6 +280,97 @@ def write_flags(rows: list[dict], path: Path) -> None:
     path.write_text("\n".join(out), encoding="utf-8")
 
 
+def _changed_elsewhere(before: str, after: str, line: str = "") -> float:
+    """How much of the lesson changed besides the error put in: 0 = nothing else.
+
+    Measured on the lines, the injected one left out on both sides: a repair
+    that fixed the error and touched nothing else scores 0.
+    """
+    import difflib
+
+    def keep(text: str) -> list[str]:
+        return [row for row in text.splitlines() if row.strip() and row.strip() != line.strip()]
+
+    return round(1 - difflib.SequenceMatcher(None, keep(before), keep(after)).ratio(), 3)
+
+
+async def run_repair(cases: list[dict], concurrency: int) -> list[dict]:
+    """The judge node on every case: what it fixed, what else it changed."""
+    from aix.agent.graph.nodes import judge_node
+
+    gate = asyncio.Semaphore(concurrency)
+
+    async def one(case: dict) -> dict:
+        state = {
+            "final_lesson_plan": case["lesson"],
+            "teacher_query": case["request"],
+            "educational_profile": case["profile"],
+        }
+        async with gate:
+            out = await judge_node(state)
+        after = out.get("final_lesson_plan") or case["lesson"]
+        row = {k: v for k, v in case.items() if k != "lesson"}
+        row.update(
+            summary=out.get("judge_summary") or {},
+            notes=out.get("review_notes") or [],
+            changed_elsewhere=_changed_elsewhere(case["lesson"], after, case.get("line", "")),
+            before=case["lesson"],
+            after=after,
+        )
+        if case.get("injection"):
+            from aix.agent.validation.judge import _flat
+
+            row["resolved"] = _flat(case["needle"]) not in _flat(after)
+        return row
+
+    return await asyncio.gather(*(one(c) for c in cases))
+
+
+def summarise_repair(rows: list[dict]) -> dict:
+    injected = [r for r in rows if r.get("injection")]
+    clean = [r for r in rows if not r.get("injection")]
+    summaries = [r["summary"] for r in rows]
+    return {
+        "errors put in, fixed in the text": f"{sum(1 for r in injected if r['resolved'])}/{len(injected)}",
+        "replaced (code)": sum(s.get("replaced", 0) for s in summaries),
+        "revised (block)": sum(s.get("revised", 0) for s in summaries),
+        "undone": sum(1 for s in summaries if s.get("undone")),
+        "changed besides the fix, median": statistics.median(
+            [r["changed_elsewhere"] for r in injected]
+        )
+        if injected
+        else None,
+        "changed besides the fix, max": max(
+            (r["changed_elsewhere"] for r in injected), default=None
+        ),
+        "lessons as they are, changed": f"{sum(1 for r in clean if r['after'] != r['before'])}/{len(clean)}",
+        "notes per lesson": round(sum(len(r["notes"]) for r in rows) / max(1, len(rows)), 1),
+        "$ total": round(sum(s.get("cost") or 0 for s in summaries), 3),
+        "median s": statistics.median([s.get("seconds") or 0 for s in summaries]),
+        "not fixed": sorted({r["injection"] for r in injected if not r["resolved"]}),
+    }
+
+
+def write_repairs(rows: list[dict], path: Path) -> None:
+    """Every change, before and after, to be read."""
+    import difflib
+
+    out = ["# Che cosa ha cambiato la riparazione\n"]
+    for r in rows:
+        if r["after"] == r["before"]:
+            continue
+        title = f"{r['run']} · caso {r['case']}" + (
+            f" · errore «{r['injection']}»" if r.get("injection") else ""
+        )
+        out.append(f"## {title}\n\n```diff")
+        diff = difflib.unified_diff(
+            r["before"].splitlines(), r["after"].splitlines(), lineterm="", n=0
+        )
+        out.extend(line for line in diff if not line.startswith(("---", "+++")))
+        out.append("```\n")
+    path.write_text("\n".join(out), encoding="utf-8")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--runs", nargs="+", required=True)
@@ -291,6 +382,11 @@ def main() -> int:
     )
     parser.add_argument("--concurrency", type=int, default=4)
     parser.add_argument("--dry-run", action="store_true", help="build the cases, call nothing")
+    parser.add_argument(
+        "--repair",
+        action="store_true",
+        help="run the whole judge node (judge, repair, judge again) instead of the judge alone",
+    )
     args = parser.parse_args()
     out = Path(args.out)
     if REPO_ROOT in out.resolve().parents:
@@ -306,6 +402,19 @@ def main() -> int:
         for c in cases:
             if c["injection"]:
                 print(f"  case {c['case']}: {c['injection']}")
+        return 0
+
+    if args.repair:
+        rows = asyncio.run(run_repair(cases, args.concurrency))
+        (out / "riparazioni.json").write_text(
+            json.dumps(rows, ensure_ascii=False, indent=2), "utf-8"
+        )
+        write_repairs(rows, out / "riparazioni.md")
+        result = summarise_repair(rows)
+        (out / "summary_repair.json").write_text(
+            json.dumps(result, ensure_ascii=False, indent=2), "utf-8"
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
 
     # One event loop for every model: the HTTP client is cached and bound to the

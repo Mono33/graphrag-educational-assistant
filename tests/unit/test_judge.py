@@ -101,3 +101,15 @@ def test_unknown_checks_and_severities_are_normalised():
 
     assert (issues[0].check, issues[0].severity) == ("altro", "minore")
     assert "esercizi" in CHECKS and "sicurezza" in CHECKS
+
+
+def test_a_wrong_fact_is_blocking_whatever_the_model_says():
+    """«l'acqua si trasforma in aria» came back «minore» and stayed in the lesson."""
+    issues = parse_issues(
+        _answer(
+            {"check": "fatti", "severity": "minore", "quote": "q", "why": "w", "fix": "f"},
+            {"check": "classe", "severity": "minore", "quote": "q", "why": "w", "fix": "f"},
+        )
+    )
+
+    assert [i.severity for i in issues] == ["bloccante", "minore"]

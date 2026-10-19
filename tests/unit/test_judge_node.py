@@ -144,3 +144,16 @@ def test_the_review_notes_are_shown_under_the_lesson_only_when_there_are_some():
     assert "Note di revisione (1)" in html and "Esempi di lingua" in html
     assert "«foglia/folla»" in html and "aix-review-note--minor" in html
     assert template.render(notes=[]).strip() == ""
+
+
+async def test_a_problem_found_later_in_untouched_text_does_not_undo_a_good_fix(judged):
+    """The judge notices different things on each reading: 8 of 33 good repairs
+    were undone by comparing counts (2026-10-19)."""
+    elsewhere = _issue("# Le sillabe", "titolo più chiaro")
+    judged += [_report(_issue("«ga-to»", "«gat-to»")), _report(elsewhere)]
+
+    out = await judge_node({"final_lesson_plan": DRAFT})
+
+    assert "«gat-to»" in out["final_lesson_plan"]
+    assert out["judge_summary"]["undone"] is False
+    assert [n["quote"] for n in out["review_notes"]] == ["# Le sillabe"]

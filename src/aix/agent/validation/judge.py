@@ -81,6 +81,8 @@ CHECKS: dict[str, str] = {
 
 #: A problem the teacher must fix before using the lesson, or one worth fixing.
 SEVERITIES = ("bloccante", "minore")
+#: Questions whose problems are errors of content or of safety: always blocking.
+ALWAYS_BLOCKING = frozenset({"esempi_lingua", "fatti", "esercizi", "sicurezza"})
 #: How it is fixed: the quote replaced by the fix, or the section around it revised.
 KINDS = ("sostituzione", "revisione")
 
@@ -215,7 +217,12 @@ def parse_issues(raw: str) -> list[Issue]:
         issues.append(
             Issue(
                 check=check if check in CHECKS else "altro",
-                severity=severity if severity in SEVERITIES else "minore",
+                # A wrong fact, example, answer key or a danger is never minor,
+                # whatever the model says: «l'acqua si trasforma in aria» came
+                # back «minore» on 2026-10-19 and stayed in the lesson.
+                severity="bloccante"
+                if check in ALWAYS_BLOCKING
+                else (severity if severity in SEVERITIES else "minore"),
                 quote=str(item.get("quote") or "").strip(),
                 why=str(item.get("why") or "").strip(),
                 fix=str(item.get("fix") or "").strip(),

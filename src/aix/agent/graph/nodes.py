@@ -971,6 +971,15 @@ async def critique_node(state: AgentState) -> dict[str, Any]:
         return {"error": str(e), "current_step": "error"}
 
 
+def _in_lines_written(quote: str, before: str, after: str) -> bool:
+    """Whether ``quote`` is in a line of ``after`` that ``before`` did not have."""
+    from aix.agent.validation.judge import quote_in
+
+    old = {line.strip() for line in before.splitlines()}
+    written = "\n".join(line for line in after.splitlines() if line.strip() not in old)
+    return bool(written.strip()) and quote_in(quote, written)
+
+
 async def judge_node(state: AgentState) -> dict[str, Any]:
     """Review the lesson with the judge and fix what is wrong where it is.
 
@@ -1030,12 +1039,17 @@ async def judge_node(state: AgentState) -> dict[str, Any]:
             cost=summary["cost"] + (second.cost or 0.0),
             seconds=round(summary["seconds"] + second.seconds, 1),
         )
-        if not second.error and len(second.blocking) > len(first.blocking):
-            # The repair made it worse: undone.
+        # Undone only when the repair wrote something wrong: a blocking problem
+        # quoted from a line the repair wrote. The judge notices different
+        # things on each reading -- comparing counts undid good fixes (8 of 33
+        # on 2026-10-19) because of problems in text nobody had touched; those
+        # were already there, and become notes.
+        introduced = [
+            issue for issue in second.blocking if _in_lines_written(issue.quote, draft, lesson)
+        ]
+        if not second.error and introduced:
             logger.warning(
-                "[Node: Judge] repair left %d blocking problems (were %d): undone",
-                len(second.blocking),
-                len(first.blocking),
+                "[Node: Judge] the repair wrote %d blocking problem(s): undone", len(introduced)
             )
             lesson, notes = draft, list(first.issues)
             summary.update(undone=True, replaced=0, revised=0)
