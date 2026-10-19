@@ -411,3 +411,43 @@ def test_the_rest_is_what_the_follow_up_does_not_list():
     }
 
     assert found["other"] + len(listed) == len({n["name"] for n in NODES})
+
+
+def test_the_follow_up_gets_where_each_strategy_is_and_its_unused_already_chosen():
+    """53 returned, 2 used, 5 unused the follow-up chose itself, «il resto 51»;
+    and Adaptive Strategies listed as unused while the lesson names it (2026-10-19)."""
+    from aix.agent.kg_evidence import render_usage, usage
+
+    lesson = (
+        "# Lezione\n\n**Attività 1 – Compiti brevi (15 min)**\n- Compiti brevi (Focus Tasks).\n"
+        "\n## Differenziazione\n- Gruppi (Cooperative Learning)."
+    )
+    found = usage(NODES, RELS, {}, lesson)
+    text = render_usage(found)
+
+    assert found["where"]["Focus Tasks"] == "Attività 1 – Compiti brevi"
+    assert found["where"]["Cooperative Learning"] == "Differenziazione"
+    assert found["unused_other"] and not set(found["unused_other"]) & set(found["used"])
+    shown = len(found["unused_for_needs"]) + len(found["unused_other"])
+    assert 0 < shown <= 5 and f"Non usati, tra i più pertinenti ({shown};" in text
+    assert "Focus Tasks [in «Attività 1 – Compiti brevi»]" in text
+    assert f"Elementi restituiti dal grafo: {found['total']}" in text
+
+
+@pytest.mark.parametrize(
+    "sources",
+    [
+        "*Fonti: Focus Tasks (Strategie); Cooperative Learning.*",
+        "## Risorse di approfondimento per il docente\n- Focus Tasks; Cooperative Learning.",
+        "**Fonti:**\n- Focus Tasks; Cooperative Learning.",
+    ],
+)
+def test_what_the_sources_list_is_not_used_by_the_lesson(sources):
+    """«*Fonti: Cooperative learning (…)*» on one line, or a section of resources,
+    was read as the body: every node it listed counted as used (2026-10-19)."""
+    from aix.agent.kg_evidence import lesson_body, usage
+
+    lesson = f"# Lezione\n\n## Attività (20 minuti)\n- Fonti di energia: il sole.\n\n{sources}\n"
+
+    assert usage(NODES, RELS, PROFILE, lesson)["used"] == []
+    assert "Fonti di energia" in lesson_body(lesson)

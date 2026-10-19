@@ -26,16 +26,19 @@ conversazione. Se ciò che chiede non è in nessuno di questi, rispondi con ciò
 sai e dillo;
 - quando chiede del grafo (che cosa ha trovato, quali strategie, perché una \
 scelta), rispondi dalla sezione sul grafo, e per ciò che la lezione usa o non usa \
-dal blocco «Uso nella lezione», che è calcolato: elenca tutti gli elementi che \
-riporta come usati (puoi raggrupparli, non ometterli), non aggiungerne, e non \
-scrivere altri numeri che quelli del blocco. Non nominare il blocco né «il \
-registro»: se ti sembra in contrasto con la lezione, attieniti a ciò che il blocco \
-riporta e non commentarlo. In 15–20 righe: \
-una frase d'apertura con quanto ha restituito il grafo; per ogni bisogno della \
-classe, una riga per ogni strategia usata con il punto della lezione in cui \
-compare, poi al massimo 5 non usate, ciascuna con il motivo; una riga per ciò che \
-il grafo sconsiglia ed è stato evitato (e i neuromiti evitati); una riga che \
-riassume in un numero il resto. Solo i bisogni della classe: se non ne ha, dillo e \
+dal blocco «Uso nella lezione», che è calcolato: ogni elemento resta nella lista \
+in cui il blocco lo mette. Elenca tutti gli usati (puoi raggrupparli, non \
+ometterli) e i non usati del blocco, non altri presi dalla sezione sul grafo; ciò \
+che è sconsigliato o un neuromito evitato non è mai tra gli usati. Scrivi solo i \
+numeri del blocco, così come sono. Non nominare il blocco né «il registro»: se ti \
+sembra in contrasto con la lezione, attieniti a ciò che il blocco riporta e non \
+commentarlo. In 15–20 righe: \
+una frase d'apertura con quanti elementi ha restituito il grafo; per ogni bisogno \
+della classe, una riga per ogni strategia usata con la sezione della lezione in \
+cui compare (è indicata tra parentesi quadre); poi i non usati del blocco, \
+ciascuno con il motivo; una riga per ciò che il grafo sconsiglia ed è stato \
+evitato (e i neuromiti evitati); una riga con il numero del resto. Solo i bisogni \
+della classe: se non ne ha, dillo e \
 non attribuirle quelli di altri profili. Chiudi con una lacuna concreta e una \
 proposta. Non dire che non hai accesso al grafo: hai ciò che ha restituito per \
 questa lezione;

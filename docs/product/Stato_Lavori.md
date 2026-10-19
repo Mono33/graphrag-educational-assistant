@@ -3576,3 +3576,45 @@ peggiorate non vengono dal giudice:
   sezione delle evidenze.
 
 Lettura alla cieca da fare: `C:\axl\qab_giudice\lettura_alla_cieca.html`.
+
+### 2026-10-19 — Dopo la terza lettura alla cieca: nota sulle fonti, follow-up, misure
+
+La lettura manuale dei 16 testi (8 con il giudice, 8 senza) ha trovato difetti che
+nessuna metrica vedeva. Il flag `AIX_JUDGE_ENABLED` non mette il Critic nel ciclo:
+lo toglie dalle decisioni. Con il flag acceso il Critic chiede una riscrittura solo
+se mancano i documenti, e il resto lo fa il giudice. La sua calibrazione (approva
+15 lezioni su 16) conta quindi poco; spegnerlo con il giudice acceso farebbe
+risparmiare circa 10 s.
+
+Corretti nel sistema:
+
+- **Nota sulle fonti scelta dal codice** (`answer_shape.source_note`): «materiali
+  allegati dalla docente» o «riferimenti forniti dal docente» comparivano in 4
+  lezioni su 16, tutte senza allegati. Ora la nota scritta dal modello viene tolta
+  e il nodo di scrittura mette quella giusta, a seconda che ci siano documenti.
+  Le risposte senza nota restano senza.
+- **Follow-up**: il blocco calcolato dà anche il totale, la sezione della lezione
+  in cui compare ogni strategia usata, e fino a 5 non usate scelte dal codice,
+  anche quando la classe non ha bisogni dichiarati. Il resto esclude tutte le voci
+  elencate. Prima il modello sceglieva da solo le non usate e copiava un «resto»
+  che non le sottraeva (53 = 2 + 5 + «51»). Nel prompt: ogni voce resta nella sua
+  lista, e i neuromiti evitati non sono mai tra le usate.
+- **Dove iniziano le fonti** (`kg_evidence._SOURCES`): «*Fonti: … *» su una riga
+  sola, «## Risorse di approfondimento per il docente» e «**Fonti:**» erano letti
+  come corpo della lezione. Ogni nodo elencato lì risultava usato.
+
+Corretti nelle misure (`quality_ab.py`):
+
+- nodi usati nel testo, presi dal conteggio del sistema, accanto ai nodi elencati
+  nelle fonti;
+- «(KG)» conta come gergo e non come prompt trapelato;
+- nuovi controlli: nota che cita allegati inesistenti, parti del follow-up che non
+  tornano con il totale, voci messe nella lista sbagliata rispetto al corpo della
+  lezione.
+
+Sui 16 testi letti a mano trovano: la nota falsa 4 su 4; i conti sbagliati nei
+casi 4 e 6, più il 5, dove anche le parti non tornano; Adaptive Strategies (caso 8,
+entrambe le configurazioni), Socratic questioning e Quantum jargon misuse.
+Sfuggono Visual Organizers e Social comparison.
+
+Prossimo passo: rigenerare insieme le due configurazioni, 3 esecuzioni per caso.

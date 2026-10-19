@@ -824,7 +824,7 @@ async def write_node(state: AgentState) -> dict[str, Any]:
         # markers are authentic, but one can end up on a sentence its passage
         # does not support; those are removed here, and the sentence stays.
         # Costs one call, and only when the draft carries private citations.
-        from aix.agent.validation.answer_shape import tidy_answer
+        from aix.agent.validation.answer_shape import set_source_note, source_note, tidy_answer
         from aix.agent.validation.citation_support import (
             drop_unknown_markers,
             drop_unsupported_citations,
@@ -835,6 +835,19 @@ async def write_node(state: AgentState) -> dict[str, Any]:
         # Tidied first, so the citation check reads the answer and not its
         # packaging. See ``answer_shape`` for why this is not the renderer's job.
         lesson_plan = tidy_answer(lesson_plan)
+        # The source note says where the content came from, so it is the code
+        # that knows whether the teacher attached anything, not the model.
+        lesson_plan = set_source_note(
+            lesson_plan,
+            source_note(
+                has_material=bool(
+                    state.get("material_context_items")
+                    or (state.get("teacher_provided_context") or "").strip()
+                ),
+                domain=state.get("domain", "neuro"),
+                language=state.get("language", "it"),
+            ),
+        )
         lesson_plan = drop_unknown_markers(lesson_plan, state.get("material_context_items"))
 
         lesson_plan = await drop_unsupported_citations(

@@ -152,7 +152,7 @@ CASES: list[tuple[str, str, dict]] = [
     ),
 ]
 
-_LEAKS = re.compile(r"non ammesso|vincolo rigido|``|\[\[material:|\(KG\)", re.IGNORECASE)
+_LEAKS = re.compile(r"non ammesso|vincolo rigido|``|\[\[material:", re.IGNORECASE)
 _MYTHS = re.compile(
     r"alunn\w* (?:visiv|uditiv|cinestetic)|stil\w* di apprendimento (?:visiv|uditiv|cinestetic)"
     r"|brain gym",
@@ -230,6 +230,124 @@ def count_mismatch(answer: str) -> bool:
     return False
 
 
+#: Third blind read (2026-10-19): what the first two runs of the judge missed.
+_TOTAL = re.compile(r"restituit\w*\s+(\d+)\s+(?:element|concett|nod)", re.IGNORECASE)
+_HEADING_COUNT = re.compile(r"\((\d+)(?:\s+su\s+\d+)?(?:\s+element\w*)?\)|\b(\d+)\s+element", re.I)
+_NAMES = re.compile(r"\*\*([^*]+)\*\*|(?<!\*)\*([^*\n]+)\*(?!\*)")
+#: The closing note claiming documents the teacher never attached.
+_FALSE_PROVENANCE = re.compile(
+    r"allegat\w* dall?a? docente|fornit\w* dall?a? docente|fornit\w* dal docente", re.I
+)
+
+
+def _follow_up_sections(answer: str) -> list[tuple[str, list[str]]]:
+    """The follow-up as ``(heading, bullets)``: a heading is a line opening in bold."""
+    sections: list[tuple[str, list[str]]] = []
+    for line in answer.splitlines():
+        stripped = line.strip()
+        if stripped.startswith(("**", "#")):
+            sections.append((stripped, []))
+        elif stripped.startswith(("-", "*", "•")) and sections:
+            sections[-1][1].append(stripped)
+    return sections
+
+
+def _count_names(text: str) -> int:
+    """The graph's elements a bullet names: its bold names, or a list after a colon."""
+    bold = len(re.findall(r"\*\*[^*]+\*\*", text))
+    if bold:
+        return bold
+    tail = text.split(":", 1)[1] if ":" in text else ""
+    items = [i for i in re.split(r",|;", tail) if i.strip()]
+    return len(items) if len(items) >= 2 and all(len(i.split()) <= 6 for i in items) else 1
+
+
+def total_mismatch(answer: str) -> bool:
+    """The follow-up's parts do not add up to what it says the graph returned.
+
+    «53 elementi»: 2 used + 5 unused + «il resto (51 elementi)» is 58. Each part
+    is the number in its heading, or the names in its bullets; the rest is the
+    last number of its line, or «gli altri N elementi».
+    """
+    total = _TOTAL.search(answer)
+    if not total:
+        return False
+    parts, rest_seen = 0, False
+    for heading, bullets in _follow_up_sections(answer):
+        low = heading.lower()
+        if any(word in low for word in ("lacuna", "proposta", "ambiente")):
+            continue
+        if "resto" in low:
+            numbers = [int(n) for n in re.findall(r"\d+", heading) if int(n) != int(total.group(1))]
+            parts += numbers[-1] if numbers else 0
+            rest_seen = True
+            continue
+        number = _HEADING_COUNT.search(heading)
+        if number:
+            parts += int(number.group(1) or number.group(2))
+        elif bullets:
+            parts += sum(_count_names(b) for b in bullets)
+        else:  # «**Neuromiti evitati:** a, b, c» on the heading's line
+            parts += _count_names(re.sub(r"^\*\*[^*]+\*\*", "x:", heading))
+    rest = re.search(r"altri (\d+) (?:element|concett|nod)", answer, re.I)
+    if rest and not rest_seen:
+        parts += int(rest.group(1))
+        rest_seen = True
+    # Without a stated rest nothing claims to add up; avoided items told in prose
+    # are counted roughly, hence the margin.
+    declared = int(total.group(1))
+    return rest_seen and abs(parts - declared) > max(2, declared // 20)
+
+
+def usage_contradictions(answer: str, lesson: str) -> list[str]:
+    """Names the follow-up places in the wrong list, read against the lesson body.
+
+    «Usati»: one of its names (English or Italian) is in the body, or it is
+    wrong -- a myth avoided is not used. «Non usati»: none of its names may be
+    a label of the lesson, in brackets or in italics, as the Writer marks what
+    it applies (Adaptive Strategies, labelled in the lesson and listed as
+    unused). Only labels count there: «ritmo di comprensione» in a sentence is
+    not the strategy applied.
+    """
+    from aix.agent.kg_evidence import _NEEDS_IN_TEXT, _in_lesson, _norm, lesson_body
+
+    raw = lesson_body(lesson)
+    body = _norm(raw)
+    labels = _norm(
+        " | ".join(
+            re.findall(r"\(([^()]+)\)", raw) + [a or b for a, b in _NAMES.findall(raw)]
+        ).replace("*", " ")
+    )
+    wrong: list[str] = []
+    for heading, bullets in _follow_up_sections(answer):
+        low = heading.lower()
+        unused = bool(re.search(r"non (?:\w+ )?(?:usat|utilizzat|applicat|previst)", low))
+        used = not unused and ("usat" in low or "utilizzat" in low)
+        if not (used or unused):
+            continue
+        for bullet in bullets:
+            label = re.split(r":\s", bullet, maxsplit=1)[0]
+            names = [a or b for a, b in _NAMES.findall(label)]
+            names += [p for group in re.findall(r"\(([^()]+)\)", label) for p in group.split(",")]
+            names = [n.strip(" *:") for n in names if n.strip(" *:")]
+            # «(ADHD)», «(plusdotazione)» say which need, not which strategy.
+            needs = {need.lower() for need in _NEEDS_IN_TEXT}
+            names = [
+                n
+                for n in names
+                if n.lower() not in needs and not any(p.search(n) for p in _NEEDS_IN_TEXT.values())
+            ]
+            if not names:
+                continue
+            if used and not any(_in_lesson(n, body) for n in names):
+                wrong.append(f"usato, assente: {names[0]}")
+            if unused:
+                present = [n for n in names if _in_lesson(n, labels)]
+                if present:
+                    wrong.append(f"non usato, presente: {present[0]}")
+    return wrong
+
+
 def _env(path: Path) -> dict[str, str]:
     values: dict[str, str] = {}
     for line in path.read_text(encoding="utf-8").splitlines():
@@ -276,7 +394,7 @@ def measure(domain: str, profile: dict, lesson: str, answer: str, request: str =
 
     minutes = sum(m for _title, m in section_minutes(lesson))
     needs = set((profile.get("group") or {}).get("disabilities") or [])
-    note = lesson.lower().rsplit("nota sulle fonti", 1)[-1]
+    note = lesson.rsplit("ota sulle fonti", 1)[-1] if "ota sulle fonti" in lesson else ""
     return {
         "minutes": minutes,
         # No timed section: not a lesson plan (the Planner chose another intent).
@@ -287,12 +405,17 @@ def measure(domain: str, profile: dict, lesson: str, answer: str, request: str =
         "raw_profile": bool(_RAW_PROFILE.search(lesson + "\n" + answer)),
         # The body only: «nessuna pratica di tipo Brain Gym» in the sources is a myth avoided.
         "myths": sorted({m.group(0).lower() for m in _MYTHS.finditer(_body(lesson))}),
-        "domain_ok": ("neuroscien" not in note) if domain == "udl" else ("udl" not in note),
+        "domain_ok": ("neuroscien" not in note.lower())
+        if domain == "udl"
+        else ("udl" not in note.lower()),
         "no_graph": bool(_NO_GRAPH.search(answer)),
         "confidence": bool(_CONFIDENCE.search(lesson + "\n" + answer)),
         "bad_split": bool(_BAD_SPLIT.search(lesson)),
         "repeats": sorted({m.group(0) for m in _REPEAT.finditer(lesson)}),
-        "jargon": len(_JARGON.findall(_body(lesson))) + len(_JARGON.findall(answer)),
+        # «(KG)» in the sources is jargon too (third blind read), not a prompt leak.
+        "jargon": len(_JARGON.findall(_body(lesson)))
+        + len(_JARGON.findall(answer))
+        + lesson.count("(KG)"),
         # Needs the follow-up talks about that the class does not have.
         "foreign_needs": sorted(
             need
@@ -303,7 +426,10 @@ def measure(domain: str, profile: dict, lesson: str, answer: str, request: str =
         ),
         "followup_lines": len([line for line in answer.splitlines() if line.strip()]),
         "untimed_activities": untimed_activities(lesson),
-        "count_mismatch": count_mismatch(answer),
+        "count_mismatch": count_mismatch(answer) or total_mismatch(answer),
+        "usage_wrong": usage_contradictions(answer, lesson),
+        # Every case is sent without attachments.
+        "false_provenance": bool(_FALSE_PROVENANCE.search(note)),
         "offtopic_refs": sum(1 for line in _sources(lesson) if off_topic({"title": line}, profile)),
     }
 
@@ -366,6 +492,9 @@ def run(args: argparse.Namespace) -> int:
             "lesson": lesson,
             "answer": answer,
             "advised_used": (usage or {}).get("advised_against_used") if usage else None,
+            # The graph's nodes the lesson applies, as the system computes them: the
+            # sources list them whether or not they are used (third blind read).
+            "kg_used": len((usage or {}).get("used") or []) if usage else None,
         }
         results.append(row)
         print(
@@ -385,7 +514,16 @@ def _summary(rows: list[dict]) -> dict:
 
     return {
         "minuti esatti": share("minutes_ok"),
-        "nodi KG citati (media)": round(sum(r["kg"] for r in rows) / max(1, len(rows)), 1),
+        "nodi KG nelle fonti (media)": round(sum(r["kg"] for r in rows) / max(1, len(rows)), 1),
+        "nodi del grafo usati nel testo (media)": (
+            round(sum(r["kg_used"] for r in used) / len(used), 1)
+            if (used := [r for r in rows if r.get("kg_used") is not None])
+            else "—"
+        ),
+        "nota: allegati che non ci sono": share("false_provenance"),
+        "follow-up: usato/non usato contro il testo": (
+            f"{sum(1 for r in rows if r.get('usage_wrong'))}/{len(rows)}"
+        ),
         "ambiente quando serve": share("room"),
         "testo del prompt che trapela": f"{sum(1 for r in rows if r['leaks'])}/{len(rows)}",
         "«Group till N» alla docente": f"{sum(1 for r in rows if r.get('raw_profile'))}/{len(rows)}",

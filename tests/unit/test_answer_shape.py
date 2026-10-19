@@ -140,3 +140,49 @@ def test_every_intent_prompt_says_not_to_fence_the_answer():
     assert shows_a_fence, "the check would pass vacuously"
     for name in shows_a_fence:
         assert "never wrap your answer" in getattr(writer_prompt, name), name
+
+
+# --- the source note, chosen by the code (2026-10-19) ---------------------------------
+
+_LESSON_BODY = (
+    "# Il ciclo dell'acqua\n\n## Attività (20 minuti)\n- Osservare.\n\n*Fonti:* Wikipedia."
+)
+
+
+@pytest.mark.parametrize(
+    "written",
+    [
+        # the version for attached documents, with nothing attached
+        "---\n⚠️ **Nota sulle fonti**: Il contenuto disciplinare proviene dai materiali "
+        "allegati dalla docente\ne, dove indicato, da fonti esterne.",
+        # a note of its own
+        "---\n*Nota sulle fonti: la lezione è costruita sui riferimenti forniti dal docente.*",
+    ],
+)
+def test_the_source_note_says_what_the_lesson_was_built_from(written):
+    from aix.agent.validation.answer_shape import set_source_note, source_note
+
+    note = source_note(has_material=False, domain="udl")
+
+    out = set_source_note(f"{_LESSON_BODY}\n\n{written}\n", note)
+
+    assert out.count("Nota sulle fonti") == 1 and out.rstrip().endswith(
+        "(Universal Design for Learning)."
+    )
+    assert "allegati" not in out and "forniti dal docente" not in out
+    assert out.startswith(_LESSON_BODY + "\n\n---\n⚠️")
+
+
+def test_with_documents_attached_the_note_says_so():
+    from aix.agent.validation.answer_shape import source_note
+
+    assert "materiali allegati dalla docente" in source_note(has_material=True, domain="neuro")
+    assert "fonti esterne\n(Wikipedia" in source_note(has_material=False, domain="neuro")
+
+
+def test_an_answer_without_a_note_gets_none():
+    from aix.agent.validation.answer_shape import set_source_note, source_note
+
+    text = "Una definizione breve. La nota sulle fonti non serve qui."
+
+    assert set_source_note(text, source_note(has_material=False)) == text

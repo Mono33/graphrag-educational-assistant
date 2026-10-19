@@ -410,7 +410,15 @@ def _with_gloss(name: str) -> str:
     return f"{name} ({gloss[0]})" if gloss else name
 
 
-_SOURCES = re.compile(r"\*Fonti:?\*|^#+ Fonti|nota sulle fonti", re.IGNORECASE | re.MULTILINE)
+#: Where the sources begin, in the shapes the Writer gives them: «*Fonti:*», «##
+#: Fonti:», a single italic line «*Fonti: Cooperative learning (…); …*», or a
+#: section of resources for the teacher. The last two were read as the lesson's
+#: body, and every node they list counted as used (third blind read, 2026-10-19).
+_SOURCES = re.compile(
+    r"^[ \t]*[*_]{0,2}Fonti[ \t]*:|^#+[ \t]*(?:Fonti|Riferimenti|Risorse (?:di approfondimento|per|video))"
+    r"|nota sulle fonti",
+    re.IGNORECASE | re.MULTILINE,
+)
 
 
 def _advised_in_lesson(name: str, lesson: str) -> bool:
@@ -821,6 +829,24 @@ def lesson_body(lesson: str) -> str:
     return _LINK.sub(" ", text)
 
 
+_SECTION = re.compile(r"^(?:#{1,6}\s+(.+)|\*\*([^*\n]+)\*\*\s*:?\s*)$")
+_SECTION_MINUTES = re.compile(r"\s*[(–—-]\s*\d+\s*min[^)]*\)?\s*$", re.IGNORECASE)
+
+
+def _where(name: str, body: str) -> str:
+    """The section of the lesson where ``name`` first appears: «Attività 2 – Dettato»."""
+    words = _norm(fix_graph_typos(name))
+    pattern = re.compile(rf"(?<![\w-]){re.escape(words)}(?![\w-])")
+    section = ""
+    for line in body.splitlines():
+        heading = _SECTION.match(line.strip())
+        if heading:
+            section = _SECTION_MINUTES.sub("", (heading.group(1) or heading.group(2))).strip(" *#:")
+        if words and pattern.search(_norm(line)):
+            return section
+    return ""
+
+
 def usage(
     nodes: Optional[list[dict[str, Any]]],
     relationships: Optional[list[dict[str, Any]]],
@@ -859,9 +885,25 @@ def usage(
                 unused.append(label)
     myths = [_name(n) for n in ranked if kind(n) == "myth"]
     advised = sorted(name for name in avoid if name not in myths)
+    # Up to five unused in all: the ones for the class's needs first, then the
+    # graph's best-ranked. The follow-up used to pick these itself, from the
+    # evidence, and then copied a «resto» that did not subtract them (53
+    # returned: 2 used + 5 listed + «il resto 51»), or listed as unused what the
+    # lesson names (Adaptive Strategies, 2026-10-19).
+    unused = unused[:_MAX_UNUSED]
+    other_unused: list[str] = []
+    for name in (_name(n) for n in usable):
+        if len(unused) + len(other_unused) >= _MAX_UNUSED:
+            break
+        named = {u.split(" (")[0] for u in unused}
+        if name not in used and name not in avoid and name not in named | set(other_unused):
+            other_unused.append(name)
+    body = lesson_body(lesson)
     found = {
         "used": used,
-        "unused_for_needs": unused[:_MAX_UNUSED],
+        "where": {name: _where(name, body) for name in used},
+        "unused_for_needs": unused,
+        "unused_other": other_unused,
         "advised_against_used": sorted(
             name for name in advised if _advised_in_lesson(name, lesson)
         ),
@@ -872,9 +914,13 @@ def usage(
     # The rest is everything the follow-up does not list, so that the numbers it
     # copies add up to what the graph returned («il resto: 55» of 56 did not).
     listed = {
-        name.split(" (")[0] for key, names in found.items() if key != "needs" for name in names
+        name.split(" (")[0]
+        for key, names in found.items()
+        if key != "needs" and isinstance(names, list)
+        for name in names
     }
-    found["other"] = max(0, len({_name(n) for n in ranked}) - len(listed))
+    found["total"] = len({_name(n) for n in ranked})
+    found["other"] = max(0, found["total"] - len(listed))
     return found
 
 
@@ -883,13 +929,18 @@ def render_usage(found: dict[str, Any]) -> str:
     if not found:
         return ""
     lines = ["### Uso nella lezione (calcolato dal sistema, non da stimare)"]
+    if found.get("total"):
+        lines.append(f"- Elementi restituiti dal grafo: {found['total']}")
     needs = ", ".join(found.get("needs") or []) or "nessuno dichiarato né nominato"
     lines.append(f"- Bisogni della classe: {needs}")
-    lines.append(f"- Usati nella lezione ({len(found['used'])}): {', '.join(found['used']) or '—'}")
-    if found.get("unused_for_needs"):
+    where = found.get("where") or {}
+    used = [f"{name} [in «{where[name]}»]" if where.get(name) else name for name in found["used"]]
+    lines.append(f"- Usati nella lezione ({len(used)}): {', '.join(used) or '—'}")
+    unused = list(found.get("unused_for_needs") or []) + list(found.get("unused_other") or [])
+    if unused:
         lines.append(
-            "- Suggeriti dal grafo per i bisogni della classe e non usati: "
-            + ", ".join(found["unused_for_needs"])
+            f"- Non usati, tra i più pertinenti ({len(unused)}; tra parentesi il bisogno "
+            "per cui il grafo li suggerisce): " + ", ".join(unused)
         )
     if found.get("advised_against_avoided"):
         lines.append(
@@ -904,7 +955,8 @@ def render_usage(found: dict[str, Any]) -> str:
     if found.get("myths_avoided"):
         lines.append("- Neuromiti evitati: " + ", ".join(found["myths_avoided"]))
     lines.append(
-        f"- Altri elementi restituiti, non usati o non pertinenti: {found.get('other', 0)}"
+        f"- Il resto, non usato o non pertinente (esclusi tutti quelli elencati sopra): "
+        f"{found.get('other', 0)}"
     )
     return fix_graph_typos("\n".join(lines))
 
