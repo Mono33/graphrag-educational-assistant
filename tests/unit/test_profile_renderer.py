@@ -294,3 +294,22 @@ def test_the_bloom_levels_reach_the_writer_and_are_not_a_fixed_list():
 
     assert "levels of Bloom's taxonomy, lowest first: ricordare, comprendere, applicare" in section
     assert "applicare, analizzare, valutare" in deeper
+
+
+def test_young_pupils_never_handle_what_can_hurt_them():
+    """The water-cycle lesson handed hot water to every group of seven-year-olds."""
+    from aix.agent.prompts.profile_renderer import render_classroom_constraints
+
+    primary = " ".join(render_classroom_constraints({"group": {"grade": "PRIMARIA"}}))
+    high = " ".join(render_classroom_constraints({"group": {"grade": "SECONDARIA_II_GRADO"}}))
+
+    assert "never handle hot water" in primary
+    assert "hot water" not in high
+
+
+def test_groups_say_their_size_and_roles_fit_them():
+    from aix.agent.prompts.profile_renderer import render_classroom_constraints
+
+    text = " ".join(render_classroom_constraints({"group": {"students_number": 24}}))
+
+    assert "no more roles than its smallest group has members" in text

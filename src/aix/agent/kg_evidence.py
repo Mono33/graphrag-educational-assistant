@@ -419,7 +419,7 @@ def _advised_in_lesson(name: str, lesson: str) -> bool:
     Only the body counts: «Station Rotation (non applicata, … esclusa)» in the
     sources is the opposite of using it.
     """
-    lesson = _SOURCES.split(lesson, maxsplit=1)[0]
+    lesson = lesson_body(lesson)
     if _in_lesson(name, _norm(lesson)):
         return True
     gloss = ADVISED_GLOSSES.get(_norm(name))
@@ -799,8 +799,26 @@ _MAX_UNUSED = 5
 
 
 def _in_lesson(name: str, lesson_lower: str) -> bool:
+    """``name`` as whole words. A substring match counted «Stem» as used because of
+    «system» in the lesson's AI-disclosure comment (second blind read, 2026-10-19)."""
     words = _norm(fix_graph_typos(name))
-    return bool(words) and words in lesson_lower
+    return (
+        bool(words)
+        and re.search(rf"(?<![\w-]){re.escape(words)}(?![\w-])", lesson_lower) is not None
+    )
+
+
+_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
+_LINK = re.compile(r"\[[^\]]*\]\([^)]*\)|https?://\S+")
+
+
+def lesson_body(lesson: str) -> str:
+    """The lesson as a teacher reads it, for telling what it uses: no HTML comment,
+    no link (a video titled «What is Service Learning?» is not Service Learning
+    being applied), and nothing from the sources on."""
+    text = _COMMENT.sub(" ", lesson or "")
+    text = _SOURCES.split(text, maxsplit=1)[0]
+    return _LINK.sub(" ", text)
 
 
 def usage(
@@ -820,7 +838,7 @@ def usage(
     as unused -- the safe side.
     """
     ranked = rank_nodes(nodes)
-    lesson_lower = _norm(lesson)
+    lesson_lower = _norm(lesson_body(lesson))
     by_name: dict[str, dict[str, Any]] = {}
     for node in ranked:
         by_name.setdefault(_name(node), node)
@@ -841,7 +859,7 @@ def usage(
                 unused.append(label)
     myths = [_name(n) for n in ranked if kind(n) == "myth"]
     advised = sorted(name for name in avoid if name not in myths)
-    return {
+    found = {
         "used": used,
         "unused_for_needs": unused[:_MAX_UNUSED],
         "advised_against_used": sorted(
@@ -850,8 +868,14 @@ def usage(
         "advised_against_avoided": [n for n in advised if not _advised_in_lesson(n, lesson)],
         "myths_avoided": [n for n in myths if not _in_lesson(n, lesson_lower)][:_MAX_MYTHS],
         "needs": sorted(wanted),
-        "other": max(0, len(ranked) - len(used) - min(len(unused), _MAX_UNUSED)),
     }
+    # The rest is everything the follow-up does not list, so that the numbers it
+    # copies add up to what the graph returned («il resto: 55» of 56 did not).
+    listed = {
+        name.split(" (")[0] for key, names in found.items() if key != "needs" for name in names
+    }
+    found["other"] = max(0, len({_name(n) for n in ranked}) - len(listed))
+    return found
 
 
 def render_usage(found: dict[str, Any]) -> str:

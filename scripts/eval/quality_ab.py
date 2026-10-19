@@ -172,6 +172,62 @@ _BAD_SPLIT = re.compile(
 _REPEAT = re.compile(r"\b(\w{3,})/\1\b", re.IGNORECASE)
 _JARGON = re.compile(r"\bnod[oi]\b|\bKG\b|knowledge graph", re.IGNORECASE)
 FOLLOW_UP_MAX_LINES = 25
+# Second blind read (2026-10-19): an activity with no time, and follow-ups whose
+# counts («ne usa 25») did not match what they listed (about 15).
+_ACTIVITY_TITLE = re.compile(
+    r"^\s*(?:#{2,4}\s*|\*\*)\s*Attivit[àa]\s*\d+[^\n]*$", re.IGNORECASE | re.MULTILINE
+)
+_TIMED = re.compile(r"\d{1,3}\s*(?:min|′)", re.IGNORECASE)
+_DECLARED_COUNT = re.compile(r"usat\w*[^\n(]{0,40}\((\d+)\)", re.IGNORECASE)
+#: «… e la lezione ne usa 25»: counted against the bullets before the unused ones.
+_PROSE_COUNT = re.compile(r"(?:ne usa|ne utilizza|usate sono)\s+(\d+)", re.IGNORECASE)
+_UNUSED_HEADING = re.compile(r"non usat|sconsigliat|il resto|non pertinent", re.IGNORECASE)
+
+
+def untimed_activities(lesson: str) -> int:
+    """Activity titles that state no minutes."""
+    return sum(1 for m in _ACTIVITY_TITLE.finditer(lesson) if not _TIMED.search(m.group(0)))
+
+
+def _names_in(bullet: str) -> int:
+    """The strategies a bullet names: its bold names (a bullet may group several),
+    or one when it has none."""
+    return max(1, len(re.findall(r"\*\*[^*]+\*\*", bullet)))
+
+
+def count_mismatch(answer: str) -> bool:
+    """A follow-up's «Usate (N)» whose list under it does not have N items.
+
+    The items are the bullets after the line, up to a blank line or the next
+    bold heading; a bullet naming several («A e B») counts once -- the check is
+    for gross mismatches (25 declared, 15 listed), not for that.
+    """
+    lines = answer.splitlines()
+    for i, line in enumerate(lines):
+        match = _DECLARED_COUNT.search(line)
+        if not match:
+            continue
+        items = 0
+        for below in lines[i + 1 :]:
+            stripped = below.strip()
+            if not stripped or (stripped.startswith("**") and not stripped.startswith("- ")):
+                break
+            if stripped.startswith(("-", "*", "•")):
+                items += _names_in(stripped)
+        if items and abs(items - int(match.group(1))) > max(2, int(match.group(1)) // 5):
+            return True
+    prose = _PROSE_COUNT.search(answer)
+    if prose:
+        before_unused = _UNUSED_HEADING.split(answer[prose.end() :], maxsplit=1)[0]
+        items = sum(
+            _names_in(line.strip())
+            for line in before_unused.splitlines()
+            if line.strip().startswith(("-", "*", "•"))
+        )
+        declared = int(prose.group(1))
+        if items and abs(items - declared) > max(2, declared // 5):
+            return True
+    return False
 
 
 def _env(path: Path) -> dict[str, str]:
@@ -229,7 +285,8 @@ def measure(domain: str, profile: dict, lesson: str, answer: str, request: str =
         "room": bool(_ROOM.search(lesson)) if needs & {"ADHD", "SA"} else None,
         "leaks": sorted({m.group(0).lower() for m in _LEAKS.finditer(lesson + "\n" + answer)}),
         "raw_profile": bool(_RAW_PROFILE.search(lesson + "\n" + answer)),
-        "myths": sorted({m.group(0).lower() for m in _MYTHS.finditer(lesson)}),
+        # The body only: «nessuna pratica di tipo Brain Gym» in the sources is a myth avoided.
+        "myths": sorted({m.group(0).lower() for m in _MYTHS.finditer(_body(lesson))}),
         "domain_ok": ("neuroscien" not in note) if domain == "udl" else ("udl" not in note),
         "no_graph": bool(_NO_GRAPH.search(answer)),
         "confidence": bool(_CONFIDENCE.search(lesson + "\n" + answer)),
@@ -245,6 +302,8 @@ def measure(domain: str, profile: dict, lesson: str, answer: str, request: str =
             and need not in class_need_groups(profile, request)
         ),
         "followup_lines": len([line for line in answer.splitlines() if line.strip()]),
+        "untimed_activities": untimed_activities(lesson),
+        "count_mismatch": count_mismatch(answer),
         "offtopic_refs": sum(1 for line in _sources(lesson) if off_topic({"title": line}, profile)),
     }
 
@@ -346,6 +405,10 @@ def _summary(rows: list[dict]) -> dict:
             f"{sum(1 for r in rows if r.get('followup_lines', 0) > FOLLOW_UP_MAX_LINES)}/{len(rows)}"
         ),
         "riferimenti fuori tema nelle fonti": sum(r.get("offtopic_refs", 0) for r in rows),
+        "attività senza minuti": sum(r.get("untimed_activities", 0) for r in rows),
+        "follow-up: conteggi che non tornano": (
+            f"{sum(1 for r in rows if r.get('count_mismatch'))}/{len(rows)}"
+        ),
         "sconsigliate dal grafo ma usate": (
             f"{sum(1 for r in rows if r.get('advised_used'))}/"
             f"{sum(1 for r in rows if r.get('advised_used') is not None)}"

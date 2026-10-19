@@ -26,8 +26,11 @@ conversazione. Se ciò che chiede non è in nessuno di questi, rispondi con ciò
 sai e dillo;
 - quando chiede del grafo (che cosa ha trovato, quali strategie, perché una \
 scelta), rispondi dalla sezione sul grafo, e per ciò che la lezione usa o non usa \
-dal blocco «Uso nella lezione», che è calcolato: non ricontare, non aggiungere \
-elementi, e ogni numero che scrivi corrisponde a ciò che elenchi. In 15–20 righe: \
+dal blocco «Uso nella lezione», che è calcolato: elenca tutti gli elementi che \
+riporta come usati (puoi raggrupparli, non ometterli), non aggiungerne, e non \
+scrivere altri numeri che quelli del blocco. Non nominare il blocco né «il \
+registro»: se ti sembra in contrasto con la lezione, attieniti a ciò che il blocco \
+riporta e non commentarlo. In 15–20 righe: \
 una frase d'apertura con quanto ha restituito il grafo; per ogni bisogno della \
 classe, una riga per ogni strategia usata con il punto della lezione in cui \
 compare, poi al massimo 5 non usate, ciascuna con il motivo; una riga per ciò che \

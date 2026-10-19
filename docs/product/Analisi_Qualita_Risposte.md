@@ -503,3 +503,38 @@ Che cosa è cambiato, oltre ai numeri:
 
 Ancora aperto: il Critic approva tutto (fase 3); l'esattezza disciplinare
 («ga-to») non ha ancora un controllo; alcuni nomi restano solo in inglese.
+
+### 7.7 Dopo la seconda lettura alla cieca (19/10)
+
+La seconda lettura: G (questo branch) vince 8 casi su 8, e il follow-up e il rispetto
+del profilo sono risolti. I difetti rimasti venivano dai dati che arrivano al Writer
+e dal calcolo dell'uso, non dalle sue regole:
+
+- **Usi dichiarati ma inesistenti.** «Stem» risultava usato perché il confronto lo
+  trovava dentro «system» del commento IA, e «Service Learning» per il titolo di un
+  video. Ora il confronto usa parole intere, solo nel corpo della lezione, senza
+  commento, link e fonti (`748c68b`).
+- **Conteggi.** Il «resto» ora è tutto ciò che il follow-up non elenca. La risposta
+  veloce elenca tutti gli usati e non scrive altri numeri. Non nomina mai «il
+  registro» (`748c68b`, `072c4c4`).
+- **Risorse imposte.** Il video «What is Service Learning?» compariva in due lezioni
+  perché il Writer era istruito a includere le risorse curate. Ora sono facoltative,
+  e i video di pedagogia sono per la docente (`748c68b`).
+- **Gruppi, tempi, sicurezza.**
+  - Ogni attività dice quanti alunni per gruppo e quanti minuti dura.
+  - I ruoli non sono più dei membri del gruppo più piccolo e non si ripetono.
+  - In infanzia e primaria nessun bambino maneggia acqua calda o fiamme (`748c68b`).
+
+Terzo giro, stessi 8 casi, contro lo staging: minuti esatti **8/8** (ora anche il
+caso 7); gergo da 2,4 a **0,2** per caso; 0/8 per bisogni inventati, follow-up oltre
+25 righe, conteggi che non tornano, attività senza minuti, strategie sconsigliate
+usate. Il Critic approva ancora 8/8.
+
+**Resta per il giudice (fase 3).** Errori di contenuto che nessun controllo
+deterministico vede: il quiz rotto e la pizza confusa (caso 2), la «pancia» per
+distinguere p da b (caso 7), 26 minuti di scrittura per una classe demotivata
+(caso 6).
+
+Il Critic attuale non può vederli. Legge solo i primi 3.000 caratteri di lezioni
+che ne hanno circa 7.000 (`AIX_CRITIC_LESSON_MAX_CHARS`), con un modello leggero e
+cinque voti generici.

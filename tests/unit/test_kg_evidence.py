@@ -374,3 +374,40 @@ def test_no_false_alarm_for_station_rotation(lesson):
     from aix.agent.kg_evidence import usage
 
     assert usage(NODES, RELS, PROFILE, lesson)["advised_against_used"] == []
+
+
+@pytest.mark.parametrize(
+    "lesson",
+    [
+        # «Stem» inside «system» of the AI-disclosure comment.
+        "<!-- ai-generated: true, system: agentic-graphrag -->\n# Lezione\nLavoro a coppie.",
+        # A video's title is not the method being applied.
+        "# Lezione\n- Video: [What is Service Learning?](https://youtu.be/x) per la docente.",
+    ],
+)
+def test_a_node_is_used_only_when_the_lesson_applies_it(lesson):
+    """Second blind read: «Stem» and «Service Learning» declared used, used nowhere."""
+    from aix.agent.kg_evidence import usage
+
+    nodes = NODES + [
+        {"name": "Stem", "labels": ["PedagogicalMethodology"]},
+        {"name": "Service Learning", "labels": ["PedagogicalMethodology"]},
+    ]
+    used = usage(nodes, RELS, PROFILE, lesson)["used"]
+
+    assert "Stem" not in used and "Service Learning" not in used
+
+
+def test_the_rest_is_what_the_follow_up_does_not_list():
+    """«Il resto: 55» of 56, with 13 items listed: the counts must add up."""
+    from aix.agent.kg_evidence import usage
+
+    found = usage(NODES, RELS, PROFILE, "## Attività\nCompiti brevi (Focus Tasks).")
+    listed = {
+        name.split(" (")[0]
+        for key, names in found.items()
+        if key != "needs" and isinstance(names, list)
+        for name in names
+    }
+
+    assert found["other"] + len(listed) == len({n["name"] for n in NODES})

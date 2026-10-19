@@ -174,6 +174,14 @@ def render_classroom_constraints(profile: Any) -> list[str]:
             "with small local changes, not a full rearrangement of the room."
         )
 
+    # Pupils this young do not handle what can hurt them: the water-cycle lesson of
+    # 2026-10-19 handed hot water to every group of seven-year-olds.
+    if _code(group.get("grade")) in ("INFANZIA", "PRIMARIA"):
+        lines.append(
+            "Pupils this young never handle hot water, flames, heat sources, sharp tools "
+            "or chemicals: any demonstration with them is done by the teacher."
+        )
+
     students = group.get("students_number")
     if isinstance(students, int) and students > 0:
         line = (
@@ -186,6 +194,12 @@ def render_classroom_constraints(profile: Any) -> list[str]:
                 "fact; never write the arithmetic, the options you discarded or this rule "
                 "in the lesson."
             )
+        # Second blind read (2026-10-19): five roles for groups of four, two roles
+        # both keeping time, a lesson that never said how big its groups were.
+        line += (
+            " Every group activity says how many pupils per group; a group has no more "
+            "roles than its smallest group has members, and no two roles do the same job."
+        )
         lines.append(line)
 
     return lines
@@ -234,8 +248,9 @@ def time_plan(duration: Any) -> str:
     return (
         f"Time plan: Introduzione {intro} minuti + Attività {activities} minuti + Valutazione {closing} minuti "
         f"= {duration} minuti. The minutes of the activities inside «Attività» add up to "
-        f"{activities}; move minutes between sections if the lesson needs it, but the "
-        f"section timings must add up to exactly {duration}."
+        f"{activities}, and every activity states its own minutes; move minutes between "
+        f"sections if the lesson needs it, but the section timings must add up to "
+        f"exactly {duration}."
     )
 
 

@@ -1106,7 +1106,11 @@ class WriterAgent:
 
         lines = [
             "\n\n## 📚 Available Educational Media",
-            "Use these curated resources to enrich your response. Include relevant links and citations.",
+            "Optional resources. Use one only where it serves a specific activity of this "
+            "lesson, and leave out the others without mentioning them: a resource you would "
+            "have to call «not directly relevant» is not used. A video or text about teaching "
+            "methods (UDL, Service Learning, Chunking…) is for the teacher's preparation: "
+            "never show it to the pupils.",
         ]
 
         # Videos

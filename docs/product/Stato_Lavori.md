@@ -3474,3 +3474,20 @@ salvata oggi): la pipeline del branch qualità, più uno strato editoriale. Fase
 Su 8 casi, contro lo staging: tutte le misure migliorano, e il follow-up rientra
 nelle 25 righe (7 su 8). Il Critic approva ancora tutto: è la fase 3. Dettagli in
 `Analisi_Qualita_Risposte.md` §7.6.
+
+### 2026-10-19 — Dopo la seconda lettura alla cieca: dati e conteggi
+
+Il branch vince 8 casi su 8. I difetti rimasti venivano dalla pipeline, e sono
+corretti:
+
+- **Uso dei nodi.** Il calcolo dell'uso confronta parole intere, nel solo corpo della
+  lezione («Stem» trovato dentro «system»).
+- **Conteggi del follow-up.** Ora tornano con ciò che è elencato.
+- **Risorse.** Non sono più imposte al Writer.
+- **Gruppi, tempi e sicurezza.** Sono vincoli del profilo.
+
+`quality_ab.py` misura anche le attività senza minuti e i conteggi del follow-up.
+Terzo giro: pulito su tutti i controlli automatici, minuti esatti 8/8. Gli errori
+di contenuto (quiz, esempi linguistici) restano al giudice: il Critic attuale legge
+solo i primi 3.000 caratteri della lezione. Dettagli in
+`Analisi_Qualita_Risposte.md` §7.7.
