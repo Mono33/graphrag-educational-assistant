@@ -164,7 +164,7 @@ che renda il markdown non si vede. Per questo è escluso dai controlli.
 
 ## 5. Piano di lavoro (19/10/2026)
 
-1. **Deterministici, subito:**
+1. **Deterministici, subito** (fatto il 19/10: `5870542`, `698c550`, `435a8dc`, `c37c096`):
    - solo i bisogni dichiarati nella mappa dell'evidenza (caso 4: con nessun bisogno
      dichiarato venivano elencati tutti);
    - refusi del grafo e gergo;

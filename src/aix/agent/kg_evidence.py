@@ -333,8 +333,28 @@ PROFILE_NEED_GROUPS: dict[str, set[str]] = {
 }
 
 
-def class_need_groups(profile: Any) -> set[str]:
-    """The class's declared needs, by the names ``need_group`` gives them."""
+#: How teachers name the needs in a request, when the profile does not carry them
+#: («Ci sono 2 bambini con adhd e 2 non italofoni»): the WebUI form is optional.
+_NEEDS_IN_TEXT: dict[str, re.Pattern[str]] = {
+    "ADHD": re.compile(r"\badhd\b|iperattiv|deficit (?:di|dell')\s?attenzione", re.I),
+    "Alunni non italofoni": re.compile(
+        r"non italofon|stranier|\bl2\b|italiano come (?:seconda|lingua seconda)"
+        r"|madre ?lingua (?!italian)|lingua madre (?!italian)",
+        re.I,
+    ),
+    "Dislessia": re.compile(r"dislessi|\bdsa\b", re.I),
+    "Discalculia": re.compile(r"discalculi|\bdsa\b", re.I),
+    "Spettro autistico": re.compile(r"autis|asperger|spettro autistico", re.I),
+    "Plusdotazione": re.compile(r"plusdotat|alto potenziale|gifted", re.I),
+}
+
+
+def class_need_groups(profile: Any, request: str = "") -> set[str]:
+    """The class's needs, by the names ``need_group`` gives them: those the profile
+    declares and those the request names. Empty when neither names one -- and then
+    no need is shown: on 2026-10-16 a class with none declared got every need the
+    graph returned (ADHD, autism, non-native speakers), and the follow-up answer
+    presented them as the class's (``scripts/eval/quality_ab.py``, case 4)."""
     group = _profile_group(profile)
     raw = group.get("disabilities")
     if not raw and isinstance(profile, dict):
@@ -342,6 +362,9 @@ def class_need_groups(profile: Any) -> set[str]:
     groups: set[str] = set()
     for code in _codes(raw):
         groups |= PROFILE_NEED_GROUPS.get(code, set())
+    for need, pattern in _NEEDS_IN_TEXT.items():
+        if request and pattern.search(request):
+            groups.add(need)
     return groups
 
 
@@ -474,6 +497,7 @@ def advised_against(
     nodes: Optional[list[dict[str, Any]]],
     relationships: Optional[list[dict[str, Any]]],
     profile: Any = None,
+    request: str = "",
 ) -> set[str]:
     """What the graph advises against for this class's needs and class profile.
 
@@ -486,12 +510,8 @@ def advised_against(
     for node in ranked:
         by_name.setdefault(_name(node), node)
     edges = _edges(relationships)
-    wanted = class_need_groups(profile)
-    sources = [
-        node
-        for node in ranked
-        if kind(node) == "need" and (not wanted or need_group(node) in wanted)
-    ]
+    wanted = class_need_groups(profile, request)
+    sources = [node for node in ranked if kind(node) == "need" and need_group(node) in wanted]
     sources += _matching_context([n for n in ranked if kind(n) == "context"], profile)
     names: set[str] = set()
     for node in sources:
@@ -525,7 +545,32 @@ def guidance_by_name(recommendations: Optional[list[dict[str, Any]]]) -> dict[st
     return guidance
 
 
-def render_evidence(
+#: Typos in the graph's names, corrected where a teacher would read them. The
+#: names are kept as they are everywhere else: queries and edges match on them.
+#: The graph itself should be fixed (``docs/product/Analisi_Qualita_Risposte.md``
+#: §5, proposal 6); until then «Gammification» reached the lessons.
+GRAPH_TYPOS: dict[str, str] = {
+    "Gammification": "Gamification",
+    "Poject": "Project",
+    "sustaints": "sustains",
+}
+_TYPO = re.compile("|".join(re.escape(typo) for typo in GRAPH_TYPOS))
+
+
+def fix_graph_typos(text: str) -> str:
+    """``text`` with the graph's known typos corrected."""
+    return _TYPO.sub(lambda match: GRAPH_TYPOS[match.group(0)], text) if text else text
+
+
+def render_evidence(*args: Any, **kwargs: Any) -> str:
+    """The retrieved graph as the lesson can use it: see :func:`_render_evidence`.
+
+    The graph's typos are corrected in what it returns (:func:`fix_graph_typos`).
+    """
+    return fix_graph_typos(_render_evidence(*args, **kwargs))
+
+
+def _render_evidence(
     nodes: Optional[list[dict[str, Any]]],
     relationships: Optional[list[dict[str, Any]]] = None,
     profile: Any = None,
@@ -533,6 +578,7 @@ def render_evidence(
     *,
     max_chars: int = MAX_CHARS,
     include_strategies: bool = True,
+    request: str = "",
 ) -> str:
     """The retrieved graph as the lesson can use it, in Italian, bounded.
 
@@ -555,13 +601,13 @@ def render_evidence(
     # neuroscience graph links a need to what it brings about rather than to
     # strategies («Difficulty Managing Frustration or Stress» TRIGGERS «Anxiety»):
     # that is the «why» of a choice, and is rendered as such.
-    wanted = class_need_groups(profile)
+    wanted = class_need_groups(profile, request)
     need_lines: list[str] = []
     for node in ranked:
         if kind(node) != "need":
             continue
         group = need_group(node) or ""
-        if wanted and group not in wanted:
+        if group not in wanted:
             continue
         suggests, avoid = _links(_name(node), edges, by_name)
         effects = [] if (suggests or avoid) else _effects(_name(node), edges)
@@ -704,6 +750,7 @@ def digest(state: dict[str, Any], profile: Any = None) -> Optional[dict[str, Any
         state.get("retrieved_relationships") or [],
         profile if profile is not None else state.get("educational_profile"),
         state.get("recommendations") or [],
+        request=str(state.get("raw_user_turn") or state.get("teacher_query") or ""),
     )
     if not text:
         return None
@@ -724,7 +771,7 @@ def environment_lookup_enabled() -> bool:
     return raw.strip().lower() in ("1", "true", "yes", "on")
 
 
-def environment_needed(profile: Any) -> bool:
+def environment_needed(profile: Any, request: str = "") -> bool:
     """Whether the class's needs call for advice on the learning environment.
 
     ADHD and the autism spectrum (attention, sensory load), and a class the
@@ -739,4 +786,5 @@ def environment_needed(profile: Any) -> bool:
         raw = profile.get("disabilities")
     needs = set(_codes(raw))
     features = set(_codes(group.get("class_features")))
-    return bool(needs & {"ADHD", "SA", "DOP"} or "ELEMENTI_DI_DISTURBO" in features)
+    named = class_need_groups(None, request) & {"ADHD", "Spettro autistico"}
+    return bool(needs & {"ADHD", "SA", "DOP"} or named or "ELEMENTI_DI_DISTURBO" in features)

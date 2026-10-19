@@ -3439,3 +3439,20 @@ Un peggioramento («Group till 30» mostrato alla docente) è stato corretto: i 
 del profilo classe ora sono in italiano. Il Critic approva 8/8 in entrambe le
 build. Lettura alla cieca da fare prima del deploy. Dettagli in
 `Analisi_Qualita_Risposte.md` §7.5.
+
+### 2026-10-19 — Risposta mediana, fase 1: le correzioni deterministiche
+
+Dalla lettura alla cieca degli 8 casi (`docs/product/Specifica_Risposta_Mediana.md`,
+salvata oggi): la pipeline del branch qualità, più uno strato editoriale. Fase 1:
+
+- **Bisogni della classe** = profilo + quelli nominati nella richiesta. Se non ce n'è
+  nessuno, non se ne mostra nessuno: nel caso 4 il follow-up attribuiva alla classe
+  ADHD, autismo e alunni non italofoni (`5870542`).
+- **Niente gergo** («nodo», «KG», confidenza) nei prompt di Writer e risposta veloce.
+  Le strategie si nominano prima in italiano. I refusi del grafo («Gammification»)
+  sono corretti nel testo mostrato (`698c550`).
+- **Riferimenti scientifici** che non possono sostenere la lezione (animali, modelli
+  linguistici, studenti universitari per una scuola) scartati prima del Writer, che
+  non è più obbligato a citare i riferimenti curati (`435a8dc`).
+- **`quality_ab.py`** ha i controlli della specifica §4 (`c37c096`). Rimisurati sui
+  due giri del 16/10, ritrovano ciò che la lettura aveva visto.

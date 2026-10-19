@@ -474,18 +474,21 @@ async def retrieve_node(state: AgentState) -> dict[str, Any]:
         result = await retriever.retrieve(plan)
 
         # The room, when the class needs it: no planned search asks about it.
-        # See ``RetrieverAgent.fetch_learning_environment``.
+        # See ``RetrieverAgent.fetch_learning_environment``. The needs are the
+        # profile's and the request's: teachers often write them in the text.
         from aix.agent import kg_evidence
+
+        request = str(state.get("raw_user_turn") or state.get("teacher_query") or "")
 
         fetch_environment = getattr(retriever, "fetch_learning_environment", None)
         if (
             domain == "udl"
             and fetch_environment is not None
             and kg_evidence.environment_lookup_enabled()
-            and kg_evidence.environment_needed(ep)
+            and kg_evidence.environment_needed(ep, request)
         ):
             extra = await fetch_environment(
-                sensory="AutismSpectrum" in kg_evidence.class_need_labels(ep)
+                sensory="Spettro autistico" in kg_evidence.class_need_groups(ep, request)
             )
             known = {node.get("name") for node in result.nodes}
             result.nodes = kg_evidence.rank_nodes(
@@ -502,8 +505,8 @@ async def retrieve_node(state: AgentState) -> dict[str, Any]:
             and kg_evidence.environment_lookup_enabled()
         ):
             found = await fetch_neuro(
-                needs=kg_evidence.class_need_groups(ep),
-                environment=kg_evidence.environment_needed(ep),
+                needs=kg_evidence.class_need_groups(ep, request),
+                environment=kg_evidence.environment_needed(ep, request),
             )
             # A (nodes, relationships) pair; anything else adds nothing.
             if isinstance(found, tuple) and len(found) == 2:

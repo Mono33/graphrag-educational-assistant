@@ -135,7 +135,11 @@ advises against for a class like this one (its size, its features): follow it \
 when you choose the format of the activities.
 - Prefer the graph's strategies to generic ones. A strategy the graph did not \
 return is your own choice: do not list it under the Knowledge Graph in `*Fonti:*`.
-- Write this as plain prose, with no brackets, tags or labels such as «(KG)».
+- Write this as plain prose, with no brackets, tags or labels such as «(KG)». \
+In the body of the lesson never write «nodo», «KG», «Knowledge Graph», confidence \
+labels («VERY_HIGH», «confidenza media») or scores: the graph is named only in \
+`*Fonti:*` and in the closing note. Name a strategy in Italian, with the graph's \
+English name in brackets the first time it appears.
 - In `*Fonti:*`, list under the Knowledge Graph only the nodes the lesson actually \
 applies (in an activity or in Differenziazione), with the names the graph gives \
 them — not every node you were given.

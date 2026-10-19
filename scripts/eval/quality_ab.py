@@ -162,6 +162,16 @@ _NO_GRAPH = re.compile(r"non ho accesso (?:diretto )?al grafo", re.IGNORECASE)
 _ROOM = re.compile(r"ambiente di apprendimento", re.IGNORECASE)
 #: A class-profile node's raw name («Group till 30»): means nothing to a teacher.
 _RAW_PROFILE = re.compile(r"group till \d+", re.IGNORECASE)
+# The checks of docs/product/Specifica_Risposta_Mediana.md §4 (2026-10-19).
+_CONFIDENCE = re.compile(
+    r"confidenza (?:alta|media|bassa)|very_high|\(high\)|\(medium\)|\(low\)", re.IGNORECASE
+)
+_BAD_SPLIT = re.compile(
+    r"\bgrupp[oi] da 1\b|\(0\s*(?:min|′)|\b0 minuti\b|\b1 gruppo da 1\b", re.IGNORECASE
+)
+_REPEAT = re.compile(r"\b(\w{3,})/\1\b", re.IGNORECASE)
+_JARGON = re.compile(r"\bnod[oi]\b|\bKG\b|knowledge graph", re.IGNORECASE)
+FOLLOW_UP_MAX_LINES = 25
 
 
 def _env(path: Path) -> dict[str, str]:
@@ -182,7 +192,21 @@ def _kg_sources(lesson: str) -> int:
     return 0
 
 
-def measure(domain: str, profile: dict, lesson: str, answer: str) -> dict:
+def _body(lesson: str) -> str:
+    """The lesson without its sources and closing note, where the graph is named."""
+    return re.split(
+        r"\*Fonti:?\*|^## Fonti|nota sulle fonti", lesson, maxsplit=1, flags=re.I | re.M
+    )[0]
+
+
+def _sources(lesson: str) -> list[str]:
+    parts = re.split(r"\*Fonti:?\*|^## Fonti", lesson, maxsplit=1, flags=re.I | re.M)
+    return [line for line in (parts[1] if len(parts) > 1 else "").splitlines() if line.strip()]
+
+
+def measure(domain: str, profile: dict, lesson: str, answer: str, request: str = "") -> dict:
+    from aix.agent.kg_evidence import _NEEDS_IN_TEXT, class_need_groups
+    from aix.agent.reference_filter import off_topic
     from aix.agent.validation.rules import section_minutes
 
     minutes = sum(m for _title, m in section_minutes(lesson))
@@ -199,6 +223,18 @@ def measure(domain: str, profile: dict, lesson: str, answer: str) -> dict:
         "myths": sorted({m.group(0).lower() for m in _MYTHS.finditer(lesson)}),
         "domain_ok": ("neuroscien" not in note) if domain == "udl" else ("udl" not in note),
         "no_graph": bool(_NO_GRAPH.search(answer)),
+        "confidence": bool(_CONFIDENCE.search(lesson + "\n" + answer)),
+        "bad_split": bool(_BAD_SPLIT.search(lesson)),
+        "repeats": sorted({m.group(0) for m in _REPEAT.finditer(lesson)}),
+        "jargon": len(_JARGON.findall(_body(lesson))) + len(_JARGON.findall(answer)),
+        # Needs the follow-up talks about that the class does not have.
+        "foreign_needs": sorted(
+            need
+            for need, pattern in _NEEDS_IN_TEXT.items()
+            if pattern.search(answer) and need not in class_need_groups(profile, request)
+        ),
+        "followup_lines": len([line for line in answer.splitlines() if line.strip()]),
+        "offtopic_refs": sum(1 for line in _sources(lesson) if off_topic({"title": line}, profile)),
     }
 
 
@@ -244,7 +280,7 @@ def run(args: argparse.Namespace) -> int:
             "critic_approved": critic.get("approved"),
             "critic_score": critic.get("score"),
             "nodes": (lesson_turn.get("retriever") or {}).get("nodes_count"),
-            **measure(domain, profile, lesson, answer),
+            **measure(domain, profile, lesson, answer, request),
             "lesson": lesson,
             "answer": answer,
         }
@@ -273,6 +309,19 @@ def _summary(rows: list[dict]) -> dict:
         "neuromiti proposti": f"{sum(1 for r in rows if r['myths'])}/{len(rows)}",
         "grafo giusto nella nota": share("domain_ok"),
         "«non ho accesso al grafo»": f"{sum(1 for r in rows if r['no_graph'])}/{len(rows)}",
+        "etichette di confidenza": f"{sum(1 for r in rows if r.get('confidence'))}/{len(rows)}",
+        "gruppo da 1 / fase da 0 minuti": f"{sum(1 for r in rows if r.get('bad_split'))}/{len(rows)}",
+        "ripetizioni «x/x»": f"{sum(1 for r in rows if r.get('repeats'))}/{len(rows)}",
+        "gergo (nodo, KG) per caso": round(
+            sum(r.get("jargon", 0) for r in rows) / max(1, len(rows)), 1
+        ),
+        "follow-up: bisogni non della classe": (
+            f"{sum(1 for r in rows if r.get('foreign_needs'))}/{len(rows)}"
+        ),
+        f"follow-up oltre {FOLLOW_UP_MAX_LINES} righe": (
+            f"{sum(1 for r in rows if r.get('followup_lines', 0) > FOLLOW_UP_MAX_LINES)}/{len(rows)}"
+        ),
+        "riferimenti fuori tema nelle fonti": sum(r.get("offtopic_refs", 0) for r in rows),
         "Critic: approvate": share("critic_approved"),
         "secondi (media)": round(sum(r["seconds"] for r in rows) / max(1, len(rows)), 1),
     }

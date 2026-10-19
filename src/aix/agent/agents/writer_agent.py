@@ -19,6 +19,7 @@ from aix.agent.agents.retriever_agent import RetrievalResult
 from aix.agent.kg_evidence import (
     advised_against,
     environment_needed,
+    fix_graph_typos,
     guidance_by_name,
     is_context_recommendation,
     kind,
@@ -40,6 +41,7 @@ from aix.agent.prompts.writer_prompt import (
     get_writer_prompts,
     kg_basis,
 )
+from aix.agent.reference_filter import keep_references
 from aix.core import prompt_cache
 from aix.core.concurrency import guarded_chat_completion, llm_slot
 from aix.core.config import config as app_config
@@ -520,22 +522,36 @@ class WriterAgent:
             educational_profile,
             retrieval_result.recommendations,
             include_strategies=False,
+            request=teacher_query,
         )
         nodes_text = self._format_nodes(
             retrieval_result.nodes,
             recommendations=retrieval_result.recommendations,
-            exclude=advised_against(retrieval_result.nodes, relationships, educational_profile),
+            exclude=advised_against(
+                retrieval_result.nodes, relationships, educational_profile, teacher_query
+            ),
         )
         if evidence:
             nodes_text = evidence + "\n\n### Altri nodi recuperati\n" + nodes_text
+        nodes_text = fix_graph_typos(nodes_text)
         if graph_relations_enabled():
             nodes_text += _format_relationships(relationships)
-        recommendations_text = self._format_recommendations(
-            retrieval_result.recommendations, nodes=retrieval_result.nodes
+        recommendations_text = fix_graph_typos(
+            self._format_recommendations(
+                retrieval_result.recommendations, nodes=retrieval_result.nodes
+            )
         )
         key_concepts_text = ", ".join(plan.key_concepts) if plan.key_concepts else "Not specified"
 
         # NEW Phase 2: Format curated media if available
+        # References that cannot back this lesson leave before the Writer reads
+        # them (rodents, ChatGPT, college students for a primary class): see
+        # ``aix.agent.reference_filter``.
+        if has_media and curated_media.get("citations"):
+            curated_media = {
+                **curated_media,
+                "citations": keep_references(curated_media["citations"], educational_profile),
+            }
         media_text = self._format_media(curated_media) if has_media else ""
 
         # The whole profile, with codes resolved to the teacher's labels and the
@@ -576,9 +592,10 @@ class WriterAgent:
         # (the teacher waived the search, or the sources found nothing). It used to
         # fall to the standard branch and fail on ``{wikipedia_content}``.
         if user_template is WRITER_USER_TEMPLATE_HYBRID:
-            wikipedia_content, papers_content, oer_content = format_external_resources(
-                external_resources or {}
-            )
+            resources = dict(external_resources or {})
+            if resources.get("papers"):
+                resources["papers"] = keep_references(resources["papers"], educational_profile)
+            wikipedia_content, papers_content, oer_content = format_external_resources(resources)
 
             user_prompt = WRITER_USER_TEMPLATE_HYBRID.format(
                 teacher_query=teacher_query,
@@ -633,7 +650,7 @@ class WriterAgent:
             )
 
         is_lesson = intent in ("lesson_creation", "activity_design")
-        if is_lesson and environment_needed(educational_profile):
+        if is_lesson and environment_needed(educational_profile, teacher_query):
             user_prompt += WRITER_LEARNING_ENVIRONMENT_NOTE
 
         # SAM refinement instruction — prepend so the model's first frame
@@ -1135,7 +1152,10 @@ class WriterAgent:
         citations = curated_media.get("citations", [])
         if citations:
             lines.append("\n### 📖 Riferimenti Scientifici")
-            lines.append("Includi questi riferimenti nella sezione Fonti:")
+            lines.append(
+                "Cita uno di questi riferimenti nella sezione Fonti solo se sostiene una "
+                "scelta precisa della lezione; altrimenti non citarlo:"
+            )
             for c in citations[:3]:
                 authors = c.get("authors", [])
                 authors_str = ", ".join(authors[:2])

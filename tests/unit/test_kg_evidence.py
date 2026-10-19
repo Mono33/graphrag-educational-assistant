@@ -159,8 +159,11 @@ def test_advised_against_for_this_class():
     from aix.agent.kg_evidence import advised_against
 
     assert advised_against(NODES, RELS, PROFILE) == {"Long Frontal Lesson", "Station Rotation"}
-    # Without a profile the class-size band is unknown: only the needs speak.
-    assert advised_against(NODES, RELS, None) == {"Long Frontal Lesson"}
+    # Without a profile the class-size band is unknown; a need named in the
+    # request still speaks, and with none named nothing is advised against.
+    request = "Lezione per una classe con 2 bambini con ADHD"
+    assert advised_against(NODES, RELS, None, request) == {"Long Frontal Lesson"}
+    assert advised_against(NODES, RELS, None) == set()
 
 
 def test_a_node_without_description_takes_the_recommendation_guidance():
@@ -177,11 +180,44 @@ def test_a_node_without_description_takes_the_recommendation_guidance():
     assert "appropriate adaptations" not in text
 
 
-def test_without_a_profile_every_need_is_shown_and_no_class_profile():
+def test_a_class_with_no_need_declared_or_named_gets_none():
+    """Until 2026-10-19 every need retrieved was shown: the follow-up of a class
+    with none declared listed ADHD, autism and non-native speakers as its own
+    (``scripts/eval/quality_ab.py``, case 4)."""
     text = render_evidence(NODES, RELS, None)
 
-    assert "joint attention" in text
+    assert "Bisogni della classe" not in text
+    assert "joint attention" not in text
     assert "Profilo della classe" not in text
+
+
+def test_a_need_named_only_in_the_request_is_the_class_s():
+    """The WebUI profile form is optional: teachers write the needs in the text."""
+    text = render_evidence(
+        NODES, RELS, None, request="Ci sono 2 bambini con adhd e 2 non italofoni"
+    )
+
+    assert "**ADHD ·" in text and "**Alunni non italofoni ·" in text
+    assert "joint attention" not in text, "autism was not named"
+
+
+@pytest.mark.parametrize(
+    ("request_text", "expected"),
+    [
+        ("due alunni con ADHD", {"ADHD"}),
+        ("alunni stranieri appena arrivati", {"Alunni non italofoni"}),
+        ("madre lingua spagnola", {"Alunni non italofoni"}),
+        ("madrelingua italiana", set()),
+        ("un alunno con DSA", {"Dislessia", "Discalculia"}),
+        ("una ragazza con sindrome di Asperger", {"Spettro autistico"}),
+        ("uno studente ad alto potenziale", {"Plusdotazione"}),
+        ("la rivoluzione francese per una terza", set()),
+    ],
+)
+def test_needs_named_in_a_request(request_text, expected):
+    from aix.agent.kg_evidence import class_need_groups
+
+    assert class_need_groups(None, request_text) == expected
 
 
 def test_environment_and_udl_sections_when_retrieved():
@@ -251,3 +287,15 @@ def test_digest_counts_and_text():
 )
 def test_environment_needed(profile, needed):
     assert environment_needed(profile) is needed
+
+
+def test_the_graph_s_typos_never_reach_the_writer():
+    """«Gammification» reached two of eight evaluated lessons (2026-10-16)."""
+    nodes = [
+        {"name": "Gammification", "labels": ["PedagogicalMethodology"], "description": "Poject"}
+    ]
+
+    text = render_evidence(nodes, [], None)
+
+    assert "Gamification" in text and "Gammification" not in text
+    assert "Project" in text and "Poject" not in text
