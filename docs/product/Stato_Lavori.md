@@ -3562,5 +3562,17 @@ sono quasi tutte vere correzioni (2/6 con 4/12, «Stato Llano», gruppi che non
 tornano con 26 e 21 alunni, acqua calda in mano ai bambini, quiz del 1792 senza
 risposta).
 
-Prossimo passo: giudice acceso sullo stack locale e `quality_ab.py` con il giudice
-acceso contro spento, poi una lettura alla cieca.
+**Dal vivo** (stack locale, `AIX_JUDGE_ENABLED=true`, gli 8 casi di
+`quality_ab.py` contro il giro 3 senza giudice): il giudice ha girato su tutte e
+8 le lezioni, con 10 problemi bloccanti trattati e 2 modifiche rimesse. Costa
+circa 11 s in più per lezione (38,8 → 50,3 s di media) e circa $0,025. Le metriche
+peggiorate non vengono dal giudice:
+
+- caso 7: il pianificatore ha scelto il formato «Strategie consigliate», senza
+  minuti e con più gergo;
+- caso 6: le fonti sono scritte senza l'etichetta «Knowledge Graph:», e la
+  metrica conta 0 nodi;
+- caso 8: il Writer ha copiato nelle fonti il titolo «(nodi del KG)» della
+  sezione delle evidenze.
+
+Lettura alla cieca da fare: `C:\axl\qab_giudice\lettura_alla_cieca.html`.
