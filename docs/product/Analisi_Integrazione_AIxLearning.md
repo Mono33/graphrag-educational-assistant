@@ -6,6 +6,11 @@
 `chore/repo-reorg` (`f3daecb`); il documento di Louis *Technical Implementation
 Roadmap — Private RAG API and AIxLearning Integration* (3 ottobre 2026).
 
+**Aggiornamento del 18 ottobre 2026:** contratto ricontrollato su
+`chore/repo-reorg` a `615f7af`. La review aggiornata, con ciò che è pronto e ciò
+che resta prima del freeze di produzione, è in
+[`docs/api/review_api_contract.md`](../api/review_api_contract.md).
+
 **Domanda:** l'API che stiamo costruendo per i chatbot è compatibile con la
 piattaforma AIxLearning, e cosa va considerato prima che i dev la integrino?
 
@@ -206,11 +211,16 @@ Il documento descrive advanced al 3 ottobre. Da allora sono stati fatti:
 - le sessioni con risposte veloci, rimando a una lezione nuova e rifiniture;
 - gli export (md, txt, pdf, docx, scaletta) e le spiegazioni (planner,
   retriever, critic, struttura);
-- il 409 sui documenti non pronti, e codici di errore stabili `{code, message}`;
+- il 409 sui documenti non pronti, e codici di errore applicativi stabili
+  `{code, message}` sulle nuove route di sessioni e materiali (gli errori
+  standard di validazione FastAPI e alcuni errori delle route one-shot hanno
+  ancora una forma diversa);
 - l'identità per utente finale, legata alla proprietà dei documenti.
 
-Anche il timore su `AIX_WRITER_MAX_TOKENS=2000` è superato: nel `.env` condiviso è
-8000.
+Il codice e il `.env` locale generato usano `AIX_WRITER_MAX_TOKENS=8000`, quindi
+il problema osservato nello sviluppo è corretto. Il template
+`deploy/.env.prod.example` è però ancora a `2000`: il valore di produzione deve
+essere validato e allineato prima del rilascio.
 
 ### 5.2 Dove ci discostiamo apposta
 
@@ -223,8 +233,11 @@ Louis propone di **non** usare righe `Lesson` come sessioni dell'API, ma dei
   sessione si escludono (`already_running`), e la chiave del recupero dei
   documenti è l'id della lezione, unico per sessione.
 
-Ci perdiamo il fissare una versione specifica di un documento per sessione: oggi
-vale l'ultima versione pronta.
+La sessione creata con `material_ids` seleziona l'ultima versione disponibile e
+la fissa nel `LessonMaterialBinding`; inoltre l'attach esplicito accetta un
+`version_id`. Il limite attuale è nel contratto di lettura: la risposta della
+sessione non espone chiaramente quale versione è stata fissata, quindi un client
+esterno non può ricostruire tutta la provenienza dal solo payload della sessione.
 
 ### 5.3 Da adottare
 
@@ -242,8 +255,11 @@ vale l'ultima versione pronta.
      Traefik, sullo staging nessuno).
 5. **Id di correlazione** tra il trace Langfuse della piattaforma e il nostro.
 6. **Documenti obbligatori.** Un documento che *deve* essere seguito e non è
-   disponibile fa fallire il turno, invece di essere ignorato. Il 409 dice quali
-   documenti mancano, con `Retry-After`.
+   disponibile deve far fallire il turno, invece di essere ignorato. Oggi il
+   `409 materials_preparing` mette i nomi solo nel messaggio italiano e non
+   invia `Retry-After`; un documento `must_follow` fallito può ancora essere
+   ignorato. Servono una lista strutturata di materiale/versione e una semantica
+   bloccante prima del freeze del contratto.
 7. **Anteprima della pagina citata**, per citazioni verificabili (più avanti).
 8. **Il suo §15 come lista delle decisioni** da chiudere con i dev.
 

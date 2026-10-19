@@ -17,7 +17,8 @@ single FastAPI process.
 | Run it on your laptop | [Running it locally](#running-it-locally) |
 | Understand the agent | [The agentic flow](#the-agentic-flow) |
 | Know which env var does what | [`docs/ENVIRONMENT.md`](docs/ENVIRONMENT.md) — every variable the code reads |
-| Call the API from another service | [`docs/api/API_INTEGRATION_GUIDE.md`](docs/api/API_INTEGRATION_GUIDE.md) |
+| Integrate the conversational API from another service | [`docs/api/Chatbot_API_Guide.md`](docs/api/Chatbot_API_Guide.md) |
+| Call the GraphRAG-only context endpoint | [`docs/api/API_INTEGRATION_GUIDE.md`](docs/api/API_INTEGRATION_GUIDE.md) |
 | Wire up Claude Desktop / Cursor | [`docs/integrations/MCP_Setup.md`](docs/integrations/MCP_Setup.md) |
 | A step-by-step first run | [`docs/runbooks/QUICKSTART.md`](docs/runbooks/QUICKSTART.md) |
 
@@ -31,7 +32,7 @@ One uvicorn process, three entry points, two databases and one LLM provider.
                       ┌──────────────────────────────────────────────┐
   teacher (browser) ──►  /webui/*      HTML + htmx + SSE             │
                       │                                              │
-  DEV team (JSON)  ───►  /api/v1/*     JSON + SSE, JWT Bearer        │
+  DEV team (JSON)  ───►  /api/v1/*     JSON + SSE, Basic/JWT auth    │
                       │                                              │
   MCP client       ───►  /mcp/         Streamable HTTP, JWT Bearer   │
                       └───────────────────────┬──────────────────────┘
@@ -295,14 +296,21 @@ Auth lives under `/auth/*` (`/auth/register`, `/auth/login`, `/auth/logout` — 
 cookie) with a separate JSON Bearer router at `/auth/jwt/login` and `/auth/jwt/logout`.
 Static assets are served from `/static`.
 
-### 2. Agent API — `/api/v1/agent/*`
+### 2. JSON/SSE API — `/api/v1/*`
 
-JWT Bearer, JSON and SSE. Documented live at `/docs` (Swagger UI), where the **Authorize**
-dialog takes a token from `/auth/jwt/login`.
+JSON and SSE. A WebUI user may call with their JWT; a platform service uses
+HTTP Basic credentials and, on owner-scoped materials/sessions routes,
+`X-End-User-Id`. The live contract is at `/docs` (Swagger UI). For the
+conversational private-RAG integration, see
+[`docs/api/Chatbot_API_Guide.md`](docs/api/Chatbot_API_Guide.md).
 
 ```
 POST /api/v1/agent/run      full pipeline, one JSON response. Typical run: 60–120 s.
 POST /api/v1/agent/stream   the same phases as SSE, each event body JSON
+GET|POST /api/v1/materials  owner-scoped private documents and versions
+GET|POST /api/v1/sessions   persistent lesson conversations
+POST /api/v1/sessions/{id}/turns[/stream]  lesson, answer or handoff
+GET  /api/v1/catalog        accepted domains, profile codes, modes and limits
 POST /api/v1/context        the original GraphRAG context endpoint (no agent)
 GET  /api/v1/context/domains
 GET  /api/v1/health         Neo4j reachability, domain configs, code version, DB revision
@@ -651,7 +659,9 @@ monitoring goes to GlitchTip/Sentry when `SENTRY_DSN` is set.
 | [`docs/ENVIRONMENT.md`](docs/ENVIRONMENT.md) | Every environment variable, its default, the consequence of omitting it |
 | [`docs/runbooks/QUICKSTART.md`](docs/runbooks/QUICKSTART.md) | Step-by-step first run |
 | [`docs/runbooks/GraphRAG_Data_Pipeline_Guide.md`](docs/runbooks/GraphRAG_Data_Pipeline_Guide.md) | Rebuilding the KG from raw team data |
-| [`docs/api/API_INTEGRATION_GUIDE.md`](docs/api/API_INTEGRATION_GUIDE.md) | Calling the API from another service |
+| [`docs/api/Chatbot_API_Guide.md`](docs/api/Chatbot_API_Guide.md) | Dev guide for materials, sessions, turns, streaming and exports |
+| [`docs/api/API_INTEGRATION_GUIDE.md`](docs/api/API_INTEGRATION_GUIDE.md) | Legacy/specialized guide for the GraphRAG-only `/context` integration |
+| [`docs/api/review_api_contract.md`](docs/api/review_api_contract.md) | Audit of the current API contract, readiness and remaining gaps |
 | [`docs/api/Explainability_API_Guide_for_Frontend.md`](docs/api/Explainability_API_Guide_for_Frontend.md) | The explainability payload the frontend renders |
 | [`docs/integrations/MCP_Setup.md`](docs/integrations/MCP_Setup.md) | MCP client onboarding |
 | [`docs/architecture/`](docs/architecture/) | Architecture analyses, ADR-0001 (frontend platform) |

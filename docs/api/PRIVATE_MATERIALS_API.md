@@ -2,10 +2,12 @@
 
 The private-material surface is mounted at `/api/v1/materials` and appears in
 the existing Swagger UI at `/docs`. Every operation acts as one owner: a teacher
-with their bearer token (or WebUI session), or the service account of a chatbot
-platform acting for the end user named in `X-End-User-Id` -- each end user is
-its own owner (`aix.api.principals`, 2026-10-14). Errors carry
-`{"code", "message"}`. For the chatbot flow (sessions, turns, downloads) see
+with their established WebUI authentication, or a chatbot platform using HTTP
+Basic service credentials and acting for the end user named in
+`X-End-User-Id` -- each end user is its own owner (`aix.api.principals`,
+2026-10-14). Application errors carry
+`{"detail": {"code", "message"}}`; standard request-validation errors retain
+FastAPI's validation shape. For the chatbot flow (sessions, turns, downloads) see
 [`Chatbot_API_Guide.md`](Chatbot_API_Guide.md).
 
 ## Compatibility gate
@@ -45,6 +47,9 @@ WebUI and queue the existing durable ingestion pipeline. API-created lesson
 bindings are mirrored into the legacy lesson manifest so the attachment remains
 visible in the current WebUI and usable by older rendering paths.
 
-The later AixLearning integration should use bearer authentication, persist the
-returned UUIDs, poll the material detail until the selected version reports
-`ready` or `ready_with_warnings`, and only then start a lesson run.
+For the pilot, the AIxLearning integration should use its instance-specific
+HTTP Basic credentials plus an opaque `X-End-User-Id`, persist the returned
+UUIDs, poll the material detail until the top-level status reports `ready`, and
+only then start a lesson run. A signed per-user/service identity remains the
+recommendation before production because the platform and GraphRAG communicate
+between separate VMs over the network.

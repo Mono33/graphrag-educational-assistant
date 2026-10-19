@@ -2,6 +2,12 @@
 
 This document explains how to use the FastAPI module that provides educational context from the GraphRAG knowledge graph.
 
+> **Scope:** this is the guide for the established, GraphRAG-only
+> `/api/v1/context` integration. Dev teams integrating the conversational agent,
+> private documents, persistent sessions, turns, streaming and exports should
+> use [`Chatbot_API_Guide.md`](Chatbot_API_Guide.md). The `/context` endpoint
+> remains supported for tools that only need Knowledge Graph context.
+
 ---
 
 ## 📋 Table of Contents

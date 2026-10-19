@@ -228,8 +228,12 @@ choices from it rather than hard-coding them.
 
 ## 9. Errors
 
-Every error body is `{"detail": {"code": "…", "message": "…"}}`. The `message` is
-Italian, for a person; the `code` is stable, for your code.
+Application errors from the materials and sessions routes use
+`{"detail": {"code": "…", "message": "…"}}`. The `message` is Italian, for a
+person; the `code` is stable, for your code. Authentication failures, standard
+FastAPI request-validation errors and some errors from the older one-shot
+`/agent/*` routes have their established shapes, so clients must also handle
+those cases until the envelope is normalized.
 
 | HTTP | `code` | Meaning |
 | --- | --- | --- |
@@ -252,3 +256,90 @@ Italian, for a person; the `code` is stable, for your code.
 request, without a session or documents. They now also return the `critic`
 card and the extra planner and retriever fields. For anything conversational,
 use sessions.
+
+---
+
+## Appendix A — Dev integration checklist and current boundaries
+
+This appendix does not change the endpoint contract described above. It
+collects the integration rules the AI and Dev teams should freeze together
+before production. The implementation review is
+[`review_api_contract.md`](review_api_contract.md).
+
+### Which API to use
+
+- Use `/materials`, `/sessions` and `/sessions/{id}/turns[/stream]` for the
+  conversational lesson tools and private RAG.
+- Keep `/context` for existing tools that only need Knowledge Graph context.
+- Keep `/agent/run` and `/agent/stream` only for one-shot generation without
+  persistent private documents.
+
+The older [`API_INTEGRATION_GUIDE.md`](API_INTEGRATION_GUIDE.md) documents the
+GraphRAG-only `/context` integration; it is not the guide for the new
+conversational flow.
+
+### What the platform must persist
+
+Persist the GraphRAG `session_id` and returned material IDs. After a session is
+created, send only the new user turn: GraphRAG stores the conversation and
+material bindings, so the platform must not resend the full history and full
+document text on every request.
+
+Use instance-specific Basic credentials and a stable opaque
+`X-End-User-Id`. Production, corporate and staging must not share credentials.
+
+### Dramatiq retries
+
+Generate one `Idempotency-Key` per logical upload, session creation or turn,
+and reuse that exact value for every Dramatiq retry of the same operation.
+Do not generate a new key inside each retry attempt.
+
+When a streamed request is retried through the blocking endpoint, the same key
+still identifies the original turn. A replayed result has
+`Idempotent-Replayed: true`.
+
+### Mercure adapter
+
+The adapter must:
+
+1. append `text` frames for the active draft;
+2. clear the preview when the `draft` number increases;
+3. discard the preview on `light_escalate`;
+4. replace the preview with the final `result.markdown`;
+5. treat the final `result` frame as authoritative.
+
+### Current contract boundaries
+
+These points are intentionally visible to Dev because they remain joint work:
+
+- **Anonymization:** decide whether AIxLearning uploads anonymized,
+  page-structured Markdown or GraphRAG receives and anonymizes originals.
+- **Production identity:** Basic auth plus an IP allowlist is the pilot
+  boundary; signed identity remains recommended before production.
+- **Required documents:** `purpose="must_follow"` is accepted, but a failed
+  required document is not yet a hard failure.
+- **Preparing documents:** `409 materials_preparing` currently carries names in
+  the human message; it does not yet return a structured material list or
+  `Retry-After`.
+- **Provenance:** citations are resolved in Markdown and document names are
+  returned, but there is not yet a structured source/version/page payload or a
+  page-preview endpoint.
+- **Errors:** handle both the application `{code, message}` envelope and
+  standard FastAPI validation/authentication errors.
+- **Credits and exports:** agree how `lesson`, `answer` and `handoff` are
+  charged, and whether AIxLearning keeps its own watermark/export pipeline.
+- **Tracing:** agree a correlation identifier across AIxLearning, GraphRAG and
+  Langfuse.
+
+### Minimum staging acceptance
+
+Before Dev starts end-to-end testing:
+
+- run all Alembic migrations;
+- enable and audit durable material storage;
+- configure one service credential per platform instance;
+- restrict the staging API by network policy;
+- protect `/docs`, `/redoc`, `/openapi.json` and `/context`;
+- export a version-pinned OpenAPI document for the Dev implementation;
+- run `scripts/eval/api_smoke.py` against the deployed stack;
+- verify that two instances using the same end-user value remain isolated.

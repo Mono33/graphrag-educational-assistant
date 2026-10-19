@@ -3,8 +3,9 @@
 
 Uploads a document, waits until it is ready, opens a session on it and runs
 three turns -- a lesson, a question, a request for a new lesson -- printing what
-each returned and how long it took. Real model calls: a run costs what one
-lesson and one answer cost in the WebUI.
+each returned and how long it took. Mutating calls carry the same
+``Idempotency-Key`` headers a retry-safe platform client must use. Real model
+calls: a run costs what one lesson and one answer cost in the WebUI.
 
 Usage::
 
@@ -22,6 +23,7 @@ import argparse
 import io
 import sys
 import time
+import uuid
 from pathlib import Path
 
 import httpx
@@ -85,13 +87,18 @@ def main() -> int:
         print("GRAPH_API_USERNAME / GRAPH_API_PWD missing in", args.env)
         return 2
     headers = {"X-End-User-Id": args.end_user}
+    job = f"api-smoke-{uuid.uuid4()}"
 
     with httpx.Client(base_url=args.base, auth=auth, headers=headers, timeout=300) as client:
         if args.file:
             name, content = Path(args.file).name, Path(args.file).read_bytes()
         else:
             name, content = "guerra-fredda.docx", _docx(DEFAULT_TEXT)
-        upload = client.post("/api/v1/materials", files={"file": (name, content)})
+        upload = client.post(
+            "/api/v1/materials",
+            files={"file": (name, content)},
+            headers={"Idempotency-Key": f"{job}:upload"},
+        )
         upload.raise_for_status()
         material = upload.json()
         print(f"uploaded {name}: {material['id']} {material['status']}")
@@ -115,14 +122,23 @@ def main() -> int:
                 "educational_profile": {"pedagogical_intent": "intro"},
                 "material_ids": [material["id"]],
             },
+            headers={"Idempotency-Key": f"{job}:session"},
         )
         created.raise_for_status()
         session_id = created.json()["session_id"]
         print(f"session {session_id}")
 
+        turn_number = 0
+
         def turn(label: str, **body) -> dict:
+            nonlocal turn_number
+            turn_number += 1
             started = time.monotonic()
-            response = client.post(f"/api/v1/sessions/{session_id}/turns", json=body)
+            response = client.post(
+                f"/api/v1/sessions/{session_id}/turns",
+                json=body,
+                headers={"Idempotency-Key": f"{job}:turn:{turn_number}"},
+            )
             if response.status_code != 200:
                 print(f"\n== {label}: HTTP {response.status_code} {response.text[:300]}")
                 return {}
