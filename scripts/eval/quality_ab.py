@@ -559,13 +559,40 @@ def _summary(rows: list[dict]) -> dict:
 def report(args: argparse.Namespace) -> int:
 
     base = Path(args.out)
-    a = {r["case"]: r for r in json.loads((base / args.a / "results.json").read_text("utf-8"))}
-    b = {r["case"]: r for r in json.loads((base / args.b / "results.json").read_text("utf-8"))}
+
+    def load(labels: str) -> list[dict]:
+        """One run, or several separated by commas: the same cases sent again."""
+        return [
+            row
+            for label in labels.split(",")
+            for row in json.loads((base / label / "results.json").read_text("utf-8"))
+        ]
+
+    runs_a, runs_b = load(args.a), load(args.b)
+    a = {r["case"]: r for r in reversed(runs_a)}  # the first run's lesson, for the page
+    b = {r["case"]: r for r in reversed(runs_b)}
     cases = sorted(set(a) & set(b))
-    sa, sb = _summary([a[c] for c in cases]), _summary([b[c] for c in cases])
-    print(f"{'':32} {args.a:>12} {args.b:>12}")
+    sa = _summary([r for r in runs_a if r["case"] in cases])
+    sb = _summary([r for r in runs_b if r["case"] in cases])
+    name_a, name_b = args.a.split(",")[0].rstrip("0123456789"), args.b.split(",")[0]
+    name_b = name_b.rstrip("0123456789")
+    print(f"{'':42} {name_a:>12} {name_b:>12}")
     for key in sa:
-        print(f"{key:32} {str(sa[key]):>12} {str(sb[key]):>12}")
+        print(f"{key:42} {str(sa[key]):>12} {str(sb[key]):>12}")
+    # Case by case, every run: «7/7 against 8/8» was one case answered with
+    # strategies instead of a lesson (third blind read).
+    print("\nper caso (una colonna per esecuzione): minuti ok · conti · liste · nota falsa · s")
+    for c in cases:
+        for name, rows in ((name_a, runs_a), (name_b, runs_b)):
+            cells = [
+                f"{'✓' if r.get('minutes_ok') else ('—' if r.get('minutes_ok') is None else '✗')}"
+                f"{'C' if r.get('count_mismatch') else '.'}"
+                f"{len(r.get('usage_wrong') or [])}"
+                f"{'N' if r.get('false_provenance') else '.'} {r['seconds']:>5}"
+                for r in rows
+                if r["case"] == c
+            ]
+            print(f"  {c} {name:>8}: " + " | ".join(cells))
     (base / "summary.json").write_text(
         json.dumps({args.a: sa, args.b: sb}, ensure_ascii=False, indent=2), "utf-8"
     )
