@@ -881,7 +881,14 @@ def usage(
             continue
         for name in _links(_name(node), edges, by_name)[0]:
             label = f"{name} ({need_group(node)})"
-            if name not in used and name not in avoid and label not in unused:
+            if name in used or name in avoid:
+                continue
+            # A suggestion the lesson names is used, whatever the graph calls it:
+            # Adaptive Strategies is not a «strategy» node, and was listed as
+            # unused while the lesson labelled it (third blind read, 2026-10-19).
+            if _in_lesson(name, lesson_lower):
+                used.append(name)
+            elif label not in unused:
                 unused.append(label)
     myths = [_name(n) for n in ranked if kind(n) == "myth"]
     advised = sorted(name for name in avoid if name not in myths)

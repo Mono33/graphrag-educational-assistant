@@ -252,8 +252,26 @@ def _follow_up_sections(answer: str) -> list[tuple[str, list[str]]]:
     return sections
 
 
+#: «- **ADHD:** Structured Routines [in «…»], Visual Aids»: a group, then its list.
+_GROUPED = re.compile(r"^[-*•]\s*\*\*[^*]+?:?\*\*:?\s+(?=\S)(?!\()")
+
+
+def _grouped_items(bullet: str) -> list[str]:
+    """The list after a bold group label, or [] when the bullet is not one."""
+    if not _GROUPED.match(bullet):
+        return []
+    tail = re.sub(r"\[[^\]]*\]", "", _GROUPED.sub("", bullet, count=1))
+    items = [i.strip(" .*") for i in re.split(r",|;|\be\b", tail) if i.strip(" .*")]
+    # The graph's names, «Structured Routines»: a sentence after a bold label is not a list.
+    names = all(i[:1].isupper() and len(i.split()) <= 6 for i in items)
+    return items if items and names else []
+
+
 def _count_names(text: str) -> int:
     """The graph's elements a bullet names: its bold names, or a list after a colon."""
+    grouped = _grouped_items(text)
+    if grouped:
+        return len(grouped)
     bold = len(re.findall(r"\*\*[^*]+\*\*", text))
     if bold:
         return bold
@@ -309,7 +327,7 @@ def usage_contradictions(answer: str, lesson: str) -> list[str]:
     unused). Only labels count there: «ritmo di comprensione» in a sentence is
     not the strategy applied.
     """
-    from aix.agent.kg_evidence import _NEEDS_IN_TEXT, _in_lesson, _norm, lesson_body
+    from aix.agent.kg_evidence import _norm, lesson_body
 
     raw = lesson_body(lesson)
     body = _norm(raw)
@@ -326,26 +344,37 @@ def usage_contradictions(answer: str, lesson: str) -> list[str]:
         if not (used or unused):
             continue
         for bullet in bullets:
-            label = re.split(r":\s", bullet, maxsplit=1)[0]
-            names = [a or b for a, b in _NAMES.findall(label)]
-            names += [p for group in re.findall(r"\(([^()]+)\)", label) for p in group.split(",")]
-            names = [n.strip(" *:") for n in names if n.strip(" *:")]
-            # «(ADHD)», «(plusdotazione)» say which need, not which strategy.
-            needs = {need.lower() for need in _NEEDS_IN_TEXT}
-            names = [
-                n
-                for n in names
-                if n.lower() not in needs and not any(p.search(n) for p in _NEEDS_IN_TEXT.values())
-            ]
-            if not names:
-                continue
-            if used and not any(_in_lesson(n, body) for n in names):
-                wrong.append(f"usato, assente: {names[0]}")
-            if unused:
-                present = [n for n in names if _in_lesson(n, labels)]
-                if present:
-                    wrong.append(f"non usato, presente: {present[0]}")
+            grouped = _grouped_items(bullet)
+            # A group of names: each is checked on its own.
+            for names in [[n] for n in grouped] if grouped else [None]:
+                if names is None:
+                    label = re.split(r":\s", bullet, maxsplit=1)[0]
+                    names = [a or b for a, b in _NAMES.findall(label)]
+                    names += [
+                        p for group in re.findall(r"\(([^()]+)\)", label) for p in group.split(",")
+                    ]
+                wrong.extend(_misplaced(names, used=used, body=body, labels=labels))
     return wrong
+
+
+def _misplaced(names: list[str], *, used: bool, body: str, labels: str) -> list[str]:
+    """One item of a follow-up list against the lesson: see ``usage_contradictions``."""
+    from aix.agent.kg_evidence import _NEEDS_IN_TEXT, _in_lesson
+
+    names = [n.strip(" *:") for n in names if n.strip(" *:")]
+    # «(ADHD)», «(plusdotazione)» say which need, not which strategy.
+    needs = {need.lower() for need in _NEEDS_IN_TEXT}
+    names = [
+        n
+        for n in names
+        if n.lower() not in needs and not any(p.search(n) for p in _NEEDS_IN_TEXT.values())
+    ]
+    if not names:
+        return []
+    if used:
+        return [] if any(_in_lesson(n, body) for n in names) else [f"usato, assente: {names[0]}"]
+    present = [n for n in names if _in_lesson(n, labels)]
+    return [f"non usato, presente: {present[0]}"] if present else []
 
 
 def _env(path: Path) -> dict[str, str]:
@@ -376,10 +405,13 @@ def _kg_sources(lesson: str) -> int:
 
 
 def _body(lesson: str) -> str:
-    """The lesson without its sources and closing note, where the graph is named."""
-    return re.split(
-        r"\*Fonti:?\*|^## Fonti|nota sulle fonti", lesson, maxsplit=1, flags=re.I | re.M
-    )[0]
+    """The lesson without its sources and closing note, where the graph is named.
+
+    The system's own boundary: «*Fonti: Knowledge Graph — …*» on one line was
+    counted as jargon in the body (third blind read)."""
+    from aix.agent.kg_evidence import _SOURCES
+
+    return _SOURCES.split(lesson, maxsplit=1)[0]
 
 
 def _sources(lesson: str) -> list[str]:

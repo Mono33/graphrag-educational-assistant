@@ -74,3 +74,16 @@ def test_kg_in_the_sources_is_jargon_not_a_prompt_leak():
     row = measure("udl", {}, LESSON.replace("Visual Organizers.", "Visual Organizers (KG)."), "")
 
     assert row["leaks"] == [] and row["jargon"] >= 1
+
+
+def test_a_list_grouped_by_need_is_read_name_by_name():
+    """«**ADHD:** A, B» and «**Per tutta la classe:** C»: the label is not a strategy."""
+    answer = (
+        "Il grafo ha restituito 9 elementi.\n\n**Strategie usate nella lezione**\n"
+        "- **ADHD:** Socratic questioning [in «Attività 1»], Adaptive Strategies.\n"
+        "- **Per tutta la classe:** Feedback loops [in «Valutazione»].\n\n"
+        "**Il resto:** 6 elementi, non usati o non pertinenti."
+    )
+
+    assert usage_contradictions(answer, LESSON) == ["usato, assente: Feedback loops"]
+    assert not total_mismatch(answer)

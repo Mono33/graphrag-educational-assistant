@@ -3618,3 +3618,34 @@ entrambe le configurazioni), Socratic questioning e Quantum jargon misuse.
 Sfuggono Visual Organizers e Social comparison.
 
 Prossimo passo: rigenerare insieme le due configurazioni, 3 esecuzioni per caso.
+
+**Giudice acceso contro spento, rigenerati insieme** (stesso build, 3 esecuzioni
+senza giudice e 2 con, 40 lezioni; la terza esecuzione con il giudice è stata
+fermata per contenere la spesa):
+
+| | spento (24) | acceso (16) |
+|---|---|---|
+| minuti esatti | 23/23 | 14/14 |
+| nota che cita allegati inesistenti | 0/24 | 0/16 |
+| nodi del grafo usati nel testo (media) | 4,5 | 5,1 |
+| follow-up: conti che non tornano | 6/24 | 3/16 |
+| gergo per lezione, senza il caso 7 | 0,2 | 0,6 |
+| Critic: approvate | 24/24 | 15/16 |
+| secondi (media) | 37,6 | 43,3 |
+
+La nota falsa sparisce (era 4 su 16). Il caso 7 esce in formato «strategie»
+in 3 esecuzioni su 5, con il giudice e senza: è una scelta del pianificatore. Il
+gergo con il giudice acceso è in 3 lezioni («nel KG: Anxiety»), ma il Writer lo
+scrive anche senza giudice. Con questi numeri non si capisce se lo aggiungano le
+revisioni: resta aperto.
+
+Il controllo delle liste ha trovato un difetto del sistema. Le non usate venivano
+dai suggerimenti per i bisogni, che possono essere nodi di qualunque tipo; le
+usate contavano solo strategie e strumenti. Così Adaptive Strategies, Awareness of
+Errors e Sustained Engagement risultavano non usate anche dove la lezione le
+etichetta. Ora un suggerimento che la lezione nomina conta come usato. Queste 40
+lezioni sono state generate prima della correzione.
+
+Le misure sulle liste e sui conti del follow-up restano approssimate (leggono
+prosa libera con espressioni regolari): servono a trovare i casi, poi i casi si
+leggono.

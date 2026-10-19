@@ -451,3 +451,25 @@ def test_what_the_sources_list_is_not_used_by_the_lesson(sources):
 
     assert usage(NODES, RELS, PROFILE, lesson)["used"] == []
     assert "Fonti di energia" in lesson_body(lesson)
+
+
+def test_a_suggestion_the_lesson_labels_is_used_whatever_kind_of_node_it_is():
+    """Adaptive Strategies and Awareness of Errors are not «strategy» nodes: the
+    lesson labelled them, and the follow-up listed them as unused (2026-10-19)."""
+    from aix.agent.kg_evidence import usage
+
+    nodes = NODES + [{"name": "Adaptive Strategies", "labels": ["Outcome"], "rank_score": 1}]
+    rels = RELS + [
+        {
+            "source": "Difficulty sustaining focus",
+            "type": "SUGGESTS",
+            "target": "Adaptive Strategies",
+        }
+    ]
+    lesson = "## Differenziazione\n- La scheda divisa in passi (Adaptive Strategies)."
+
+    found = usage(nodes, rels, PROFILE, lesson)
+
+    assert "Adaptive Strategies" in found["used"]
+    assert not any(u.startswith("Adaptive Strategies") for u in found["unused_for_needs"])
+    assert found["where"]["Adaptive Strategies"] == "Differenziazione"
