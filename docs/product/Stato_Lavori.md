@@ -3491,3 +3491,31 @@ Terzo giro: pulito su tutti i controlli automatici, minuti esatti 8/8. Gli error
 di contenuto (quiz, esempi linguistici) restano al giudice: il Critic attuale legge
 solo i primi 3.000 caratteri della lezione. Dettagli in
 `Analisi_Qualita_Risposte.md` §7.7.
+
+### 2026-10-19 — Il giudice: misurato prima di collegarlo
+
+Il Critic legge solo i primi 3.000 caratteri di lezioni lunghe circa 7.000
+(`AIX_CRITIC_LESSON_MAX_CHARS`) e dà cinque voti generici: approva 8 lezioni su 8,
+compresi un quiz sbagliato e «ga-to». Al suo posto, ma non ancora collegato alla
+catena, il giudice (`aix.agent.validation.judge`):
+
+- legge la lezione intera e risponde a 8 domande sì/no (esempi di lingua, fatti,
+  esercizi, chiarezza, perimetro, sicurezza, risorse, sostenibilità per la classe);
+- ogni problema ha la citazione esatta, il perché e il testo corretto; se la
+  citazione non è nella lezione, il problema si scarta.
+
+Banco di prova `scripts/eval/check_judge.py`: 14 tipi di errore delle letture alla
+cieca, inseriti in 17 lezioni, più 16 lezioni senza inserimenti.
+
+| | Sonnet 5.5 | Haiku 5.5 |
+|---|---|---|
+| errori trovati | 17/17 | 14/17 (sfuggono ga-to, p/b, video) |
+| citazioni inventate | 0 | 0 |
+| bloccanti sulle lezioni senza inserimenti | 26 | 5 |
+| costo per lezione | ~$0,019 | ~$0,002 |
+
+Delle bloccanti di Sonnet sulle lezioni attuali, circa 7 su 10 sono problemi veri,
+sfuggiti a tutti. Per esempio «pe-lu-ria» data come esempio del suono /ʎ/,
+«foglia/moglie» come coppia di suoni da distinguere, quattro fasi negli obiettivi
+contro tre nell'attività. Prossimo passo: come trasformare le segnalazioni in
+correzioni.
