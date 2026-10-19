@@ -108,6 +108,9 @@ PHASE_LABELS: dict[str, str] = {
     "reuse": "Riuso del contesto già recuperato",
     "write": "Scrittura della lezione",
     "critique": "Revisione e valutazione qualità",
+    # The judge (2026-10-19): when it is on, its diff carries the repaired lesson
+    # and the review notes, and a dropped diff would ship the lesson unrepaired.
+    "judge": "Revisione mirata delle correzioni",
 }
 
 
@@ -1286,6 +1289,9 @@ def _extract_meta(final_state: dict[str, Any]) -> dict[str, Any]:
         "media_counts": _count_media(media),
         "search_queries_count": len(final_state.get("search_queries") or []),
         "udl_coverage": udl_coverage,
+        # The judge's notes for the teacher, shown under the lesson.
+        "review_notes": final_state.get("review_notes") or [],
+        "judge": final_state.get("judge_summary"),
     }
 
 
@@ -1664,12 +1670,11 @@ async def run_agent_stream(
                         kind="critic",
                         payload=_critic_pl,
                     )
-                    approved = final_state.get("approved", False)
-                    rev_count = int(final_state.get("revision_count", 0))
-                    max_rev = int(final_state.get("max_revisions", 1))
-                    # Same rule as ``should_continue_to_revision``: the count
-                    # already includes this rejection.
-                    if (not approved) and rev_count <= max_rev:
+                    from aix.agent.graph.nodes import should_continue_to_revision
+
+                    # Same router as the graph: with the judge on, a rejection
+                    # goes to the judge, and no «revising» card should appear.
+                    if should_continue_to_revision(final_state) == "revise":
                         write_revision_idx += 1
                         yield StreamEvent(
                             kind="writer_pending",
@@ -2034,12 +2039,11 @@ async def stream_agent_events(
                         kind="critic",
                         payload=_build_critic_payload(final_state),
                     )
-                    approved = final_state.get("approved", False)
-                    rev_count = int(final_state.get("revision_count", 0))
-                    max_rev = int(final_state.get("max_revisions", 1))
-                    # Same rule as ``should_continue_to_revision``: the count
-                    # already includes this rejection.
-                    if (not approved) and rev_count <= max_rev:
+                    from aix.agent.graph.nodes import should_continue_to_revision
+
+                    # Same router as the graph: with the judge on, a rejection
+                    # goes to the judge, and no «revising» card should appear.
+                    if should_continue_to_revision(final_state) == "revise":
                         write_revision_idx += 1
                         yield StreamEvent(
                             kind="writer_pending",

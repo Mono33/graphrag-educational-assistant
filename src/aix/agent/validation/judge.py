@@ -151,6 +151,11 @@ class JudgeReport:
         return [i for i in self.issues if i.severity == "bloccante"]
 
 
+def judge_enabled() -> bool:
+    """``AIX_JUDGE_ENABLED``: the judge reviews and repairs every lesson. Off by default."""
+    return (os.getenv("AIX_JUDGE_ENABLED") or "").strip().lower() in ("1", "true", "yes", "on")
+
+
 def judge_model() -> str:
     return os.getenv("AIX_JUDGE_MODEL") or DEFAULT_JUDGE_MODEL
 

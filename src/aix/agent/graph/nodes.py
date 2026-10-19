@@ -971,6 +971,94 @@ async def critique_node(state: AgentState) -> dict[str, Any]:
         return {"error": str(e), "current_step": "error"}
 
 
+async def judge_node(state: AgentState) -> dict[str, Any]:
+    """Review the lesson with the judge and fix what is wrong where it is.
+
+    Replacements in code, revisions of the block around a problem only, then
+    the judge again on the repaired lesson. A repair that leaves more blocking
+    problems than it found is undone: the lesson goes out as it was, with the
+    problems as notes. Whatever is not fixed -- minor problems, and blocking
+    ones no repair could make safely -- becomes a note for the teacher. See
+    ``validation.judge`` and ``validation.repair``.
+    """
+    from dataclasses import asdict
+
+    from aix.agent.validation.judge import judge_lesson
+    from aix.agent.validation.repair import apply_replacements, revise_units
+
+    draft = state.get("final_lesson_plan") or state.get("lesson_plan_draft") or ""
+    if not draft.strip():
+        return {"current_step": "judge_complete"}
+    request = str(state.get("raw_user_turn") or state.get("teacher_query") or "")
+    profile = state.get("educational_profile")
+
+    first = await judge_lesson(draft, request=request, profile=profile)
+    summary: dict[str, Any] = {
+        "model": first.model,
+        "found": len(first.issues),
+        "blocking": len(first.blocking),
+        "replaced": 0,
+        "revised": 0,
+        "second_check": False,
+        "undone": False,
+        "cost": first.cost or 0.0,
+        "seconds": first.seconds,
+    }
+    if first.error:
+        summary["error"] = first.error
+        return {
+            "final_lesson_plan": draft,
+            "review_notes": [],
+            "judge_summary": summary,
+            "current_step": "judge_complete",
+        }
+
+    replaced = apply_replacements(draft, first.issues)
+    revised = await revise_units(replaced.lesson, replaced.left, request=request)
+    lesson = revised.lesson
+    summary.update(
+        replaced=len(replaced.replaced),
+        revised=len(revised.revised),
+        cost=summary["cost"] + revised.cost,
+    )
+    notes = [i for i in first.issues if i.severity != "bloccante"] + revised.left
+
+    if lesson != draft:
+        second = await judge_lesson(lesson, request=request, profile=profile)
+        summary.update(
+            second_check=True,
+            cost=summary["cost"] + (second.cost or 0.0),
+            seconds=round(summary["seconds"] + second.seconds, 1),
+        )
+        if not second.error and len(second.blocking) > len(first.blocking):
+            # The repair made it worse: undone.
+            logger.warning(
+                "[Node: Judge] repair left %d blocking problems (were %d): undone",
+                len(second.blocking),
+                len(first.blocking),
+            )
+            lesson, notes = draft, list(first.issues)
+            summary.update(undone=True, replaced=0, revised=0)
+        elif not second.error:
+            notes = list(second.issues)
+
+    logger.info(
+        "[Node: Judge] %d found (%d blocking): %d replaced, %d revised, %d notes",
+        summary["found"],
+        summary["blocking"],
+        summary["replaced"],
+        summary["revised"],
+        len(notes),
+    )
+    return {
+        "final_lesson_plan": lesson,
+        "lesson_plan_draft": lesson,
+        "review_notes": [asdict(note) for note in notes],
+        "judge_summary": summary,
+        "current_step": "judge_complete",
+    }
+
+
 #: Separates the validator's fix from the teacher's refinement instruction.
 _REMEDIATION_MARK = "## Correzioni richieste dal controllo della classe"
 
@@ -1067,6 +1155,24 @@ def should_continue_to_revision(state: AgentState) -> str:
     """
     if state.get("error"):
         return "error"
+
+    from aix.agent.validation.judge import judge_enabled
+
+    # With the judge on, a lesson is not rewritten whole for what the Critic
+    # finds: it goes to the judge, which fixes the sentences that are wrong.
+    # The one exception is a lesson that ignores the attached documents --
+    # nothing to fix in place, a part is missing -- which still goes back to
+    # the Writer while revisions are left.
+    if judge_enabled():
+        missing_documents = DOCUMENTS_UNUSED_INSTRUCTION in (
+            state.get("revision_instructions") or ""
+        )
+        within_budget = state.get("revision_count", 0) <= state.get("max_revisions", 1)
+        if not state.get("approved", False) and missing_documents and within_budget:
+            logger.info("[Router] Attached documents unused: revising")
+            return "revise"
+        logger.info("[Router] To the judge")
+        return "judge"
 
     if state.get("approved", False):
         logger.info("[Router] Lesson plan approved, finishing...")

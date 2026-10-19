@@ -39,6 +39,7 @@ from aix.agent.graph.nodes import (
     # an import error fails fast even when the feature flag is off; the
     # nodes are only added to the topology when the flag is on.
     grade_retrieval_node,
+    judge_node,
     plan_node,
     retrieve_node,
     retrieve_private_node,
@@ -212,16 +213,17 @@ def _build_workflow() -> StateGraph:
         {"rewrite": "write", "critique": "critique"},
     )
 
-    # Add conditional edge for revision loop
-    workflow.add_conditional_edges(
-        "critique",
-        should_continue_to_revision,
-        {
-            "revise": "write",
-            "finish": END,
-            "error": END,
-        },  # Go back to writer  # End the pipeline  # End on error
-    )
+    # Add conditional edge for revision loop. With the judge on (2026-10-19),
+    # the Critic's verdict goes to the judge, which fixes the lesson in place
+    # instead of sending it back to be rewritten whole; see ``judge_node``.
+    from aix.agent.validation.judge import judge_enabled
+
+    routes = {"revise": "write", "finish": END, "error": END}
+    if judge_enabled():
+        workflow.add_node("judge", judge_node, retry_policy=LLM_RETRY_POLICY)
+        workflow.add_edge("judge", END)
+        routes["judge"] = "judge"
+    workflow.add_conditional_edges("critique", should_continue_to_revision, routes)
     return workflow
 
 

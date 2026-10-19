@@ -299,6 +299,14 @@ class AgentState(TypedDict, total=False):
     revision_instructions: Optional[str]  # What to fix if not approved
 
     # ========================================
+    # THE JUDGE (2026-10-19, ``validation.judge`` + ``validation.repair``)
+    # ========================================
+    # Problems left for the teacher to read (minor ones, and blocking ones the
+    # repair could not fix), and what the judge did, for the meta and the traces.
+    review_notes: Optional[list[dict[str, Any]]]
+    judge_summary: Optional[dict[str, Any]]
+
+    # ========================================
     # Q1 · 1.3 — VALIDATOR OUTPUT (deterministic, no LLM)
     # ========================================
     # Written by ``validate_node`` between the Writer and the Critic. The Critic
@@ -437,6 +445,8 @@ class AgentInput(TypedDict, total=False):
     critique_score: Optional[float]
     approved: bool
     revision_instructions: Optional[str]
+    review_notes: Optional[list[dict[str, Any]]]
+    judge_summary: Optional[dict[str, Any]]
 
     # Run metadata. ``revision_count`` reset is load bearing: see above.
     revision_count: int
@@ -580,6 +590,9 @@ def create_initial_state(
         critique_score=None,
         approved=False,
         revision_instructions=None,
+        # The judge's, per turn (``judge_node``).
+        review_notes=None,
+        judge_summary=None,
         # Metadata
         revision_count=0,
         max_revisions=max_revisions,
