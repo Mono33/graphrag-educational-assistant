@@ -3924,3 +3924,13 @@ poi «lezione sui vulcani», conferma e «semplifica»). Sono serviti tre passag
 Due esecuzioni consecutive: le lezioni sui vulcani e i loro affinamenti restano
 sui vulcani, non citano il PDF, l'affinamento dura 22 s (prima 154), e il
 controllo trova 1 argomento su 5 o 0 su 6 e non riscrive.
+
+### 2026-10-16 — `writer-stream` controlla il proprietario
+
+Trovato lavorando allo streaming dell'API su `chore/repo-reorg` e portato qui
+per lo staging: `GET /webui/lesson/{id}/writer-stream` (il typewriter della
+WebUI) controllava solo il login, non che la lezione fosse dell'utente. Un
+docente autenticato che avesse l'id di una lezione altrui poteva leggerne il
+testo mentre veniva scritto. Ora risponde 404 come le altre rotte; il test
+`test_bruno_cannot_follow_annas_lesson_as_it_is_written` fallisce senza la
+correzione.
