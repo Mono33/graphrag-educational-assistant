@@ -3,6 +3,9 @@
 **For:** teams building an application on top of the agent (chatbots, assistants)
 **From:** AI team · **Date:** 2026-10-14 · **Base path:** `/api/v1`
 
+New here? Read [`QUICKSTART.md`](QUICKSTART.md) first: one page with the flow
+and the calls.
+
 Everything the WebUI does is available here: the documents a teacher attaches
 (private RAG), the conversation, the fast answers, the lesson with its full
 explanation, the downloads. The API uses the same code as the WebUI, so the

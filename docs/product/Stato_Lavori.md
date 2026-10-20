@@ -3981,3 +3981,14 @@ Ancora da fare sulla VM: nel `.env` non ci sono né `GRAPH_API_*` né
 `AIX_API_CLIENTS`, quindi oggi nessun service account può usare l'API dello
 staging. Va creato un client per l'istanza di staging di AIxLearning, in un file
 non versionato.
+
+### 2026-10-20 — Una pagina per i dev: `docs/api/QUICKSTART.md`
+
+Per la consegna ai dev di AIxLearning: una pagina sola con accesso (URL dello
+staging, Basic auth, `X-End-User-Id`), il flusso in quattro chiamate con esempi
+`curl`, i tre `kind` di risposta e cosa farne, tre regole (stream, idempotenza,
+un messaggio alla volta), gli errori da gestire e a cosa serve ciascun file
+consegnato (`openapi.json` non si legge: si importa in Postman o genera il
+client). `Chatbot_API_Guide.md` rimanda alla quickstart come punto di partenza.
+Da mandare: `QUICKSTART.md`, `Chatbot_API_Guide.md`, `openapi.json`; le
+credenziali a parte.
