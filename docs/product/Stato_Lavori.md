@@ -3886,3 +3886,22 @@ canali. Da notare anche che con il PDF del ciclo dell'acqua ancora legato alla
 sessione, la lezione sui vulcani torna una volta al Writer per «documenti non
 usati» (circa 10 s in più): la regola chiede di dire in una riga che i documenti
 non riguardano la richiesta.
+
+### 2026-10-20 — Le due cose emerse dalla prova via API, corrette prima del push
+
+- **Il cambio di argomento con un documento legato.** Riletta, la lezione «sui
+  vulcani» della prova era intitolata «Il ciclo dell'acqua: un viaggio senza
+  fine». Il PDF del ciclo dell'acqua era ancora legato alla sessione, i suoi
+  passaggi risultavano «abbastanza simili» (scienze della Terra), e il controllo
+  dei documenti non usati ha fatto riscrivere la lezione sul documento. I
+  controlli della prova verificavano che arrivasse una lezione, non di che cosa
+  parlasse. Ora il controllo rimanda indietro solo se una parola dell'argomento del
+  turno (dal pianificatore: «vulcani», «eruzione», «magma») compare nei passaggi.
+  Senza argomento estratto resta come prima, così il caso del libro ignorato del
+  29/09 è ancora coperto. L'istruzione al Writer dice che l'argomento resta quello
+  della richiesta. La guida per i dev spiega che cosa succede ai documenti legati
+  quando si cambia argomento.
+- **La query sul grafo rimasta appesa 99 s.** La traduzione e la scrittura del
+  Cypher hanno ora un limite proprio, `AIX_TEXT2CYPHER_TIMEOUT_S` (20 s), senza
+  nuovi tentativi (LangChain ne faceva 2). Oltre il limite la query si salta e la
+  ricerca prosegue con gli altri canali.

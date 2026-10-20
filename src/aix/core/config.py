@@ -65,6 +65,21 @@ def takes_effort(model: Optional[str]) -> bool:
     )
 
 
+def text2cypher_timeout() -> float:
+    """``AIX_TEXT2CYPHER_TIMEOUT_S``: how long a graph query may take to be written.
+
+    Its own limit, not ``AIX_LLM_TIMEOUT_S`` (120 s, sized for the Writer): a
+    Cypher query is a few lines, and usually comes in 1-2 s. On 2026-10-20 one
+    took 99 s and held the whole lesson; past this limit the query is skipped and
+    the search goes on with its other channels. No retry, for the same reason.
+    """
+    raw = os.getenv("AIX_TEXT2CYPHER_TIMEOUT_S", "20")
+    try:
+        return max(3.0, float(raw))
+    except ValueError:
+        return 20.0
+
+
 def reasoning_extra_body(model: Optional[str]) -> Optional[dict]:
     """The reasoning setting a model that thinks on its own needs, or ``None``.
 

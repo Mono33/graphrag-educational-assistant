@@ -7,7 +7,7 @@ Enhanced with comprehensive educational terminology including UDL, BES, DSA conc
 import logging
 import re
 
-from aix.core.config import config
+from aix.core.config import config, text2cypher_timeout
 
 # Import domain configuration system for scalable architecture
 from aix.domains import get_domain_config
@@ -464,6 +464,9 @@ class MultilingualText2Cypher:
                 max_tokens=500,
                 model_override=config.text2cypher.model,
             )
+            # No retry: past its short limit the query goes on untranslated.
+            if hasattr(client, "with_options"):
+                client = client.with_options(max_retries=0)
             response = client.chat.completions.create(
                 messages=[
                     {
@@ -485,6 +488,8 @@ class MultilingualText2Cypher:
                         ),
                     },
                 ],
+                # A short limit of its own: past it the Italian query goes on as it is.
+                timeout=text2cypher_timeout(),
                 **completion_kwargs,
             )
 

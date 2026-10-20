@@ -879,16 +879,54 @@ DOCUMENTS_UNUSED_INSTRUCTION = (
     "La docente ha allegato dei documenti e la risposta non ne usa né cita nessun "
     "passaggio. Riscrivi la risposta costruendo i contenuti sui passaggi dei documenti, "
     "con i loro marcatori, e usa la mappa dei documenti per scegliere che cosa proporre. "
-    "Se i documenti non riguardano davvero la richiesta, dillo in una riga."
+    "L'argomento resta quello della richiesta: usa i passaggi che lo riguardano, e se "
+    "i documenti parlano d'altro non cambiare argomento, dillo in una riga."
 )
+
+#: Words of a request that say nothing about its subject.
+_GENERIC_WORDS = frozenset(
+    "lezione lezioni classe classi alunni alunno studenti studente attività attivita "
+    "didattica didattico scuola primaria secondaria grado docente fammi creare crea "
+    "prepara prepariamo vorrei completa completo nuova nuovo lesson lessons class "
+    "students teaching education school activity activities create complete about "
+    "sulla sulle sugli sullo della delle degli dello questa questo questi queste".split()
+)
+_TOPIC_WORD = re.compile(r"[a-zàèéìíòóùú]{4,}", re.IGNORECASE)
+
+
+def _passages_about_the_request(state: AgentState, passages: list[dict[str, Any]]) -> bool:
+    """Whether the passages speak of what this turn asks: a word of its subject is in them.
+
+    Similarity alone is not enough. On 2026-10-20 a session kept the water-cycle
+    handout, the teacher asked for a lesson on volcanoes, the passages were
+    «similar enough» (earth sciences), and the rewrite this check ordered turned
+    the lesson on volcanoes into one on the water cycle. Without a subject from
+    the planner the passages are taken to be about it, as before: the case this
+    check was made for (a 222-page book ignored, 2026-09-29) stays covered.
+    """
+    subject = " ".join(str(c) for c in (state.get("subject_concepts") or []))
+    if not subject.strip():
+        return True
+    words = {
+        w.lower()
+        for w in _TOPIC_WORD.findall(f"{subject} {state.get('raw_user_turn') or ''}")
+        if w.lower() not in _GENERIC_WORDS
+    }
+    text = " ".join(str(p.get("text") or "") for p in passages).lower()
+    # A stem, so «vulcani» meets «vulcanica» and «eruzione» meets «eruzioni».
+    return any(w[: max(4, min(len(w), 6))] in text for w in words)
 
 
 def _ignores_the_documents(state: AgentState) -> bool:
-    """Relevant passages were handed over, and the draft cites none of them."""
+    """Passages about this request were handed over, and the draft cites none of them."""
     items = state.get("material_context_items") or []
     draft = state.get("lesson_plan_draft") or ""
-    relevant = any(float(i.get("score") or 0) >= RELEVANT_PASSAGE_SCORE for i in items)
-    return relevant and "[[material:" not in draft
+    relevant = [i for i in items if float(i.get("score") or 0) >= RELEVANT_PASSAGE_SCORE]
+    return (
+        bool(relevant)
+        and "[[material:" not in draft
+        and _passages_about_the_request(state, relevant)
+    )
 
 
 async def critique_node(state: AgentState) -> dict[str, Any]:

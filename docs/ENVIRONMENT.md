@@ -60,6 +60,7 @@ I costi di ogni ruolo si vedono in Langfuse, per modello (sezione «Tracciamento
 | `OPENAI_API_KEY` | — | Ripiego storico se manca la chiave OpenRouter |
 | `AIX_LLM_TIMEOUT_S` | `120` | Timeout di una chiamata |
 | `AIX_LLM_MAX_RETRIES` | `1` | Tentativi su errore transitorio |
+| `AIX_TEXT2CYPHER_TIMEOUT_S` | `20` | Limite proprio, senza nuovi tentativi, per la traduzione della domanda e la scrittura di una query sul grafo (di solito 1–2 s): oltre, la query si salta e la ricerca prosegue con gli altri canali. Prima valeva il limite generale di 120 s, e il 2026-10-20 una sola query aveva fatto aspettare una lezione 99 s |
 | `AIX_LLM_PROBE_ENABLED` | `true` | Sonda di connettività all'avvio |
 | `AIX_PROMPT_CACHE_ENABLED` | `true` | Segna la parte stabile del prompt (lo schema di text2cypher, ~100k caratteri, identico a ogni chiamata) perché il provider la faccia pagare un decimo alle ripetizioni. Solo per i modelli `anthropic/` e `google/`; il testo non cambia. Misurato il 2026-10-06: su Gemini senza il segno non si risparmia nulla (0 token in cache), con il segno -90% |
 | `AIX_RESULT_CACHE_ENABLED` | `true` | Ricorda le risposte che dipendono solo dai loro ingressi: la risposta del grafo a una domanda (le parole chiave tornano di turno in turno, 32 su 100 erano ripetute) e il verdetto del giudice delle citazioni su una coppia frase–passaggio. Un errore non viene mai ricordato. Usa il backend della cache dei media (`AIX_MEDIA_CACHE_BACKEND`), con nomi propri |

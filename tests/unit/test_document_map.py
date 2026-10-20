@@ -330,3 +330,40 @@ async def test_the_critic_s_approval_does_not_stand_for_a_draft_that_ignores_the
     # Once the revision is spent, the Critic's verdict stands.
     updates = await nodes.critique_node({**state, "revision_count": 1})
     assert updates["approved"] is True
+
+
+WATER = [
+    {"score": 0.52, "text": "Il ciclo idrologico: evaporazione, condensazione, precipitazioni."}
+]
+
+
+@pytest.mark.parametrize(
+    ("subject", "turn", "passages", "expected"),
+    [
+        # 2026-10-20: the water-cycle handout still bound, a lesson on volcanoes
+        # asked -- the rewrite turned it into a lesson on the water cycle.
+        (
+            ["vulcani", "eruzione vulcanica", "magma e lava"],
+            "Fammi una lezione sui vulcani",
+            WATER,
+            False,
+        ),
+        # The case the check was made for: the document is about the request.
+        (["ciclo dell'acqua", "evaporazione"], "Una lezione sul ciclo dell'acqua", WATER, True),
+        # No subject from the planner: as before, the passages count.
+        ([], "Prepariamo una lezione mirata", WATER, True),
+    ],
+)
+def test_the_documents_send_a_lesson_back_only_when_they_are_about_its_subject(
+    subject, turn, passages, expected
+):
+    from aix.agent.graph.nodes import _ignores_the_documents
+
+    state = {
+        "material_context_items": passages,
+        "lesson_plan_draft": "# Lezione\n\n## Attività (20 minuti)\n- Senza citare i documenti.",
+        "subject_concepts": subject,
+        "raw_user_turn": turn,
+    }
+
+    assert _ignores_the_documents(state) is expected

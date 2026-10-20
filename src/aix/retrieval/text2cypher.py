@@ -166,6 +166,12 @@ class Text2CypherConverter:
             _llm_kwargs["max_tokens"] = 500
         if _is_thinking:
             _llm_kwargs["model_kwargs"] = {"extra_body": {"include_reasoning": True}}
+        # A query of a few lines: its own short limit, no retry -- past it the
+        # search goes on without this query (see ``text2cypher_timeout``).
+        from aix.core.config import text2cypher_timeout
+
+        _llm_kwargs["timeout"] = text2cypher_timeout()
+        _llm_kwargs["max_retries"] = 0
 
         self.llm = ChatOpenAI(**_llm_kwargs)
 

@@ -173,6 +173,13 @@ the same conversation. Both readings are reasonable; the client must handle both
 Two turns of the same session at once: the second is refused with
 `409 already_running`; retry it when the first ends (or read the session).
 
+The documents bound to a session stay bound for every later turn. When the user
+moves to another subject in the same conversation («now a lesson on volcanoes»
+after one on the water cycle), the lesson keeps the new subject: the documents
+are used only where they speak of it. If the platform knows the documents no
+longer concern the conversation, it can open a new session or detach them
+(`DELETE /materials/{id}/lessons/{session_id}`).
+
 ### Streaming
 
 `POST /sessions/{id}/turns/stream` takes the same body and answers with
