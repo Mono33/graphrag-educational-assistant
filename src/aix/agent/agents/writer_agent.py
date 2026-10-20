@@ -16,18 +16,33 @@ from openai import AsyncOpenAI
 
 from aix.agent.agents.planner_agent import RetrievalPlan
 from aix.agent.agents.retriever_agent import RetrievalResult
+from aix.agent.kg_evidence import (
+    advised_against,
+    environment_needed,
+    fix_graph_typos,
+    guidance_by_name,
+    is_context_recommendation,
+    kind,
+    render_evidence,
+)
 from aix.agent.prompts.profile_renderer import render_profile_section
 from aix.agent.prompts.today import today_note
 from aix.agent.prompts.writer_prompt import (
+    WRITER_KG_EVIDENCE_RULES,
+    WRITER_LEARNING_ENVIRONMENT_NOTE,
     WRITER_MATERIAL_MAPS_BLOCK,
     WRITER_MATERIAL_PASSAGES_APPENDIX,
+    WRITER_PLAIN_LANGUAGE_RULE,
     WRITER_REVISION_TEMPLATE,
     WRITER_TEACHER_UPLOADS_APPENDIX,
     WRITER_USER_TEMPLATE_HYBRID,
     WRITER_USER_TEMPLATE_RECOMMENDATION,
+    apply_kg_basis,
     format_external_resources,
     get_writer_prompts,
+    kg_basis,
 )
+from aix.agent.reference_filter import keep_references
 from aix.core import prompt_cache
 from aix.core.concurrency import guarded_chat_completion, llm_slot
 from aix.core.config import config as app_config
@@ -53,6 +68,16 @@ logger = logging.getLogger(__name__)
 # continuation call (see _continue_truncated) so the user never sees a
 # mid-sentence cut. Override with AIX_WRITER_MAX_TOKENS env var.
 _WRITER_MAX_TOKENS = int(os.getenv("AIX_WRITER_MAX_TOKENS", "8000"))
+
+
+def writer_model() -> Optional[str]:
+    """``AIX_WRITER_MODEL``: the Writer's own model, or ``None`` for ``LLM_MODEL``.
+
+    The Writer used ``LLM_MODEL``, which also drives the judge's repairs and the
+    light turns: comparing writers meant changing all three (2026-10-19).
+    """
+    return (os.getenv("AIX_WRITER_MODEL") or "").strip() or None
+
 
 # Floor for the retry after a reasoning model spends its whole budget thinking
 # and returns nothing. Retrying under the same ceiling — which is what happened
@@ -302,6 +327,10 @@ def _format_relationships(relationships: Optional[list], max_relations: int = 15
     Retrieved on every search and, until 2026-10-13, never shown to the Writer:
     it saw node names and descriptions but not that, say, an ADHD profile
     SUGGESTS movement breaks. A few lines carry the structure of the graph.
+
+    ``VECTOR_SIMILAR`` is left out (2026-10-16): it is an embedding neighbourhood,
+    not something the graph claims, and on the staging lesson five of the fifteen
+    lines were «Group till 15 —VECTOR_SIMILAR→ Group till 20».
     """
     lines: list[str] = []
     seen: set[tuple[str, str, str]] = set()
@@ -313,7 +342,7 @@ def _format_relationships(relationships: Optional[list], max_relations: int = 15
             str(rel.get("type") or rel.get("relationship") or "").strip(),
             str(rel.get("target") or "").strip(),
         )
-        if not all(triple) or triple in seen:
+        if not all(triple) or triple in seen or triple[1].upper() == "VECTOR_SIMILAR":
             continue
         seen.add(triple)
         lines.append(f"- {triple[0]} —{triple[1]}→ {triple[2]}")
@@ -493,14 +522,47 @@ class WriterAgent:
         # Get intent-specific prompts (with scope awareness for hybrid mode)
         system_prompt, user_template = get_writer_prompts(intent, scope_status)
 
-        # Format retrieved nodes for prompt
-        nodes_text = self._format_nodes(retrieval_result.nodes)
+        # Format retrieved nodes for prompt. The evidence map comes first: each
+        # need of this class with what the graph suggests and advises against,
+        # the class-profile nodes that match it, the learning environment and
+        # the UDL checkpoints when retrieved. See ``aix.agent.kg_evidence``.
+        relationships = getattr(retrieval_result, "relationships", None)
+        evidence = render_evidence(
+            retrieval_result.nodes,
+            relationships,
+            educational_profile,
+            retrieval_result.recommendations,
+            include_strategies=False,
+            request=teacher_query,
+        )
+        nodes_text = self._format_nodes(
+            retrieval_result.nodes,
+            recommendations=retrieval_result.recommendations,
+            exclude=advised_against(
+                retrieval_result.nodes, relationships, educational_profile, teacher_query
+            ),
+        )
+        if evidence:
+            nodes_text = evidence + "\n\n### Altri nodi recuperati\n" + nodes_text
+        nodes_text = fix_graph_typos(nodes_text)
         if graph_relations_enabled():
-            nodes_text += _format_relationships(getattr(retrieval_result, "relationships", None))
-        recommendations_text = self._format_recommendations(retrieval_result.recommendations)
+            nodes_text += _format_relationships(relationships)
+        recommendations_text = fix_graph_typos(
+            self._format_recommendations(
+                retrieval_result.recommendations, nodes=retrieval_result.nodes
+            )
+        )
         key_concepts_text = ", ".join(plan.key_concepts) if plan.key_concepts else "Not specified"
 
         # NEW Phase 2: Format curated media if available
+        # References that cannot back this lesson leave before the Writer reads
+        # them (rodents, ChatGPT, college students for a primary class): see
+        # ``aix.agent.reference_filter``.
+        if has_media and curated_media.get("citations"):
+            curated_media = {
+                **curated_media,
+                "citations": keep_references(curated_media["citations"], educational_profile),
+            }
         media_text = self._format_media(curated_media) if has_media else ""
 
         # The whole profile, with codes resolved to the teacher's labels and the
@@ -541,9 +603,10 @@ class WriterAgent:
         # (the teacher waived the search, or the sources found nothing). It used to
         # fall to the standard branch and fail on ``{wikipedia_content}``.
         if user_template is WRITER_USER_TEMPLATE_HYBRID:
-            wikipedia_content, papers_content, oer_content = format_external_resources(
-                external_resources or {}
-            )
+            resources = dict(external_resources or {})
+            if resources.get("papers"):
+                resources["papers"] = keep_references(resources["papers"], educational_profile)
+            wikipedia_content, papers_content, oer_content = format_external_resources(resources)
 
             user_prompt = WRITER_USER_TEMPLATE_HYBRID.format(
                 teacher_query=teacher_query,
@@ -557,6 +620,7 @@ class WriterAgent:
                 target_grade=plan.target_grade or "Not specified",
                 time_constraints=plan.time_constraints or "Not specified",
                 language="Italian" if language == "it" else "English",
+                kg_basis_en=kg_basis(domain)[0],
             )
 
             logger.info(
@@ -595,6 +659,10 @@ class WriterAgent:
                 retrieved_nodes=nodes_text,
                 language="Italian" if language == "it" else "English",
             )
+
+        is_lesson = intent in ("lesson_creation", "activity_design")
+        if is_lesson and environment_needed(educational_profile, teacher_query):
+            user_prompt += WRITER_LEARNING_ENVIRONMENT_NOTE
 
         # SAM refinement instruction — prepend so the model's first frame
         # is "improve the previous lesson in this specific direction".
@@ -666,6 +734,11 @@ class WriterAgent:
         system_prompt = system_prompt.replace(
             "{language}", "Italian" if language == "it" else "English"
         )
+        system_prompt = apply_kg_basis(system_prompt, domain)
+        if is_lesson:
+            system_prompt += WRITER_KG_EVIDENCE_RULES
+        else:
+            system_prompt += WRITER_PLAIN_LANGUAGE_RULE
 
         # NEW Phase B: Add domain-specific extensions
         if DOMAIN_EXTENSIONS_AVAILABLE:
@@ -697,6 +770,7 @@ class WriterAgent:
             completion_kwargs = app_config.openai.build_completion_kwargs(
                 temperature=0.7,
                 max_tokens=_WRITER_MAX_TOKENS,
+                model_override=writer_model(),
             )
             # The system prompt (intent, domain knowledge, constraints: ~3-4k
             # tokens) is the same for every teacher of a domain: marked, the
@@ -734,6 +808,7 @@ class WriterAgent:
                         temperature=0.7,
                         max_tokens=retry_max_tokens,
                         include_reasoning=False,
+                        model_override=writer_model(),
                     )
                     content, last_finish_reason = await self._stream_completion(
                         client,
@@ -896,6 +971,7 @@ class WriterAgent:
             completion_kwargs = app_config.openai.build_completion_kwargs(
                 temperature=0.5,
                 max_tokens=_WRITER_MAX_TOKENS,
+                model_override=writer_model(),
             )
             messages: list[Any] = prompt_cache.cacheable(
                 [
@@ -958,41 +1034,75 @@ class WriterAgent:
             logger.error(f"[WriterAgent] Revision failed: {e}")
             raise
 
-    def _format_nodes(self, nodes: list, max_nodes: int = 20) -> str:
-        """Format retrieved nodes for the prompt"""
+    def _format_nodes(
+        self,
+        nodes: list,
+        max_nodes: int = 20,
+        recommendations: Optional[list] = None,
+        exclude: Optional[set[str]] = None,
+    ) -> str:
+        """Format retrieved nodes for the prompt.
+
+        Class-profile nodes are left out: the ones that describe this class are
+        in the evidence map with what the graph suggests for them, and the rest
+        («Group till 15» for a class of 22) are not about this class. Until
+        2026-10-16 they were eight of these twenty lines, without a description.
+        So are the ``exclude`` names: what the graph advises against for this
+        class is in the map, under its need, not among the concepts to use. A
+        node without a description takes its recommendation's guidance.
+        """
         if not nodes:
             return "No nodes retrieved"
 
+        guidance = guidance_by_name(recommendations)
+        skip = {" ".join(str(name).split()) for name in exclude or ()}
+        listed = [
+            n
+            for n in nodes
+            if kind(n) != "context" and " ".join(str(n.get("name") or "").split()) not in skip
+        ]
         lines = []
-        for node in nodes[:max_nodes]:
+        for node in listed[:max_nodes]:
             name = node.get("name", "Unknown")
             labels = node.get("labels", [])
-            desc = node.get("description", "")[:150]
+            desc = str(node.get("description") or guidance.get(name) or "")[:150]
 
             label_str = f" [{', '.join(labels)}]" if labels else ""
             lines.append(f"- **{name}**{label_str}")
             if desc:
                 lines.append(f"  {desc}")
 
-        return "\n".join(lines)
+        return "\n".join(lines) or "No nodes retrieved"
 
-    def _format_recommendations(self, recommendations: list, max_recs: int = 10) -> str:
-        """Format recommendations for the prompt"""
+    def _format_recommendations(
+        self, recommendations: list, max_recs: int = 10, nodes: Optional[list] = None
+    ) -> str:
+        """Format recommendations for the prompt.
+
+        The text of a recommendation is its ``implementation_guidance``: the
+        context builder never writes a ``description``, so until 2026-10-16 the
+        Writer read ten bare names («### Cooperative Learning (Confidence:
+        VERY_HIGH)») and nothing about them. Class-profile entries and the
+        builder's boilerplate («Apply X with appropriate adaptations») are left
+        out.
+        """
         if not recommendations:
             return "No specific recommendations"
 
         lines = []
-        for rec in recommendations[:max_recs]:
+        for rec in [r for r in recommendations if not is_context_recommendation(r, nodes)][
+            :max_recs
+        ]:
             name = rec.get("name", "Unknown")
             confidence = rec.get("confidence", "MEDIUM")
-            desc = rec.get("description", "")[:200]
+            desc = guidance_by_name([rec]).get(" ".join(str(name).split()), "")[:200]
 
             lines.append(f"### {name} (Confidence: {confidence})")
             if desc:
                 lines.append(desc)
             lines.append("")
 
-        return "\n".join(lines)
+        return "\n".join(lines) or "No specific recommendations"
 
     def _format_media(self, curated_media: Optional[dict[str, Any]]) -> str:
         """
@@ -1012,7 +1122,11 @@ class WriterAgent:
 
         lines = [
             "\n\n## 📚 Available Educational Media",
-            "Use these curated resources to enrich your response. Include relevant links and citations.",
+            "Optional resources. Use one only where it serves a specific activity of this "
+            "lesson, and leave out the others without mentioning them: a resource you would "
+            "have to call «not directly relevant» is not used. A video or text about teaching "
+            "methods (UDL, Service Learning, Chunking…) is for the teacher's preparation: "
+            "never show it to the pupils.",
         ]
 
         # Videos
@@ -1058,7 +1172,10 @@ class WriterAgent:
         citations = curated_media.get("citations", [])
         if citations:
             lines.append("\n### 📖 Riferimenti Scientifici")
-            lines.append("Includi questi riferimenti nella sezione Fonti:")
+            lines.append(
+                "Cita uno di questi riferimenti nella sezione Fonti solo se sostiene una "
+                "scelta precisa della lezione; altrimenti non citarlo:"
+            )
             for c in citations[:3]:
                 authors = c.get("authors", [])
                 authors_str = ", ".join(authors[:2])

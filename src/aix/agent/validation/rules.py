@@ -102,7 +102,8 @@ _PROJECTION_PHRASES = ("proietta", "proiezione", "alla lim", "sulla lim", "proje
 _BES_CODES = ("DSA", "ADHD", "DOP", "DCGL", "DCGM", "DCGS", "DLDS")
 
 _HEADING = re.compile(r"^(#{1,6})\s+(.*)$")
-_MINUTES = re.compile(r"(\d{1,3})\s*(?:min\b|min\.|minut|minute)", re.IGNORECASE)
+#: «10 min», «10 minuti», «10 minutes» and «10′» (a Writer copies the notation it is shown).
+_MINUTES = re.compile(r"(\d{1,3})\s*(?:min\b|min\.|minut|minute|′)", re.IGNORECASE)
 _GROUP_SIZE = re.compile(r"gruppi?\s+(?:da|di)\s+(\d{1,2})|groups?\s+of\s+(\d{1,2})", re.IGNORECASE)
 
 
@@ -318,6 +319,72 @@ def rule_group_size(lesson: str, profile: dict[str, Any]) -> list[Violation]:
     return violations
 
 
+_NUMBERS = {
+    "un": 1, "uno": 1, "una": 1, "due": 2, "tre": 3, "quattro": 4, "cinque": 5, "sei": 6,
+    "sette": 7, "otto": 8, "nove": 9, "dieci": 10, "undici": 11, "dodici": 12, "tredici": 13,
+}  # fmt: skip
+_N = r"(\d{1,2}|" + "|".join(_NUMBERS) + r")"
+#: How a split of the class is written, each with how to count it: (how many, of how many).
+#: A single group counts only when it is added to a split («e un gruppo da 5», «e
+#: uno da 5»): «inserito in un gruppo da 4» says where one pupil goes.
+_SPLITS = (
+    (re.compile(rf"\b{_N}\s+gruppi\s+(?:da|di)\s+{_N}\b", re.I), lambda n, k: (n, k)),
+    (re.compile(r"(?<![\w-])(\d{1,2})\s+gruppo\s+(?:da|di)\s+" + _N + r"\b", re.I), lambda n, k: (n, k)),
+    (re.compile(rf"\b(?:da|di)\s+{_N}\s*\(\s*{_N}\s+grupp[io]\s*\)", re.I), lambda k, n: (n, k)),
+    (re.compile(rf"\b(?:e|più|con)\s+{_N}\s+(?:gruppo\s+)?(?:da|di)\s+{_N}\b", re.I), lambda n, k: (n, k)),
+    (re.compile(rf"\b{_N}\s+(?:coppie|coppia)\b", re.I), lambda n: (n, 2)),
+    (re.compile(rf"\b{_N}\s+(?:terne|terna|terzetti|terzetto)\b", re.I), lambda n: (n, 3)),
+)  # fmt: skip
+
+
+def _number(word: str) -> int:
+    return int(word) if word.isdigit() else _NUMBERS[word.lower()]
+
+
+def _pupils_in(line: str) -> int:
+    """The pupils a line's split of the class accounts for (0 when it has none)."""
+    total, counted = 0, []
+    for pattern, count in _SPLITS:
+        for match in pattern.finditer(line):
+            # «e 1 gruppo da 4» is two forms at once: each piece of text counts once.
+            if any(match.start() < end and start < match.end() for start, end in counted):
+                continue
+            counted.append(match.span())
+            groups, size = count(*(_number(g) for g in match.groups()))
+            total += groups * size
+    return total
+
+
+def rule_group_total(lesson: str, profile: dict[str, Any]) -> list[Violation]:
+    """The groups of a line add up to the pupils of the class.
+
+    «Cinque gruppi da 4 e uno da 5» for a class of 21 is 25 (blind read,
+    2026-10-20). Only a split of most of the class counts: a line about the two
+    pupils with DSA in one pair is not the class.
+    """
+    group = profile.get("group") or {}
+    students = group.get("students_number")
+    if not isinstance(students, int) or students <= 0:
+        return []
+    violations = []
+    for line in _sentences(lesson):
+        total = _pupils_in(line)
+        if total >= 0.7 * students and total != students:
+            violations.append(
+                Violation(
+                    severity=BLOCKING,
+                    rule="group_total",
+                    evidence=_trim(line),
+                    remediation=(
+                        f"I gruppi di questa riga contano {total} alunni, ma la classe ne ha "
+                        f"{students}: rifai la divisione perché la somma sia esattamente "
+                        f"{students}, con gruppi da 2 a 5."
+                    ),
+                )
+            )
+    return violations
+
+
 def rule_bes_label_drift(lesson: str, profile: dict[str, Any]) -> list[Violation]:
     """No BES acronym in the lesson that the teacher did not declare.
 
@@ -368,5 +435,6 @@ ALL_RULES = (
     rule_furniture_static,
     rule_no_projection,
     rule_group_size,
+    rule_group_total,
     rule_bes_label_drift,
 )

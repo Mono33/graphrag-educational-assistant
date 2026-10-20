@@ -1,0 +1,84 @@
+{#
+  Judge — pending placeholder (2026-10-19).
+
+  Emitted by service.py when the lesson goes to the judge (``judge_pending``),
+  in place of the Critic's card: with AIX_JUDGE_ENABLED the Critic is not in the
+  chain. The checklist follows the judge's own checks (``validation.judge.CHECKS``)
+  and then the repair, so the teacher sees what runs while it runs.
+
+  OOB replacement: id="judge-card-rev{{ rev }}" matches chat_judge_card.html.
+
+  Required context:
+    payload = { write_revision }
+#}
+
+{% set p = payload or {} %}
+{% set rev = p.get('write_revision', 1) %}
+
+<div id="judge-card-rev{{ rev }}" class="aix-agent-shell">
+
+  <div class="aix-agent-avatar aix-agent-avatar--critic">
+    <wa-icon name="clipboard-check"></wa-icon>
+  </div>
+
+  <div class="aix-agent-body">
+    <article class="aix-agent-card aix-agent-card--critic aix-card-stripe-critic">
+
+      <header class="aix-agent-card-header aix-agent-card-header--critic">
+        <div class="aix-agent-card-title">
+          <strong>Revisione mirata</strong>
+          <span class="aix-agent-card-role">· rilettura in corso</span>
+        </div>
+        <span class="aix-pill aix-pill-warning">
+          <wa-spinner class="aix-fs-xs"></wa-spinner>
+          verifica
+        </span>
+      </header>
+
+      <div class="aix-agent-card-body aix-col-10">
+
+        <p class="aix-color-secondary aix-fs-12 m-0">
+          Un revisore rilegge la lezione intera e corregge solo i punti sbagliati:
+        </p>
+
+        <div class="aix-col-6">
+          <div class="critic-pending-item aix-delay-0">
+            <span class="critic-pending-dot"></span>
+            <span>Esempi di lingua, fatti e date</span>
+          </div>
+          <div class="critic-pending-item aix-delay-2-5s">
+            <span class="critic-pending-dot"></span>
+            <span>Esercizi e soluzioni</span>
+          </div>
+          <div class="critic-pending-item aix-delay-5s">
+            <span class="critic-pending-dot"></span>
+            <span>Sicurezza e risorse adatte agli alunni</span>
+          </div>
+          <div class="critic-pending-item aix-delay-7-5s">
+            <span class="critic-pending-dot"></span>
+            <span>Gruppi, ruoli e tempi adatti alla classe</span>
+          </div>
+          <div class="critic-pending-item aix-delay-10s">
+            <span class="critic-pending-dot"></span>
+            <span>Correzione mirata dei punti sbagliati</span>
+          </div>
+          <div class="critic-pending-item aix-delay-12-5s">
+            <span class="critic-pending-dot"></span>
+            <span>Verifica di ogni correzione</span>
+          </div>
+        </div>
+
+        <p class="aix-footnote-sm m-0">
+          La revisione richiede tipicamente 10–20 secondi.
+        </p>
+
+      </div>
+
+    </article>
+    <div class="aix-agent-footer-label">
+      <wa-icon name="clipboard-check" class="aix-fs-sm"></wa-icon>
+      <span>Revisione · in corso</span>
+    </div>
+  </div>
+
+</div>

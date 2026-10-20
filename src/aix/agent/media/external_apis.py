@@ -30,6 +30,7 @@ import asyncio
 import logging
 import os
 import random
+import re
 import time
 from collections import deque
 from dataclasses import dataclass, field
@@ -39,6 +40,20 @@ from urllib.parse import quote_plus
 import aiohttp
 
 logger = logging.getLogger(__name__)
+
+
+def _words(text: str) -> set[str]:
+    return {w for w in re.findall(r"[^\W\d_]+", str(text or "").lower()) if len(w) >= 4}
+
+
+def _shares_a_word(query: str, title: str) -> bool:
+    """Whether a search hit's title has at least one word (4+ letters) of the query.
+
+    Loose on purpose -- «Ciclo dell'acqua» for "ciclo acqua" passes -- and enough
+    to drop a hit that is about something else entirely.
+    """
+    return bool(_words(query) & _words(title))
+
 
 # =============================================================================
 # USER-AGENT (Required by Wikipedia API policy)
@@ -523,10 +538,20 @@ class ExternalMediaAPI:
             if not results:
                 return None
 
-            # Get the first result's title and fetch its summary
+            # Get the first result's title and fetch its summary -- if it is
+            # about the query at all. Full-text search always returns something:
+            # the Planner's English concepts searched on it.wikipedia gave «Sam
+            # Neill» for "water cycle", «Poltergeist di Enfield» for "evaporation"
+            # and «Condensato di Bose-Einstein» for "condensation", and the
+            # Writer was handed them as the lesson's subject content (staging,
+            # 2026-10-16). A title that shares no word with the query is no hit.
             first_title = results[0].get("title", "")
-            if first_title:
+            if first_title and _shares_a_word(query, first_title):
                 return await self.get_wikipedia_summary(first_title, language)
+            if first_title:
+                logger.info(
+                    "[Wikipedia Search] '%s' → '%s' is not about it: dropped", query, first_title
+                )
 
             return None
 

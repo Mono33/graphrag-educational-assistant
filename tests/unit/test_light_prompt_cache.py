@@ -27,6 +27,7 @@ def _old_user(documents, history, instruction):
         today=today_note().strip(),
         profile=render_profile_section(profile),
         lesson=LESSON.lesson_plan_md,
+        graph="",
         documents=documents,
         history=history,
         instruction=instruction,

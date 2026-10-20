@@ -45,6 +45,28 @@ def test_without_retrieved_material_every_marker_is_unknown():
     assert drop_unknown_markers(f"Frase {PLANTED}.", None) == "Frase."
 
 
+def test_a_quoted_marker_goes_with_its_backticks():
+    """Staging, 2026-10-16: «Il documento non contiene marcatori ``» reached the teacher."""
+    draft = "Il documento non contiene marcatori `[[material:…]]`, quindi non posso citarli."
+
+    assert drop_unknown_markers(draft, []) == (
+        "Il documento non contiene marcatori, quindi non posso citarli."
+    )
+
+
+def test_a_known_marker_in_backticks_is_left_alone_and_a_lone_backtick_stays():
+    assert drop_unknown_markers(f"`{MINE}`", ITEMS) == f"`{MINE}`"
+    assert drop_unknown_markers(f"codice `x {PLANTED}.", []) == "codice `x."
+
+
+def test_the_light_prompt_no_longer_spells_the_marker_out():
+    """Quoted in the rules, the marker was quoted back to the teacher."""
+    from aix.agent.prompts.light_prompt import LIGHT_SYSTEM_PROMPT
+
+    assert "`[[material:" not in LIGHT_SYSTEM_PROMPT
+    assert "non parlarne alla docente" in LIGHT_SYSTEM_PROMPT
+
+
 def test_the_same_document_with_another_page_is_still_unknown():
     """The Writer must copy the marker it was handed, not compose a neighbour."""
     neighbour = MINE.replace("page=2", "page=9")

@@ -450,9 +450,15 @@ async def retrieve_node(state: AgentState) -> dict[str, Any]:
             profile_terms.append(ep["specific_topic"])
         if ep.get("subject_area") and ep["subject_area"] != ep.get("specific_topic"):
             profile_terms.append(ep["subject_area"])
+        # The need's label, not its code: «DLDS» was searched as it is on
+        # 2026-10-16 and text2cypher wrote ``CONTAINS "dlds"``, which matches
+        # nothing. «Difficoltà linguistiche (straniero/a)» is translated and found.
+        from aix.api.schemas.educational_profile import DISABILITY_LABELS
+
         for d in (ep.get("group") or {}).get("disabilities") or []:
             if d:
-                profile_terms.append(d)
+                code = str(getattr(d, "value", d))
+                profile_terms.append(DISABILITY_LABELS.get(code, code))
         if profile_terms:
             existing_lower = {q.lower() for q in plan.search_queries}
             for pt in profile_terms:
@@ -466,6 +472,50 @@ async def retrieve_node(state: AgentState) -> dict[str, Any]:
             )
 
         result = await retriever.retrieve(plan)
+
+        # The room, when the class needs it: no planned search asks about it.
+        # See ``RetrieverAgent.fetch_learning_environment``. The needs are the
+        # profile's and the request's: teachers often write them in the text.
+        from aix.agent import kg_evidence
+
+        request = str(state.get("raw_user_turn") or state.get("teacher_query") or "")
+
+        fetch_environment = getattr(retriever, "fetch_learning_environment", None)
+        if (
+            domain == "udl"
+            and fetch_environment is not None
+            and kg_evidence.environment_lookup_enabled()
+            and kg_evidence.environment_needed(ep, request)
+        ):
+            extra = await fetch_environment(
+                sensory="Spettro autistico" in kg_evidence.class_need_groups(ep, request)
+            )
+            known = {node.get("name") for node in result.nodes}
+            result.nodes = kg_evidence.rank_nodes(
+                result.nodes + [node for node in extra if node.get("name") not in known]
+            )
+
+        # The neuroscience graph's side of the same: the class's needs with what
+        # they bring about, its neuromyths, and the room when the class needs it.
+        # See ``RetrieverAgent.fetch_neuro_class_evidence``.
+        fetch_neuro = getattr(retriever, "fetch_neuro_class_evidence", None)
+        if (
+            domain == "neuro"
+            and fetch_neuro is not None
+            and kg_evidence.environment_lookup_enabled()
+        ):
+            found = await fetch_neuro(
+                needs=kg_evidence.class_need_groups(ep, request),
+                environment=kg_evidence.environment_needed(ep, request),
+            )
+            # A (nodes, relationships) pair; anything else adds nothing.
+            if isinstance(found, tuple) and len(found) == 2:
+                extra, extra_relationships = found
+                known = {node.get("name") for node in result.nodes}
+                result.nodes = kg_evidence.rank_nodes(
+                    result.nodes + [node for node in extra if node.get("name") not in known]
+                )
+                result.relationships = list(result.relationships or []) + list(extra_relationships)
 
         # Log hybrid retrieval if applicable
         if result.is_hybrid:
@@ -774,17 +824,34 @@ async def write_node(state: AgentState) -> dict[str, Any]:
         # markers are authentic, but one can end up on a sentence its passage
         # does not support; those are removed here, and the sentence stays.
         # Costs one call, and only when the draft carries private citations.
-        from aix.agent.validation.answer_shape import tidy_answer
+        from aix.agent.validation.answer_shape import set_source_note, source_note, tidy_answer
         from aix.agent.validation.citation_support import (
             drop_unknown_markers,
             drop_unsupported_citations,
         )
+        from aix.agent.validation.lesson_shape import shape_lesson
 
         # Every draft passes through here -- first version and revisions -- and
         # from here it reaches the WebUI, the exports and the public API alike.
         # Tidied first, so the citation check reads the answer and not its
         # packaging. See ``answer_shape`` for why this is not the renderer's job.
         lesson_plan = tidy_answer(lesson_plan)
+        # The source note says where the content came from, so it is the code
+        # that knows whether the teacher attached anything, not the model.
+        lesson_plan = set_source_note(
+            lesson_plan,
+            source_note(
+                has_material=bool(
+                    state.get("material_context_items")
+                    or (state.get("teacher_provided_context") or "").strip()
+                ),
+                domain=state.get("domain", "neuro"),
+                language=state.get("language", "it"),
+            ),
+        )
+        # The header from the class profile, the sources cut to what the body
+        # uses, no graph categories in the teacher's text: see ``lesson_shape``.
+        lesson_plan = shape_lesson(lesson_plan, state.get("educational_profile"))
         lesson_plan = drop_unknown_markers(lesson_plan, state.get("material_context_items"))
 
         lesson_plan = await drop_unsupported_citations(
@@ -921,6 +988,138 @@ async def critique_node(state: AgentState) -> dict[str, Any]:
         return {"error": str(e), "current_step": "error"}
 
 
+async def documents_check_node(state: AgentState) -> dict[str, Any]:
+    """With the judge on, what is left of the Critic: are the attached documents used?
+
+    The Critic's scores approved 15 lessons out of 16 and no longer decided
+    anything once the judge was in the chain (third blind read, 2026-10-19); it
+    cost a call and about ten seconds. The one decision that still needs a
+    rewrite -- the teacher attached documents and the lesson ignores them -- is
+    code, as it already was inside the Critic (see ``_ignores_the_documents``).
+    """
+    if state.get("error"):
+        return {"current_step": "error"}
+    revisions = state.get("revision_count", 0)
+    if _ignores_the_documents(state) and revisions < state.get("max_revisions", 1):
+        logger.info("[Node: Documents] the draft cites none of the attached documents: revising")
+        return {
+            "approved": False,
+            "revision_instructions": DOCUMENTS_UNUSED_INSTRUCTION,
+            "revision_count": revisions + 1,
+            "current_step": "documents_unused",
+        }
+    return {
+        "approved": True,
+        "final_lesson_plan": state.get("lesson_plan_draft"),
+        "current_step": "documents_checked",
+    }
+
+
+async def judge_node(state: AgentState) -> dict[str, Any]:
+    """Review the lesson with the judge and fix what is wrong where it is.
+
+    Replacements in code, revisions of the block around a problem only, then
+    each change verified: a change judged wrong is put back. Every problem is
+    corrected in the lesson, minor ones included (2026-10-20: the teacher wanted
+    the corrections made, not proposed under the lesson). What was changed, and
+    what could not be, is kept in ``judge_summary`` and ``review_notes`` and shown
+    in the judge's card, not in the lesson. See ``validation.judge`` and
+    ``validation.repair``.
+    """
+    from dataclasses import asdict
+
+    from aix.agent.validation.judge import judge_lesson, verify_changes
+    from aix.agent.validation.repair import apply_replacements, on_teacher_material, revise_units
+
+    draft = state.get("final_lesson_plan") or state.get("lesson_plan_draft") or ""
+    if not draft.strip():
+        return {"current_step": "judge_complete"}
+    request = str(state.get("raw_user_turn") or state.get("teacher_query") or "")
+    profile = state.get("educational_profile")
+
+    first = await judge_lesson(draft, request=request, profile=profile)
+    summary: dict[str, Any] = {
+        "model": first.model,
+        "found": len(first.issues),
+        "blocking": len(first.blocking),
+        "replaced": 0,
+        "revised": 0,
+        "verified": 0,
+        "reverted": 0,
+        "cost": first.cost or 0.0,
+        "seconds": first.seconds,
+    }
+    if first.error:
+        summary["error"] = first.error
+        return {
+            "final_lesson_plan": draft,
+            "review_notes": [],
+            "judge_summary": summary,
+            "current_step": "judge_complete",
+        }
+
+    replaced = apply_replacements(draft, first.issues)
+    revised = await revise_units(replaced.lesson, replaced.left, request=request)
+    lesson = revised.lesson
+    summary.update(
+        replaced=len(replaced.replaced),
+        revised=len(revised.revised),
+        cost=summary["cost"] + revised.cost,
+    )
+    # What could not be corrected: shown in the card as points to check.
+    notes = list(revised.left)
+
+    # Each change is checked, not the whole lesson again (see ``verify_changes``);
+    # a change judged wrong is put back as it was, and its problem becomes a note.
+    changes = replaced.changes + revised.changes
+    verdict = await verify_changes(changes, lesson=lesson, request=request)
+    summary.update(
+        verified=len(changes),
+        cost=summary["cost"] + (verdict.cost or 0.0),
+        seconds=round(summary["seconds"] + verdict.seconds, 1),
+    )
+    reverted, fixed = [], []
+    for change, ok, reason in zip(changes, verdict.ok, verdict.reasons, strict=True):
+        if ok or change.after not in lesson:
+            # What the judge's card shows the teacher it corrected.
+            fixed.extend(
+                {
+                    "check": issue.check,
+                    "why": issue.why[:240],
+                    "before": change.before[:160],
+                    "after": change.after[:160],
+                    "kind": "sostituzione" if change in replaced.changes else "revisione",
+                    # A line taken from the teacher's documents: the card asks her
+                    # to check it against them (the judge does not see them).
+                    "teacher_material": on_teacher_material(issue.quote, draft),
+                }
+                for issue in change.issues
+            )
+            continue
+        lesson = lesson.replace(change.after, change.before, 1)
+        reverted.append({"before": change.before[:200], "after": change.after[:200], "why": reason})
+        notes.extend(change.issues)
+    if reverted:
+        logger.warning("[Node: Judge] %d change(s) judged wrong: put back", len(reverted))
+    summary.update(reverted=len(reverted), reverted_changes=reverted, fixed=fixed)
+
+    logger.info(
+        "[Node: Judge] %d found (%d blocking): %d replaced, %d revised, %d notes",
+        summary["found"],
+        summary["blocking"],
+        summary["replaced"],
+        summary["revised"],
+        len(notes),
+    )
+    return {
+        "final_lesson_plan": lesson,
+        "lesson_plan_draft": lesson,
+        "review_notes": [asdict(note) for note in notes],
+        "judge_summary": summary,
+        "current_step": "judge_complete",
+    }
+
+
 #: Separates the validator's fix from the teacher's refinement instruction.
 _REMEDIATION_MARK = "## Correzioni richieste dal controllo della classe"
 
@@ -1017,6 +1216,24 @@ def should_continue_to_revision(state: AgentState) -> str:
     """
     if state.get("error"):
         return "error"
+
+    from aix.agent.validation.judge import judge_enabled
+
+    # With the judge on, a lesson is not rewritten whole for what the Critic
+    # finds: it goes to the judge, which fixes the sentences that are wrong.
+    # The one exception is a lesson that ignores the attached documents --
+    # nothing to fix in place, a part is missing -- which still goes back to
+    # the Writer while revisions are left.
+    if judge_enabled():
+        missing_documents = DOCUMENTS_UNUSED_INSTRUCTION in (
+            state.get("revision_instructions") or ""
+        )
+        within_budget = state.get("revision_count", 0) <= state.get("max_revisions", 1)
+        if not state.get("approved", False) and missing_documents and within_budget:
+            logger.info("[Router] Attached documents unused: revising")
+            return "revise"
+        logger.info("[Router] To the judge")
+        return "judge"
 
     if state.get("approved", False):
         logger.info("[Router] Lesson plan approved, finishing...")

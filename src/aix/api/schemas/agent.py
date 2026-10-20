@@ -234,6 +234,34 @@ class AgentRunMeta(BaseModel):
         description="How the lesson covers the three UDL principles (representation, "
         "action, engagement), as the WebUI's lesson card shows it.",
     )
+    review_notes: list[ReviewNote] = Field(
+        default_factory=list,
+        description="Problems the judge left for the teacher to read (AIX_JUDGE_ENABLED): "
+        "minor ones, and blocking ones no repair could make safely. Empty when the judge "
+        "is off or found nothing.",
+    )
+    judge: Optional[dict[str, Any]] = Field(
+        default=None,
+        description="What the judge did: found, blocking, replaced, revised, verified, "
+        "reverted (changes judged wrong and put back), cost, seconds. Null when the judge "
+        "is off.",
+    )
+
+
+class ReviewNote(BaseModel):
+    """One problem the judge found, quoting the lesson (``validation.judge``)."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    check: str = Field(..., description="The checklist question, e.g. «esempi_lingua», «esercizi».")
+    severity: str = Field(..., description="«bloccante» or «minore».")
+    quote: str = Field(..., description="The sentence of the lesson, as written.")
+    why: str = ""
+    fix: str = Field("", description="The corrected text, or what to change.")
+    kind: str = Field("revisione", description="«sostituzione» or «revisione».")
+
+
+AgentRunMeta.model_rebuild()
 
 
 # The three cards below take the WebUI's payloads as they are (``extra="ignore"``):

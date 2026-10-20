@@ -108,6 +108,12 @@ PHASE_LABELS: dict[str, str] = {
     "reuse": "Riuso del contesto già recuperato",
     "write": "Scrittura della lezione",
     "critique": "Revisione e valutazione qualità",
+    # The judge (2026-10-19): when it is on, its diff carries the repaired lesson
+    # and the review notes, and a dropped diff would ship the lesson unrepaired.
+    "judge": "Revisione mirata delle correzioni",
+    # With the judge on it replaces the Critic: its diff says whether the lesson
+    # goes back to the Writer for the attached documents.
+    "check_documents": "Controllo dei documenti allegati",
 }
 
 
@@ -1247,6 +1253,27 @@ def _build_critic_payload(state: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _build_judge_payload(state: dict[str, Any], write_revision: int = 1) -> dict[str, Any]:
+    """Shape the judge's summary into its card: what it found, fixed, left to the teacher."""
+    summary = state.get("judge_summary") or {}
+    notes = state.get("review_notes") or []
+    return {
+        "write_revision": write_revision,
+        "found": int(summary.get("found") or 0),
+        "blocking": int(summary.get("blocking") or 0),
+        "replaced": int(summary.get("replaced") or 0),
+        "revised": int(summary.get("revised") or 0),
+        "reverted": int(summary.get("reverted") or 0),
+        "fixed": summary.get("fixed") or [],
+        "notes": len(notes),
+        "notes_blocking": sum(1 for n in notes if n.get("severity") == "bloccante"),
+        # What could not be corrected, shown in the card: nothing under the lesson.
+        "points": notes,
+        "seconds": summary.get("seconds"),
+        "error": summary.get("error") or "",
+    }
+
+
 def _extract_meta(final_state: dict[str, Any]) -> dict[str, Any]:
     """Run summary used by the final lesson card and the run-complete banner."""
     media = final_state.get("curated_media") or {}
@@ -1286,6 +1313,9 @@ def _extract_meta(final_state: dict[str, Any]) -> dict[str, Any]:
         "media_counts": _count_media(media),
         "search_queries_count": len(final_state.get("search_queries") or []),
         "udl_coverage": udl_coverage,
+        # The judge's notes for the teacher, shown under the lesson.
+        "review_notes": final_state.get("review_notes") or [],
+        "judge": final_state.get("judge_summary"),
     }
 
 
@@ -1652,24 +1682,29 @@ async def run_agent_stream(
                         payload={"revision": write_revision_idx},
                         lesson_plan_md=final_state.get("lesson_plan_draft") or "",
                     )
-                    yield StreamEvent(
-                        kind="critic_pending",
-                        payload={"write_revision": write_revision_idx},
-                    )
+                    # With the judge on there is no Critic, and a pending card
+                    # would spin for the rest of the run.
+                    from aix.agent.validation.judge import judge_enabled
 
-                elif node_name == "critique":
-                    _critic_pl = _build_critic_payload(final_state)
-                    _critic_pl["write_revision"] = write_revision_idx
-                    yield StreamEvent(
-                        kind="critic",
-                        payload=_critic_pl,
-                    )
-                    approved = final_state.get("approved", False)
-                    rev_count = int(final_state.get("revision_count", 0))
-                    max_rev = int(final_state.get("max_revisions", 1))
-                    # Same rule as ``should_continue_to_revision``: the count
-                    # already includes this rejection.
-                    if (not approved) and rev_count <= max_rev:
+                    if not judge_enabled():
+                        yield StreamEvent(
+                            kind="critic_pending",
+                            payload={"write_revision": write_revision_idx},
+                        )
+
+                elif node_name in ("critique", "check_documents"):
+                    if node_name == "critique":
+                        _critic_pl = _build_critic_payload(final_state)
+                        _critic_pl["write_revision"] = write_revision_idx
+                        yield StreamEvent(
+                            kind="critic",
+                            payload=_critic_pl,
+                        )
+                    from aix.agent.graph.nodes import should_continue_to_revision
+
+                    # Same router as the graph: with the judge on, a rejection
+                    # goes to the judge, and no «revising» card should appear.
+                    if should_continue_to_revision(final_state) == "revise":
                         write_revision_idx += 1
                         yield StreamEvent(
                             kind="writer_pending",
@@ -1681,6 +1716,19 @@ async def run_agent_stream(
                                 ).strip(),
                             },
                         )
+                    elif should_continue_to_revision(final_state) == "judge":
+                        # The judge's card, while it reads and corrects: like
+                        # every other phase, the teacher sees what runs.
+                        yield StreamEvent(
+                            kind="judge_pending",
+                            payload={"write_revision": write_revision_idx},
+                        )
+
+                elif node_name == "judge":
+                    yield StreamEvent(
+                        kind="judge",
+                        payload=_build_judge_payload(final_state, write_revision_idx),
+                    )
 
         # ── Run finished cleanly ─────────────────────────────────────────────
         elapsed = time.monotonic() - started_at
@@ -1705,12 +1753,19 @@ async def run_agent_stream(
         lesson.lesson_plan_md = lesson_plan_md
         await session.commit()
 
+        # What the graph returned, kept with the lesson for the light turns:
+        # until 2026-10-16 a follow-up could only say «Non ho accesso diretto al
+        # grafo», because nothing of the retrieval outlived the run. Saved with
+        # the message, not sent on the ``done`` event, which does not need it.
+        from aix.agent.kg_evidence import digest as kg_digest
+
+        kept = kg_digest(final_state, lesson=lesson_plan_md)
         await _persist_assistant_turn(
             session=session,
             lesson_id=lesson.id,
             owner_id=lesson.owner_id,
             content_md=lesson_plan_md,
-            meta=meta,
+            meta={**meta, "kg_digest": kept} if kept else meta,
             curated_media=final_state.get("curated_media") or {},
         )
 
@@ -2022,17 +2077,17 @@ async def stream_agent_events(
                         lesson_plan_md=final_state.get("lesson_plan_draft") or "",
                     )
 
-                elif node_name == "critique":
-                    yield StreamEvent(
-                        kind="critic",
-                        payload=_build_critic_payload(final_state),
-                    )
-                    approved = final_state.get("approved", False)
-                    rev_count = int(final_state.get("revision_count", 0))
-                    max_rev = int(final_state.get("max_revisions", 1))
-                    # Same rule as ``should_continue_to_revision``: the count
-                    # already includes this rejection.
-                    if (not approved) and rev_count <= max_rev:
+                elif node_name in ("critique", "check_documents"):
+                    if node_name == "critique":
+                        yield StreamEvent(
+                            kind="critic",
+                            payload=_build_critic_payload(final_state),
+                        )
+                    from aix.agent.graph.nodes import should_continue_to_revision
+
+                    # Same router as the graph: with the judge on, a rejection
+                    # goes to the judge, and no «revising» card should appear.
+                    if should_continue_to_revision(final_state) == "revise":
                         write_revision_idx += 1
                         yield StreamEvent(
                             kind="writer_pending",

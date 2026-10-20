@@ -174,14 +174,130 @@ def render_classroom_constraints(profile: Any) -> list[str]:
             "with small local changes, not a full rearrangement of the room."
         )
 
+    # Pupils this young do not handle what can hurt them: the water-cycle lesson of
+    # 2026-10-19 handed hot water to every group of seven-year-olds.
+    if _code(group.get("grade")) in ("INFANZIA", "PRIMARIA"):
+        lines.append(
+            "Pupils this young never handle hot water, flames, heat sources, sharp tools "
+            "or chemicals: any demonstration with them is done by the teacher."
+        )
+
     students = group.get("students_number")
     if isinstance(students, int) and students > 0:
-        lines.append(
+        line = (
             f"The class has {students} students: every grouping must account for all "
             f"{students}, and cooperative groups must not exceed {MAX_GROUP_SIZE} members."
         )
+        if split := group_split(students):
+            line += (
+                f" A grouping that works: {split}. State the grouping you use as a plain "
+                "fact; never write the arithmetic, the options you discarded or this rule "
+                "in the lesson."
+            )
+        # Second blind read (2026-10-19): five roles for groups of four, two roles
+        # both keeping time, a lesson that never said how big its groups were.
+        line += (
+            " Every group activity says how many pupils per group; a group has no more "
+            "roles than its smallest group has members, and no two roles do the same job."
+        )
+        lines.append(line)
 
     return lines
+
+
+def group_split(students: int, max_size: int = MAX_GROUP_SIZE) -> str:
+    """The most even split of the class into groups of at most ``max_size``.
+
+    Handed to the model ready-made because the arithmetic leaked into the
+    lesson. The staging lesson of 2026-10-16 (22 pupils) read «Gruppi di 4–5
+    studenti (5 gruppi da 4 e 1 da 2, oppure 4 gruppi: 3 da 5 e 1 da 7 non
+    ammesso; usare 5 gruppi da 4 e 1 da 2 oppure 2 gruppi da 5 e 3 da 4…)»: the
+    rule, worked out in front of the teacher. ``""`` below two groups.
+    """
+    if students <= max_size:
+        return ""
+    count = -(-students // max_size)
+    small, larger = divmod(students, count)
+    parts = []
+    if larger:
+        parts.append(f"{larger} group{'s' if larger > 1 else ''} of {small + 1}")
+    if count - larger:
+        parts.append(f"{count - larger} group{'s' if count - larger > 1 else ''} of {small}")
+    return " and ".join(parts)
+
+
+def _five(minutes: float) -> int:
+    return max(5, int(round(minutes / 5.0)) * 5)
+
+
+def time_plan(duration: Any) -> str:
+    """A split of the duration that adds up, for the Writer to fill in.
+
+    «The total MUST equal the Duration exactly» was in the prompt, and every
+    lesson regenerated on 2026-10-16 still came out at 53–55 minutes of 60: the
+    model does not add. The group split came worked out for the same reason (see
+    ``render_classroom_constraints``) and the arithmetic left the lesson; so does this.
+    The proportions are a starting point the Writer may move, as long as the sum
+    stays exact.
+    """
+    if not isinstance(duration, int) or duration < 20:
+        return ""
+    intro = _five(duration * 0.15)
+    closing = _five(duration * 0.15)
+    activities = duration - intro - closing
+    return (
+        f"Time plan: Introduzione {intro} minuti + Attività {activities} minuti + Valutazione {closing} minuti "
+        f"= {duration} minuti. The minutes of the activities inside «Attività» add up to "
+        f"{activities}, and every activity states its own minutes; move minutes between "
+        f"sections if the lesson needs it, but the section timings must add up to "
+        f"exactly {duration}."
+    )
+
+
+#: Bloom's levels in Italian, lowest first.
+BLOOM_LEVELS = ("ricordare", "comprendere", "applicare", "analizzare", "valutare", "creare")
+
+#: The levels a lesson's objectives should use, by pedagogical intent.
+_BLOOM_BY_INTENT: dict[str, tuple[str, ...]] = {
+    "intro": ("ricordare", "comprendere", "applicare"),
+    "deepening": ("applicare", "analizzare", "valutare"),
+    "misconception": ("comprendere", "analizzare", "valutare"),
+    "assessment": ("ricordare", "comprendere", "applicare"),
+    "practice": ("applicare", "analizzare"),
+    "interdisciplinary": ("comprendere", "analizzare", "creare"),
+}
+_BLOOM_BY_GRADE: dict[str, tuple[str, ...]] = {
+    "INFANZIA": ("ricordare", "comprendere"),
+    "PRIMARIA": ("ricordare", "comprendere", "applicare"),
+    "SECONDARIA_I_GRADO": ("comprendere", "applicare", "analizzare"),
+    "SECONDARIA_II_GRADO": ("applicare", "analizzare", "valutare"),
+    "UNIVERSITA": ("analizzare", "valutare", "creare"),
+    "FORMAZIONE_SUL_LAVORO": ("applicare", "analizzare", "valutare"),
+}
+#: Young pupils: no higher than this, whatever the intent says.
+_BLOOM_CEILING = {"INFANZIA": "comprendere", "PRIMARIA": "applicare"}
+
+
+def bloom_levels(profile: Any) -> tuple[str, ...]:
+    """The Bloom levels for this lesson's objectives: from the intent, else the grade.
+
+    The blind read of 2026-10-16 preferred the lesson whose objectives climbed
+    Bloom's levels (ricordare, comprendere, applicare, esprimere) -- but not as a
+    formula repeated in every lesson: the levels follow what the teacher wants
+    (an introduction remembers and understands, a deepening analyses and judges)
+    and how old the pupils are. The Writer chooses the verbs.
+    """
+    ep = _as_dict(profile)
+    group = ep.get("group") or {}
+    grade = _code(group.get("grade"))
+    intent = str(ep.get("pedagogical_intent") or "").split(":", 1)[0].strip()
+    levels = _BLOOM_BY_INTENT.get(intent) or _BLOOM_BY_GRADE.get(grade) or ()
+    ceiling = _BLOOM_CEILING.get(grade)
+    if ceiling:
+        top = BLOOM_LEVELS.index(ceiling)
+        levels = tuple(level for level in levels if BLOOM_LEVELS.index(level) <= top)
+        levels = levels or (ceiling,)
+    return levels
 
 
 def render_profile_section(profile: Any) -> str:
@@ -220,6 +336,17 @@ def render_profile_section(profile: Any) -> str:
     duration = ep.get("time_available_minutes") or ep.get("lesson_duration")
     if duration:
         facts.append(f"- Duration: {duration} minutes")
+        if plan := time_plan(duration):
+            facts.append(f"- {plan}")
+
+    if levels := bloom_levels(ep):
+        facts.append(
+            "- Learning objectives: 2–4, observable, each opening with a verb of these "
+            f"levels of Bloom's taxonomy, lowest first: {', '.join(levels)}. Choose the "
+            "verbs for this lesson (ricordare → elencare, nominare; comprendere → spiegare "
+            "con parole proprie, riordinare; applicare → usare in un caso nuovo…), and do "
+            "not go beyond what the request asks."
+        )
 
     constraints = render_classroom_constraints(ep)
 

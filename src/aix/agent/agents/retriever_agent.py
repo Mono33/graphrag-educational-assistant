@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from aix.agent.agents.planner_agent import RetrievalPlan
+from aix.agent.kg_evidence import rank_nodes, rank_recommendations
 from aix.agent.tools.graphrag_tool import GraphRAGResult, GraphRAGTool
 
 # Optional media lookup - fails gracefully if not available
@@ -331,6 +332,14 @@ class RetrieverAgent:
                 if rec.get("name") not in existing_recs:
                     result.recommendations.append(rec)
                     existing_recs.add(rec.get("name"))
+
+        # Merged in the order the searches ran, the head of the list was whatever
+        # the first search found -- on 2026-10-16 eight class-profile nodes
+        # («Group till 15», «Cohesive»…), which the card showed as the «most
+        # relevant concepts» and the Writer read before any strategy. Every
+        # reader takes the head, so the order is decided once, here.
+        result.nodes = rank_nodes(result.nodes)
+        result.recommendations = rank_recommendations(result.recommendations, result.nodes)
 
         # Determine overall confidence
         confidences = [r.confidence for r in result.search_results if r.confidence]
@@ -680,8 +689,15 @@ class RetrieverAgent:
             # Fetch all external sources in parallel across concepts.
             # Each concept triggers 3 API calls (Wikipedia, Scholar, OER)
             # simultaneously instead of sequentially — saves ~(N-1)×slowest_api.
+            async def _wikipedia(concept: str):
+                # The Planner's subject concepts are English ("water cycle"):
+                # the Italian Wikipedia first, the English one when it has no
+                # page on it (2026-10-16 -- see ``_wikipedia_search``).
+                found = await external_api.get_wikipedia_summary(concept, language="it")
+                return found or await external_api.get_wikipedia_summary(concept, language="en")
+
             async def _fetch_for_concept(concept: str):
-                wiki_task = external_api.get_wikipedia_summary(concept, language="it")
+                wiki_task = _wikipedia(concept)
                 scholar_task = external_api.search_openalex(
                     query=f"{concept} education teaching",
                     max_results=3,
@@ -777,6 +793,176 @@ class RetrieverAgent:
         except Exception as e:
             logger.warning(f"[RetrieverAgent] External resource fetch failed: {e}")
             return {}
+
+    async def fetch_learning_environment(self, *, sensory: bool = False) -> list[dict[str, Any]]:
+        """The graph's nodes on the physical classroom, and the UDL checkpoints about it.
+
+        No search finds them: the Planner plans queries about strategies and
+        needs, never about the room, and on 2026-10-16 none of the 85 nodes of a
+        lesson for two pupils with ADHD was about light, colour or noise -- yet
+        the UDL graph has them (Colour «Neutral tones»: «Neutral colours reduce
+        overstimulation, aiding focus»; Acoustics, Lighting, Furniture) and the
+        checkpoint «address distractions». So they are read directly, by label,
+        when the class needs them (``kg_evidence.environment_needed``).
+
+        ``sensory`` adds smells and textures, which matter for the autism
+        spectrum more than for attention. Empty on any failure: the lesson is
+        written without them, as before.
+        """
+        labels = ["Colour", "Lighting", "Acoustics", "Furniture"]
+        if sensory:
+            labels += ["Smells", "Textures"]
+        environment = """
+            MATCH (n)
+            WHERE n.domain = $domain AND any(l IN labels(n) WHERE l IN $labels)
+            RETURN n.name AS name, labels(n) AS labels, n.description AS description
+            ORDER BY labels(n)[0], n.name
+            LIMIT 40
+        """
+        checkpoints = """
+            MATCH (g:Guideline)-[:MENTIONS]-(c:Checkpoint)
+            WHERE c.domain = $domain AND any(word IN $words
+                WHERE toLower(coalesce(c.description, '')) CONTAINS word)
+            RETURN c.name AS name, labels(c) AS labels, c.description AS description,
+                   g.name AS guideline
+            ORDER BY c.name
+            LIMIT 8
+        """
+        try:
+            tool = self._get_tool()
+            rows = await tool.read(environment, domain=self.domain, labels=labels)
+            rows += await tool.read(
+                checkpoints, domain=self.domain, words=["environment", "distraction", "movement"]
+            )
+        except Exception as exc:  # noqa: BLE001 — the lesson does not depend on it
+            logger.warning(
+                "[RetrieverAgent] learning environment not read (%s: %s)", type(exc).__name__, exc
+            )
+            return []
+        nodes = []
+        for row in rows:
+            if not row.get("name"):
+                continue
+            node = {
+                "id": f"{(row.get('labels') or ['?'])[0]}:{row['name']}",
+                "name": row["name"],
+                "labels": row.get("labels") or [],
+                "description": row.get("description") or "",
+                "retrieval_stage": "learning_environment",
+                "rank_score": 1.0,
+            }
+            if row.get("guideline"):
+                node["guideline"] = row["guideline"]
+            nodes.append(node)
+        logger.info("[RetrieverAgent] learning environment: %d node(s)", len(nodes))
+        return nodes
+
+    async def fetch_neuro_class_evidence(
+        self, *, needs: set[str], environment: bool = False
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """What the neuroscience graph says about this class, read directly.
+
+        The neuroscience graph files a need's difficulties under a ``category``
+        («ADHD»: «Need for Structure and Scaffolding», «Difficulty Managing
+        Frustration or Stress» → TRIGGERS «Anxiety», «High Creativity»…), and the
+        planned searches, about strategies and topics, rarely reach them: on
+        2026-10-16 the neuro lesson for two pupils with ADHD had none of them.
+        So, as ``fetch_learning_environment`` does for the UDL graph, they are
+        read by category, with what each brings about; with them the graph's
+        neuromyths, which a lesson must never propose (several are filed under
+        «Teaching Practices»), and, when the class needs it, what the graph says
+        about the room («External Distractions», «Salient Stimuli»).
+
+        ``needs`` are teacher names (``kg_evidence.class_need_groups``). Returns
+        nodes and relationships; empty on any failure.
+        """
+        from aix.agent import kg_evidence
+
+        categories = sorted(
+            prefix for prefix, group in kg_evidence.NEURO_NEED_CATEGORIES.items() if group in needs
+        )
+        need_query = """
+            MATCH (n)
+            WHERE n.domain = $domain AND (
+                any(c IN $categories WHERE toLower(coalesce(n.category, '')) STARTS WITH c)
+                OR ('adhd' IN $categories AND toLower(n.name) = 'adhd'))
+            OPTIONAL MATCH (n)-[r]->(m)
+            WHERE m.domain = $domain
+            RETURN n.name AS name, labels(n) AS labels, n.category AS category,
+                   n.description AS description,
+                   collect({type: type(r), target: m.name})[0..6] AS effects
+            LIMIT 30
+        """
+        myth_query = """
+            MATCH (n)
+            WHERE n.domain = $domain AND (
+                toLower(coalesce(n.category, '')) = 'neuromyths'
+                OR toLower(n.name) =~ '.*\\\\bmyths?\\\\b.*'
+                OR toLower(n.name) CONTAINS 'pseudoscien')
+            RETURN n.name AS name, labels(n) AS labels, n.category AS category,
+                   n.description AS description, [] AS effects
+            ORDER BY n.name
+            LIMIT 20
+        """
+        environment_query = """
+            MATCH (n)
+            WHERE n.domain = $domain AND (
+                toLower(coalesce(n.category, '')) IN $env_categories
+                OR toLower(n.name) IN $env_names)
+            RETURN n.name AS name, labels(n) AS labels, n.category AS category,
+                   n.description AS description, [] AS effects
+            ORDER BY n.name
+            LIMIT 12
+        """
+        try:
+            tool = self._get_tool()
+            rows = []
+            if categories:
+                rows += await tool.read(need_query, domain=self.domain, categories=categories)
+            rows += await tool.read(myth_query, domain=self.domain)
+            if environment:
+                rows += await tool.read(
+                    environment_query,
+                    domain=self.domain,
+                    env_categories=sorted(kg_evidence.NEURO_ENVIRONMENT_CATEGORIES),
+                    env_names=sorted(kg_evidence.NEURO_ENVIRONMENT_NAMES),
+                )
+        except Exception as exc:  # noqa: BLE001 — the lesson does not depend on it
+            logger.warning(
+                "[RetrieverAgent] neuro class evidence not read (%s: %s)", type(exc).__name__, exc
+            )
+            return [], []
+        nodes: list[dict[str, Any]] = []
+        relationships: list[dict[str, Any]] = []
+        for row in rows:
+            if not row.get("name"):
+                continue
+            nodes.append(
+                {
+                    "id": f"{(row.get('labels') or ['?'])[0]}:{row['name']}",
+                    "name": row["name"],
+                    "labels": row.get("labels") or [],
+                    "category": row.get("category") or "",
+                    "description": row.get("description") or "",
+                    "retrieval_stage": "neuro_class_evidence",
+                    "rank_score": 1.0,
+                }
+            )
+            for effect in row.get("effects") or []:
+                if effect.get("type") and effect.get("target"):
+                    relationships.append(
+                        {
+                            "relationship": effect["type"],
+                            "source": row["name"],
+                            "target": effect["target"],
+                        }
+                    )
+        logger.info(
+            "[RetrieverAgent] neuro class evidence: %d node(s), %d relation(s)",
+            len(nodes),
+            len(relationships),
+        )
+        return nodes, relationships
 
     async def retrieve_single(self, query: str) -> RetrievalResult:
         """

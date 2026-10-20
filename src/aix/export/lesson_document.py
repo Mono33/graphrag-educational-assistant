@@ -46,7 +46,7 @@ BlockKind = Literal["heading", "paragraph", "list", "table", "quote", "code"]
 ALLOWED_LINK_SCHEMES = ("http://", "https://", "mailto:")
 
 _DURATION = re.compile(r"(?:durata|duration)\W{0,6}(\d{1,3})\s*(?:min|minuti|minutes)", re.I)
-_MINUTES = re.compile(r"(\d{1,3})\s*(?:min\b|min\.|minut|minute)", re.I)
+_MINUTES = re.compile(r"(\d{1,3})\s*(?:min\b|min\.|minut|minute|′)", re.I)
 
 
 @dataclass(frozen=True)

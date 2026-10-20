@@ -379,3 +379,51 @@ def test_the_hand_off_card_replaces_the_pending_answer_and_resends_the_request()
     assert "<b>nuova</b>" not in html, "the request is text, not markup"
     # An apostrophe in the request must not close the single-quoted hx-vals.
     assert "sull\\u0027" in html
+
+
+# ---------------------------------------------------------------------------
+# What the graph returned (2026-10-16: «Non ho accesso diretto al grafo»)
+# ---------------------------------------------------------------------------
+
+
+async def _keep_digest(maker, digest):
+    async with maker() as session:
+        row = (
+            await session.execute(select(LessonMessage).where(LessonMessage.agent_kind == "writer"))
+        ).scalar_one()
+        row.meta_json = {**(row.meta_json or {}), "kg_digest": digest}
+        await session.commit()
+
+
+async def test_the_answer_reads_what_the_graph_returned_for_the_lesson(maker, monkeypatch):
+    await _keep_digest(
+        maker,
+        {
+            "version": 1,
+            "nodes": 85,
+            "relationships": 213,
+            "text": "### Bisogni della classe\n- **ADHD · Difficulty sustaining focus** → Focus Tasks",
+        },
+    )
+    client = _Client(["Ok."])
+
+    await _turn(maker, monkeypatch, client, text="Esploriamo che cosa hai trovato nel grafo")
+
+    system = client.calls[0]["messages"][0]["content"]
+    prompt = client.calls[0]["messages"][1]["content"]
+    assert "## Che cosa ha restituito il Knowledge Graph per questa lezione" in prompt
+    assert "La ricerca ha trovato 85 concetti e 213 relazioni" in prompt
+    assert "**ADHD · Difficulty sustaining focus** → Focus Tasks" in prompt
+    assert "Non dire che non hai accesso al grafo" in system
+    # Stable from turn to turn: before the request, in the cached head.
+    head = prompt.index("Difficulty sustaining focus")
+    assert head < prompt.index("## La richiesta della docente")
+
+
+async def test_a_lesson_without_a_kept_digest_says_so(maker, monkeypatch):
+    client = _Client(["Ok."])
+
+    await _turn(maker, monkeypatch, client)
+
+    prompt = client.calls[0]["messages"][1]["content"]
+    assert "l'elenco di ciò che il grafo ha restituito non è stato conservato" in prompt

@@ -83,6 +83,30 @@ def test_class_size_bounds_the_groups(section):
     assert "cooperative groups must not exceed 5" in section
 
 
+def test_the_grouping_comes_worked_out_and_is_applied_silently(section):
+    """22 pupils on staging (2026-10-16): «4 gruppi: 3 da 5 e 1 da 7 non ammesso» in the lesson."""
+    assert "A grouping that works: 5 groups of 5." in section
+    assert "never write the arithmetic" in section
+
+
+@pytest.mark.parametrize(
+    ("students", "split"),
+    [
+        (22, "2 groups of 5 and 3 groups of 4"),
+        (25, "5 groups of 5"),
+        (23, "3 groups of 5 and 2 groups of 4"),
+        (6, "2 groups of 3"),
+        (11, "2 groups of 4 and 1 group of 3"),
+        (5, ""),
+        (1, ""),
+    ],
+)
+def test_group_split(students, split):
+    from aix.agent.prompts.profile_renderer import group_split
+
+    assert group_split(students) == split
+
+
 def test_constraints_are_imperative_not_key_value(section):
     assert CONSTRAINTS_HEADER in section
     assert "own_device" not in section
@@ -195,3 +219,97 @@ def test_keys_the_renderer_does_not_know_are_ignored():
 
     assert "accorcia" not in section
     assert "Subject: Scienze" in section
+
+
+@pytest.mark.parametrize(
+    ("duration", "parts"),
+    [(60, (10, 40, 10)), (45, (5, 35, 5)), (90, (15, 60, 15)), (120, (20, 80, 20))],
+)
+def test_the_duration_comes_with_a_split_that_adds_up(duration, parts):
+    """Every lesson regenerated on 2026-10-16 came out 5-7 minutes short of 60."""
+    from aix.agent.prompts.profile_renderer import time_plan
+
+    plan = time_plan(duration)
+    intro, activities, closing = parts
+
+    assert intro + activities + closing == duration
+    assert (
+        f"Introduzione {intro} minuti + Attività {activities} minuti + Valutazione {closing} minuti = {duration} minuti"
+        in plan
+    )
+
+
+def test_a_short_or_missing_duration_has_no_split():
+    from aix.agent.prompts.profile_renderer import time_plan
+
+    assert time_plan(15) == "" and time_plan(None) == ""
+
+
+def test_a_section_timed_with_a_prime_is_counted():
+    """«## Introduzione (10′)»: the notation a Writer copied from the time plan."""
+    from aix.agent.validation.rules import section_minutes
+
+    lesson = "# L\n\n## Introduzione (10′)\n\n## Attività (40′)\n\n## Valutazione (10 minuti)\n"
+    assert [m for _t, m in section_minutes(lesson)] == [10, 40, 10]
+
+
+@pytest.mark.parametrize(
+    ("profile", "levels"),
+    [
+        (
+            {"pedagogical_intent": "intro", "group": {"grade": "PRIMARIA"}},
+            ("ricordare", "comprendere", "applicare"),
+        ),
+        (
+            {"pedagogical_intent": "deepening", "group": {"grade": "SECONDARIA_II_GRADO"}},
+            ("applicare", "analizzare", "valutare"),
+        ),
+        # A deepening in primary school still stops at «applicare».
+        ({"pedagogical_intent": "deepening", "group": {"grade": "PRIMARIA"}}, ("applicare",)),
+        ({"group": {"grade": "SECONDARIA_I_GRADO"}}, ("comprendere", "applicare", "analizzare")),
+        (
+            {"pedagogical_intent": "misconception: l'acqua sparisce"},
+            ("comprendere", "analizzare", "valutare"),
+        ),
+        ({}, ()),
+    ],
+)
+def test_the_objectives_climb_the_bloom_levels_this_lesson_needs(profile, levels):
+    from aix.agent.prompts.profile_renderer import bloom_levels
+
+    assert bloom_levels(profile) == levels
+
+
+def test_the_bloom_levels_reach_the_writer_and_are_not_a_fixed_list():
+    section = render_profile_section(
+        {
+            "pedagogical_intent": "intro",
+            "group": {"grade": "PRIMARIA"},
+            "time_available_minutes": 60,
+        }
+    )
+    deeper = render_profile_section(
+        {"pedagogical_intent": "deepening", "group": {"grade": "SECONDARIA_II_GRADO"}}
+    )
+
+    assert "levels of Bloom's taxonomy, lowest first: ricordare, comprendere, applicare" in section
+    assert "applicare, analizzare, valutare" in deeper
+
+
+def test_young_pupils_never_handle_what_can_hurt_them():
+    """The water-cycle lesson handed hot water to every group of seven-year-olds."""
+    from aix.agent.prompts.profile_renderer import render_classroom_constraints
+
+    primary = " ".join(render_classroom_constraints({"group": {"grade": "PRIMARIA"}}))
+    high = " ".join(render_classroom_constraints({"group": {"grade": "SECONDARIA_II_GRADO"}}))
+
+    assert "never handle hot water" in primary
+    assert "hot water" not in high
+
+
+def test_groups_say_their_size_and_roles_fit_them():
+    from aix.agent.prompts.profile_renderer import render_classroom_constraints
+
+    text = " ".join(render_classroom_constraints({"group": {"students_number": 24}}))
+
+    assert "no more roles than its smallest group has members" in text

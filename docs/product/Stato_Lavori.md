@@ -3337,3 +3337,473 @@ documento può essere diventato `ready`. Chiavi per utente finale e operazione,
 chiave si libera. Nuova tabella `api_idempotency_key`, migrazione additiva
 `d41f7a2c9b13`. Test: `test_api_idempotency.py`, `test_api_tenants.py`, e
 l'upload ripetuto in `test_api_materials.py`.
+
+### 2026-10-16 — Qualità delle risposte: la lezione costruita su ciò che il grafo dice della classe
+
+Branch `feature/response-quality-improvement` (da `chore/repo-reorg`). Analisi
+completa in `docs/product/Analisi_Qualita_Risposte.md`, sul caso di staging «ciclo
+dell'acqua» (2 alunni con ADHD, 2 ispanofoni).
+
+**Diagnosi.** Il retriever univa i risultati nell'ordine delle ricerche, e ogni
+lettore prendeva la testa della lista. Di 85 nodi, 56 raccomandazioni e 213 relazioni,
+al Writer sono arrivati 20 nodi (8 del profilo classe senza testo, 0 bisogni), 10
+raccomandazioni senza testo (il formatter leggeva un campo che non esiste) e 15
+relazioni, tutte sulla numerosità della classe. Le 12 difficoltà ADHD e degli alunni
+non italofoni, con le strategie collegate e quelle sconsigliate, sono rimaste fuori.
+Il turno veloce non vedeva nulla del retrieval («Non ho accesso diretto al grafo»;
+`b6cda33` non c'entra). Wikipedia ha restituito «Sam Neill» per *water cycle*. La
+nota di fondo diceva «neuroscienze» anche per l'UDL.
+
+**Fatto** (10 commit, `8602b0c`…`79e8a97`, più il documento in `96fec51`):
+
+- `aix.agent.kg_evidence`: ordinamento unico (prima le strategie, in fondo il
+  profilo classe) e una mappa *bisogno della classe → che cosa il grafo suggerisce /
+  sconsiglia*, con i nodi del profilo che corrispondono a questa classe;
+- il Writer la legge per prima, e il prompt chiede una strategia del grafo per ogni
+  bisogno;
+- i nodi d'ambiente (Colour, Lighting, Acoustics, Furniture) e i checkpoint UDL si
+  leggono dal grafo quando la classe ha ADHD, autismo o elementi di disturbo; la
+  lezione ha un punto «Ambiente di apprendimento». Si spegne con
+  `AIX_KG_ENVIRONMENT_ENABLED=false`;
+- il messaggio del Writer conserva `kg_digest`, e il turno veloce lo legge (nella
+  parte in cache);
+- i gruppi arrivano già divisi; la nota di fondo dice il dominio giusto; il marcatore
+  non lascia più «``»; Wikipedia scarta i risultati fuori tema e ripiega su en; i
+  bisogni del profilo si cercano per etichetta; il tetto del turno veloce passa a
+  4 500 token.
+
+Rigenerata con Haiku 5.5 (6 chiamate, $0,014): la Differenziazione nomina 8 strategie
+del grafo legate ai bisogni, rispetta ciò che il grafo sconsiglia, ha l'ambiente; il
+turno veloce elenca per bisogno che cosa la lezione usa e che cosa no. Costo del
+Writer per lezione: $0,0024 → $0,0029. Test: 1 180 passati, ruff pulito.
+
+**Da fare** (proposte, §5 del documento): archi bisogno → checkpoint UDL nel grafo
+(con l'esperta) e un blocco «barriere e linee guida»; un Critic che controlli
+l'aderenza al grafo e la durata (tutte e tre le lezioni viste arrivano a 55 minuti su
+60); pulizia di text2cypher (l'ancora «Group till 15» nel prompt di schema) e dei
+dati del grafo; confermare che «Group till N» significhi «classe fino a N»; provare
+le modifiche sul set di prova prima del deploy.
+
+### 2026-10-16 — Qualità delle risposte: prova dal vero e il grafo neuro
+
+Il branch `feature/response-quality-improvement` è stato provato con la catena
+completa sullo stack locale, ripetendo il caso «ciclo dell'acqua» su UDL e neuro con
+le due domande di follow-up della docente.
+
+UDL regge: i concetti in testa sono strategie, niente Station Rotation (che il grafo
+sconsiglia), l'ambiente viene dai nodi del grafo, il turno 3 risponde «No, non sono
+solo sei».
+
+Su neuro la logica UDL non bastava, perché quel grafo dice cos'è un nodo con
+`category` e archivia diversi neuromiti come «Teaching Practices». `25ec05a` gli
+insegna il grafo neuro:
+
+- i bisogni (ADHD…) con ciò che comportano;
+- gli effetti come motivazioni, non come attività;
+- i neuromiti pertinenti come «da evitare», mai come strategie;
+- lettura diretta di bisogni, miti e ambiente.
+
+`bdc7f80`: nella cronologia della risposta veloce l'ultima risposta resta intera.
+Il «…» faceva dire al modello che si era interrotta.
+
+Resta aperta la durata: 53–55 minuti su 60 in tutte le lezioni, e il Critic
+approva. Dettagli in `Analisi_Qualita_Risposte.md` §7.
+
+### 2026-10-16 — La durata torna, e il grafo giusto nelle Fonti
+
+Le lezioni rigenerate duravano 53–55 minuti su 60. Il controllo della durata è
+spento per impostazione predefinita e tollera il 10%, e il prompt chiedeva già una
+durata esatta. Ora il Writer riceve la ripartizione già sommata, come per i gruppi:
+UDL e neuro rigenerate danno **60 su 60**. Il parser dei minuti (validatore ed
+export) accetta anche «10′».
+
+«Focus Tasks» citato nelle lezioni neuro veniva dall'esempio scritto nel prompt,
+che è un nodo UDL: l'esempio ora non nomina nodi. Dettagli in
+`Analisi_Qualita_Risposte.md` §7.4.
+
+### 2026-10-16 — Valutazione prima/dopo: il branch qualità su 8 casi
+
+`scripts/eval/quality_ab.py`: le stesse 8 richieste (UDL e neuro, bisogni e durate
+diversi, più una domanda sul grafo) mandate attraverso l'API a due build.
+
+| Misura | staging | branch qualità |
+|---|---|---|
+| minuti esatti | 1/7 | 7/7 |
+| ambiente quando serve | 0/4 | 4/4 |
+| prompt che trapela | 3/8 | 0/8 |
+| grafo giusto nella nota | 4/8 | 8/8 |
+| «non ho accesso al grafo» | 3/8 | 0/8 |
+| nodi del grafo citati (media) | 8,6 | 14,5 |
+
+Un peggioramento («Group till 30» mostrato alla docente) è stato corretto: i nodi
+del profilo classe ora sono in italiano. Il Critic approva 8/8 in entrambe le
+build. Lettura alla cieca da fare prima del deploy. Dettagli in
+`Analisi_Qualita_Risposte.md` §7.5.
+
+### 2026-10-19 — Risposta mediana, fase 1: le correzioni deterministiche
+
+Dalla lettura alla cieca degli 8 casi (`docs/product/Specifica_Risposta_Mediana.md`,
+salvata oggi): la pipeline del branch qualità, più uno strato editoriale. Fase 1:
+
+- **Bisogni della classe** = profilo + quelli nominati nella richiesta. Se non ce n'è
+  nessuno, non se ne mostra nessuno: nel caso 4 il follow-up attribuiva alla classe
+  ADHD, autismo e alunni non italofoni (`2ee3d1c`).
+- **Niente gergo** («nodo», «KG», confidenza) nei prompt di Writer e risposta veloce.
+  Le strategie si nominano prima in italiano. I refusi del grafo («Gammification»)
+  sono corretti nel testo mostrato (`2ee3d1c`).
+- **Riferimenti scientifici** che non possono sostenere la lezione (animali, modelli
+  linguistici, studenti universitari per una scuola) scartati prima del Writer, che
+  non è più obbligato a citare i riferimenti curati (`2ee3d1c`).
+- **`quality_ab.py`** ha i controlli della specifica §4 (`2ee3d1c`). Rimisurati sui
+  due giri del 16/10, ritrovano ciò che la lettura aveva visto.
+
+### 2026-10-19 — Risposta mediana, fase 2: azioni pratiche, Bloom, follow-up calcolato
+
+- **Strategie in azioni.** In Differenziazione ogni strategia del grafo diventa
+  un'azione concreta, legata a un'attività (`fc95208`).
+- **Obiettivi alla Bloom.** I livelli li sceglie il codice, in base a intento e grado
+  (`fc95208`).
+- **Follow-up calcolato.** La risposta sul grafo legge l'uso calcolato con la lezione:
+  15–20 righe, conteggi che tornano (`fc95208`).
+- **Sconsigliato dal grafo.** Ciò che il grafo sconsiglia è rifiutato in ogni forma e
+  riconosciuto anche in italiano (`fc95208`).
+- **DSA.** Vale il disturbo che la richiesta nomina (`fc95208`).
+- **Classi senza bisogni dichiarati.** Ricevono opzioni per tutti, non diagnosi
+  inventate.
+
+Su 8 casi, contro lo staging: tutte le misure migliorano, e il follow-up rientra
+nelle 25 righe (7 su 8). Il Critic approva ancora tutto: è la fase 3. Dettagli in
+`Analisi_Qualita_Risposte.md` §7.6.
+
+### 2026-10-19 — Dopo la seconda lettura alla cieca: dati e conteggi
+
+Il branch vince 8 casi su 8. I difetti rimasti venivano dalla pipeline, e sono
+corretti:
+
+- **Uso dei nodi.** Il calcolo dell'uso confronta parole intere, nel solo corpo della
+  lezione («Stem» trovato dentro «system»).
+- **Conteggi del follow-up.** Ora tornano con ciò che è elencato.
+- **Risorse.** Non sono più imposte al Writer.
+- **Gruppi, tempi e sicurezza.** Sono vincoli del profilo.
+
+`quality_ab.py` misura anche le attività senza minuti e i conteggi del follow-up.
+Terzo giro: pulito su tutti i controlli automatici, minuti esatti 8/8. Gli errori
+di contenuto (quiz, esempi linguistici) restano al giudice: il Critic attuale legge
+solo i primi 3.000 caratteri della lezione. Dettagli in
+`Analisi_Qualita_Risposte.md` §7.7.
+
+### 2026-10-19 — Il giudice: misurato prima di collegarlo
+
+Il Critic legge solo i primi 3.000 caratteri di lezioni lunghe circa 7.000
+(`AIX_CRITIC_LESSON_MAX_CHARS`) e dà cinque voti generici: approva 8 lezioni su 8,
+compresi un quiz sbagliato e «ga-to». Al suo posto, ma non ancora collegato alla
+catena, il giudice (`aix.agent.validation.judge`):
+
+- legge la lezione intera e risponde a 8 domande sì/no (esempi di lingua, fatti,
+  esercizi, chiarezza, perimetro, sicurezza, risorse, sostenibilità per la classe);
+- ogni problema ha la citazione esatta, il perché e il testo corretto; se la
+  citazione non è nella lezione, il problema si scarta.
+
+Banco di prova `scripts/eval/check_judge.py`: 14 tipi di errore delle letture alla
+cieca, inseriti in 17 lezioni, più 16 lezioni senza inserimenti.
+
+| | Sonnet 5.5 | Haiku 5.5 |
+|---|---|---|
+| errori trovati | 17/17 | 14/17 (sfuggono ga-to, p/b, video) |
+| citazioni inventate | 0 | 0 |
+| bloccanti sulle lezioni senza inserimenti | 26 | 5 |
+| costo per lezione | ~$0,019 | ~$0,002 |
+
+Delle bloccanti di Sonnet sulle lezioni attuali, circa 7 su 10 sono problemi veri,
+sfuggiti a tutti. Per esempio «pe-lu-ria» data come esempio del suono /ʎ/,
+«foglia/moglie» come coppia di suoni da distinguere, quattro fasi negli obiettivi
+contro tre nell'attività. Prossimo passo: come trasformare le segnalazioni in
+correzioni.
+
+### 2026-10-19 — Il giudice in catena: corregge solo ciò che non va
+
+Commit `e35ae5f`, `00b59fa`, `3288807`, `cd98b39`, `76bd850` e il successivo, sul
+branch `feature/response-quality-improvement` (non pubblicati). Dietro
+`AIX_JUDGE_ENABLED` (spento per default): dopo il Critic la lezione va al giudice,
+non a una riscrittura. Il Critic riscrive solo se manca una parte (documenti non
+usati).
+
+- **Sostituzione in codice** (`aix.agent.validation.repair`): per i problemi
+  bloccanti con un testo corretto pronto, la citazione esatta viene sostituita e
+  nient'altro. Si rinuncia se la citazione non è unica, se la correzione è troppo
+  lunga, se taglia un grassetto o se rompe la riga (ripete le parole vicine, o due
+  punti dopo un punto).
+- **Revisione del solo blocco** (Haiku 5.5): per gruppi, ruoli e attività da
+  ripensare, solo l'attività intorno al problema; il titolo e i minuti restano
+  uguali. Il blocco finisce dove iniziano le fonti.
+- **Verifica di ogni modifica**: una chiamata breve chiede, per ogni modifica
+  (la riga intera prima e dopo), se il testo nuovo è sbagliato. Solo quelle
+  sbagliate tornano com'erano, e il problema diventa una nota. Rileggere tutta
+  la lezione una seconda volta annullava le correzioni buone (23 su 33).
+- **Note di revisione**: i problemi minori, e quelli bloccanti non corretti,
+  compaiono sotto la lezione, chiusi, nella WebUI e nella cronologia
+  (`review_notes` e `judge` nei meta dell'API).
+
+Misura (`check_judge.py --repair`, 17 lezioni con un errore inserito e 16 senza):
+
+| | errori corretti | modifiche rimesse | righe rotte | $ totale | s mediani |
+|---|---|---|---|---|---|
+| giudice ripetuto, conteggio bloccanti | 11/17 | 8 | — | 1,30 | 16 |
+| giudice ripetuto, righe scritte | 6/17 | 23 | — | 1,30 | 16 |
+| verifica per modifica | 15/17 | 10 (3 con motivazione «ok») | — | 0,84 | 10 |
+| + motivazione prima del verdetto | 16/17 | 2 | 4, e una sezione Fonti persa | 0,86 | 12 |
+| + riga intera, giunture, fonti | 15/17 | 5, tutte giuste | 0 | 0,79 | 10 |
+
+Il testo cambiato fuori dal punto corretto ha una mediana del 3% e un massimo
+dell'8%. Non corretti nell'ultima misura: `pizza_confusa`, minore per scelta, e
+`acqua_aria`. Questo il giudice l'ha visto e corretto bene, ma l'ha classificato
+come «minore»: resta una nota. Sulle 16 lezioni senza errori inseriti le modifiche
+sono quasi tutte vere correzioni (2/6 con 4/12, «Stato Llano», gruppi che non
+tornano con 26 e 21 alunni, acqua calda in mano ai bambini, quiz del 1792 senza
+risposta).
+
+**Dal vivo** (stack locale, `AIX_JUDGE_ENABLED=true`, gli 8 casi di
+`quality_ab.py` contro il giro 3 senza giudice): il giudice ha girato su tutte e
+8 le lezioni, con 10 problemi bloccanti trattati e 2 modifiche rimesse. Costa
+circa 11 s in più per lezione (38,8 → 50,3 s di media) e circa $0,025. Le metriche
+peggiorate non vengono dal giudice:
+
+- caso 7: il pianificatore ha scelto il formato «Strategie consigliate», senza
+  minuti e con più gergo;
+- caso 6: le fonti sono scritte senza l'etichetta «Knowledge Graph:», e la
+  metrica conta 0 nodi;
+- caso 8: il Writer ha copiato nelle fonti il titolo «(nodi del KG)» della
+  sezione delle evidenze.
+
+Lettura alla cieca da fare: `C:\axl\qab_giudice\lettura_alla_cieca.html`.
+
+### 2026-10-19 — Dopo la terza lettura alla cieca: nota sulle fonti, follow-up, misure
+
+La lettura manuale dei 16 testi (8 con il giudice, 8 senza) ha trovato difetti che
+nessuna metrica vedeva. Il flag `AIX_JUDGE_ENABLED` non mette il Critic nel ciclo:
+lo toglie dalle decisioni. Con il flag acceso il Critic chiede una riscrittura solo
+se mancano i documenti, e il resto lo fa il giudice. La sua calibrazione (approva
+15 lezioni su 16) conta quindi poco; spegnerlo con il giudice acceso farebbe
+risparmiare circa 10 s.
+
+Corretti nel sistema:
+
+- **Nota sulle fonti scelta dal codice** (`answer_shape.source_note`): «materiali
+  allegati dalla docente» o «riferimenti forniti dal docente» comparivano in 4
+  lezioni su 16, tutte senza allegati. Ora la nota scritta dal modello viene tolta
+  e il nodo di scrittura mette quella giusta, a seconda che ci siano documenti.
+  Le risposte senza nota restano senza.
+- **Follow-up**: il blocco calcolato dà anche il totale, la sezione della lezione
+  in cui compare ogni strategia usata, e fino a 5 non usate scelte dal codice,
+  anche quando la classe non ha bisogni dichiarati. Il resto esclude tutte le voci
+  elencate. Prima il modello sceglieva da solo le non usate e copiava un «resto»
+  che non le sottraeva (53 = 2 + 5 + «51»). Nel prompt: ogni voce resta nella sua
+  lista, e i neuromiti evitati non sono mai tra le usate.
+- **Dove iniziano le fonti** (`kg_evidence._SOURCES`): «*Fonti: … *» su una riga
+  sola, «## Risorse di approfondimento per il docente» e «**Fonti:**» erano letti
+  come corpo della lezione. Ogni nodo elencato lì risultava usato.
+
+Corretti nelle misure (`quality_ab.py`):
+
+- nodi usati nel testo, presi dal conteggio del sistema, accanto ai nodi elencati
+  nelle fonti;
+- «(KG)» conta come gergo e non come prompt trapelato;
+- nuovi controlli: nota che cita allegati inesistenti, parti del follow-up che non
+  tornano con il totale, voci messe nella lista sbagliata rispetto al corpo della
+  lezione.
+
+Sui 16 testi letti a mano trovano: la nota falsa 4 su 4; i conti sbagliati nei
+casi 4 e 6, più il 5, dove anche le parti non tornano; Adaptive Strategies (caso 8,
+entrambe le configurazioni), Socratic questioning e Quantum jargon misuse.
+Sfuggono Visual Organizers e Social comparison.
+
+Prossimo passo: rigenerare insieme le due configurazioni, 3 esecuzioni per caso.
+
+**Giudice acceso contro spento, rigenerati insieme** (stesso build, 3 esecuzioni
+senza giudice e 2 con, 40 lezioni; la terza esecuzione con il giudice è stata
+fermata per contenere la spesa):
+
+| | spento (24) | acceso (16) |
+|---|---|---|
+| minuti esatti | 23/23 | 14/14 |
+| nota che cita allegati inesistenti | 0/24 | 0/16 |
+| nodi del grafo usati nel testo (media) | 4,5 | 5,1 |
+| follow-up: conti che non tornano | 6/24 | 3/16 |
+| gergo per lezione, senza il caso 7 | 0,2 | 0,6 |
+| Critic: approvate | 24/24 | 15/16 |
+| secondi (media) | 37,6 | 43,3 |
+
+La nota falsa sparisce (era 4 su 16). Il caso 7 esce in formato «strategie»
+in 3 esecuzioni su 5, con il giudice e senza: è una scelta del pianificatore. Il
+gergo con il giudice acceso è in 3 lezioni («nel KG: Anxiety»), ma il Writer lo
+scrive anche senza giudice. Con questi numeri non si capisce se lo aggiungano le
+revisioni: resta aperto.
+
+Il controllo delle liste ha trovato un difetto del sistema. Le non usate venivano
+dai suggerimenti per i bisogni, che possono essere nodi di qualunque tipo; le
+usate contavano solo strategie e strumenti. Così Adaptive Strategies, Awareness of
+Errors e Sustained Engagement risultavano non usate anche dove la lezione le
+etichetta. Ora un suggerimento che la lezione nomina conta come usato. Queste 40
+lezioni sono state generate prima della correzione.
+
+Le misure sulle liste e sui conti del follow-up restano approssimate (leggono
+prosa libera con espressioni regolari): servono a trovare i casi, poi i casi si
+leggono.
+
+### 2026-10-19 — Con il giudice acceso il Critic esce dalla catena
+
+Il Critic approvava 39 lezioni su 40 e, con il giudice acceso, non decideva più
+nulla, ma costava una chiamata e circa 10 s. Con `AIX_JUDGE_ENABLED=true` la
+catena è ora scrittura → validatore → controllo dei documenti → giudice. Il
+controllo dei documenti è solo codice: se la docente ha allegato documenti e la
+lezione non ne cita nessuno, la lezione torna una volta al Writer, come prima.
+Con il giudice spento non cambia nulla.
+
+Nella WebUI, con il giudice acceso, non compare più la scheda del Critic, che
+altrimenti resterebbe «in corso» per sempre.
+
+**La scheda del giudice nella WebUI.** Come le altre fasi, mentre il giudice
+lavora compare una scheda «Revisione mirata · rilettura in corso», con la
+checklist di ciò che controlla. Quando finisce, la scheda dice:
+
+- quanti problemi ha trovato e quanti erano da correggere;
+- quanti ne ha corretti nel testo, con il prima → dopo in un elenco da aprire;
+- quante correzioni ha scartato;
+- quanti punti da verificare ha lasciato nelle note sotto la lezione.
+
+Il riepilogo del giudice (`judge_summary.fixed`) porta ora anche le correzioni
+mantenute.
+
+### 2026-10-20 — Tre Writer e «tutto DeepSeek»: costi, lettura e correzioni nel codice
+
+Con `AIX_WRITER_MODEL` (nuovo, vuoto = `LLM_MODEL`) si confrontano i Writer senza
+cambiare riparazioni e risposte veloci. Stessi 8 casi, giudice acceso, niente
+Critic; costi da Langfuse, per lezione più follow-up:
+
+| configurazione | costo | lettura alla cieca |
+|---|---|---|
+| Haiku Writer, Sonnet pianificatore e giudice (oggi) | 0,050 $ | mai prima, ultima in 4 casi su 8 |
+| DeepSeek V4.1 Flash 1017 come Writer | 0,046 $ | prima in 3 casi su 8, molto variabile |
+| Sonnet 5.5 come Writer | 0,095 $ | prima in 5 casi su 8, costante |
+| tutto DeepSeek 1017 (pianificatore, giudice, riparazioni, follow-up) | 0,0055 $ | contro Sonnet Writer: Sonnet meglio in 5, DeepSeek in 1, 2 pari |
+
+DeepSeek passa da OpenRouter solo per i fornitori a zero data retention (ZDR attivo
+sull'account): 17 per la versione 1017, esclusi DeepSeek stesso, Alibaba,
+GMICloud e AtlasCloud. Decart e Wafer girano a 4 bit. Come giudice, sul banco dei
+17 errori, DeepSeek ne trova 16 (Sonnet 17) e costa 0,036 $ per 33 lezioni contro
+0,64 $, ma segnala come bloccanti 60 punti sulle lezioni pulite (Sonnet 26). Come
+Text2Cypher scrive query che Neo4j rifiuta: lì resta Gemini flash-lite.
+
+La differenza tra DeepSeek e Sonnet sta quasi tutta in difetti che il codice
+corregge, e vale per qualunque Writer (`aix.agent.validation.lesson_shape`, nel
+nodo di scrittura):
+
+- **intestazione** («**Livello:** Primaria · 22 alunni», «**Durata:** 60 minuti»)
+  dal profilo, quando il Writer non la scrive (5 lezioni DeepSeek su 8);
+- **fonti** ridotte ai nomi del grafo che il testo usa (fino a 17 elencati). Gli
+  altri riferimenti della riga (articoli, video, link) restano sempre;
+- **categorie del grafo** come «(EmotionalRegulation)» tolte dal testo per la
+  docente;
+- **gruppi**: nuova regola del validatore `group_total`. I gruppi di una riga
+  devono sommare gli alunni della classe («cinque gruppi da 4 e uno da 5» per
+  21). Su 72 lezioni segnala i 2 errori veri e nessun falso allarme.
+
+Nel prompt del Writer (commit `f97dc6f`): il nome del grafo tra parentesi anche
+quando la classe non ha bisogni dichiarati (con Sonnet il follow-up diceva
+«usati: nessuno»), e niente gergo anche nelle risposte che non sono lezioni.
+
+Il follow-up conta come usato ogni elemento del grafo che la lezione nomina, non
+solo le strategie: Autonomy, Competence e Relatedness sono esiti nel grafo di
+neuroscienze, e una lezione costruita su di loro diceva «Usati: 0».
+
+### 2026-10-20 — Prova sulla WebUI (tutto DeepSeek) contro staging: cinque correzioni
+
+Stessa richiesta (Guerra Fredda, con Cold-War.pdf allegato) in locale e su
+staging. I profili erano diversi: in locale secondaria di II grado con spettro
+autistico e disabilità cognitiva media, su staging secondaria di I grado. Su
+staging il Critic dava 100% a una lezione con minuti che non tornano (50 su 60),
+nota sul grafo sbagliato, gergo UDL nel testo e articoli universitari nelle fonti.
+In locale cinque difetti, corretti:
+
+- il giudice aveva «corretto» una frase presa dal documento della docente
+  (Eltsin, p. 4). Ora un problema in una riga che cita gli allegati va nelle note
+  e non si ripara (`repair.on_teacher_material`);
+- il follow-up diceva che la disabilità cognitiva media «non compare tra i
+  bisogni del profilo». Era dichiarata, ma il grafo non ha strategie per lei. Il
+  blocco calcolato ora la riporta come «dichiarata nel profilo, senza strategie
+  nel grafo»;
+- «Alunni non italofoni» era un'etichetta nostra, mostrata alla docente per il
+  codice CL. Ora si usano le parole della piattaforma, «Competenze linguistiche»;
+- «approvata dal critic» compariva anche senza Critic. Ora, quando c'è il
+  giudice, l'etichetta è «rivista · N correzioni»;
+- «Fonti dai tuoi materiali» restava in italiano sotto una risposta tradotta in
+  inglese. Ora diventa «Sources from your materials».
+
+Il pianificatore resta com'è. Nella prova DeepSeek ha cercato nel grafo temi di
+storia invece di strategie didattiche, ma la lezione è venuta bene lo stesso: è
+un effetto di secondo ordine, da misurare prima di cambiarlo.
+
+**Le correzioni nel testo, il registro nella scheda.** Nella prova del ciclo
+dell'acqua (Klein_ppt allegato) il giudice aveva trovato 8 punti, ne aveva
+corretto 1 e ne aveva lasciati 7 come note sotto la lezione, quasi tutti su frasi
+prese dal documento. Angelo: le proposte si applicano, non si elencano. Ora:
+
+- il giudice corregge tutto, anche i punti minori e anche le frasi prese dal
+  documento della docente;
+- sotto la lezione non compare più nulla: le «Note di revisione» sono tolte;
+- la scheda «Revisione mirata» elenca le correzioni con il prima → dopo, e segna
+  «dal tuo documento: verifica» quelle su frasi degli allegati, che il giudice non
+  vede. «Da verificare» elenca solo ciò che non ha potuto correggere;
+- tutto resta salvato in `judge_summary` e `review_notes`, nei metadati del turno
+  e nell'API.
+
+Questo sostituisce la regola di poco prima, che lasciava come nota ogni problema
+su una riga degli allegati.
+
+**Il grafo si interroga sulla didattica, non sull'argomento.** Con DeepSeek come
+pianificatore, 6 delle 11 query lanciate sul grafo parlavano di storia («Yalta
+Conference and division of Europe», «Iron Curtain and spheres of influence»), e la
+scheda le mostrava come «strategie didattiche cercate». Il grafo contiene solo
+strategie, processi di apprendimento, bisogni e ambiente. Il prompt diceva
+«pedagogy_concepts», ma il JSON chiedeva `key_concepts` senza dire che cosa
+contenesse: Sonnet lo intuiva, DeepSeek no. Ora:
+
+- **prompt:** `key_concepts` e `search_queries` sono per il grafo e riguardano
+  come insegnare; l'argomento va solo in `subject_concepts`. Rifatta la stessa
+  richiesta, DeepSeek produce 7 query tutte didattiche;
+- **codice, per qualunque modello** (`planner_agent.keep_pedagogy`): una query o
+  un concetto che nomina l'argomento senza nulla di didattico viene tolto; se ne
+  restano meno di 4 si aggiungono query didattiche di riserva.
+
+### 2026-10-20 — Il giudice riceve fatti calcolati, non fa i conti a mente
+
+Ciò che ha una sola risposta giusta lo calcola il codice
+(`aix.agent.validation.facts`), senza modello:
+
+- **sillabe**: regole dell'italiano (doppie divise, s impura, consonante più l/r,
+  ch gh gn gl sc inseparabili; dittongo o iato accettati entrambi), solo nelle
+  lezioni che parlano di sillabe. Le parole composte («suono-segno»,
+  «warm-up») sono escluse;
+- **frazioni**: equivalenze scritte nel testo e chiave dei quiz «Quale frazione è
+  equivalente a…?»;
+- **operazioni** con «=», valutate per intero («15 + 15 + 10 = 40»). Un
+  valutatore che accetta solo numeri e operatori, non esegue codice;
+- **minuti e gruppi**: i conteggi del validatore.
+
+Il giudice riceve i risultati come «Verifiche fatte dal sistema (esatte)»,
+[ERRATO] o [corretto]. Una verifica errata che il modello non riporta viene
+aggiunta comunque come problema (`Issue.computed`). Interruttore
+`AIX_JUDGE_FACTS`, acceso di default.
+
+Su 72 lezioni reali: zero falsi allarmi. Sul banco del giudice, con DeepSeek
+1017:
+
+| | senza verifiche | con verifiche |
+|---|---|---|
+| errori trovati | 16/17 (sfugge «ga-to») | 17/17 |
+| citazioni inventate | 3 | 0 |
+| costo per 33 lezioni | 0,033 $ | 0,032 $ |
+| secondi (mediana) | 5,0 | 4,6 |
+
+«ga-to» lo trova il modello stesso, guidato dalla verifica; la rete del codice
+non è servita. Sulle lezioni pulite non aggiunge problemi.

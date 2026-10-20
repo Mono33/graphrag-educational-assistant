@@ -110,6 +110,94 @@ documento — le affermazioni si citano dai passaggi.
 {maps}
 """
 
+# 2026-10-16 — the Writer had the graph's nodes but not what to do with them.
+# On the staging lesson (two pupils with ADHD, two Spanish speakers) the
+# differentiation was the model's own knowledge: none of the strategies the graph
+# links to those needs was named, and the lesson recommended Station Rotation,
+# which the graph advises against for a class of that size. Appended to the
+# system prompt of the lesson intents; the text is the same on every lesson, so
+# it stays in the cached prefix.
+#: The jargon rule for answers that are not lesson plans (recommended strategies,
+#: explanations): it lived only in the lesson's rules, and a list of strategies
+#: said «Il KG segnala scaffolding e chunking con confidenza molto alta»
+#: (blind read of three writers, 2026-10-20).
+WRITER_PLAIN_LANGUAGE_RULE = """
+
+## Language for the teacher
+Never write «nodo», «KG», «Knowledge Graph», confidence labels («VERY_HIGH», \
+«confidenza molto alta») or scores in the text: say «la ricerca» when you need to. \
+Name a strategy in Italian, with the graph's English name in brackets the first \
+time it appears.
+"""
+
+WRITER_KG_EVIDENCE_RULES = """
+
+## Using the Knowledge Graph evidence
+- «Bisogni della classe → che cosa indica il Knowledge Graph» maps each need of \
+THIS class to the strategies the graph suggests for it and the ones it advises \
+against. Build **Differenziazione** on it, one line per need of the class, in \
+this shape: **<bisogno>** → <strategia in italiano> (<graph's name>): what the \
+teacher does, when, and with which material — concrete enough to do tomorrow, \
+not a principle — and in which activity it happens (e.g. «**ADHD** → compiti \
+brevi (<graph's name>): nell'Attività 2 dà una consegna alla volta su un \
+cartellino e la spunta con l'alunno prima della successiva»; the name is always \
+one from the evidence above, never one from this example). Every strategy you \
+name there must also be visible in the steps of that activity. A strategy you \
+cannot turn into a concrete action is not named at all. Do not use what the \
+graph advises against for a need of the class or for this class's profile — \
+neither by its name nor in its form under another name: if it advises against \
+Station Rotation, no activity has groups rotating between stations. When the \
+class has no declared or named need (no «Bisogni della classe» section above), \
+do not invent pupils with ADHD, dyslexia, autism or any other need: \
+**Differenziazione** then offers options for every pupil — more than one way to \
+take in the content, to take part, to show what they learned — each tied to an \
+activity, and each of the graph's strategies named in the same shape: \
+<strategia in italiano> (<graph's name>). Under the Knowledge Graph in `*Fonti:*`, \
+a name that is not in the evidence above is not a node of this graph.
+- «Profilo della classe nel Knowledge Graph» says what the graph suggests and \
+advises against for a class like this one (its size, its features): follow it \
+when you choose the format of the activities.
+- Prefer the graph's strategies to generic ones. A strategy the graph did not \
+return is your own choice: do not list it under the Knowledge Graph in `*Fonti:*`.
+- Write this as plain prose. The graph's name in brackets after a strategy is \
+the one bracket allowed: no tags or labels such as «(KG)». \
+In the body of the lesson never write «nodo», «KG», «Knowledge Graph», confidence \
+labels («VERY_HIGH», «confidenza media») or scores: the graph is named only in \
+`*Fonti:*` and in the closing note. Name a strategy in Italian, with the graph's \
+English name in brackets the first time it appears.
+- In `*Fonti:*`, list under the Knowledge Graph only the nodes the lesson actually \
+applies (in an activity or in Differenziazione), with the names the graph gives \
+them — not every node you were given, and not the ones you left out, not even to \
+say they were excluded.
+- A need line ending in «→ nel KG: …» says what that \
+difficulty brings about («scatena Anxiety», «compromette Encoding…»): use it as \
+the reason for the Differenziazione choice, in plain words, and keep any strength \
+it names (e.g. creativity) as something to build on.
+- «Da evitare: neuromiti» lists practices the graph marks as myths: never propose \
+them, nor frame an activity in their terms (no «alunni visivi/uditivi/cinestetici», \
+no Brain Gym exercises).
+- «Effetti attesi secondo il KG» are reasons, not activities: do not present them \
+as strategies, and do not list them as strategies in `*Fonti:*`.
+"""
+
+# Added to the user prompt only when the class's needs call for it (ADHD, autism,
+# a class with disruptive elements; see ``kg_evidence.environment_needed``). The
+# UDL expert's point on the same lesson: for a pupil with ADHD the room must not
+# be overloaded with stimuli — neutral, orderly — and neither our lesson nor a
+# competitor's said a word about the environment.
+WRITER_LEARNING_ENVIRONMENT_NOTE = """
+
+## Learning environment
+The class includes pupils whose attention or sensory load depends on the room. \
+In **Differenziazione** add one bullet **Ambiente di apprendimento** with 2–4 \
+concrete actions to set up the room before and during the lesson — few visual \
+stimuli on the walls and the board, a neutral and orderly space, where those \
+pupils sit, noise and light — compatible with the Classroom Constraints. If the \
+Knowledge Graph evidence has a section «Ambiente di apprendimento (nodi del KG)», \
+base the actions on those nodes and name them in `*Fonti:*`; otherwise do not \
+attribute them to the Knowledge Graph.
+"""
+
 # =============================================================================
 # SYSTEM PROMPTS BY INTENT
 # =============================================================================
@@ -633,7 +721,7 @@ Create a clear, organized list grounded in the retrieved knowledge.
 
 WRITER_SYSTEM_PROMPT_HYBRID = """You are an expert Educational Content Writer creating lessons that combine:
 1. **Subject content** from the teacher's attached documents when there are any, and from external verified sources (Wikipedia, academic papers) for what they do not cover
-2. **Pedagogical strategies** grounded in the Knowledge Graph (neuroscience-based)
+2. **Pedagogical strategies** grounded in the Knowledge Graph ({kg_basis_en})
 
 ## Your Role (HYBRID Mode)
 
@@ -651,7 +739,7 @@ The teacher's attached documents are the one exception: they are cited in the le
 
 ## Quality Standards
 - Keep subject content factual and accurate (from external sources)
-- Apply neuroscience-based pedagogy from Knowledge Graph
+- Apply the {kg_basis_en} pedagogy from the Knowledge Graph
 - Make activities practical and classroom-ready
 - ALWAYS include the footer disclaimer
 
@@ -674,12 +762,12 @@ documents:
 ---
 ⚠️ **Nota sulle fonti**: Il contenuto disciplinare (argomento specifico) proviene da fonti esterne
 (Wikipedia, pubblicazioni accademiche) e non è stato verificato dal Knowledge Graph FEM.
-Le strategie pedagogiche sono basate sul Knowledge Graph di neuroscienze dell'apprendimento.
+Le strategie pedagogiche sono basate sul {kg_basis_it}.
 
 ---
 ⚠️ **Nota sulle fonti**: Il contenuto disciplinare proviene dai materiali allegati dalla docente
 e, dove indicato, da fonti esterne non verificate dal Knowledge Graph FEM.
-Le strategie pedagogiche sono basate sul Knowledge Graph di neuroscienze dell'apprendimento.
+Le strategie pedagogiche sono basate sul {kg_basis_it}.
 
 ### Language
 Write in {language} using appropriate educational register.
@@ -705,7 +793,7 @@ teacher's material at the end):
 {oer_content}
 
 ## Pedagogical Strategies (FROM KNOWLEDGE GRAPH)
-Apply these neuroscience-based strategies for HOW to teach:
+Apply these {kg_basis_en} strategies for HOW to teach:
 
 ### Teaching Methodologies
 {recommendations}
@@ -726,7 +814,7 @@ Apply these neuroscience-based strategies for HOW to teach:
 4. Among external sources, PRIORITIZE OER textbooks as they are domain-expert approved sources
 5. Include the footer disclaimer at the end
 
-Create a complete, practical lesson plan that combines external subject expertise with neuroscience-based pedagogy.
+Create a complete, practical lesson plan that combines external subject expertise with {kg_basis_en} pedagogy.
 """
 
 # =============================================================================
@@ -780,6 +868,30 @@ INTENT_USER_TEMPLATES = {
     "recommendation": WRITER_USER_TEMPLATE_RECOMMENDATION,
     "list": WRITER_USER_TEMPLATE_LIST,
 }
+
+
+#: What the Knowledge Graph of each domain is, in the hybrid prompt and its
+#: footer. Until 2026-10-16 both said «neuroscience» whatever the domain: a UDL
+#: lesson's card read «Ricerca completata sulla base UDL» and its footer «Le
+#: strategie pedagogiche sono basate sul Knowledge Graph di neuroscienze».
+KG_BASIS: dict[str, tuple[str, str]] = {
+    "neuro": ("neuroscience-based", "Knowledge Graph di neuroscienze dell'apprendimento"),
+    "udl": (
+        "UDL-based (Universal Design for Learning)",
+        "Knowledge Graph UDL (Universal Design for Learning)",
+    ),
+}
+
+
+def kg_basis(domain: str) -> tuple[str, str]:
+    """``(english, italian)`` wording for the domain's Knowledge Graph; neuro when unknown."""
+    return KG_BASIS.get(str(domain or "").lower(), KG_BASIS["neuro"])
+
+
+def apply_kg_basis(text: str, domain: str) -> str:
+    """Fill ``{kg_basis_en}`` / ``{kg_basis_it}`` in a prompt that is not ``.format``-ed."""
+    english, italian = kg_basis(domain)
+    return text.replace("{kg_basis_en}", english).replace("{kg_basis_it}", italian)
 
 
 def get_writer_prompts(intent: str, scope_status: str = "in_scope") -> tuple:

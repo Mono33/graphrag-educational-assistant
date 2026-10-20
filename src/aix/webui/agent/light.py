@@ -30,6 +30,8 @@ from sqlalchemy import delete, func, select
 from aix.agent.prompts.light_prompt import (
     ANSWER_HERE_RULE,
     ESCALATION_RULE,
+    GRAPH_MISSING,
+    GRAPH_TEMPLATE,
     LIGHT_SYSTEM_PROMPT,
     LIGHT_USER_TEMPLATE,
     NEW_LESSON,
@@ -49,7 +51,12 @@ _LESSON_CHARS = 60000
 _TURNS_KEPT = 6
 _USER_CHARS = 1500
 _ANSWER_CHARS = 2500
-_MAX_TOKENS = int(os.getenv("AIX_CHAT_MAX_TOKENS", "3000"))
+#: The graph's evidence, as kept with the lesson (``kg_evidence.MAX_CHARS``).
+_GRAPH_CHARS = 9000
+#: The model's reasoning counts against it too: a regenerated turn 2 of the
+#: staging lesson («esploriamo che cosa hai trovato nel grafo», 2026-10-16) used
+#: all 3000 -- about 1700 thinking, 1300 of answer -- and was cut mid-list.
+_MAX_TOKENS = int(os.getenv("AIX_CHAT_MAX_TOKENS", "4500"))
 _MARKER = re.compile(r"\[\[material:[^\]]*\]\]")
 
 
@@ -116,15 +123,24 @@ class EscalationGate:
         return head
 
 
-def _turn_line(msg: Any, lesson_md: str) -> Optional[str]:
+#: Says that a cut in the history is ours. A bare «…» read as an answer that had
+#: broken off: on 2026-10-16 the model told the teacher «la mia risposta
+#: precedente si è interrotta» about a 3,500-character answer she had read whole.
+_CLIPPED_NOTE = " […accorciata qui; la docente l'ha letta intera]"
+
+
+def _turn_line(msg: Any, lesson_md: str, *, whole: bool = False) -> Optional[str]:
+    """One turn of the history. ``whole``: the latest answer, which the new
+    question is usually about, is kept entire."""
     text = (msg.content_md or "").strip()
     if not text:
         return None
     if msg.role == "user":
         return f"**Docente:** {text[:_USER_CHARS]}"
     if msg.agent_kind == "tutor":
-        clipped = text[:_ANSWER_CHARS] + ("…" if len(text) > _ANSWER_CHARS else "")
-        return f"**Tu:** {clipped}"
+        if whole or len(text) <= _ANSWER_CHARS:
+            return f"**Tu:** {text}"
+        return f"**Tu:** {text[:_ANSWER_CHARS]}{_CLIPPED_NOTE}"
     if text == lesson_md.strip():
         return "**Tu:** (la lezione: è il documento di lavoro qui sopra)"
     return "**Tu:** (una versione precedente della lezione)"
@@ -144,7 +160,13 @@ async def _history(session: Any, lesson: Any, before_turn: int) -> str:
             .order_by(LessonMessage.turn_index, LessonMessage.created_at)
         )
     ).scalars()
-    lines = [line for msg in rows if (line := _turn_line(msg, lesson.lesson_plan_md or ""))]
+    messages = list(rows)
+    latest_answer = next((m for m in reversed(messages) if m.agent_kind == "tutor"), None)
+    lines = [
+        line
+        for msg in messages
+        if (line := _turn_line(msg, lesson.lesson_plan_md or "", whole=msg is latest_answer))
+    ]
     return "\n## La conversazione finora\n\n" + "\n\n".join(lines) + "\n" if lines else ""
 
 
@@ -169,13 +191,51 @@ async def _documents(lesson: Any, instruction: str) -> tuple[str, list[dict[str,
     return teacher_material_appendix(items, None, phase="light", material_maps=maps), items
 
 
-#: The template up to the lesson is the same on every turn of a lesson (the date,
-#: the class, the lesson); what follows -- passages, history, request -- changes.
+async def _graph_digest(session: Any, lesson: Any) -> str:
+    """What the Knowledge Graph returned for the lesson, as its last full turn kept it.
+
+    Until 2026-10-16 nothing of the retrieval outlived the run, so a teacher
+    asking «esploriamo le informazioni che hai trovato nel grafo» was told «Non
+    ho accesso diretto al grafo: lavoro su ciò che è riportato nel documento».
+    The Writer's message now keeps the evidence it was given
+    (``kg_evidence.digest``); a lesson written before that has none, and the
+    prompt says so instead.
+    """
+    from aix.webui.lessons.models import LessonMessage
+
+    try:
+        meta = await session.scalar(
+            select(LessonMessage.meta_json)
+            .where(
+                LessonMessage.lesson_id == lesson.id,
+                LessonMessage.role == "assistant",
+                func.coalesce(LessonMessage.agent_kind, "") != "tutor",
+            )
+            .order_by(LessonMessage.turn_index.desc(), LessonMessage.created_at.desc())
+            .limit(1)
+        )
+    except Exception as exc:  # noqa: BLE001 — the answer still has the lesson
+        logger.warning("[light] graph digest not read (%s: %s)", type(exc).__name__, exc)
+        return GRAPH_MISSING
+    kept = (meta or {}).get("kg_digest") if isinstance(meta, dict) else None
+    if not isinstance(kept, dict) or not str(kept.get("text") or "").strip():
+        return GRAPH_MISSING
+    return GRAPH_TEMPLATE.format(
+        nodes=kept.get("nodes", "?"),
+        relationships=kept.get("relationships", "?"),
+        usage=str(kept.get("usage_text") or "").strip(),
+        text=str(kept["text"]).strip()[:_GRAPH_CHARS],
+    )
+
+
+#: The template up to the lesson and the graph is the same on every turn of a
+#: lesson (the date, the class, the lesson, what the graph returned); what
+#: follows -- passages, history, request -- changes.
 _HEAD, _TAIL = LIGHT_USER_TEMPLATE.split("{documents}", 1)
 _TAIL = "{documents}" + _TAIL
 
 
-def _head(lesson: Any) -> str:
+def _head(lesson: Any, graph: str = "") -> str:
     """The stable start of the user message: what the provider can keep in cache."""
     from aix.agent.prompts.profile_renderer import render_profile_section
     from aix.agent.prompts.today import today_note
@@ -187,16 +247,23 @@ def _head(lesson: Any) -> str:
         today=today_note().strip(),
         profile=render_profile_section(profile),
         lesson=(lesson.lesson_plan_md or "")[:_LESSON_CHARS],
+        graph=graph,
     )
 
 
 def _messages(
-    lesson: Any, instruction: str, history: str, documents: str, *, answer_here: bool
+    lesson: Any,
+    instruction: str,
+    history: str,
+    documents: str,
+    *,
+    answer_here: bool,
+    graph: str = "",
 ) -> list[dict[str, str]]:
     system = LIGHT_SYSTEM_PROMPT.format(
         scope_rule=ANSWER_HERE_RULE if answer_here else ESCALATION_RULE
     )
-    user = _head(lesson) + _TAIL.format(
+    user = _head(lesson, graph) + _TAIL.format(
         documents=documents, history=history, instruction=instruction
     )
     return [{"role": "system", "content": system}, {"role": "user", "content": user}]
@@ -284,12 +351,14 @@ async def run_light_turn(
         # (see light_tools); without, they are searched before every answer.
         toolbox = light_tools.Toolbox(lesson) if light_tools.enabled() else None
         documents, items = ("", []) if toolbox else await _documents(lesson, instruction)
+        graph = await _graph_digest(session, lesson)
         messages = _messages(
             lesson,
             instruction,
             await _history(session, lesson, turn),
             documents,
             answer_here=answer_here,
+            graph=graph,
         )
         if toolbox:
             messages[0] = {
@@ -299,7 +368,9 @@ async def run_light_turn(
         # The lesson (up to ~15k tokens) is resent on every turn and on every
         # hand-off to a new lesson: marked, a turn within minutes of the last
         # reads it at a tenth of the price. The text is unchanged.
-        messages = prompt_cache.cacheable(messages, model=model, stable_user_prefix=_head(lesson))
+        messages = prompt_cache.cacheable(
+            messages, model=model, stable_user_prefix=_head(lesson, graph)
+        )
         kwargs = app_config.openai.build_completion_kwargs(
             temperature=0.4,
             max_tokens=_MAX_TOKENS,

@@ -65,6 +65,7 @@ _CLAIM_CHARS = 600
 #: authorization of a citation is decided elsewhere, on the version id.
 _MARKER = "[[material:"
 _ANY_MARKER = re.compile(r"\[\[material:[^\]]*\]\]")
+_QUOTED_MARKER = re.compile(r"(`?)(\[\[material:[^\]]*\]\])(`?)")
 
 
 def drop_unknown_markers(draft: str, items: Optional[list[dict[str, Any]]]) -> str:
@@ -88,13 +89,17 @@ def drop_unknown_markers(draft: str, items: Optional[list[dict[str, Any]]]) -> s
     known = {str(item.get("citation") or "") for item in items or []}
     removed: list[str] = []
 
+    # A marker the model *quotes* -- «il documento non contiene marcatori
+    # `[[material:…]]`» -- sits in backticks; removed alone, it left «``» in
+    # front of the teacher (staging, 2026-10-16). The backticks go with it.
     def _keep(match: re.Match) -> str:
-        if match.group(0) in known:
+        opening, marker, closing = match.group(1), match.group(2), match.group(3)
+        if marker in known:
             return match.group(0)
-        removed.append(match.group(0))
-        return ""
+        removed.append(marker)
+        return "" if opening and closing else opening + closing
 
-    cleaned = _ANY_MARKER.sub(_keep, draft)
+    cleaned = _QUOTED_MARKER.sub(_keep, draft)
     if not removed:
         return draft
     logger.warning(

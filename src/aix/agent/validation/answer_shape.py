@@ -128,6 +128,66 @@ def once_only_disclaimer(text: str) -> str:
     return text
 
 
+#: The source note, chosen by whether the teacher attached anything. The model
+#: used to pick it, and on 2026-10-19 said «materiali allegati dalla docente» in
+#: four lessons out of sixteen with nothing attached, or wrote its own note:
+#: «riferimenti di ricerca forniti dal docente».
+_SOURCE_NOTES = {
+    ("it", False): (
+        "⚠️ **Nota sulle fonti**: Il contenuto disciplinare (argomento specifico) proviene "
+        "da fonti esterne\n(Wikipedia, pubblicazioni accademiche) e non è stato verificato "
+        "dal Knowledge Graph FEM.\nLe strategie pedagogiche sono basate sul {kg}."
+    ),
+    ("it", True): (
+        "⚠️ **Nota sulle fonti**: Il contenuto disciplinare proviene dai materiali allegati "
+        "dalla docente\ne, dove indicato, da fonti esterne non verificate dal Knowledge "
+        "Graph FEM.\nLe strategie pedagogiche sono basate sul {kg}."
+    ),
+    ("en", False): (
+        "⚠️ **Source note**: The subject content comes from external sources\n(Wikipedia, "
+        "academic publications) and has not been checked against the FEM Knowledge Graph.\n"
+        "The teaching strategies are {kg}, from the FEM Knowledge Graph."
+    ),
+    ("en", True): (
+        "⚠️ **Source note**: The subject content comes from the teacher's attached "
+        "materials\nand, where stated, from external sources not checked against the FEM "
+        "Knowledge Graph.\nThe teaching strategies are {kg}, from the FEM Knowledge Graph."
+    ),
+}
+
+#: Any note the model wrote: the two given ones, and the ones it made up
+#: («*Nota sulle fonti: la lezione è costruita…*»), with the rule above them.
+_ANY_NOTE = re.compile(
+    r"(?:\n[ \t]*-{3,}[ \t]*)?\n+[ \t]*(?:⚠️\s*)?[*_]{0,2}(?:Nota sulle fonti|Source note)\b"
+    r".*?(?=\n\s*\n|\Z)",
+    re.DOTALL | re.IGNORECASE,
+)
+
+
+def source_note(*, has_material: bool, domain: str = "neuro", language: str = "it") -> str:
+    """The note that ends a lesson, as it applies to this one."""
+    from aix.agent.prompts.writer_prompt import kg_basis
+
+    english, italian = kg_basis(domain)
+    language = "it" if language == "it" else "en"
+    return _SOURCE_NOTES[(language, has_material)].format(
+        kg=italian if language == "it" else english
+    )
+
+
+def set_source_note(text: str, note: str) -> str:
+    """``text`` with every note the model wrote taken out and ``note`` at the end.
+
+    Only where the model wrote one: the prompts still ask for it where it
+    belongs (lessons), and an answer that never had a note does not get one.
+    """
+    if not _ANY_NOTE.search("\n" + (text or "")):
+        return text
+    body = _ANY_NOTE.sub("", "\n" + text).strip()
+    body = re.sub(r"\n[ \t]*-{3,}[ \t]*$", "", body).rstrip()
+    return f"{body}\n\n---\n{note}\n"
+
+
 def tidy_answer(text: str) -> str:
     """Both corrections, in the order that lets each see the text it expects.
 

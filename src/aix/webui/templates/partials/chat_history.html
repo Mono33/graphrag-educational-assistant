@@ -121,7 +121,13 @@
                 <wa-icon name="sparkles" class="aix-fs-xs"></wa-icon>
                 Generato dall'IA
               </span>
-              {% if m.get('approved') is not none %}
+              {%- set _j = m.get('judge') or {} -%}
+              {% if _j %}
+                <span class="aix-pill aix-pill-success" title="Revisione mirata: corregge solo i punti sbagliati">
+                  <wa-icon name="clipboard-check" class="aix-fs-xs"></wa-icon>
+                  {% if _j.get('error') %}revisione non eseguita{% else %}{% set _n = (_j.get('fixed') or []) | length %}rivista · {{ _n }} {{ 'correzione' if _n == 1 else 'correzioni' }}{% endif %}
+                </span>
+              {% elif m.get('approved') is not none %}
                 {% if m.approved %}
                   <span class="aix-pill aix-pill-success">
                     <wa-icon name="circle-check" class="aix-fs-xs"></wa-icon>
@@ -183,6 +189,7 @@
           <article class="lesson-prose aix-prose-padding">
             {{ msg.content_html | safe }}
           </article>
+
 
           {% if msg.turn_index == latest.lesson_turn and lesson.status != "running" %}
             <footer class="aix-lesson-footer">
