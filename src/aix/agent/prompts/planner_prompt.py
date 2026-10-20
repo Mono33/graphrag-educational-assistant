@@ -87,6 +87,15 @@ For `partial_scope`: Identify BOTH:
 - **subject_concepts**: The subject-specific topic (to fetch from external APIs)
 - **pedagogy_concepts**: Teaching strategies from KG to apply
 
+**`key_concepts` and `search_queries` are for the Knowledge Graph, which holds
+teaching strategies, learning processes, learners' needs and the learning
+environment — never the subject.** The subject topic goes ONLY in
+`subject_concepts`. Every search query asks how to teach it to this class, not
+what the topic is: for a lesson on the Cold War that should spark interest, write
+«strategies to spark students' interest», «activating prior knowledge»,
+«discussion and argumentation activities» — never «Iron Curtain and spheres of
+influence» or «nuclear deterrence and arms race».
+
 ## STEP 4: Additional Parameters (for lesson/activity only)
 
 Only if intent is `lesson_creation` or `activity_design`:

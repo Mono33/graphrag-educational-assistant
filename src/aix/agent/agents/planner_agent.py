@@ -85,6 +85,46 @@ def weak_plan_reason(plan_data: Optional[dict]) -> Optional[str]:
     return None
 
 
+#: Words that make a graph query about teaching, even when it names the topic.
+_PEDAGOGY_WORD = re.compile(
+    r"strateg|teach|learn|didatt|insegn|apprend|engag|interest|motivat|scaffold|differen"
+    r"|cooperat|collaborat|discussion|prior knowledge|attention|memory|metacogn|inclus"
+    r"|support|activit|assessment|feedback|visual|multisensor|need",
+    re.IGNORECASE,
+)
+_WORD = re.compile(r"[\w'-]{4,}")
+
+#: What to search the graph for when the planner left nothing about teaching.
+FALLBACK_PEDAGOGY_QUERIES = (
+    "strategies to spark students' interest and engagement",
+    "activating prior knowledge and active learning",
+    "cooperative learning and classroom discussion",
+    "differentiated instruction for a heterogeneous class",
+)
+
+
+def keep_pedagogy(items: list[str], subject: Optional[list[str]]) -> list[str]:
+    """``items`` without those about the lesson's subject rather than about teaching.
+
+    The graph holds teaching strategies, learning processes and needs, never the
+    subject. On 2026-10-20 a planner on DeepSeek searched it for «Yalta Conference
+    and division of Europe» and «Iron Curtain and spheres of influence» -- six of
+    eleven queries -- and showed them as «strategie didattiche cercate». An item
+    goes when it names the subject (a word of ``subject``) and nothing about
+    teaching; «strategies to teach the Cold War» stays.
+    """
+    topic = {w.lower() for concept in subject or [] for w in _WORD.findall(str(concept))}
+    if not topic:
+        return list(items)
+    kept = []
+    for item in items:
+        words = {w.lower() for w in _WORD.findall(str(item))}
+        if words & topic and not _PEDAGOGY_WORD.search(str(item)):
+            continue
+        kept.append(item)
+    return kept
+
+
 def _extract_json(content: str) -> dict:
     """Multi-strategy JSON extractor for LLM responses that may wrap JSON in markdown.
 
@@ -522,6 +562,35 @@ class PlannerAgent:
             scope_confidence = plan_data.get("scope_confidence", 1.0)
             subject_concepts = plan_data.get("subject_concepts")
             pedagogy_concepts = plan_data.get("pedagogy_concepts")
+
+            # The graph is searched for teaching, never for the subject: what the
+            # planner put there about the topic goes, and when too little is left
+            # the searches are topped up with teaching ones (see ``keep_pedagogy``).
+            if subject_concepts:
+                queries = keep_pedagogy(plan_data.get("search_queries") or [], subject_concepts)
+                concepts = keep_pedagogy(plan_data.get("key_concepts") or [], subject_concepts)
+                pedagogy_concepts = keep_pedagogy(pedagogy_concepts or [], subject_concepts) or None
+                for extra in FALLBACK_PEDAGOGY_QUERIES:
+                    if len(queries) >= 4:
+                        break
+                    queries.append(extra)
+                dropped = len(plan_data.get("search_queries") or []) - len(
+                    [q for q in queries if q not in FALLBACK_PEDAGOGY_QUERIES]
+                )
+                if dropped:
+                    logger.info(
+                        "[PlannerAgent] %d graph queries about the subject dropped", dropped
+                    )
+                plan_data["search_queries"] = queries
+                plan_data["key_concepts"] = (
+                    concepts
+                    or list(pedagogy_concepts or [])
+                    or [
+                        "interest and engagement",
+                        "active learning",
+                        "differentiated instruction",
+                    ]
+                )
 
             # Point (a): Extract LLM-detected response language.
             # ``response_language`` may be None on legacy / older Langfuse

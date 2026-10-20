@@ -3759,3 +3759,18 @@ prese dal documento. Angelo: le proposte si applicano, non si elencano. Ora:
 
 Questo sostituisce la regola di poco prima, che lasciava come nota ogni problema
 su una riga degli allegati.
+
+**Il grafo si interroga sulla didattica, non sull'argomento.** Con DeepSeek come
+pianificatore, 6 delle 11 query lanciate sul grafo parlavano di storia («Yalta
+Conference and division of Europe», «Iron Curtain and spheres of influence»), e la
+scheda le mostrava come «strategie didattiche cercate». Il grafo contiene solo
+strategie, processi di apprendimento, bisogni e ambiente. Il prompt diceva
+«pedagogy_concepts», ma il JSON chiedeva `key_concepts` senza dire che cosa
+contenesse: Sonnet lo intuiva, DeepSeek no. Ora:
+
+- **prompt:** `key_concepts` e `search_queries` sono per il grafo e riguardano
+  come insegnare; l'argomento va solo in `subject_concepts`. Rifatta la stessa
+  richiesta, DeepSeek produce 7 query tutte didattiche;
+- **codice, per qualunque modello** (`planner_agent.keep_pedagogy`): una query o
+  un concetto che nomina l'argomento senza nulla di didattico viene tolto; se ne
+  restano meno di 4 si aggiungono query didattiche di riserva.
