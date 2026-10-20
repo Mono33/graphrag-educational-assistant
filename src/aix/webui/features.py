@@ -98,6 +98,9 @@ def register(templates) -> None:
     templates.env.globals["conditional_retrieval_enabled"] = conditional_retrieval_enabled
     templates.env.globals["light_turns_enabled"] = light_turns_enabled
     templates.env.globals["material_library_enabled"] = material_library_enabled
+    from aix.core.config import api_docs_enabled
+
+    templates.env.globals["api_docs_enabled"] = api_docs_enabled
 
     from aix.webui.materials.saved_resources import resource_key
 

@@ -8,7 +8,10 @@ import logging
 import time
 from typing import Optional
 
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, Depends
+
+# Import domain configuration system for scalable domain-aware formatting
+from aix.api.principals import require_caller
 
 # Import schemas
 from aix.api.schemas import (
@@ -32,8 +35,6 @@ from aix.api.schemas import (
     RetrievalPhase,
     ScoringBreakdown,
 )
-
-# Import domain configuration system for scalable domain-aware formatting
 from aix.domains import get_domain_config
 from aix.retrieval.context_builder import ConfidenceLevel as CBConfidenceLevel
 
@@ -859,6 +860,10 @@ _CONTEXT_REQUEST_OPENAPI_EXAMPLES: dict = {
 @router.post("", response_model=ContextResponse)
 async def get_context(
     request: ContextRequest = Body(..., openapi_examples=_CONTEXT_REQUEST_OPENAPI_EXAMPLES),
+    # The same credentials as every other API route. It answered anyone on
+    # staging, which has no proxy authentication in front, and each call spends
+    # model calls (translation, Text2Cypher) -- flagged in Louis's review, 2026-10-18.
+    caller=Depends(require_caller),
 ) -> ContextResponse:
     """
     Get educational context from GraphRAG knowledge graph (retrieval-only mode of the Agentic GraphRAG system).

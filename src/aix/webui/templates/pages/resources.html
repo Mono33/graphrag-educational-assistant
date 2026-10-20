@@ -11,10 +11,12 @@
         sono visibili soltanto al tuo account.
       </p>
     </div>
+    {% if api_docs_enabled is defined and api_docs_enabled() %}
     <a href="/docs" class="aix-btn aix-btn-outline aix-btn-sm">
       <wa-icon name="code"></wa-icon>
       Documentazione API
     </a>
+    {% endif %}
   </section>
 
   <nav class="flex gap-2 mb-5" aria-label="Sezioni risorse">

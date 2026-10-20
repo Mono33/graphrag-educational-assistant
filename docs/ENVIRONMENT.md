@@ -163,6 +163,8 @@ dimenticata serviva il prodotto vecchio senza che nessuno se ne accorgesse.
 | `WEBUI_TOKEN_LIFETIME_SECONDS` | `86400` | Durata della sessione |
 | `WEBUI_CORS_ALLOW_ORIGINS` | `*` | Origini ammesse sull'API |
 | `GRAPH_API_USERNAME` · `GRAPH_API_PWD` | vuoti | Basic Auth per i servizi che chiamano `/api/v1` |
+| `AIX_API_CLIENTS` | vuoto | Credenziali per istanza della piattaforma, JSON `{"aixl-staging": "…", "aixl-prod": "…"}`: il nome del client fa parte dell'identità di ogni utente finale. Senza nessun client (né questo né `GRAPH_API_*`) l'API rifiuta ogni service account con 401. **Non metterlo nel `.env` versionato**: in un file solo sulla VM |
+| `AIX_API_DOCS_ENABLED` | spento se `ENVIRONMENT` è `staging` o `production`, acceso altrove | `/docs`, `/redoc`, `/openapi.json`. Su staging non c'è autenticazione del proxy davanti (la WebUI è pubblica) e il contratto era leggibile da chiunque; ai dev si dà `docs/api/openapi.json` |
 | `AIX_API_CLIENTS` | vuoto | Altri service account, uno per istanza della piattaforma: oggetto JSON `{"nome": "password"}`. Ogni nome è uno spazio di utenti finali separato (`aix.api.principals`). Un JSON non valido viene ignorato con un errore nel log |
 | `ENVIRONMENT` | `production` | `development` allenta alcune protezioni |
 | `CODE_VERSION` | — | Scritta nell'immagine al build; compare in `/api/v1/health` |

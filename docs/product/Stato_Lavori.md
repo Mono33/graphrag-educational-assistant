@@ -3955,3 +3955,29 @@ Sonda all'avvio verso DeepSeek riuscita; `/api/v1/health` con `code_version`
 Nota per i prossimi deploy: `docker compose up -d` non scarica l'immagine nuova
 (serve `docker compose pull api-staging`, o aspettare Watchtower), e nei 30–60 s
 dell'avvio il container non risponde ancora sulla porta 8765.
+
+### 2026-10-20 — Prima di consegnare l'API ai dev: cosa risponde lo staging senza credenziali
+
+Chiamato lo staging (`agente.aiforlearning.digital`, nessuna autenticazione di
+Traefik davanti perché la WebUI è pubblica) senza credenziali:
+
+| | risposta |
+|---|---|
+| `/api/v1/sessions`, `/catalog`, `/mcp/` | 401, corretto |
+| `/docs`, `/redoc`, `/openapi.json` | 200: il contratto intero, pubblico |
+| `POST /api/v1/context` | 200: chiunque interroga il grafo, e ogni chiamata spende modelli |
+
+Corretto (da portare su staging):
+
+- `/context` richiede le stesse credenziali delle altre rotte (`require_caller`);
+  `/context/domains` e `/health` restano aperti;
+- `AIX_API_DOCS_ENABLED`: documentazione spenta dove `ENVIRONMENT` è staging o
+  production, accesa in locale. I link «API docs» della WebUI compaiono solo se
+  è accesa;
+- `docs/api/openapi.json`: il contratto della versione, solo le rotte `/api`,
+  da dare ai dev.
+
+Ancora da fare sulla VM: nel `.env` non ci sono né `GRAPH_API_*` né
+`AIX_API_CLIENTS`, quindi oggi nessun service account può usare l'API dello
+staging. Va creato un client per l'istanza di staging di AIxLearning, in un file
+non versionato.

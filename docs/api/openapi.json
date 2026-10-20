@@ -1,0 +1,5555 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "GraphRAG Educational API",
+    "description": "AIxLearning integration contract, exported 2026-10-20 from chore/repo-reorg (staging f609d65 + the security fixes of the same day). Only the /api routes. Guide: docs/api/Chatbot_API_Guide.md. Authentication: HTTP Basic with the instance's client name and password, plus X-End-User-Id.",
+    "version": "1.1.0"
+  },
+  "paths": {
+    "/api/v1/context": {
+      "post": {
+        "tags": [
+          "context"
+        ],
+        "summary": "Get Context",
+        "description": "Get educational context from GraphRAG knowledge graph (retrieval-only mode of the Agentic GraphRAG system).\n\nThis endpoint:\n1. Translates the query (if needed)\n2. Generates a Cypher query\n3. Retrieves relevant nodes from Neo4j\n4. Builds structured educational context\n5. Returns everything in a format ready for prompt injection\n\nDEV team can use the returned data directly in their Jinja2 templates.\n\n**Inputs:**\n- `query`, `domain`, `language` — frozen base contract (unchanged for the DEV team).\n- `educational_profile` *(optional, CORE 1 #2.5)* — per-request class / classroom context\n  (BES, grade level, classroom resources). Backward compatible: omit it and the response\n  preserves the original generic behavior. When supplied, downstream prompt enrichment\n  and methodology ranking will specialize against the profile.\n\n*Tip:* in the Swagger UI **Try it out** panel, use the **Examples** dropdown to switch\nbetween the *Minimal* (legacy) and *Rich* (with `educational_profile`) call shapes.\n\n*Note:* Agent mode (LangGraph multi-agent lesson planning) is exposed by separate\nendpoints (`POST /api/v1/agent/run` for sync JSON and `POST /api/v1/agent/stream`\nfor SSE; CORE 2 #7) and is not available here. Both use the same\n`educational_profile` shape as the Rich example below.",
+        "operationId": "get_context_api_v1_context_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContextRequest"
+              },
+              "examples": {
+                "minimal": {
+                  "summary": "Minimal — legacy DEV contract (frozen, no profile)",
+                  "description": "The original frozen contract used by the DEV team. Backward-compatible: omitting `educational_profile` preserves the original generic GraphRAG behavior.",
+                  "value": {
+                    "query": "Quali strategie per studenti con ADHD?",
+                    "domain": "neuro",
+                    "language": "it",
+                    "include_raw_nodes": false,
+                    "max_methodologies": 10
+                  }
+                },
+                "rich": {
+                  "summary": "Rich — with EducationalProfile (CORE 1 #2.5)",
+                  "description": "Includes the optional `educational_profile` so downstream prompt enrichment and methodology ranking can specialize against the class profile (BES, grade level, classroom resources).",
+                  "value": {
+                    "query": "Crea una lezione sulla fotosintesi",
+                    "domain": "neuro",
+                    "language": "it",
+                    "include_raw_nodes": false,
+                    "max_methodologies": 10,
+                    "educational_profile": {
+                      "group": {
+                        "title": "3A Liceo Scientifico",
+                        "students_number": 25,
+                        "grade": "SECONDARIA_II_GRADO",
+                        "disabilities": [
+                          "ADHD",
+                          "DSA"
+                        ],
+                        "class_features": [
+                          "MOTIVATA"
+                        ],
+                        "student_attributes": [
+                          "PUNTI_DI_ECCELLENZA",
+                          "PUNTI_DI_CADUTA"
+                        ]
+                      },
+                      "classroom": {
+                        "title": "Aula 101",
+                        "forniture_mobility": "PARTIALLY",
+                        "has_lim": true,
+                        "has_wifi": true,
+                        "has_suite": true,
+                        "pc_station": false,
+                        "own_device": "BES"
+                      },
+                      "time_available_minutes": 60,
+                      "subject_area": "Scienze",
+                      "specific_topic": "Fotosintesi"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContextResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBasic": []
+          },
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/context/domains": {
+      "get": {
+        "tags": [
+          "context"
+        ],
+        "summary": "List Domains",
+        "description": "List available knowledge domains",
+        "operationId": "list_domains_api_v1_context_domains_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent/run": {
+      "post": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Run the agent and return the final lesson plan (sync JSON)",
+        "description": "Drives the full **Planner → Retriever → Writer → Critic** pipeline and returns a single JSON response with the final Markdown lesson plan plus planner / retriever / critic explainability. Typical run: 60–120 seconds. For incremental UI updates use ``POST /api/v1/agent/stream`` instead.",
+        "operationId": "run_agent_api_v1_agent_run_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentRunRequest"
+              },
+              "examples": {
+                "minimal": {
+                  "summary": "Minimal — only mandatory fields",
+                  "description": "Smallest valid call. Omitting ``educational_profile`` makes the agent fall back to its generic prompts — fine for a quick smoke test from /docs but the lesson plan won't specialize against a specific class.",
+                  "value": {
+                    "query": "Crea una lezione sull'attenzione",
+                    "domain": "neuro"
+                  }
+                },
+                "rich": {
+                  "summary": "Rich — with full EducationalProfile (CORE 1 #2.5)",
+                  "description": "Recommended shape for production calls. Includes every optional EducationalProfile field — class title, BES, class features, student attributes, classroom resources, time budget, subject area, specific topic — so the planner / writer can specialize prompts against the real class. ``teacher_provided_context`` may carry up to ~48k chars of extra material extracted from teacher uploads (PDF/TXT/MD).",
+                  "value": {
+                    "query": "Crea una lezione di 45 minuti sulla fotosintesi clorofilliana adattata a una classe con 2 studenti DSA",
+                    "domain": "neuro",
+                    "language": "it",
+                    "max_revisions": 1,
+                    "educational_profile": {
+                      "group": {
+                        "title": "3A Liceo Scientifico",
+                        "students_number": 25,
+                        "grade": "SECONDARIA_II_GRADO",
+                        "disabilities": [
+                          "ADHD",
+                          "DSA"
+                        ],
+                        "class_features": [
+                          "MOTIVATA"
+                        ],
+                        "student_attributes": [
+                          "PUNTI_DI_ECCELLENZA",
+                          "PUNTI_DI_CADUTA"
+                        ]
+                      },
+                      "classroom": {
+                        "title": "Aula 101",
+                        "forniture_mobility": "PARTIALLY",
+                        "has_lim": true,
+                        "has_wifi": true,
+                        "has_suite": true,
+                        "pc_station": false,
+                        "own_device": "BES"
+                      },
+                      "time_available_minutes": 45,
+                      "subject_area": "Scienze",
+                      "specific_topic": "Fotosintesi"
+                    },
+                    "teacher_provided_context": "Estratto dal manuale (opzionale): 'La fotosintesi è il processo con cui le piante convertono energia luminosa in energia chimica…'"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful agent run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRunResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid authentication."
+          },
+          "422": {
+            "description": "Validation error on the request body."
+          },
+          "502": {
+            "description": "Agent pipeline reported a runtime error (LLM failure, Knowledge Graph unreachable, etc.)."
+          }
+        },
+        "security": [
+          {
+            "HTTPBasic": []
+          },
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/agent/stream": {
+      "post": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Run the agent and stream phases as SSE-encoded JSON events",
+        "description": "Server-Sent Events stream of the same phases the webui chat workspace renders, but each event body is JSON (not HTML). Useful for non-browser clients that want incremental UI updates. Note: Swagger UI's *Try it out* renders the stream as a single blob — for live event-by-event inspection use ``curl -N`` or Postman / Bruno (both ship SSE viewers).",
+        "operationId": "stream_agent_api_v1_agent_stream_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentRunRequest"
+              },
+              "examples": {
+                "minimal": {
+                  "summary": "Minimal — only mandatory fields",
+                  "description": "Smallest valid call. Omitting ``educational_profile`` makes the agent fall back to its generic prompts — fine for a quick smoke test from /docs but the lesson plan won't specialize against a specific class.",
+                  "value": {
+                    "query": "Crea una lezione sull'attenzione",
+                    "domain": "neuro"
+                  }
+                },
+                "rich": {
+                  "summary": "Rich — with full EducationalProfile (CORE 1 #2.5)",
+                  "description": "Recommended shape for production calls. Includes every optional EducationalProfile field — class title, BES, class features, student attributes, classroom resources, time budget, subject area, specific topic — so the planner / writer can specialize prompts against the real class. ``teacher_provided_context`` may carry up to ~48k chars of extra material extracted from teacher uploads (PDF/TXT/MD).",
+                  "value": {
+                    "query": "Crea una lezione di 45 minuti sulla fotosintesi clorofilliana adattata a una classe con 2 studenti DSA",
+                    "domain": "neuro",
+                    "language": "it",
+                    "max_revisions": 1,
+                    "educational_profile": {
+                      "group": {
+                        "title": "3A Liceo Scientifico",
+                        "students_number": 25,
+                        "grade": "SECONDARIA_II_GRADO",
+                        "disabilities": [
+                          "ADHD",
+                          "DSA"
+                        ],
+                        "class_features": [
+                          "MOTIVATA"
+                        ],
+                        "student_attributes": [
+                          "PUNTI_DI_ECCELLENZA",
+                          "PUNTI_DI_CADUTA"
+                        ]
+                      },
+                      "classroom": {
+                        "title": "Aula 101",
+                        "forniture_mobility": "PARTIALLY",
+                        "has_lim": true,
+                        "has_wifi": true,
+                        "has_suite": true,
+                        "pc_station": false,
+                        "own_device": "BES"
+                      },
+                      "time_available_minutes": 45,
+                      "subject_area": "Scienze",
+                      "specific_topic": "Fotosintesi"
+                    },
+                    "teacher_provided_context": "Estratto dal manuale (opzionale): 'La fotosintesi è il processo con cui le piante convertono energia luminosa in energia chimica…'"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Server-Sent Events stream. Each ``data:`` frame is a JSON object matching one variant of ``AgentStreamEvent`` — discriminated by the ``kind`` field.",
+            "content": {
+              "text/event-stream": {}
+            }
+          },
+          "401": {
+            "description": "Missing or invalid authentication."
+          },
+          "422": {
+            "description": "Validation error on the request body."
+          }
+        },
+        "security": [
+          {
+            "HTTPBasic": []
+          },
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/materials": {
+      "get": {
+        "tags": [
+          "materials"
+        ],
+        "summary": "List Materials",
+        "operationId": "list_materials_api_v1_materials_get",
+        "security": [
+          {
+            "HTTPBasic": []
+          },
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 100,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "X-End-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-End-User-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaterialListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "materials"
+        ],
+        "summary": "Upload Material",
+        "operationId": "upload_material_api_v1_materials_post",
+        "security": [
+          {
+            "HTTPBasic": []
+          },
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "name": "X-End-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-End-User-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_material_api_v1_materials_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaterialResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/materials/saved/resources": {
+      "get": {
+        "tags": [
+          "materials"
+        ],
+        "summary": "List Saved Resources",
+        "operationId": "list_saved_resources_api_v1_materials_saved_resources_get",
+        "security": [
+          {
+            "HTTPBasic": []
+          },
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-End-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-End-User-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SavedResourceResponse"
+                  },
+                  "title": "Response List Saved Resources Api V1 Materials Saved Resources Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "materials"
+        ],
+        "summary": "Create Saved Resource",
+        "operationId": "create_saved_resource_api_v1_materials_saved_resources_post",
+        "security": [
+          {
+            "HTTPBasic": []
+          },
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-End-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-End-User-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SavedResourceCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedResourceResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/materials/saved/resources/{resource_id}": {
+      "delete": {
+        "tags": [
+          "materials"
+        ],
+        "summary": "Remove Saved Resource",
+        "operationId": "remove_saved_resource_api_v1_materials_saved_resources__resource_id__delete",
+        "security": [
+          {
+            "HTTPBasic": []
+          },
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "resource_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Resource Id"
+            }
+          },
+          {
+            "name": "X-End-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-End-User-Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/materials/{material_id}": {
+      "get": {
+        "tags": [
+          "materials"
+        ],
+        "summary": "Get Material",
+        "operationId": "get_material_api_v1_materials__material_id__get",
+        "security": [
+          {
+            "HTTPBasic": []
+          },
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "material_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Material Id"
+            }
+          },
+          {
+            "name": "X-End-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-End-User-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaterialResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "materials"
+        ],
+        "summary": "Remove Material",
+        "operationId": "remove_material_api_v1_materials__material_id__delete",
+        "security": [
+          {
+            "HTTPBasic": []
+          },
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "material_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Material Id"
+            }
+          },
+          {
+            "name": "X-End-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-End-User-Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/materials/{material_id}/versions": {
+      "post": {
+        "tags": [
+          "materials"
+        ],
+        "summary": "Upload Material Version",
+        "operationId": "upload_material_version_api_v1_materials__material_id__versions_post",
+        "security": [
+          {
+            "HTTPBasic": []
+          },
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "material_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Material Id"
+            }
+          },
+          {
+            "name": "X-End-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-End-User-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_material_version_api_v1_materials__material_id__versions_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaterialResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/materials/{material_id}/versions/{version_id}/source": {
+      "get": {
+        "tags": [
+          "materials"
+        ],
+        "summary": "Download Material Version",
+        "operationId": "download_material_version_api_v1_materials__material_id__versions__version_id__source_get",
+        "security": [
+          {
+            "HTTPBasic": []
+          },
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "material_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Material Id"
+            }
+          },
+          {
+            "name": "version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Version Id"
+            }
+          },
+          {
+            "name": "X-End-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-End-User-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/materials/{material_id}/attach": {
+      "post": {
+        "tags": [
+          "materials"
+        ],
+        "summary": "Attach Material",
+        "operationId": "attach_material_api_v1_materials__material_id__attach_post",
+        "security": [
+          {
+            "HTTPBasic": []
+          },
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "material_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Material Id"
+            }
+          },
+          {
+            "name": "X-End-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-End-User-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MaterialAttachRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaterialResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/materials/{material_id}/lessons/{lesson_id}": {
+      "delete": {
+        "tags": [
+          "materials"
+        ],
+        "summary": "Detach Material",
+        "operationId": "detach_material_api_v1_materials__material_id__lessons__lesson_id__delete",
+        "security": [
+          {
+            "HTTPBasic": []
+          },
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "material_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Material Id"
+            }
+          },
+          {
+            "name": "lesson_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Lesson Id"
+            }
+          },
+          {
+            "name": "X-End-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-End-User-Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sessions": {
+      "post": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Start a session",
+        "operationId": "create_session_api_v1_sessions_post",
+        "security": [
+          {
+            "HTTPBasic": []
+          },
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "name": "X-End-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-End-User-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "The caller's sessions",
+        "operationId": "list_sessions_api_v1_sessions_get",
+        "security": [
+          {
+            "HTTPBasic": []
+          },
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-End-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-End-User-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SessionSummary"
+                  },
+                  "title": "Response List Sessions Api V1 Sessions Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sessions/{session_id}": {
+      "get": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "A session: lesson, turns, documents",
+        "operationId": "get_session_api_v1_sessions__session_id__get",
+        "security": [
+          {
+            "HTTPBasic": []
+          },
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "X-End-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-End-User-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Delete a session",
+        "operationId": "delete_session_api_v1_sessions__session_id__delete",
+        "security": [
+          {
+            "HTTPBasic": []
+          },
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "X-End-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-End-User-Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sessions/{session_id}/media": {
+      "get": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Resources on the lesson's subject, found live",
+        "description": "Papers, Wikipedia and videos on the lesson's subject, as the WebUI's right panel shows them after a lesson. Best effort: empty when nothing is found or the live search is off. The curated resources of the Knowledge Graph are in the lesson turn's ``retriever.media``.",
+        "operationId": "session_media_api_v1_sessions__session_id__media_get",
+        "security": [
+          {
+            "HTTPBasic": []
+          },
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "X-End-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-End-User-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionMedia"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sessions/{session_id}/export": {
+      "get": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Download the session's lesson: md, txt, pdf, docx or outline",
+        "description": "The same files as the WebUI's download buttons: citations resolved to the documents' names, the AI notice in every format. ``outline`` is the timed outline as plain text.",
+        "operationId": "export_session_api_v1_sessions__session_id__export_get",
+        "security": [
+          {
+            "HTTPBasic": []
+          },
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "md",
+              "title": "Format"
+            }
+          },
+          {
+            "name": "X-End-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-End-User-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "application/pdf": {},
+              "application/vnd.openxmlformats-officedocument.wordprocessingml.document": {},
+              "text/markdown": {},
+              "text/plain": {}
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sessions/{session_id}/materials": {
+      "post": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Let the session's turns search these documents",
+        "operationId": "bind_session_materials_api_v1_sessions__session_id__materials_post",
+        "security": [
+          {
+            "HTTPBasic": []
+          },
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "X-End-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-End-User-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionMaterials"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sessions/{session_id}/turns": {
+      "post": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Send a message and wait for the turn's result",
+        "description": "Waits until the turn ends: a few seconds for an answer, about a minute for a lesson. For progress as it happens use ``/turns/stream``.",
+        "operationId": "send_turn_api_v1_sessions__session_id__turns_post",
+        "security": [
+          {
+            "HTTPBasic": []
+          },
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "name": "X-End-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-End-User-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TurnRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TurnResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sessions/{session_id}/turns/stream": {
+      "post": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Send a message and follow the turn as Server-Sent Events",
+        "description": "Each ``data:`` frame is JSON. Phase events carry ``kind`` and ``data``: planner, retriever, writer_pending, writer, then either critic_pending and critic (judge off) or judge_pending and judge (judge on, AIX_JUDGE_ENABLED: the targeted review, typically 5-15 s after the text is written; ``data`` is the ``JudgeInfo`` of the result); for a fast answer light_pending and light_done. While the text is written, ``kind: text`` frames carry the next piece (``text``) and the ``draft`` it belongs to; ``kind: draft_end`` closes a draft, and a higher ``draft`` means the lesson is being written again (a Critic revision, the attached documents left unused, a split of the class that does not add up): start the text over. The text is a preview: the last frame is ``kind: result``, the body ``/turns`` returns under ``result``, whose ``markdown`` replaces it -- with the judge on, it is the corrected lesson. A refusal or a failure is a frame ``kind: error`` with ``code`` and ``message``.",
+        "operationId": "stream_turn_api_v1_sessions__session_id__turns_stream_post",
+        "security": [
+          {
+            "HTTPBasic": []
+          },
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "name": "X-End-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-End-User-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TurnRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/catalog": {
+      "get": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "Codes and labels the API accepts, as the WebUI shows them",
+        "operationId": "catalog_api_v1_catalog_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Catalog Api V1 Catalog Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBasic": []
+          },
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/health": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Health Check",
+        "description": "Health check endpoint\n\nReturns the status of the API and its dependencies",
+        "operationId": "health_check_api_v1_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AgentRunMeta": {
+        "properties": {
+          "duration_seconds": {
+            "type": "number",
+            "title": "Duration Seconds",
+            "description": "Wall-clock duration of the agent run."
+          },
+          "approved": {
+            "type": "boolean",
+            "title": "Approved",
+            "description": "Whether the critic approved the final draft."
+          },
+          "revision_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Revision Count",
+            "description": "Number of critic-driven revisions performed."
+          },
+          "scores": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CriticScores"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Critic per-criterion scores."
+          },
+          "nodes_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Nodes Count",
+            "description": "Knowledge-graph nodes retrieved.",
+            "default": 0
+          },
+          "recommendations_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Recommendations Count",
+            "default": 0
+          },
+          "media_counts": {
+            "$ref": "#/components/schemas/MediaCounts"
+          },
+          "search_queries_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Search Queries Count",
+            "default": 0
+          },
+          "udl_coverage": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Udl Coverage",
+            "description": "How the lesson covers the three UDL principles (representation, action, engagement), as the WebUI's lesson card shows it."
+          },
+          "review_notes": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewNote"
+            },
+            "type": "array",
+            "title": "Review Notes",
+            "description": "What the judge (AIX_JUDGE_ENABLED) could not correct in the lesson: every other problem it found is already corrected in the text. Empty when the judge is off or corrected everything. The same list is ``judge.points``."
+          },
+          "judge": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Judge",
+            "description": "The judge's raw summary, as stored: found, blocking, replaced, revised, verified, reverted, fixed, cost, seconds. Prefer the typed ``judge`` of the turn result (``JudgeInfo``). Null when the judge is off."
+          }
+        },
+        "type": "object",
+        "required": [
+          "duration_seconds",
+          "approved",
+          "revision_count"
+        ],
+        "title": "AgentRunMeta",
+        "description": "Run-summary metadata returned alongside the final lesson plan."
+      },
+      "AgentRunRequest": {
+        "properties": {
+          "query": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 3,
+            "title": "Query",
+            "description": "Teacher query in natural language (Italian). Same shape the webui chat input accepts, e.g. 'Crea una lezione di 45 minuti sulla fotosintesi adattata a una classe con 2 studenti DSA'."
+          },
+          "domain": {
+            "type": "string",
+            "enum": [
+              "neuro",
+              "udl"
+            ],
+            "title": "Domain",
+            "description": "Knowledge graph domain to retrieve from. 'neuro' is the neuroscience-of-learning KG; 'udl' is the Universal Design for Learning KG."
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "it",
+              "en"
+            ],
+            "title": "Language",
+            "description": "Output language for the lesson plan and agent reasoning.",
+            "default": "it"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id",
+            "description": "The conversation's identity, not a log tag. It becomes LangGraph's ``thread_id``: send the same value again and the run continues that conversation, with its checkpointed history and possibly its reused retrieval corpus. **Two callers that send the same value share a conversation**, so an integrator must scope it per end user — a counter, or a key that is not guessable from outside. When omitted, a UUID4 is generated and the run is a fresh conversation. It is also the correlation id in the logs (CORE 2 #11)."
+          },
+          "educational_profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EducationalProfile"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "CORE 1 #2.5 — per-request class/classroom context. Same Pydantic model the webui /webui/lesson/new form serialises. When omitted, the agent falls back to generic prompts."
+          },
+          "teacher_provided_context": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 48000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Teacher Provided Context",
+            "description": "CORE 2 #6.6 P3 — joined plain text from teacher-uploaded files (PDF / TXT / Markdown) that the Writer should treat as additional context. Truncated to 48k chars to fit the Writer prompt budget. NOT ingested into the Knowledge Graph."
+          },
+          "max_revisions": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 4.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Revisions",
+            "description": "Cap on critic revision loops. ``None`` defers to the agent pipeline default (AIX_MAX_REVISIONS env var, default 1). Setting 0 disables critic revisions for fast smoke testing."
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "query",
+          "domain"
+        ],
+        "title": "AgentRunRequest",
+        "description": "Input to either ``POST /api/v1/agent/run`` (sync JSON) or\n``POST /api/v1/agent/stream`` (SSE-encoded JSON events).\n\n**Unknown fields are kept and logged, not rejected — for now.** A field the\ncaller misspells (``languag`` for ``language``) is silently dropped under\nPydantic's default, so the lesson comes back in the wrong language and\nnothing anywhere says why. ``extra=\"forbid\"`` would turn that into an\nimmediate 422, which is the behaviour this API should end up with.\n\nIt is not on yet because we do not know what the integrating worker\nactually sends: one undeclared field in its payload — a trace id, a client\nversion, a leftover — and every call it makes starts failing, on code we do\nnot control. So the route logs the *names* of unknown fields on each\nrequest (never the values: an unknown field may carry a teacher's data),\nand once the logs show nobody is sending any, this becomes\n``extra=\"forbid\"`` and the guesswork ends (2026-09-22).\n\nMandatory fields are ``query`` + ``domain``. Everything else has sensible\ndefaults so the smallest valid call from /docs is just::\n\n    {\"query\": \"Crea una lezione su attenzione\", \"domain\": \"neuro\"}\n\nA richer call attaches an Educational Profile so the planner / writer\ncan specialise prompts to grade level, BES, classroom resources, etc.",
+        "example": {
+          "domain": "neuro",
+          "educational_profile": {
+            "classroom": {
+              "forniture_mobility": "PARTIALLY",
+              "has_lim": true,
+              "has_suite": true,
+              "has_wifi": true,
+              "own_device": "BES",
+              "pc_station": false,
+              "title": "Aula 101"
+            },
+            "group": {
+              "class_features": [
+                "MOTIVATA"
+              ],
+              "disabilities": [
+                "ADHD",
+                "DSA"
+              ],
+              "grade": "SECONDARIA_II_GRADO",
+              "student_attributes": [
+                "PUNTI_DI_ECCELLENZA",
+                "PUNTI_DI_CADUTA"
+              ],
+              "students_number": 25,
+              "title": "3A Liceo Scientifico"
+            },
+            "specific_topic": "Fotosintesi",
+            "subject_area": "Scienze",
+            "time_available_minutes": 45
+          },
+          "language": "it",
+          "max_revisions": 2,
+          "query": "Crea una lezione di 45 minuti sulla fotosintesi clorofilliana adattata a una classe con 2 studenti DSA",
+          "teacher_provided_context": "Estratto dal manuale (opzionale): 'La fotosintesi è il processo con cui le piante convertono energia luminosa in energia chimica…'"
+        }
+      },
+      "AgentRunResponse": {
+        "properties": {
+          "lesson_plan_md": {
+            "type": "string",
+            "title": "Lesson Plan Md",
+            "description": "Final lesson plan as Markdown. Empty string indicates the agent finished without producing output (rare)."
+          },
+          "meta": {
+            "$ref": "#/components/schemas/AgentRunMeta"
+          },
+          "planner": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlannerInfo"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Planner-stage explainability. Absent only on early errors that bailed before the planner ran."
+          },
+          "retriever": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RetrieverInfo"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Retriever-stage explainability. Absent only on early errors that bailed before the retriever ran."
+          },
+          "critic": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CriticInfo"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The critic's last judgement on the lesson. Null when the judge is on (AIX_JUDGE_ENABLED): the Critic is then not in the chain."
+          },
+          "judge": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JudgeInfo"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The targeted review, when the judge is on. Null when it is off."
+          }
+        },
+        "type": "object",
+        "required": [
+          "lesson_plan_md",
+          "meta"
+        ],
+        "title": "AgentRunResponse",
+        "description": "Final result of ``POST /api/v1/agent/run`` (sync).\n\nHolds the full lesson plan plus the explainability fields the webui\nsurfaces in its planner / retriever / critic cards. Consumers that only\nneed the lesson plan can read ``lesson_plan_md`` and ignore the rest.",
+        "example": {
+          "lesson_plan_md": "# Lezione: ...",
+          "meta": {
+            "approved": true,
+            "duration_seconds": 73.2,
+            "media_counts": {
+              "articles": 2,
+              "oer": 4,
+              "videos": 3
+            },
+            "nodes_count": 14,
+            "recommendations_count": 5,
+            "revision_count": 0,
+            "search_queries_count": 4
+          },
+          "planner": {
+            "intent": "lesson_creation",
+            "intent_label": "Creazione lezione",
+            "key_concepts": [
+              "attenzione",
+              "memoria di lavoro"
+            ],
+            "scope": "in_scope",
+            "scope_label": "Nel Knowledge Graph",
+            "search_queries": [
+              "strategie attenzione DSA",
+              "..."
+            ]
+          },
+          "retriever": {
+            "nodes_count": 14,
+            "recommendations_count": 5,
+            "relationships_count": 31,
+            "retrieval_confidence": "HIGH",
+            "top_concepts": [
+              "Attenzione sostenuta",
+              "Self-regulation"
+            ]
+          }
+        }
+      },
+      "AnswerMeta": {
+        "properties": {
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seconds"
+          },
+          "first_token_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Token Seconds"
+          },
+          "passages": {
+            "type": "integer",
+            "title": "Passages",
+            "description": "Passages of the user's documents the answer was given.",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "AnswerMeta"
+      },
+      "BearerResponse": {
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "title": "Access Token"
+          },
+          "token_type": {
+            "type": "string",
+            "title": "Token Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "access_token",
+          "token_type"
+        ],
+        "title": "BearerResponse"
+      },
+      "Body_auth_jwt_bearer_login_auth_jwt_login_post": {
+        "properties": {
+          "grant_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^password$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grant Type"
+          },
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "password": {
+            "type": "string",
+            "format": "password",
+            "title": "Password"
+          },
+          "scope": {
+            "type": "string",
+            "title": "Scope",
+            "default": ""
+          },
+          "client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Id"
+          },
+          "client_secret": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "format": "password",
+            "title": "Client Secret"
+          }
+        },
+        "type": "object",
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "Body_auth_jwt_bearer_login_auth_jwt_login_post"
+      },
+      "Body_auth_login_post_auth_login_post": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "password": {
+            "type": "string",
+            "title": "Password"
+          },
+          "next": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "Body_auth_login_post_auth_login_post"
+      },
+      "Body_auth_register_post_auth_register_post": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "password": {
+            "type": "string",
+            "title": "Password"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "next": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "Body_auth_register_post_auth_register_post"
+      },
+      "Body_upload_material_api_v1_materials_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "purpose": {
+            "type": "string",
+            "title": "Purpose",
+            "default": "reference"
+          },
+          "lesson_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lesson Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_material_api_v1_materials_post"
+      },
+      "Body_upload_material_version_api_v1_materials__material_id__versions_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_material_version_api_v1_materials__material_id__versions_post"
+      },
+      "ClassFeature": {
+        "type": "string",
+        "enum": [
+          "COESA",
+          "DIVISA_IN_GRUPPI",
+          "ELEMENTI_DI_DISTURBO",
+          "MOTIVATA",
+          "GENDER_GAP"
+        ],
+        "title": "ClassFeature",
+        "description": "Class characteristics matching `party.models.PartyFeature`."
+      },
+      "ClassroomEnvironment": {
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title",
+            "description": "Classroom name / identifier (e.g. 'Aula 101')."
+          },
+          "forniture_mobility": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FornitureMobility"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whether furniture can be moved / rearranged. UNKNOWN or omitted: not said."
+          },
+          "has_lim": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Has Lim",
+            "description": "Has Interactive Whiteboard (LIM). true/false, or YES/NO/UNKNOWN."
+          },
+          "has_wifi": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Has Wifi",
+            "description": "Has WiFi connection. true/false, or YES/NO/UNKNOWN."
+          },
+          "has_suite": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Has Suite",
+            "description": "Has Office Suite (Google Workspace / Microsoft 365). true/false, or YES/NO/UNKNOWN."
+          },
+          "pc_station": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pc Station",
+            "description": "Has PC workstations. true/false, or YES/NO/UNKNOWN."
+          },
+          "own_device": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OwnDevicePolicy"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Student personal-device policy (BYOD). UNKNOWN or omitted: not said."
+          },
+          "environment_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EnvironmentType"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where the lesson happens: LOCAL (in presence), REMOTE, HYBRID."
+          },
+          "participation_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ParticipationType"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For REMOTE or HYBRID: SYNC (live), ASYNC (recorded), MIXED."
+          },
+          "prevalent_modality_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PrevalentModality"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For HYBRID: MOSTLY_LOCAL, MOSTLY_REMOTE, BILANCED."
+          }
+        },
+        "type": "object",
+        "title": "ClassroomEnvironment",
+        "description": "Classroom environment matching `classroom.models.Classroom`.",
+        "example": {
+          "forniture_mobility": "PARTIALLY",
+          "has_lim": true,
+          "has_suite": true,
+          "has_wifi": true,
+          "own_device": "BES",
+          "pc_station": false,
+          "title": "Aula 101"
+        }
+      },
+      "ConceptGraph": {
+        "properties": {
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/ConceptGraphNode"
+            },
+            "type": "array",
+            "title": "Nodes",
+            "default": []
+          },
+          "edges": {
+            "items": {
+              "$ref": "#/components/schemas/ConceptGraphEdge"
+            },
+            "type": "array",
+            "title": "Edges",
+            "default": []
+          }
+        },
+        "type": "object",
+        "title": "ConceptGraph",
+        "description": "Nodes and edges extracted from the knowledge graph retrieval.\n\nFeed directly into D3.js / vis.js / sigma.js for graph visualization.\nNodes capped at 20, edges at 30 to keep rendering performant."
+      },
+      "ConceptGraphEdge": {
+        "properties": {
+          "source": {
+            "type": "string",
+            "title": "Source",
+            "description": "Source node name"
+          },
+          "target": {
+            "type": "string",
+            "title": "Target",
+            "description": "Target node name"
+          },
+          "relation": {
+            "type": "string",
+            "title": "Relation",
+            "description": "Relationship type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source",
+          "target",
+          "relation"
+        ],
+        "title": "ConceptGraphEdge",
+        "description": "A directed edge in the concept graph"
+      },
+      "ConceptGraphNode": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "Unique node identifier (label:name)"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label",
+            "description": "Primary Neo4j label"
+          },
+          "score": {
+            "type": "number",
+            "title": "Score",
+            "description": "Normalized rank score 0-1"
+          },
+          "hop_distance": {
+            "type": "integer",
+            "title": "Hop Distance",
+            "description": "Graph distance from query"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "score",
+          "hop_distance"
+        ],
+        "title": "ConceptGraphNode",
+        "description": "A node in the concept graph for visualization"
+      },
+      "ConfidenceLevel": {
+        "type": "string",
+        "enum": [
+          "very_high",
+          "high",
+          "medium",
+          "low",
+          "very_low"
+        ],
+        "title": "ConfidenceLevel",
+        "description": "Confidence levels for recommendations"
+      },
+      "ContextData": {
+        "properties": {
+          "educational_context_type": {
+            "type": "string",
+            "title": "Educational Context Type",
+            "description": "Type of educational context (e.g., 'special_needs', 'general')"
+          },
+          "student_profile": {
+            "type": "string",
+            "title": "Student Profile",
+            "description": "Formatted student profile string"
+          },
+          "primary_methodologies": {
+            "items": {
+              "$ref": "#/components/schemas/MethodologyInfo"
+            },
+            "type": "array",
+            "title": "Primary Methodologies",
+            "description": "Primary recommended methodologies",
+            "default": []
+          },
+          "supporting_methodologies": {
+            "items": {
+              "$ref": "#/components/schemas/MethodologyInfo"
+            },
+            "type": "array",
+            "title": "Supporting Methodologies",
+            "description": "Supporting/alternative methodologies",
+            "default": []
+          },
+          "evidence_summary": {
+            "type": "string",
+            "title": "Evidence Summary",
+            "description": "Summary of evidence supporting recommendations"
+          },
+          "implementation_priority": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Implementation Priority",
+            "description": "Ordered list of implementation priorities",
+            "default": []
+          },
+          "confidence_level": {
+            "$ref": "#/components/schemas/ConfidenceLevel",
+            "description": "Overall confidence in recommendations"
+          },
+          "fallback_strategies": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Fallback Strategies",
+            "description": "Fallback strategies if primary methods don't work",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "educational_context_type",
+          "student_profile",
+          "evidence_summary",
+          "confidence_level"
+        ],
+        "title": "ContextData",
+        "description": "Structured educational context - ready for prompt injection\n\nDEV team can use these fields directly in their Jinja2 templates"
+      },
+      "ContextRequest": {
+        "properties": {
+          "query": {
+            "type": "string",
+            "title": "Query",
+            "description": "The educational query in Italian or English",
+            "example": "Quali strategie per studenti con ADHD?"
+          },
+          "domain": {
+            "$ref": "#/components/schemas/DomainType",
+            "description": "Knowledge domain to search",
+            "default": "neuro"
+          },
+          "language": {
+            "$ref": "#/components/schemas/LanguageType",
+            "description": "Query language",
+            "default": "it"
+          },
+          "include_raw_nodes": {
+            "type": "boolean",
+            "title": "Include Raw Nodes",
+            "description": "Include raw node data from graph",
+            "default": false
+          },
+          "include_explainability": {
+            "type": "boolean",
+            "title": "Include Explainability",
+            "description": "Include explainability data: per-methodology provenance + response-level KG summary + concept graph for visualization",
+            "default": true
+          },
+          "max_methodologies": {
+            "type": "integer",
+            "maximum": 20.0,
+            "minimum": 1.0,
+            "title": "Max Methodologies",
+            "description": "Maximum number of methodologies to return (split ~50/50 primary/supporting)",
+            "default": 10
+          },
+          "educational_profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EducationalProfile"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional per-request educational context (CORE 1 #2.5). When provided, downstream prompt enrichment and methodology ranking can specialize against the class profile (BES, grade, classroom environment). Backward compatible: omitting this field preserves the original generic behavior."
+          }
+        },
+        "type": "object",
+        "required": [
+          "query"
+        ],
+        "title": "ContextRequest",
+        "description": "Request model for getting GraphRAG context\n\nThis is what DEV team sends to the API",
+        "example": {
+          "domain": "neuro",
+          "educational_profile": {
+            "classroom": {
+              "forniture_mobility": "PARTIALLY",
+              "has_lim": true,
+              "has_suite": true,
+              "has_wifi": true,
+              "own_device": "BES",
+              "pc_station": false,
+              "title": "Aula 101"
+            },
+            "group": {
+              "class_features": [
+                "MOTIVATA"
+              ],
+              "disabilities": [
+                "ADHD",
+                "DSA"
+              ],
+              "grade": "SECONDARIA_II_GRADO",
+              "student_attributes": [
+                "PUNTI_DI_ECCELLENZA",
+                "PUNTI_DI_CADUTA"
+              ],
+              "students_number": 25,
+              "title": "3A Liceo Scientifico"
+            },
+            "specific_topic": "Fotosintesi",
+            "subject_area": "Scienze",
+            "time_available_minutes": 60
+          },
+          "include_raw_nodes": false,
+          "language": "it",
+          "max_methodologies": 10,
+          "query": "Crea una lezione sulla fotosintesi"
+        }
+      },
+      "ContextResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success",
+            "description": "Whether the request was successful"
+          },
+          "query_info": {
+            "$ref": "#/components/schemas/QueryInfo",
+            "description": "Query processing information"
+          },
+          "context": {
+            "$ref": "#/components/schemas/ContextData",
+            "description": "Structured context for prompt injection"
+          },
+          "raw_nodes": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/RawNode"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raw Nodes",
+            "description": "Raw nodes (only if include_raw_nodes=True)"
+          },
+          "metrics": {
+            "$ref": "#/components/schemas/MetricsInfo",
+            "description": "Retrieval metrics"
+          },
+          "formatted_prompt_section": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Formatted Prompt Section",
+            "description": "Pre-formatted text ready to inject into prompts (domain-aware)"
+          },
+          "domain_prompt_context": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DomainPromptContext"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Domain-specific system prompt, response template, and formatted KG context for production integration"
+          },
+          "explainability_summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExplainabilitySummary"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Response-level KG stats + Italian summary sentence. Use label_distribution for concept tag chips."
+          },
+          "concept_graph": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConceptGraph"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Nodes and edges for graph visualization (D3.js / vis.js ready). Max 20 nodes, 30 edges."
+          },
+          "context_warning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Warning",
+            "description": "Optional warning about retrieval quality"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error",
+            "description": "Error message if success=False"
+          }
+        },
+        "type": "object",
+        "required": [
+          "success",
+          "query_info",
+          "context",
+          "metrics"
+        ],
+        "title": "ContextResponse",
+        "description": "Full response from GraphRAG API\n\nThis is what DEV team receives and uses in their prompts",
+        "example": {
+          "context": {
+            "confidence_level": "high",
+            "educational_context_type": "special_needs",
+            "evidence_summary": "Based on 15 educational concepts...",
+            "fallback_strategies": [],
+            "implementation_priority": [
+              "Start with structured environment"
+            ],
+            "primary_methodologies": [],
+            "student_profile": "Bisogni primari: ADHD | Contesto: inclusivo",
+            "supporting_methodologies": []
+          },
+          "metrics": {
+            "total_nodes": 15,
+            "total_relationships": 29
+          },
+          "query_info": {
+            "cypher_query": "MATCH (n:TeachingPractices {domain: 'neuro'})...",
+            "detected_language": "it",
+            "original_query": "Quali strategie per studenti con ADHD?",
+            "translated_query": "What strategies for students with ADHD?"
+          },
+          "success": true
+        }
+      },
+      "CriticInfo": {
+        "properties": {
+          "approved": {
+            "type": "boolean",
+            "title": "Approved",
+            "default": false
+          },
+          "revision_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Revision Count",
+            "default": 0
+          },
+          "max_revisions": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Max Revisions",
+            "default": 1
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score",
+            "description": "0-5."
+          },
+          "score_pct": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score Pct",
+            "description": "The score as a percentage."
+          },
+          "critique": {
+            "type": "string",
+            "title": "Critique",
+            "description": "The critic's assessment, in the lesson's language.",
+            "default": ""
+          },
+          "revision_instructions": {
+            "type": "string",
+            "title": "Revision Instructions",
+            "description": "What the critic asked the writer to change, when it did.",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "CriticInfo",
+        "description": "The critic's judgement: the WebUI's critic card."
+      },
+      "CriticScores": {
+        "properties": {
+          "average_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average Score",
+            "description": "Average score on a 0-5 scale. Convert to % via ``round(average_score / 5 * 100)`` if needed."
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "title": "CriticScores",
+        "description": "Critic-agent per-criterion scores. Shape matches the internal critic\noutput and is left intentionally permissive — the critic prompt is the\nsource of truth and may evolve in CORE 3."
+      },
+      "DisabilityType": {
+        "type": "string",
+        "enum": [
+          "DSA",
+          "ADHD",
+          "DOP",
+          "DF",
+          "SC",
+          "PD",
+          "SA",
+          "CL",
+          "DCGL",
+          "DCGM",
+          "DCGS",
+          "DLDS"
+        ],
+        "title": "DisabilityType",
+        "description": "BES (Bisogni Educativi Speciali) types matching `party.models.StudentDisabilities`.\n\nThe platform's current eight, then four it no longer offers (still accepted:\nlessons and saved profiles carry them)."
+      },
+      "DomainPromptContext": {
+        "properties": {
+          "domain": {
+            "type": "string",
+            "title": "Domain",
+            "description": "Domain identifier (e.g., 'neuro', 'udl')"
+          },
+          "domain_display_name": {
+            "type": "string",
+            "title": "Domain Display Name",
+            "description": "Human-readable domain name (e.g., 'Neuro (Neuroscience)')"
+          },
+          "system_prompt": {
+            "type": "string",
+            "title": "System Prompt",
+            "description": "Rich domain system prompt (RUOLO, TAG-CLOUD, PRINCIPI, META-REGOLE)"
+          },
+          "response_template": {
+            "type": "string",
+            "title": "Response Template",
+            "description": "Domain-specific response structure (e.g., I Do/We Do/You Do lesson schema)"
+          },
+          "kg_context_formatted": {
+            "type": "string",
+            "title": "Kg Context Formatted",
+            "description": "KG data formatted in domain-specific structure, ready for prompt injection"
+          }
+        },
+        "type": "object",
+        "required": [
+          "domain",
+          "domain_display_name",
+          "system_prompt",
+          "response_template",
+          "kg_context_formatted"
+        ],
+        "title": "DomainPromptContext",
+        "description": "Domain-specific prompt context for production integration\n\nProvides the DEV team with everything needed to align their\nproduction prompt with GraphRAG domain expertise.\n\nThis is designed to be scalable: each domain (neuro, udl, etc.)\nprovides its own system_prompt and response_template through the\ndomain config system."
+      },
+      "DomainType": {
+        "type": "string",
+        "enum": [
+          "neuro",
+          "udl",
+          "all"
+        ],
+        "title": "DomainType",
+        "description": "Available knowledge domains"
+      },
+      "EducationalGroup": {
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title",
+            "description": "Group / class name (e.g. '3A Liceo Scientifico')."
+          },
+          "students_number": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 500.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Students Number",
+            "description": "Number of students in the group. Omitted, or 0, when unknown: the prompt then says nothing about class size."
+          },
+          "grade": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GradeLevel"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Grade level (school level)."
+          },
+          "disabilities": {
+            "items": {
+              "$ref": "#/components/schemas/DisabilityType"
+            },
+            "type": "array",
+            "title": "Disabilities",
+            "description": "Special Educational Needs (BES) present in the class."
+          },
+          "class_features": {
+            "items": {
+              "$ref": "#/components/schemas/ClassFeature"
+            },
+            "type": "array",
+            "title": "Class Features",
+            "description": "Class characteristics (cohesion, motivation, etc.)."
+          },
+          "student_attributes": {
+            "items": {
+              "$ref": "#/components/schemas/StudentAttribute"
+            },
+            "type": "array",
+            "title": "Student Attributes",
+            "description": "Population-level attributes (excellence/difficulty, motivation, etc.)."
+          }
+        },
+        "type": "object",
+        "title": "EducationalGroup",
+        "description": "Educational group (class) matching `party.models.Party`.",
+        "example": {
+          "class_features": [
+            "MOTIVATA"
+          ],
+          "disabilities": [
+            "ADHD",
+            "DSA"
+          ],
+          "grade": "SECONDARIA_II_GRADO",
+          "student_attributes": [
+            "PUNTI_DI_ECCELLENZA",
+            "PUNTI_DI_CADUTA"
+          ],
+          "students_number": 25,
+          "title": "3A Liceo Scientifico"
+        }
+      },
+      "EducationalProfile": {
+        "properties": {
+          "group": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EducationalGroup"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Educational group / class profile."
+          },
+          "classroom": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClassroomEnvironment"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Classroom environment."
+          },
+          "time_available_minutes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 480.0,
+                "minimum": 15.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time Available Minutes",
+            "description": "Available time for the activity in minutes."
+          },
+          "subject_area": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject Area",
+            "description": "Subject area (e.g. 'Matematica', 'Storia')."
+          },
+          "specific_topic": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Specific Topic",
+            "description": "Specific topic within the subject."
+          },
+          "pedagogical_intent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pedagogical Intent",
+            "description": "Teacher's pedagogical intent for this lesson. Stored as '{code}: {optional_detail}' (e.g. 'misconception: practice alone doesn't increase WM capacity'). Code alone is valid when no detail is provided."
+          }
+        },
+        "type": "object",
+        "title": "EducationalProfile",
+        "description": "Complete educational context combining group and environment.\n\nThis is the main model that gets attached to API requests to provide\nrich, personalized educational context. Every field is optional —\na missing profile must fall back to current generic behavior\n(backward-compat acceptance criterion of CORE 1 #2.5).",
+        "example": {
+          "classroom": {
+            "forniture_mobility": "PARTIALLY",
+            "has_lim": true,
+            "has_suite": false,
+            "has_wifi": true,
+            "own_device": "NO",
+            "pc_station": false
+          },
+          "group": {
+            "class_features": [
+              "ELEMENTI_DI_DISTURBO"
+            ],
+            "disabilities": [
+              "ADHD",
+              "DSA"
+            ],
+            "grade": "SECONDARIA_I_GRADO",
+            "student_attributes": [
+              "MANCANZA_DI_MOTIVAZIONE"
+            ],
+            "students_number": 25
+          },
+          "specific_topic": "Fotosintesi",
+          "subject_area": "Scienze",
+          "time_available_minutes": 60
+        }
+      },
+      "EnvironmentType": {
+        "type": "string",
+        "enum": [
+          "LOCAL",
+          "REMOTE",
+          "HYBRID"
+        ],
+        "title": "EnvironmentType",
+        "description": "`classroom.models.ModalityType`."
+      },
+      "ErrorModel": {
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              }
+            ],
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "detail"
+        ],
+        "title": "ErrorModel"
+      },
+      "ExplainabilitySummary": {
+        "properties": {
+          "embedding_mode": {
+            "type": "string",
+            "title": "Embedding Mode",
+            "description": "Embedding mode used: 'hybrid_semantic' | 'node2vec' | 'openai_only'"
+          },
+          "retrieval_phases": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/RetrievalPhase"
+            },
+            "type": "object",
+            "title": "Retrieval Phases",
+            "description": "Timing and node count per retrieval phase: graph_traversal, semantic_search, fusion_ranking",
+            "default": {}
+          },
+          "knowledge_graph_stats": {
+            "$ref": "#/components/schemas/KGStats",
+            "description": "Aggregate KG retrieval statistics"
+          },
+          "graph_coverage": {
+            "type": "string",
+            "title": "Graph Coverage",
+            "description": "Human-readable Italian sentence summarising graph coverage"
+          }
+        },
+        "type": "object",
+        "required": [
+          "embedding_mode",
+          "knowledge_graph_stats",
+          "graph_coverage"
+        ],
+        "title": "ExplainabilitySummary",
+        "description": "Response-level explainability data.\n\nFrontend use:\n- label_distribution → render colored concept tag chips\n- graph_coverage → display as summary sentence in reliability panel\n- retrieval_phases → show retrieval breakdown (graph vs semantic)"
+      },
+      "FornitureMobility": {
+        "type": "string",
+        "enum": [
+          "YES",
+          "NO",
+          "PARTIALLY"
+        ],
+        "title": "FornitureMobility",
+        "description": "Furniture mobility matching `classroom.models.Classroom.forniture_mobility`.\n\nField name preserved (`Forniture` with the typo) to keep 1:1 mapping with\nthe AixLearning native model field. Do not rename without coordinating\nwith the FEM platform team."
+      },
+      "GradeLevel": {
+        "type": "string",
+        "enum": [
+          "INFANZIA",
+          "PRIMARIA",
+          "SECONDARIA_I_GRADO",
+          "SECONDARIA_II_GRADO",
+          "UNIVERSITA",
+          "FORMAZIONE_SUL_LAVORO"
+        ],
+        "title": "GradeLevel",
+        "description": "Grade levels matching `party.models.Party.grade`."
+      },
+      "GraphPath": {
+        "properties": {
+          "source_node": {
+            "type": "string",
+            "title": "Source Node",
+            "description": "Name of the source node"
+          },
+          "source_label": {
+            "type": "string",
+            "title": "Source Label",
+            "description": "Primary Neo4j label of the source node"
+          },
+          "relationship": {
+            "type": "string",
+            "title": "Relationship",
+            "description": "Relationship type (e.g. MITIGATED_BY, SUGGESTS)"
+          },
+          "target_node": {
+            "type": "string",
+            "title": "Target Node",
+            "description": "Name of the target node"
+          },
+          "target_label": {
+            "type": "string",
+            "title": "Target Label",
+            "description": "Primary Neo4j label of the target node"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_node",
+          "source_label",
+          "relationship",
+          "target_node",
+          "target_label"
+        ],
+        "title": "GraphPath",
+        "description": "Represents a single hop in the knowledge graph: source -[rel]-> target"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "HealthResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Service status"
+          },
+          "neo4j_connected": {
+            "type": "boolean",
+            "title": "Neo4J Connected",
+            "description": "Neo4j connection status"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version",
+            "description": "API version"
+          },
+          "domain_configs_loaded": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Domain Configs Loaded",
+            "description": "Loaded domain configurations"
+          },
+          "code_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code Version",
+            "description": "Git SHA the running image was built from ('dev' for local builds)"
+          },
+          "db_revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Db Revision",
+            "description": "Current Alembic revision of the WebUI database"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "neo4j_connected",
+          "version",
+          "domain_configs_loaded"
+        ],
+        "title": "HealthResponse",
+        "description": "Health check response"
+      },
+      "JudgeCorrection": {
+        "properties": {
+          "check": {
+            "type": "string",
+            "title": "Check",
+            "description": "The checklist question, e.g. «esempi_lingua», «fatti»."
+          },
+          "why": {
+            "type": "string",
+            "title": "Why",
+            "description": "What was wrong.",
+            "default": ""
+          },
+          "before": {
+            "type": "string",
+            "title": "Before",
+            "description": "The text as the Writer wrote it (up to 160 chars).",
+            "default": ""
+          },
+          "after": {
+            "type": "string",
+            "title": "After",
+            "description": "The text as it is now in the lesson (up to 160 chars).",
+            "default": ""
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind",
+            "description": "«sostituzione»: the sentence replaced; «revisione»: the activity around it rewritten (``before``/``after`` then cover the whole block, truncated).",
+            "default": "sostituzione"
+          },
+          "teacher_material": {
+            "type": "boolean",
+            "title": "Teacher Material",
+            "description": "The corrected sentence was taken from the user's attached documents, which the judge does not read: show it as to be checked against them.",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "check"
+        ],
+        "title": "JudgeCorrection",
+        "description": "One correction the judge made in the lesson."
+      },
+      "JudgeInfo": {
+        "properties": {
+          "found": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Found",
+            "description": "Problems found.",
+            "default": 0
+          },
+          "blocking": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Blocking",
+            "description": "Of which blocking (content, solutions, safety).",
+            "default": 0
+          },
+          "replaced": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Replaced",
+            "description": "Corrected by replacing the sentence.",
+            "default": 0
+          },
+          "revised": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Revised",
+            "description": "Corrected by rewriting the activity around it.",
+            "default": 0
+          },
+          "reverted": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Reverted",
+            "description": "Corrections judged wrong on verification and put back.",
+            "default": 0
+          },
+          "fixed": {
+            "items": {
+              "$ref": "#/components/schemas/JudgeCorrection"
+            },
+            "type": "array",
+            "title": "Fixed",
+            "description": "The corrections now in the lesson."
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewNote"
+            },
+            "type": "array",
+            "title": "Points",
+            "description": "What could not be corrected: to check by hand."
+          },
+          "notes": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Notes",
+            "description": "len(points).",
+            "default": 0
+          },
+          "notes_blocking": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Notes Blocking",
+            "description": "Of the points, the blocking ones.",
+            "default": 0
+          },
+          "seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seconds",
+            "description": "Time the review took."
+          },
+          "error": {
+            "type": "string",
+            "title": "Error",
+            "description": "Set when the review failed: the lesson is then the uncorrected one.",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "JudgeInfo",
+        "description": "The targeted review (AIX_JUDGE_ENABLED): the WebUI's «Revisione mirata» card.\n\nRuns after the Writer, in place of the Critic: it reads the whole lesson,\ncorrects in the text only what is wrong, and checks every correction. The\nlesson the API returns is already the corrected one."
+      },
+      "KGStats": {
+        "properties": {
+          "total_nodes_retrieved": {
+            "type": "integer",
+            "title": "Total Nodes Retrieved"
+          },
+          "total_relationships": {
+            "type": "integer",
+            "title": "Total Relationships"
+          },
+          "direct_hits": {
+            "type": "integer",
+            "title": "Direct Hits",
+            "description": "Nodes found by direct Cypher query (hop_distance=0)"
+          },
+          "structural_neighbors": {
+            "type": "integer",
+            "title": "Structural Neighbors",
+            "description": "Nodes found by graph neighbor expansion (hop_distance=1)"
+          },
+          "semantic_matches": {
+            "type": "integer",
+            "title": "Semantic Matches",
+            "description": "Nodes found by semantic/vector similarity (hop_distance=2)"
+          },
+          "label_distribution": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Label Distribution",
+            "description": "Count of nodes per Neo4j label — use this to render concept tags in the UI",
+            "default": {}
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_nodes_retrieved",
+          "total_relationships",
+          "direct_hits",
+          "structural_neighbors",
+          "semantic_matches"
+        ],
+        "title": "KGStats",
+        "description": "Aggregate statistics about the knowledge graph retrieval"
+      },
+      "LanguageType": {
+        "type": "string",
+        "enum": [
+          "it",
+          "en"
+        ],
+        "title": "LanguageType",
+        "description": "Supported languages"
+      },
+      "LessonSection": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "level": {
+            "type": "integer",
+            "title": "Level",
+            "description": "2 for a ## section, 3 for a ### part of it."
+          },
+          "minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minutes",
+            "description": "The minutes the section declares, if any."
+          }
+        },
+        "type": "object",
+        "required": [
+          "title",
+          "level"
+        ],
+        "title": "LessonSection"
+      },
+      "LessonStructure": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "duration_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Minutes"
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/LessonSection"
+            },
+            "type": "array",
+            "title": "Sections"
+          },
+          "timed_outline": {
+            "items": {
+              "$ref": "#/components/schemas/LessonSection"
+            },
+            "type": "array",
+            "title": "Timed Outline",
+            "description": "The timed sections without double counting: the outline export."
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings",
+            "description": "What the reader noticed, e.g. minutes that do not add up."
+          }
+        },
+        "type": "object",
+        "required": [
+          "title"
+        ],
+        "title": "LessonStructure",
+        "description": "The lesson as sections and minutes, read from its Markdown (the export model)."
+      },
+      "MaterialAttachRequest": {
+        "properties": {
+          "lesson_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Lesson Id"
+          },
+          "version_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "lesson_id"
+        ],
+        "title": "MaterialAttachRequest"
+      },
+      "MaterialListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MaterialResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total"
+        ],
+        "title": "MaterialListResponse"
+      },
+      "MaterialResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "purpose": {
+            "type": "string",
+            "title": "Purpose"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "processing: being read and indexed · ready: searchable · failed: never searchable (see error_code)",
+            "default": "processing"
+          },
+          "passages": {
+            "type": "integer",
+            "title": "Passages",
+            "description": "Searchable passages once ready.",
+            "default": 0
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "latest_version": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MaterialVersionResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/MaterialVersionResponse"
+            },
+            "type": "array",
+            "title": "Versions"
+          },
+          "attached_lesson_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Attached Lesson Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "display_name",
+          "purpose",
+          "created_at"
+        ],
+        "title": "MaterialResponse"
+      },
+      "MaterialVersionResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "version_number": {
+            "type": "integer",
+            "title": "Version Number"
+          },
+          "media_type": {
+            "type": "string",
+            "title": "Media Type"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "parse_quality": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parse Quality"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "version_number",
+          "media_type",
+          "status",
+          "created_at"
+        ],
+        "title": "MaterialVersionResponse"
+      },
+      "MediaCounts": {
+        "properties": {
+          "videos": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Videos",
+            "default": 0
+          },
+          "articles": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Articles",
+            "default": 0
+          },
+          "oer": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Oer",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "MediaCounts",
+        "description": "Aggregated counts of curated media for the right sidebar / API summary."
+      },
+      "MethodologyExplainability": {
+        "properties": {
+          "retrieval_method": {
+            "type": "string",
+            "title": "Retrieval Method",
+            "description": "How this node was found: 'direct_query' | 'structural_neighbor' | 'vector_neighbor' | 'semantic_search'"
+          },
+          "hop_distance": {
+            "type": "integer",
+            "title": "Hop Distance",
+            "description": "Graph distance from query: 0=direct match, 1=1-hop neighbor, 2=2-hop/semantic"
+          },
+          "graph_path": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GraphPath"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The graph path that led to this node (only present when hop_distance >= 1)"
+          },
+          "scoring_breakdown": {
+            "$ref": "#/components/schemas/ScoringBreakdown",
+            "description": "Score components for transparency"
+          },
+          "reasoning": {
+            "type": "string",
+            "title": "Reasoning",
+            "description": "Technical English sentence explaining the retrieval"
+          }
+        },
+        "type": "object",
+        "required": [
+          "retrieval_method",
+          "hop_distance",
+          "scoring_breakdown",
+          "reasoning"
+        ],
+        "title": "MethodologyExplainability",
+        "description": "Provenance data for a single methodology — explains HOW and WHY it was retrieved.\n\nFrontend can use this to render source badges, graph path arrows, and score tooltips."
+      },
+      "MethodologyInfo": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Methodology name"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category",
+            "description": "Methodology category"
+          },
+          "relevance_score": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Relevance Score",
+            "description": "Relevance score 0-1"
+          },
+          "evidence_type": {
+            "type": "string",
+            "title": "Evidence Type",
+            "description": "Type of evidence supporting this"
+          },
+          "implementation_guidance": {
+            "type": "string",
+            "title": "Implementation Guidance",
+            "description": "How to implement"
+          },
+          "classroom_applications": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Classroom Applications",
+            "description": "Practical applications",
+            "default": []
+          },
+          "special_considerations": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Special Considerations",
+            "description": "Special needs considerations",
+            "default": []
+          },
+          "confidence": {
+            "$ref": "#/components/schemas/ConfidenceLevel",
+            "description": "Confidence level"
+          },
+          "explainability_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Explainability Name",
+            "description": "Italian UI label for the source type (e.g. 'Raccomandazione diretta dal Knowledge Graph')"
+          },
+          "explainability_phrase": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Explainability Phrase",
+            "description": "Italian human-readable sentence explaining how this methodology was retrieved — render directly as a badge or tooltip"
+          },
+          "explainability": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MethodologyExplainability"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Full provenance data for advanced UI rendering"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "category",
+          "relevance_score",
+          "evidence_type",
+          "implementation_guidance",
+          "confidence"
+        ],
+        "title": "MethodologyInfo",
+        "description": "Information about a recommended methodology"
+      },
+      "MetricsInfo": {
+        "properties": {
+          "total_nodes": {
+            "type": "integer",
+            "title": "Total Nodes",
+            "description": "Total nodes retrieved"
+          },
+          "total_relationships": {
+            "type": "integer",
+            "title": "Total Relationships",
+            "description": "Total relationships found"
+          },
+          "kg_data_available": {
+            "type": "boolean",
+            "title": "Kg Data Available",
+            "description": "Whether the Knowledge Graph contained relevant data for this query. When false, kg_context_formatted contains guidance for the LLM to use system_prompt principles instead. DEV team can optionally use this flag to skip GraphRAG calls on follow-up messages.",
+            "default": true
+          },
+          "context_relevance": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Relevance",
+            "description": "Context relevance score"
+          },
+          "processing_time_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Processing Time Ms",
+            "description": "Processing time in milliseconds"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_nodes",
+          "total_relationships"
+        ],
+        "title": "MetricsInfo",
+        "description": "Metrics about the retrieval"
+      },
+      "OwnDevicePolicy": {
+        "type": "string",
+        "enum": [
+          "YES",
+          "NO",
+          "BES"
+        ],
+        "title": "OwnDevicePolicy",
+        "description": "BYOD policy matching `classroom.models.Classroom.own_device`."
+      },
+      "ParticipationType": {
+        "type": "string",
+        "enum": [
+          "SYNC",
+          "ASYNC",
+          "MIXED"
+        ],
+        "title": "ParticipationType",
+        "description": "`classroom.models.ParticipationType`: how remote students take part."
+      },
+      "PlannerInfo": {
+        "properties": {
+          "intent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intent",
+            "description": "lesson_creation, activity_design, …"
+          },
+          "intent_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intent Label",
+            "description": "The intent in Italian."
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope",
+            "description": "in_scope · partial_scope · out_of_scope"
+          },
+          "scope_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Label"
+          },
+          "scope_variant": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Variant",
+            "description": "success · warning · danger: how the card colours the scope."
+          },
+          "scope_confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Confidence"
+          },
+          "key_concepts": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Key Concepts"
+          },
+          "subject_concepts": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Subject Concepts",
+            "description": "The subject the lesson is about (searched outside the graph when out of scope)."
+          },
+          "search_queries": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Search Queries"
+          },
+          "lesson_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lesson Type"
+          },
+          "target_grade": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Grade"
+          }
+        },
+        "type": "object",
+        "title": "PlannerInfo",
+        "description": "What the planner understood: the WebUI's planner card."
+      },
+      "PrevalentModality": {
+        "type": "string",
+        "enum": [
+          "MOSTLY_REMOTE",
+          "MOSTLY_LOCAL",
+          "BILANCED"
+        ],
+        "title": "PrevalentModality",
+        "description": "`classroom.models.PrevalentModalityType` (``BILANCED`` as the platform spells it)."
+      },
+      "QueryInfo": {
+        "properties": {
+          "original_query": {
+            "type": "string",
+            "title": "Original Query",
+            "description": "Original query as received"
+          },
+          "translated_query": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Translated Query",
+            "description": "Translated query (if translation occurred)"
+          },
+          "detected_language": {
+            "type": "string",
+            "title": "Detected Language",
+            "description": "Detected query language"
+          },
+          "cypher_query": {
+            "type": "string",
+            "title": "Cypher Query",
+            "description": "Generated Cypher query"
+          }
+        },
+        "type": "object",
+        "required": [
+          "original_query",
+          "detected_language",
+          "cypher_query"
+        ],
+        "title": "QueryInfo",
+        "description": "Information about query processing"
+      },
+      "RawNode": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "labels": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Labels",
+            "default": []
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "properties": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Properties",
+            "default": {}
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "RawNode",
+        "description": "Raw node data from knowledge graph"
+      },
+      "Refinement": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "simplify",
+              "deepen",
+              "more_activities",
+              "adapt_class",
+              "custom"
+            ],
+            "title": "Code"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "title": "Refinement"
+      },
+      "RetrievalPhase": {
+        "properties": {
+          "nodes_found": {
+            "type": "integer",
+            "title": "Nodes Found",
+            "description": "Number of nodes found in this phase"
+          },
+          "time_ms": {
+            "type": "integer",
+            "title": "Time Ms",
+            "description": "Time taken in milliseconds"
+          }
+        },
+        "type": "object",
+        "required": [
+          "nodes_found",
+          "time_ms"
+        ],
+        "title": "RetrievalPhase",
+        "description": "Stats for a single retrieval phase"
+      },
+      "RetrieverInfo": {
+        "properties": {
+          "nodes_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Nodes Count",
+            "default": 0
+          },
+          "relationships_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Relationships Count",
+            "default": 0
+          },
+          "recommendations_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Recommendations Count",
+            "default": 0
+          },
+          "media_counts": {
+            "$ref": "#/components/schemas/MediaCounts"
+          },
+          "media": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Media",
+            "description": "Full curated_media payload (videos / resources / citations / open_textbooks). Same shape consumed by the webui side panel."
+          },
+          "top_concepts": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Top Concepts"
+          },
+          "retrieval_confidence": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retrieval Confidence"
+          },
+          "media_total": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Media Total",
+            "default": 0
+          },
+          "kg_unreachable": {
+            "type": "boolean",
+            "title": "Kg Unreachable",
+            "description": "The Knowledge Graph did not answer: the lesson was written without it. Not the same as an out-of-scope question.",
+            "default": false
+          },
+          "retrieval_outcome": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retrieval Outcome",
+            "description": "success · adapted_with_hybrid (outside sources filled in) · limited_kg_only · grader_error"
+          },
+          "coverage_tier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coverage Tier",
+            "description": "How much of the request the graph covers, for the coverage banner."
+          },
+          "domain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domain"
+          },
+          "domain_label_short": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domain Label Short"
+          },
+          "domain_label_long": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domain Label Long"
+          },
+          "reused": {
+            "type": "boolean",
+            "title": "Reused",
+            "description": "This turn reused an earlier turn's search instead of searching again.",
+            "default": false
+          },
+          "reuse_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reuse Reason",
+            "description": "Why the planner chose to reuse it."
+          },
+          "retrieval_grade": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retrieval Grade",
+            "description": "Corrective RAG only (off in the pilot): relevant · ambiguous · irrelevant."
+          },
+          "retrieval_grade_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retrieval Grade Label"
+          },
+          "retrieval_grade_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retrieval Grade Reason"
+          },
+          "retrieval_attempts": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retrieval Attempts"
+          },
+          "retrieval_attempts_max": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retrieval Attempts Max"
+          },
+          "retrieval_warning": {
+            "type": "boolean",
+            "title": "Retrieval Warning",
+            "default": false
+          },
+          "retrieval_rewritten_query": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retrieval Rewritten Query"
+          }
+        },
+        "type": "object",
+        "title": "RetrieverInfo",
+        "description": "What the search found: the WebUI's retriever card."
+      },
+      "ReviewNote": {
+        "properties": {
+          "check": {
+            "type": "string",
+            "title": "Check",
+            "description": "The checklist question, e.g. «esempi_lingua», «esercizi»."
+          },
+          "severity": {
+            "type": "string",
+            "title": "Severity",
+            "description": "«bloccante» or «minore»."
+          },
+          "quote": {
+            "type": "string",
+            "title": "Quote",
+            "description": "The sentence of the lesson, as written."
+          },
+          "why": {
+            "type": "string",
+            "title": "Why",
+            "default": ""
+          },
+          "fix": {
+            "type": "string",
+            "title": "Fix",
+            "description": "The corrected text, or what to change.",
+            "default": ""
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind",
+            "description": "«sostituzione» or «revisione».",
+            "default": "revisione"
+          }
+        },
+        "type": "object",
+        "required": [
+          "check",
+          "severity",
+          "quote"
+        ],
+        "title": "ReviewNote",
+        "description": "One problem the judge found, quoting the lesson (``validation.judge``)."
+      },
+      "SavedResourceCreate": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source",
+            "default": "unknown"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "title"
+        ],
+        "title": "SavedResourceCreate"
+      },
+      "SavedResourceResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "metadata_json": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata Json"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "source",
+          "title",
+          "created_at"
+        ],
+        "title": "SavedResourceResponse"
+      },
+      "ScoringBreakdown": {
+        "properties": {
+          "base_score": {
+            "type": "number",
+            "title": "Base Score",
+            "description": "Base score by retrieval source (graph=1.0, structural=0.8, vector=0.6, semantic=0.5)"
+          },
+          "semantic_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Semantic Score",
+            "description": "Embedding similarity score 0-1 (null if not computed)"
+          },
+          "vector_similarity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vector Similarity",
+            "description": "Node2Vec similarity score 0-1 (null if not computed)"
+          },
+          "domain_boost": {
+            "type": "number",
+            "title": "Domain Boost",
+            "description": "Domain-specific multiplier applied to base score"
+          },
+          "final_rank_score": {
+            "type": "number",
+            "title": "Final Rank Score",
+            "description": "Final ranking score = base × domain_boost × semantic × vector"
+          }
+        },
+        "type": "object",
+        "required": [
+          "base_score",
+          "domain_boost",
+          "final_rank_score"
+        ],
+        "title": "ScoringBreakdown",
+        "description": "Score components used to rank this node"
+      },
+      "SessionCreate": {
+        "properties": {
+          "domain": {
+            "type": "string",
+            "enum": [
+              "neuro",
+              "udl"
+            ],
+            "title": "Domain",
+            "description": "Knowledge Graph domain: neuro (neuroscience) or udl.",
+            "default": "neuro"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "educational_profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EducationalProfile"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The class and classroom, as in the WebUI's profile form. Set ``pedagogical_intent`` here: the API does not ask for it with a card."
+          },
+          "material_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Material Ids",
+            "description": "Documents from ``/api/v1/materials`` this session's turns may search."
+          }
+        },
+        "type": "object",
+        "title": "SessionCreate"
+      },
+      "SessionMaterial": {
+        "properties": {
+          "material_id": {
+            "type": "string",
+            "title": "Material Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "material_id",
+          "name",
+          "status"
+        ],
+        "title": "SessionMaterial"
+      },
+      "SessionMaterials": {
+        "properties": {
+          "material_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Material Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "material_ids"
+        ],
+        "title": "SessionMaterials"
+      },
+      "SessionMedia": {
+        "properties": {
+          "videos": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Videos"
+          },
+          "citations": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Citations"
+          },
+          "wikipedia": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Wikipedia"
+          }
+        },
+        "type": "object",
+        "title": "SessionMedia",
+        "description": "Resources on the lesson's subject, found live (papers, Wikipedia, videos)."
+      },
+      "SessionOut": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "domain": {
+            "type": "string",
+            "title": "Domain"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "draft (no turn yet) · running · complete · error"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "educational_profile": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Educational Profile"
+          },
+          "lesson_markdown": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lesson Markdown",
+            "description": "The current lesson, citations resolved."
+          },
+          "lesson_structure": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LessonStructure"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cited_documents": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Cited Documents"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "materials": {
+            "items": {
+              "$ref": "#/components/schemas/SessionMaterial"
+            },
+            "type": "array",
+            "title": "Materials"
+          },
+          "turns": {
+            "items": {
+              "$ref": "#/components/schemas/TurnOut"
+            },
+            "type": "array",
+            "title": "Turns"
+          },
+          "ai_disclosure": {
+            "type": "string",
+            "title": "Ai Disclosure",
+            "default": "Contenuto generato dall'intelligenza artificiale."
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "domain",
+          "status"
+        ],
+        "title": "SessionOut"
+      },
+      "SessionSummary": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "domain": {
+            "type": "string",
+            "title": "Domain"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "draft (no turn yet) · running · complete · error"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "domain",
+          "status"
+        ],
+        "title": "SessionSummary"
+      },
+      "StudentAttribute": {
+        "type": "string",
+        "enum": [
+          "PUNTI_DI_ECCELLENZA",
+          "PUNTI_DI_CADUTA",
+          "SPINTA_MOTIVAZIONALE",
+          "MANCANZA_DI_MOTIVAZIONE",
+          "TIMIDEZZA_O_CHIUSURA",
+          "PROBLEMI_FAMILIARI"
+        ],
+        "title": "StudentAttribute",
+        "description": "Student-population attributes matching `party.models.StudentAttribute`."
+      },
+      "TurnOut": {
+        "properties": {
+          "turn_index": {
+            "type": "integer",
+            "title": "Turn Index"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "user",
+              "assistant"
+            ],
+            "title": "Role"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "message",
+              "lesson",
+              "answer"
+            ],
+            "title": "Kind"
+          },
+          "markdown": {
+            "type": "string",
+            "title": "Markdown"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "turn_index",
+          "role",
+          "kind",
+          "markdown"
+        ],
+        "title": "TurnOut"
+      },
+      "TurnRequest": {
+        "properties": {
+          "message": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message",
+            "description": "What the user writes. May be omitted only with a ``refinement``."
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "answer",
+              "lesson"
+            ],
+            "title": "Mode",
+            "description": "auto: as the WebUI -- the first turn writes a lesson, later turns answer in a few seconds, and a request for a new lesson comes back as ``handoff``. answer: answer here, never hand off (needs a lesson). lesson: the whole chain, a new version of the lesson.",
+            "default": "auto"
+          },
+          "refinement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Refinement"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A refinement chip of the WebUI: rewrites the whole lesson."
+          },
+          "search_graph": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Search Graph",
+            "description": "On a follow-up that rewrites the lesson: false reuses what the Knowledge Graph already found, true searches again. Omitted: the agent decides."
+          },
+          "material_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Material Ids",
+            "description": "Documents to bind to the session before this turn."
+          }
+        },
+        "type": "object",
+        "title": "TurnRequest"
+      },
+      "TurnResult": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "turn_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Turn Index"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "lesson",
+              "answer",
+              "handoff"
+            ],
+            "title": "Kind",
+            "description": "lesson: a new version of the lesson (``markdown``). answer: a reply about the lesson and its documents (``markdown``); the lesson did not change. handoff: the request needs a new lesson -- send ``handoff_query`` again with ``mode: lesson`` (or ``mode: answer`` to have it answered here)."
+          },
+          "markdown": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Markdown",
+            "description": "The lesson or the answer, citations of the user's documents resolved to document name and place, with the sources listed at the end."
+          },
+          "handoff_query": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Handoff Query"
+          },
+          "cited_documents": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Cited Documents",
+            "description": "Names of the user's documents the text cites."
+          },
+          "structure": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LessonStructure"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For a lesson."
+          },
+          "planner": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlannerInfo"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For a lesson: the planner card."
+          },
+          "retriever": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RetrieverInfo"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For a lesson: the search card."
+          },
+          "critic": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CriticInfo"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For a lesson: the critic card. Null when the judge is on (the Critic is then not in the chain)."
+          },
+          "judge": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JudgeInfo"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For a lesson, when the judge is on (AIX_JUDGE_ENABLED): the targeted review -- what it corrected (already in ``markdown``) and what is left to check."
+          },
+          "lesson_meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentRunMeta"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For a lesson: the run summary."
+          },
+          "answer_meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AnswerMeta"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For an answer."
+          },
+          "ai_disclosure": {
+            "type": "string",
+            "title": "Ai Disclosure",
+            "default": "Contenuto generato dall'intelligenza artificiale."
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "kind"
+        ],
+        "title": "TurnResult"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBasic": {
+        "type": "http",
+        "scheme": "basic"
+      },
+      "APIKeyCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "aix_webui_auth"
+      },
+      "OAuth2PasswordBearer": {
+        "type": "oauth2",
+        "flows": {
+          "password": {
+            "scopes": {},
+            "tokenUrl": "auth/jwt/login"
+          }
+        }
+      }
+    }
+  }
+}

@@ -65,6 +65,20 @@ def takes_effort(model: Optional[str]) -> bool:
     )
 
 
+def api_docs_enabled() -> bool:
+    """``AIX_API_DOCS_ENABLED``: serve /docs, /redoc and /openapi.json.
+
+    Off by default where ``ENVIRONMENT`` is staging or production: on staging,
+    which has no proxy authentication in front (the WebUI is public), the whole
+    contract was readable by anyone (2026-10-20). Developers get the version-
+    pinned ``docs/api/openapi.json`` instead; locally the pages stay on.
+    """
+    raw = (os.getenv("AIX_API_DOCS_ENABLED") or "").strip().lower()
+    if raw:
+        return raw in ("1", "true", "yes", "on")
+    return os.getenv("ENVIRONMENT", "").strip().lower() not in ("staging", "production", "prod")
+
+
 def text2cypher_timeout() -> float:
     """``AIX_TEXT2CYPHER_TIMEOUT_S``: how long a graph query may take to be written.
 

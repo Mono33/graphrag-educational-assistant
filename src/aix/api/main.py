@@ -350,6 +350,10 @@ async def lifespan(app: FastAPI):
         logger.warning("⚠️ Checkpointer shutdown failed: %s", e)
 
 
+from aix.core.config import api_docs_enabled  # noqa: E402
+
+_DOCS = api_docs_enabled()
+
 # Create FastAPI app
 app = FastAPI(
     title="GraphRAG Educational API",
@@ -393,8 +397,9 @@ context = response.json()
     """,
     version=__version__,
     lifespan=lifespan,
-    docs_url="/docs",
-    redoc_url="/redoc",
+    docs_url="/docs" if _DOCS else None,
+    redoc_url="/redoc" if _DOCS else None,
+    openapi_url="/openapi.json" if _DOCS else None,
 )
 
 # ---------------------------------------------------------------------------

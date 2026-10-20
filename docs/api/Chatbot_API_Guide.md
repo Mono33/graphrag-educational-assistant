@@ -8,7 +8,14 @@ Everything the WebUI does is available here: the documents a teacher attaches
 explanation, the downloads. The API uses the same code as the WebUI, so the
 same request gives the same result.
 
-Interactive reference: `GET /docs` (Swagger) on the server.
+Reference: **`docs/api/openapi.json`**, the contract exported for this version
+(only the `/api` routes; load it in Swagger UI, Postman or a client generator).
+`/docs`, `/redoc` and `/openapi.json` are switched off on staging and production
+(`AIX_API_DOCS_ENABLED`), where the service has no proxy authentication in front;
+they stay on in a local stack.
+
+**Staging:** `https://agente.aiforlearning.digital/api/v1`. Every route needs the
+credentials below, except `GET /health` and `GET /context/domains`.
 
 ---
 

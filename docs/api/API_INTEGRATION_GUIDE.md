@@ -294,8 +294,13 @@ else:
 
 ### cURL
 
+Since 2026-10-20 `/context` needs the same HTTP Basic credentials as the other
+API routes (the instance's client name and password, see
+`docs/api/Chatbot_API_Guide.md`); without them it answers `401`.
+
 ```bash
 curl -X POST "http://localhost:8000/api/v1/context" \
+  -u "$CLIENT_NAME:$CLIENT_PASSWORD" \
   -H "Content-Type: application/json" \
   -d '{
     "query": "Strategie per studenti con ADHD",

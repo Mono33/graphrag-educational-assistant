@@ -234,8 +234,10 @@
       <span>Built with</span>
       <span class="font-mono">FastAPI · htmx · WebAwesome · Tailwind</span>
       <span class="aix-footer-sep">·</span>
+      {% if api_docs_enabled is defined and api_docs_enabled() %}
       <a href="/docs">API docs</a>
       <span class="aix-footer-sep">·</span>
+      {% endif %}
       <span>v0.4.0</span>
     </div>
   </footer>
