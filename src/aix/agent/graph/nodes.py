@@ -1019,14 +1019,16 @@ async def judge_node(state: AgentState) -> dict[str, Any]:
     """Review the lesson with the judge and fix what is wrong where it is.
 
     Replacements in code, revisions of the block around a problem only, then
-    each change verified: a change judged wrong is put back, and its problem
-    becomes a note. Whatever is not fixed -- minor problems, and blocking ones
-    no repair could make safely -- becomes a note for the teacher. See
-    ``validation.judge`` and ``validation.repair``.
+    each change verified: a change judged wrong is put back. Every problem is
+    corrected in the lesson, minor ones included (2026-10-20: the teacher wanted
+    the corrections made, not proposed under the lesson). What was changed, and
+    what could not be, is kept in ``judge_summary`` and ``review_notes`` and shown
+    in the judge's card, not in the lesson. See ``validation.judge`` and
+    ``validation.repair``.
     """
     from dataclasses import asdict
 
-    from aix.agent.validation.judge import judge_lesson, quote_in, verify_changes
+    from aix.agent.validation.judge import judge_lesson, verify_changes
     from aix.agent.validation.repair import apply_replacements, on_teacher_material, revise_units
 
     draft = state.get("final_lesson_plan") or state.get("lesson_plan_draft") or ""
@@ -1056,13 +1058,7 @@ async def judge_node(state: AgentState) -> dict[str, Any]:
             "current_step": "judge_complete",
         }
 
-    # A line taken from the teacher's documents is hers to weigh: a problem
-    # there is shown, not repaired (see ``on_teacher_material``).
-    on_material = [
-        i for i in first.issues if i.severity == "bloccante" and on_teacher_material(i.quote, draft)
-    ]
-    to_repair = [i for i in first.issues if i not in on_material]
-    replaced = apply_replacements(draft, to_repair)
+    replaced = apply_replacements(draft, first.issues)
     revised = await revise_units(replaced.lesson, replaced.left, request=request)
     lesson = revised.lesson
     summary.update(
@@ -1070,7 +1066,8 @@ async def judge_node(state: AgentState) -> dict[str, Any]:
         revised=len(revised.revised),
         cost=summary["cost"] + revised.cost,
     )
-    notes = [i for i in first.issues if i.severity != "bloccante"] + on_material + revised.left
+    # What could not be corrected: shown in the card as points to check.
+    notes = list(revised.left)
 
     # Each change is checked, not the whole lesson again (see ``verify_changes``);
     # a change judged wrong is put back as it was, and its problem becomes a note.
@@ -1092,6 +1089,9 @@ async def judge_node(state: AgentState) -> dict[str, Any]:
                     "before": change.before[:160],
                     "after": change.after[:160],
                     "kind": "sostituzione" if change in replaced.changes else "revisione",
+                    # A line taken from the teacher's documents: the card asks her
+                    # to check it against them (the judge does not see them).
+                    "teacher_material": on_teacher_material(issue.quote, draft),
                 }
                 for issue in change.issues
             )
@@ -1102,8 +1102,6 @@ async def judge_node(state: AgentState) -> dict[str, Any]:
     if reverted:
         logger.warning("[Node: Judge] %d change(s) judged wrong: put back", len(reverted))
     summary.update(reverted=len(reverted), reverted_changes=reverted, fixed=fixed)
-    # A minor problem whose sentence a fix rewrote is no longer about the lesson.
-    notes = [n for n in notes if n.severity == "bloccante" or quote_in(n.quote, lesson)]
 
     logger.info(
         "[Node: Judge] %d found (%d blocking): %d replaced, %d revised, %d notes",

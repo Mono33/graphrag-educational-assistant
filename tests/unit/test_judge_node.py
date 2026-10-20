@@ -75,17 +75,20 @@ def test_with_the_judge_on_the_critic_no_longer_rewrites_the_lesson(monkeypatch,
 # --- the node -------------------------------------------------------------------
 
 
-async def test_a_wrong_example_is_fixed_in_place_and_the_minor_problems_stay_as_notes(judged):
+async def test_every_problem_is_corrected_in_the_lesson_minor_ones_too(judged):
+    """2026-10-20: the corrections made, not proposed under the lesson."""
     answers, _ = judged
-    minor = _issue("La divisione di gatto", "-", severity="minore", kind="revisione")
+    minor = _issue("La divisione di gatto", "La sillabazione di gatto", severity="minore")
     answers.append(_report(_issue("«ga-to»", "«gat-to»"), minor))
 
     out = await judge_node({"final_lesson_plan": DRAFT, "teacher_query": "sillabe"})
 
-    assert out["final_lesson_plan"] == DRAFT.replace("«ga-to»", "«gat-to»")
-    assert [n["severity"] for n in out["review_notes"]] == ["minore"]
+    assert out["final_lesson_plan"] == DRAFT.replace("«ga-to»", "«gat-to»").replace(
+        "La divisione di gatto", "La sillabazione di gatto"
+    )
+    assert out["review_notes"] == []
     summary = out["judge_summary"]
-    assert (summary["replaced"], summary["verified"], summary["reverted"]) == (1, 1, 0)
+    assert (summary["replaced"], summary["verified"], summary["reverted"]) == (2, 2, 0)
     assert summary["cost"] == pytest.approx(0.012)
 
 
@@ -174,29 +177,13 @@ async def test_a_lesson_without_documents_goes_straight_to_the_judge(monkeypatch
     assert should_continue_to_revision({**state, **out}) == "judge"
 
 
-def test_the_review_notes_are_shown_under_the_lesson_only_when_there_are_some():
+def test_nothing_of_the_review_is_listed_under_the_lesson():
+    """2026-10-20: the corrections are in the lesson, the record in the judge's card."""
     from pathlib import Path
 
-    from jinja2 import Environment, FileSystemLoader
-
     root = Path(__file__).resolve().parents[2] / "src" / "aix" / "webui" / "templates"
-    template = Environment(loader=FileSystemLoader(str(root))).get_template(
-        "partials/review_notes.html"
-    )
-    note = {
-        "check": "esempi_lingua",
-        "severity": "minore",
-        "quote": "«foglia/moglie»",
-        "why": "stesso suono",
-        "fix": "«foglia/folla»",
-        "kind": "sostituzione",
-    }
-
-    html = template.render(notes=[note])
-
-    assert "Note di revisione (1)" in html and "Esempi di lingua" in html
-    assert "«foglia/folla»" in html and "aix-review-note--minor" in html
-    assert template.render(notes=[]).strip() == ""
+    for name in ("chat_lesson_card.html", "chat_history.html"):
+        assert "review_notes" not in (root / "partials" / name).read_text(encoding="utf-8")
 
 
 def _render(name, payload):
@@ -230,7 +217,10 @@ def test_the_judge_has_its_card_while_it_works_and_after():
                 }
             ],
         },
-        "review_notes": [{"severity": "minore"}, {"severity": "minore"}],
+        "review_notes": [
+            {"severity": "minore", "check": "classe", "quote": "q1", "why": "w"},
+            {"severity": "bloccante", "check": "fatti", "quote": "q2", "why": "w"},
+        ],
     }
 
     pending = _render("chat_judge_pending_card.html", {"write_revision": 1})
@@ -238,8 +228,8 @@ def test_the_judge_has_its_card_while_it_works_and_after():
 
     assert 'id="judge-card-rev1"' in pending and "Verifica di ogni correzione" in pending
     assert 'id="judge-card-rev1" hx-swap-oob="outerHTML"' in done
-    assert "trovato 4 problemi" in done and "1 correzione" in done
-    assert "«gat-to»" in done and "2 punti da verificare" in done
+    assert "trovato 4 punti da migliorare" in done and "1 correzione" in done
+    assert "«gat-to»" in done and "Da verificare (2)" in done
 
 
 def test_a_judge_that_failed_says_so_on_its_card():
@@ -262,13 +252,13 @@ def test_the_writer_can_have_its_own_model(monkeypatch):
     assert writer_model() == "anthropic/claude-sonnet-5.5"
 
 
-async def test_a_line_from_the_teacher_s_document_is_shown_not_repaired(judged):
-    """The judge «corrected» a sentence of the teacher's handout (2026-10-20)."""
+async def test_a_correction_of_a_line_from_the_teacher_s_document_is_flagged_for_her(judged):
+    """The judge does not see the documents: its card asks the teacher to check."""
     answers, _ = judged
     draft = DRAFT + "- L'URSS fu sciolta da Eltsin [[material:abc#p4]].\n"
     answers.append(_report(_issue("fu sciolta da Eltsin", "si dissolse dopo le dimissioni")))
 
     out = await judge_node({"final_lesson_plan": draft})
 
-    assert out["final_lesson_plan"] == draft
-    assert [n["quote"] for n in out["review_notes"]] == ["fu sciolta da Eltsin"]
+    assert "si dissolse dopo le dimissioni [[material:abc#p4]]" in out["final_lesson_plan"]
+    assert [f["teacher_material"] for f in out["judge_summary"]["fixed"]] == [True]

@@ -2,16 +2,21 @@
   Judge card (2026-10-19): what the targeted review did, replacing its pending
   card in place (same id, hx-swap-oob).
 
+  Since 2026-10-20 every correction is made in the lesson, and this card is the
+  one place that shows them: nothing is listed under the lesson any more.
+
   Required context (``_build_judge_payload`` in service.py):
     payload = {
       write_revision, found, blocking, replaced, revised, reverted,
-      fixed: [{check, why, before, after, kind}], notes, notes_blocking,
+      fixed: [{check, why, before, after, kind, teacher_material}],
+      points: [{check, severity, quote, why, fix, kind}], notes,
       seconds, error
     }
 #}
 
 {% set p = payload or {} %}
 {% set fixed = p.get('fixed') or [] %}
+{% set points = p.get('points') or [] %}
 {% set _labels = {
     "esempi_lingua": "Esempi di lingua",
     "fatti": "Contenuti",
@@ -43,15 +48,10 @@
             <wa-icon name="triangle-exclamation" class="aix-fs-xs"></wa-icon>
             non eseguita
           </span>
-        {% elif fixed %}
-          <span class="aix-pill aix-pill-success">
-            <wa-icon name="circle-check" class="aix-fs-xs"></wa-icon>
-            {{ fixed | length }} {{ 'correzione' if fixed | length == 1 else 'correzioni' }}
-          </span>
         {% else %}
           <span class="aix-pill aix-pill-success">
             <wa-icon name="circle-check" class="aix-fs-xs"></wa-icon>
-            nessuna correzione
+            {% if fixed %}{{ fixed | length }} {{ 'correzione' if fixed | length == 1 else 'correzioni' }}{% else %}nessuna correzione{% endif %}
           </span>
         {% endif %}
       </header>
@@ -65,11 +65,9 @@
         {% else %}
           <p class="aix-color-primary aix-fs-13 m-0">
             Ha riletto la lezione intera e trovato {{ p.get('found', 0) }}
-            {{ 'problema' if p.get('found', 0) == 1 else 'problemi' }}
-            ({{ p.get('blocking', 0) }} da correggere).
-            {% if fixed %}Ne ha corretti {{ fixed | length }} nel testo, senza riscrivere il resto.{% endif %}
+            {{ 'punto da migliorare' if p.get('found', 0) == 1 else 'punti da migliorare' }}.
+            {% if fixed %}Ha corretto nel testo {{ fixed | length }} {{ 'punto' if fixed | length == 1 else 'punti' }}, senza riscrivere il resto.{% endif %}
             {% if p.get('reverted') %}{{ p.reverted }} {{ 'correzione è stata scartata' if p.reverted == 1 else 'correzioni sono state scartate' }} perché non convincente.{% endif %}
-            {% if p.get('notes') %}{{ 'Un punto da verificare è' if p.notes == 1 else p.notes ~ ' punti da verificare sono' }} nelle note sotto la lezione.{% endif %}
           </p>
 
           {% if fixed %}
@@ -78,11 +76,28 @@
               <ul class="aix-review-notes-list">
                 {% for f in fixed %}
                   <li class="aix-review-note aix-review-note--minor">
-                    <span class="aix-review-note-kind">{{ _labels.get(f.check, "Altro") }}{% if f.kind == 'revisione' %} · attività rivista{% endif %}</span>
+                    <span class="aix-review-note-kind">
+                      {{ _labels.get(f.check, "Altro") }}{% if f.kind == 'revisione' %} · attività rivista{% endif %}{% if f.teacher_material %} · dal tuo documento: verifica{% endif %}
+                    </span>
                     {% if f.why %}<span class="aix-review-note-why">{{ f.why }}</span>{% endif %}
                     {% if f.kind != 'revisione' %}
                       <span class="aix-review-note-fix"><s>{{ f.before }}</s> → {{ f.after }}</span>
                     {% endif %}
+                  </li>
+                {% endfor %}
+              </ul>
+            </details>
+          {% endif %}
+
+          {% if points %}
+            <details>
+              <summary class="aix-section-label aix-clickable">Da verificare ({{ points | length }})</summary>
+              <ul class="aix-review-notes-list">
+                {% for n in points %}
+                  <li class="aix-review-note aix-review-note--{{ 'blocking' if n.severity == 'bloccante' else 'minor' }}">
+                    <span class="aix-review-note-kind">{{ _labels.get(n.check, "Altro") }}</span>
+                    <q class="aix-review-note-quote">{{ n.quote }}</q>
+                    {% if n.why %}<span class="aix-review-note-why">{{ n.why }}</span>{% endif %}
                   </li>
                 {% endfor %}
               </ul>

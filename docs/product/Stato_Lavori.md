@@ -3742,3 +3742,20 @@ In locale cinque difetti, corretti:
 Il pianificatore resta com'è. Nella prova DeepSeek ha cercato nel grafo temi di
 storia invece di strategie didattiche, ma la lezione è venuta bene lo stesso: è
 un effetto di secondo ordine, da misurare prima di cambiarlo.
+
+**Le correzioni nel testo, il registro nella scheda.** Nella prova del ciclo
+dell'acqua (Klein_ppt allegato) il giudice aveva trovato 8 punti, ne aveva
+corretto 1 e ne aveva lasciati 7 come note sotto la lezione, quasi tutti su frasi
+prese dal documento. Angelo: le proposte si applicano, non si elencano. Ora:
+
+- il giudice corregge tutto, anche i punti minori e anche le frasi prese dal
+  documento della docente;
+- sotto la lezione non compare più nulla: le «Note di revisione» sono tolte;
+- la scheda «Revisione mirata» elenca le correzioni con il prima → dopo, e segna
+  «dal tuo documento: verifica» quelle su frasi degli allegati, che il giudice non
+  vede. «Da verificare» elenca solo ciò che non ha potuto correggere;
+- tutto resta salvato in `judge_summary` e `review_notes`, nei metadati del turno
+  e nell'API.
+
+Questo sostituisce la regola di poco prima, che lasciava come nota ogni problema
+su una riga degli allegati.

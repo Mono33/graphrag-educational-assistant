@@ -155,12 +155,14 @@ class RepairResult:
 
 
 def apply_replacements(lesson: str, issues: list[Issue]) -> RepairResult:
-    """Put each blocking «sostituzione» fix in place of its quote, where that is safe."""
+    """Put each «sostituzione» fix in place of its quote, where that is safe.
+
+    Minor problems too, since 2026-10-20: the teacher wanted the corrections made
+    in the lesson, not listed under it as proposals to apply by hand.
+    """
     spans: list[tuple[int, int, Issue]] = []
     left: list[Issue] = []
     for issue in issues:
-        if issue.severity != "bloccante":
-            continue
         fix = issue.fix.strip()
         span = locate(issue.quote, lesson) if issue.kind == "sostituzione" else None
         safe = (
@@ -252,8 +254,6 @@ async def revise_units(
     result = RepairResult(lesson=lesson)
     units: dict[tuple[int, int], list[Issue]] = {}
     for issue in issues:
-        if issue.severity != "bloccante":
-            continue
         span = locate(issue.quote, lesson)
         if span is None:
             result.left.append(issue)

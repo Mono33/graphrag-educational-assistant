@@ -125,7 +125,7 @@
               {% if _j %}
                 <span class="aix-pill aix-pill-success" title="Revisione mirata: corregge solo i punti sbagliati">
                   <wa-icon name="clipboard-check" class="aix-fs-xs"></wa-icon>
-                  {% if _j.get('error') %}revisione non eseguita{% else %}rivista · {{ (_j.get('fixed') or []) | length }} correzioni{% endif %}
+                  {% if _j.get('error') %}revisione non eseguita{% else %}{% set _n = (_j.get('fixed') or []) | length %}rivista · {{ _n }} {{ 'correzione' if _n == 1 else 'correzioni' }}{% endif %}
                 </span>
               {% elif m.get('approved') is not none %}
                 {% if m.approved %}
@@ -190,9 +190,6 @@
             {{ msg.content_html | safe }}
           </article>
 
-          {% with notes = m.get('review_notes') or [] %}
-            {% include "partials/review_notes.html" %}
-          {% endwith %}
 
           {% if msg.turn_index == latest.lesson_turn and lesson.status != "running" %}
             <footer class="aix-lesson-footer">

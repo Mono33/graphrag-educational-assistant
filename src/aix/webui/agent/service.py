@@ -1267,6 +1267,8 @@ def _build_judge_payload(state: dict[str, Any], write_revision: int = 1) -> dict
         "fixed": summary.get("fixed") or [],
         "notes": len(notes),
         "notes_blocking": sum(1 for n in notes if n.get("severity") == "bloccante"),
+        # What could not be corrected, shown in the card: nothing under the lesson.
+        "points": notes,
         "seconds": summary.get("seconds"),
         "error": summary.get("error") or "",
     }

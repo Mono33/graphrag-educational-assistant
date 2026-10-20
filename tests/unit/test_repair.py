@@ -65,14 +65,20 @@ def test_a_replacement_changes_the_quote_and_nothing_else():
         _issue("«foglia/moglie»", "x" * 900),  # a rewrite, not a replacement
         _issue("sillabe di **gatto", "sillabe di gatto"),  # cuts an emphasis in half
         _issue("«foglia/moglie»", "«foglia/foca»", kind="revisione"),  # the judge said revise
-        _issue("«ga-to»", "«gat-to»", severity="minore"),  # a note, not a repair
     ],
 )
-def test_an_unsafe_or_non_blocking_replacement_is_not_made(issue):
+def test_an_unsafe_replacement_is_not_made(issue):
     result = apply_replacements(LESSON, [issue])
 
     assert result.lesson == LESSON
-    assert result.left == ([issue] if issue.severity == "bloccante" else [])
+    assert result.left == [issue]
+
+
+def test_a_minor_problem_is_corrected_too():
+    """2026-10-20: the corrections made in the lesson, not proposed under it."""
+    result = apply_replacements(LESSON, [_issue("«ga-to»", "«gat-to»", severity="minore")])
+
+    assert "«gat-to»" in result.lesson and not result.left
 
 
 @pytest.mark.parametrize(
