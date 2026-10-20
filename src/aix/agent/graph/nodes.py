@@ -1027,7 +1027,7 @@ async def judge_node(state: AgentState) -> dict[str, Any]:
     from dataclasses import asdict
 
     from aix.agent.validation.judge import judge_lesson, quote_in, verify_changes
-    from aix.agent.validation.repair import apply_replacements, revise_units
+    from aix.agent.validation.repair import apply_replacements, on_teacher_material, revise_units
 
     draft = state.get("final_lesson_plan") or state.get("lesson_plan_draft") or ""
     if not draft.strip():
@@ -1056,7 +1056,13 @@ async def judge_node(state: AgentState) -> dict[str, Any]:
             "current_step": "judge_complete",
         }
 
-    replaced = apply_replacements(draft, first.issues)
+    # A line taken from the teacher's documents is hers to weigh: a problem
+    # there is shown, not repaired (see ``on_teacher_material``).
+    on_material = [
+        i for i in first.issues if i.severity == "bloccante" and on_teacher_material(i.quote, draft)
+    ]
+    to_repair = [i for i in first.issues if i not in on_material]
+    replaced = apply_replacements(draft, to_repair)
     revised = await revise_units(replaced.lesson, replaced.left, request=request)
     lesson = revised.lesson
     summary.update(
@@ -1064,7 +1070,7 @@ async def judge_node(state: AgentState) -> dict[str, Any]:
         revised=len(revised.revised),
         cost=summary["cost"] + revised.cost,
     )
-    notes = [i for i in first.issues if i.severity != "bloccante"] + revised.left
+    notes = [i for i in first.issues if i.severity != "bloccante"] + on_material + revised.left
 
     # Each change is checked, not the whole lesson again (see ``verify_changes``);
     # a change judged wrong is put back as it was, and its problem becomes a note.

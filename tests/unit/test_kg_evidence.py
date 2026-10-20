@@ -123,7 +123,7 @@ def test_the_needs_of_this_class_with_what_the_graph_suggests_and_advises_agains
     )
     assert "sconsiglia: Long Frontal Lesson" in text
     assert (
-        "**Alunni non italofoni · Limited academic vocabulary** → il KG suggerisce: Glossaries"
+        "**Competenze linguistiche · Limited academic vocabulary** → il KG suggerisce: Glossaries"
         in text
     )
     # The class has no pupil on the autism spectrum.
@@ -197,7 +197,7 @@ def test_a_need_named_only_in_the_request_is_the_class_s():
         NODES, RELS, None, request="Ci sono 2 bambini con adhd e 2 non italofoni"
     )
 
-    assert "**ADHD ·" in text and "**Alunni non italofoni ·" in text
+    assert "**ADHD ·" in text and "**Competenze linguistiche ·" in text
     assert "joint attention" not in text, "autism was not named"
 
 
@@ -205,8 +205,8 @@ def test_a_need_named_only_in_the_request_is_the_class_s():
     ("request_text", "expected"),
     [
         ("due alunni con ADHD", {"ADHD"}),
-        ("alunni stranieri appena arrivati", {"Alunni non italofoni"}),
-        ("madre lingua spagnola", {"Alunni non italofoni"}),
+        ("alunni stranieri appena arrivati", {"Competenze linguistiche"}),
+        ("madre lingua spagnola", {"Competenze linguistiche"}),
         ("madrelingua italiana", set()),
         ("un alunno con DSA", {"Dislessia", "Discalculia"}),
         ("una ragazza con sindrome di Asperger", {"Spettro autistico"}),
@@ -484,3 +484,15 @@ def test_an_outcome_the_lesson_builds_on_is_used():
     lesson = "## Attività\n- Ogni gruppo sceglie il compito: autonomia (*Autonomy*)."
 
     assert "Autonomy" in usage(nodes, RELS, PROFILE, lesson)["used"]
+
+
+def test_a_declared_need_the_graph_does_not_cover_is_still_the_class_s():
+    """«La disabilità cognitiva media non compare tra i bisogni del profilo»: it was
+    declared (DCGM), the graph has no group for it (2026-10-20)."""
+    from aix.agent.kg_evidence import render_usage, usage
+
+    profile = {"group": {"disabilities": ["ADHD", "DCGM"]}}
+    found = usage(NODES, RELS, profile, "## Attività\nCompiti brevi (Focus Tasks).")
+
+    assert found["needs_not_in_graph"] == ["Disabilità cognitiva media"]
+    assert "senza strategie nel grafo" in render_usage(found)

@@ -39,7 +39,9 @@ cui compare (è indicata tra parentesi quadre); poi i non usati del blocco, \
 ciascuno con il motivo; una riga per ciò che il grafo sconsiglia ed è stato \
 evitato (e i neuromiti evitati); una riga con il numero del resto. Solo i bisogni \
 della classe: se non ne ha, dillo e \
-non attribuirle quelli di altri profili. Chiudi con una lacuna concreta e una \
+non attribuirle quelli di altri profili. Un bisogno che il blocco riporta come \
+dichiarato ma senza strategie nel grafo è della classe: dillo così, non dire mai \
+che non è nel profilo. Chiudi con una lacuna concreta e una \
 proposta. Non dire che non hai accesso al grafo: hai ciò che ha restituito per \
 questa lezione;
 - quando un'affermazione viene da un passaggio dei documenti allegati, mettile \

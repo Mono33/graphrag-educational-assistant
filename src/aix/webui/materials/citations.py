@@ -121,6 +121,16 @@ def has_citations(text: str) -> bool:
 #: own documents. Decision U3 (2026-09-18): the inline reference says *where* a
 #: sentence comes from, this says *what was used* for the lesson as a whole.
 SOURCES_HEADING = "**Fonti dai tuoi materiali**"
+#: The same, under an answer written in English («traduci in inglese», 2026-10-20).
+SOURCES_HEADING_EN = "**Sources from your materials**"
+
+_IT_WORDS = re.compile(r"\b(?:il|lo|la|gli|le|di|del|della|che|per|con|una|sono|non|è)\b", re.I)
+_EN_WORDS = re.compile(r"\b(?:the|of|and|to|with|for|is|are|that|on|each|this)\b", re.I)
+
+
+def _in_english(text: str) -> bool:
+    """Whether the answer is written in English: its common words, counted."""
+    return len(_EN_WORDS.findall(text)) > 2 * len(_IT_WORDS.findall(text)) + 5
 
 
 def sources_block(text: str, labels: Optional[dict[str, str]] = None) -> str:
@@ -156,7 +166,7 @@ def sources_block(text: str, labels: Optional[dict[str, str]] = None) -> str:
     if not pages:
         return ""
 
-    lines = [SOURCES_HEADING, ""]
+    lines = [SOURCES_HEADING_EN if _in_english(text) else SOURCES_HEADING, ""]
     for label, found in pages.items():
         lines.append(f"- {label} — {_say_all(found)}" if found else f"- {label}")
     return "\n".join(lines)

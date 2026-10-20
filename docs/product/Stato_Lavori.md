@@ -3715,3 +3715,30 @@ quando la classe non ha bisogni dichiarati (con Sonnet il follow-up diceva
 Il follow-up conta come usato ogni elemento del grafo che la lezione nomina, non
 solo le strategie: Autonomy, Competence e Relatedness sono esiti nel grafo di
 neuroscienze, e una lezione costruita su di loro diceva «Usati: 0».
+
+### 2026-10-20 — Prova sulla WebUI (tutto DeepSeek) contro staging: cinque correzioni
+
+Stessa richiesta (Guerra Fredda, con Cold-War.pdf allegato) in locale e su
+staging. I profili erano diversi: in locale secondaria di II grado con spettro
+autistico e disabilità cognitiva media, su staging secondaria di I grado. Su
+staging il Critic dava 100% a una lezione con minuti che non tornano (50 su 60),
+nota sul grafo sbagliato, gergo UDL nel testo e articoli universitari nelle fonti.
+In locale cinque difetti, corretti:
+
+- il giudice aveva «corretto» una frase presa dal documento della docente
+  (Eltsin, p. 4). Ora un problema in una riga che cita gli allegati va nelle note
+  e non si ripara (`repair.on_teacher_material`);
+- il follow-up diceva che la disabilità cognitiva media «non compare tra i
+  bisogni del profilo». Era dichiarata, ma il grafo non ha strategie per lei. Il
+  blocco calcolato ora la riporta come «dichiarata nel profilo, senza strategie
+  nel grafo»;
+- «Alunni non italofoni» era un'etichetta nostra, mostrata alla docente per il
+  codice CL. Ora si usano le parole della piattaforma, «Competenze linguistiche»;
+- «approvata dal critic» compariva anche senza Critic. Ora, quando c'è il
+  giudice, l'etichetta è «rivista · N correzioni»;
+- «Fonti dai tuoi materiali» restava in italiano sotto una risposta tradotta in
+  inglese. Ora diventa «Sources from your materials».
+
+Il pianificatore resta com'è. Nella prova DeepSeek ha cercato nel grafo temi di
+storia invece di strategie didattiche, ma la lezione è venuta bene lo stesso: è
+un effetto di secondo ordine, da misurare prima di cambiarlo.

@@ -118,6 +118,22 @@ def locate(quote: str, lesson: str) -> Optional[tuple[int, int]]:
     return index[first], index[first + len(needle) - 1] + 1
 
 
+def on_teacher_material(quote: str, lesson: str) -> bool:
+    """Whether ``quote`` is in a line that cites the teacher's attached documents.
+
+    The judge does not see the documents: on 2026-10-20 it «corrected» a sentence
+    taken from the teacher's handout (the dissolution of the USSR on p. 4). What
+    such a line says is the teacher's material to weigh, so a problem there is a
+    note, never a repair.
+    """
+    span = locate(quote, lesson)
+    if span is None:
+        return False
+    start = lesson.rfind("\n", 0, span[0]) + 1
+    end = lesson.find("\n", span[1])
+    return "[[material:" in lesson[start : len(lesson) if end == -1 else end]
+
+
 @dataclass
 class Change:
     """One change the repair made: the text before and after, and why."""

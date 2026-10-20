@@ -181,7 +181,7 @@ def test_the_room_from_the_neuro_graph_is_the_environment_section():
 def test_the_profile_codes_name_the_needs_of_both_graphs():
     assert kg_evidence.class_need_groups({"group": {"disabilities": ["ADHD", "CL", "DSA"]}}) == {
         "ADHD",
-        "Alunni non italofoni",
+        "Competenze linguistiche",
         "Dislessia",
         "Discalculia",
     }

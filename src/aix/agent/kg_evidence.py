@@ -50,7 +50,7 @@ from typing import Any, Optional
 #: KG learner-variability labels, with the name the teacher knows them by.
 NEED_GROUPS: dict[str, str] = {
     "Adhd": "ADHD",
-    "ForeignStudents": "Alunni non italofoni",
+    "ForeignStudents": "Competenze linguistiche",
     "AutismSpectrum": "Spettro autistico",
     "Dyslexia": "Dislessia",
     "Dyscalculia": "Discalculia",
@@ -325,8 +325,8 @@ def context_label(node: dict[str, Any]) -> str:
 #: Profile need codes -> the teacher's names of the needs (``need_group``).
 PROFILE_NEED_GROUPS: dict[str, set[str]] = {
     "ADHD": {"ADHD"},
-    "DLDS": {"Alunni non italofoni"},
-    "CL": {"Alunni non italofoni"},
+    "DLDS": {"Competenze linguistiche"},
+    "CL": {"Competenze linguistiche"},
     "SA": {"Spettro autistico"},
     "DSA": {"Dislessia", "Discalculia"},
     "PD": {"Plusdotazione"},
@@ -337,7 +337,7 @@ PROFILE_NEED_GROUPS: dict[str, set[str]] = {
 #: («Ci sono 2 bambini con adhd e 2 non italofoni»): the WebUI form is optional.
 _NEEDS_IN_TEXT: dict[str, re.Pattern[str]] = {
     "ADHD": re.compile(r"\badhd\b|iperattiv|deficit (?:di|dell')\s?attenzione", re.I),
-    "Alunni non italofoni": re.compile(
+    "Competenze linguistiche": re.compile(
         r"non italofon|stranier|\bl2\b|italiano come (?:seconda|lingua seconda)"
         r"|madre ?lingua (?!italian)|lingua madre (?!italian)",
         re.I,
@@ -847,6 +847,28 @@ def _where(name: str, body: str) -> str:
     return ""
 
 
+def _needs_not_in_graph(profile: Any, ranked: list[dict[str, Any]]) -> list[str]:
+    """The needs the teacher declared that no node of the graph's answer is about.
+
+    «Disabilità cognitiva media» has no group in the graph: the follow-up of
+    2026-10-20 said it «non compare tra i bisogni del profilo», and it did.
+    Named with the platform's words.
+    """
+    from aix.api.schemas.educational_profile import DISABILITY_LABELS
+
+    group = _profile_group(profile)
+    raw = group.get("disabilities")
+    if not raw and isinstance(profile, dict):
+        raw = profile.get("disabilities")
+    present = {need_group(n) for n in ranked if kind(n) == "need"}
+    missing = []
+    for code in _codes(raw):
+        groups = PROFILE_NEED_GROUPS.get(code, set())
+        if not groups & present:
+            missing.append(DISABILITY_LABELS.get(code, code))
+    return missing
+
+
 def usage(
     nodes: Optional[list[dict[str, Any]]],
     relationships: Optional[list[dict[str, Any]]],
@@ -921,6 +943,7 @@ def usage(
         "advised_against_avoided": [n for n in advised if not _advised_in_lesson(n, lesson)],
         "myths_avoided": [n for n in myths if not _in_lesson(n, lesson_lower)][:_MAX_MYTHS],
         "needs": sorted(wanted),
+        "needs_not_in_graph": _needs_not_in_graph(profile, ranked),
     }
     # The rest is everything the follow-up does not list, so that the numbers it
     # copies add up to what the graph returned («il resto: 55» of 56 did not).
@@ -944,6 +967,12 @@ def render_usage(found: dict[str, Any]) -> str:
         lines.append(f"- Elementi restituiti dal grafo: {found['total']}")
     needs = ", ".join(found.get("needs") or []) or "nessuno dichiarato né nominato"
     lines.append(f"- Bisogni della classe: {needs}")
+    if found.get("needs_not_in_graph"):
+        lines.append(
+            "- Dichiarati nel profilo, ma senza strategie nel grafo (sono comunque bisogni "
+            "della classe; la lezione li tratta con scelte proprie): "
+            + ", ".join(found["needs_not_in_graph"])
+        )
     where = found.get("where") or {}
     used = [f"{name} [in «{where[name]}»]" if where.get(name) else name for name in found["used"]]
     lines.append(f"- Usati nella lezione ({len(used)}): {', '.join(used) or '—'}")

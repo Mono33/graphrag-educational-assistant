@@ -464,3 +464,18 @@ def test_a_lesson_without_material_tells_the_critic_nothing():
 
     assert teacher_material_note([]) == ""
     assert teacher_material_note(None) == ""
+
+
+def test_an_answer_in_english_lists_its_sources_in_english():
+    """«traduci in inglese»: the block under it said «Fonti dai tuoi materiali» (2026-10-20)."""
+    from aix.webui.materials.citations import SOURCES_HEADING_EN, sources_block
+
+    text = (
+        "Each group reads the extracts and answers on a poster with two columns, "
+        "and the spokesperson presents the work of the group to the class "
+        "[[material:3f1c0d6e-7a51-4c1b-9e1a-0b6f2a7c9d11#p2]]."
+    )
+
+    block = sources_block(text)
+
+    assert block.startswith(SOURCES_HEADING_EN)

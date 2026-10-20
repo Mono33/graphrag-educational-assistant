@@ -260,3 +260,15 @@ def test_the_writer_can_have_its_own_model(monkeypatch):
     assert writer_model() is None
     monkeypatch.setenv("AIX_WRITER_MODEL", "anthropic/claude-sonnet-5.5")
     assert writer_model() == "anthropic/claude-sonnet-5.5"
+
+
+async def test_a_line_from_the_teacher_s_document_is_shown_not_repaired(judged):
+    """The judge «corrected» a sentence of the teacher's handout (2026-10-20)."""
+    answers, _ = judged
+    draft = DRAFT + "- L'URSS fu sciolta da Eltsin [[material:abc#p4]].\n"
+    answers.append(_report(_issue("fu sciolta da Eltsin", "si dissolse dopo le dimissioni")))
+
+    out = await judge_node({"final_lesson_plan": draft})
+
+    assert out["final_lesson_plan"] == draft
+    assert [n["quote"] for n in out["review_notes"]] == ["fu sciolta da Eltsin"]
