@@ -353,6 +353,14 @@ WATER = [
             WATER,
             False,
         ),
+        # One subject word in common is not the subject: «struttura» of a volcano
+        # and of water.
+        (
+            ["vulcani", "struttura di un vulcano", "eruzione vulcanica", "magma e lava"],
+            "Fammi una lezione sui vulcani",
+            [{"score": 0.5, "text": WATER[0]["text"] + " Proprietà dovute alla sua struttura."}],
+            False,
+        ),
         # The case the check was made for: the document is about the request.
         (["ciclo dell'acqua", "evaporazione"], "Una lezione sul ciclo dell'acqua", WATER, True),
         # No subject from the planner: as before, the passages count.

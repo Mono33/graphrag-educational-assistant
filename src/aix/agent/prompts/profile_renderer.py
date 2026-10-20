@@ -313,8 +313,16 @@ def render_profile_section(profile: Any) -> str:
     group = ep.get("group") or {}
     facts: list[str] = []
 
+    # The profile's topic and subject were set when the session began: a request
+    # that names another wins. A conversation moved from the water cycle to
+    # volcanoes, and a refinement of the lesson on volcanoes came back on the
+    # water cycle (API replay, 2026-10-20).
     if ep.get("specific_topic"):
-        facts.append(f"- Topic: {ep['specific_topic']}")
+        facts.append(
+            f"- Topic set at the start of the session: {ep['specific_topic']} "
+            "(if the teacher's request or the lesson being refined is about another "
+            "subject, that subject is the topic)"
+        )
     if ep.get("subject_area"):
         facts.append(f"- Subject: {ep['subject_area']}")
     if grade := _label(group.get("grade"), GRADE_LABELS):

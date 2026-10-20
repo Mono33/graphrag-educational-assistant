@@ -894,29 +894,48 @@ _GENERIC_WORDS = frozenset(
 _TOPIC_WORD = re.compile(r"[a-zàèéìíòóùú]{4,}", re.IGNORECASE)
 
 
+def _in_text(word: str, text: str) -> bool:
+    """``word`` at the start of a word of ``text``: «vulcani» meets «vulcanica»."""
+    stem = word if len(word) < 7 else word[:6]
+    return re.search(rf"(?<![\w]){re.escape(stem)}", text) is not None
+
+
 def _passages_about_the_request(state: AgentState, passages: list[dict[str, Any]]) -> bool:
-    """Whether the passages speak of what this turn asks: a word of its subject is in them.
+    """Whether the passages speak of what this turn asks: half its subjects at least.
 
     Similarity alone is not enough. On 2026-10-20 a session kept the water-cycle
     handout, the teacher asked for a lesson on volcanoes, the passages were
     «similar enough» (earth sciences), and the rewrite this check ordered turned
-    the lesson on volcanoes into one on the water cycle. Without a subject from
-    the planner the passages are taken to be about it, as before: the case this
-    check was made for (a 222-page book ignored, 2026-09-29) stays covered.
+    the lesson on volcanoes into one on the water cycle. One word is not enough
+    either: «lava» met «lavare i capi», «struttura» (of a volcano) the water's
+    «struttura». So each of the planner's subjects counts when one of its words
+    (five letters at least, at the start of a word) is in the passages, and at
+    least half of them must count. Without a subject from the planner the
+    passages are taken to be about it, as before: the case this check was made
+    for (a 222-page book ignored, 2026-09-29) stays covered.
     """
-    subject = " ".join(str(c) for c in (state.get("subject_concepts") or []))
-    if not subject.strip():
+    concepts = [str(c) for c in (state.get("subject_concepts") or []) if str(c).strip()]
+    if not concepts:
         return True
-    words = {
-        w.lower()
-        for w in _TOPIC_WORD.findall(f"{subject} {state.get('raw_user_turn') or ''}")
-        if len(w) >= 5 and w.lower() not in _GENERIC_WORDS
-    }
     text = " ".join(str(p.get("text") or "") for p in passages).lower()
-    # The start of a word of the passages: «vulcani» meets «vulcanica», «eruzione»
-    # «eruzioni». Never inside a word, and never a short stem: «lava» (from «magma
-    # e lava») met «lavare i capi» in the water-cycle handout.
-    return any(re.search(rf"(?<![\w]){re.escape(w if len(w) < 7 else w[:6])}", text) for w in words)
+    found = []
+    for concept in concepts:
+        words = [
+            w.lower()
+            for w in _TOPIC_WORD.findall(concept)
+            if len(w) >= 5 and w.lower() not in _GENERIC_WORDS
+        ]
+        if any(_in_text(w, text) for w in words):
+            found.append(concept)
+    about = len(found) * 2 >= len(concepts)
+    logger.info(
+        "[Documents] subjects in the passages: %d of %d %s -> %s",
+        len(found),
+        len(concepts),
+        found[:4],
+        "about the request" if about else "not about it: the lesson keeps its subject",
+    )
+    return about
 
 
 def _ignores_the_documents(state: AgentState) -> bool:

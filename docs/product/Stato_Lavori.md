@@ -3905,3 +3905,22 @@ non riguardano la richiesta.
   Cypher hanno ora un limite proprio, `AIX_TEXT2CYPHER_TIMEOUT_S` (20 s), senza
   nuovi tentativi (LangChain ne faceva 2). Oltre il limite la query si salta e la
   ricerca prosegue con gli altri canali.
+
+Verificato con una prova mirata via API (ciclo dell'acqua con il PDF di Klein,
+poi «lezione sui vulcani», conferma e «semplifica»). Sono serviti tre passaggi:
+
+1. una sola parola in comune non basta: «lava» (da «magma e lava») trovava
+   «lavare i capi», «struttura» (del vulcano) trovava la «struttura» dell'acqua.
+   Ora conta come in comune un argomento del pianificatore che abbia una parola di
+   almeno 5 lettere all'inizio di una parola dei passaggi, e devono esserlo almeno
+   la metà degli argomenti;
+2. l'affinamento della lezione sui vulcani tornava sul ciclo dell'acqua, perché
+   il profilo della sessione dice ancora «argomento: ciclo dell'acqua». Nel
+   prompt del Writer l'argomento del profilo è ora «quello di inizio sessione»:
+   se la richiesta o la lezione da affinare parla d'altro, vale quello;
+3. il log `[Documents]` dice quanti argomenti ha trovato nei passaggi e la
+   decisione presa.
+
+Due esecuzioni consecutive: le lezioni sui vulcani e i loro affinamenti restano
+sui vulcani, non citano il PDF, l'affinamento dura 22 s (prima 154), e il
+controllo trova 1 argomento su 5 o 0 su 6 e non riscrive.
