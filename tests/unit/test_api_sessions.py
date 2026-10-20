@@ -350,3 +350,24 @@ def test_with_the_judge_on_the_turn_returns_its_corrections_typed(api, monkeypat
         "teacher_material": True,
     }
     assert judge["points"][0]["quote"] == "q"
+
+
+@pytest.mark.parametrize(
+    ("status", "plan", "code"),
+    [("running", "# L", "already_running"), ("draft", "", "no_lesson_yet")],
+)
+def test_an_answer_during_a_turn_is_already_running_not_no_lesson_yet(status, plan, code):
+    """Two turns at once: the second was refused as «no_lesson_yet» (replay, 2026-10-20)."""
+    from types import SimpleNamespace
+
+    from fastapi import HTTPException
+
+    from aix.api.routes.sessions import _form
+    from aix.api.schemas.sessions import TurnRequest
+
+    lesson = SimpleNamespace(status=status, lesson_plan_md=plan)
+
+    with pytest.raises(HTTPException) as refused:
+        _form(TurnRequest(message="E per l'Attività 2?", mode="answer"), lesson)
+
+    assert (refused.value.status_code, refused.value.detail["code"]) == (409, code)

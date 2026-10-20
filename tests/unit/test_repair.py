@@ -189,3 +189,31 @@ async def test_a_revised_block_that_changes_its_title_or_minutes_is_refused(answ
 
     assert result.lesson == LESSON
     assert result.left == [ROLES]
+
+
+QUOTING = (
+    "# La guerra fredda\n\n## Attività (20 minuti)\n"
+    "- Dal testo: «Non si spararono mai un colpo, e il mondo visse sull'orlo» "
+    "[[material:abc#p2]].\n"
+    "- In sintesi le due potenze non si scontrarono [[material:abc#p2]].\n"
+)
+
+
+def test_a_quotation_of_the_teacher_s_document_is_left_as_it_is():
+    """«istallare» «corrected» inside a quotation of the handout (replay, 2026-10-20)."""
+    from aix.agent.validation.repair import quotes_teacher_material
+
+    assert quotes_teacher_material("Non si spararono mai un colpo", QUOTING)
+    assert not quotes_teacher_material("le due potenze non si scontrarono", QUOTING)
+    assert not quotes_teacher_material("«ga-to»", LESSON)
+
+
+def test_a_revision_that_changes_a_quotation_or_drops_a_marker_is_refused():
+    from aix.agent.validation.repair import _acceptable
+
+    block = QUOTING.split("\n", 2)[2]
+    changed = block.replace("Non si spararono mai un colpo", "Non si scontrarono mai")
+    dropped = block.replace(" [[material:abc#p2]]", "", 1)
+
+    assert not _acceptable(block, changed) and not _acceptable(block, dropped)
+    assert _acceptable(block, block.replace("In sintesi", "In breve"))

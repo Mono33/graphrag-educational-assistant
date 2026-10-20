@@ -1029,7 +1029,12 @@ async def judge_node(state: AgentState) -> dict[str, Any]:
     from dataclasses import asdict
 
     from aix.agent.validation.judge import judge_lesson, verify_changes
-    from aix.agent.validation.repair import apply_replacements, on_teacher_material, revise_units
+    from aix.agent.validation.repair import (
+        apply_replacements,
+        on_teacher_material,
+        quotes_teacher_material,
+        revise_units,
+    )
 
     draft = state.get("final_lesson_plan") or state.get("lesson_plan_draft") or ""
     if not draft.strip():
@@ -1058,7 +1063,10 @@ async def judge_node(state: AgentState) -> dict[str, Any]:
             "current_step": "judge_complete",
         }
 
-    replaced = apply_replacements(draft, first.issues)
+    # A quotation of the teacher's documents stays as it is: shown, not changed
+    # (see ``quotes_teacher_material``).
+    quoted = [i for i in first.issues if quotes_teacher_material(i.quote, draft)]
+    replaced = apply_replacements(draft, [i for i in first.issues if i not in quoted])
     revised = await revise_units(replaced.lesson, replaced.left, request=request)
     lesson = revised.lesson
     summary.update(
@@ -1067,7 +1075,7 @@ async def judge_node(state: AgentState) -> dict[str, Any]:
         cost=summary["cost"] + revised.cost,
     )
     # What could not be corrected: shown in the card as points to check.
-    notes = list(revised.left)
+    notes = quoted + list(revised.left)
 
     # Each change is checked, not the whole lesson again (see ``verify_changes``);
     # a change judged wrong is put back as it was, and its problem becomes a note.

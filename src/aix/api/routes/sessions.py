@@ -413,6 +413,12 @@ def _form(request: TurnRequest, lesson: Lesson) -> dict[str, str]:
     if request.mode == "lesson":
         form["full_run"] = "1"
     elif request.mode == "answer":
+        # A turn in progress first: during it the lesson is «running», and a
+        # client retrying an answer was told «no_lesson_yet» (replay, 2026-10-20).
+        if lesson.status == "running":
+            raise _error(
+                409, "already_running", "Una generazione è già in corso. Attendi il termine."
+            )
         if lesson.status not in ("complete", "error") or not (lesson.lesson_plan_md or "").strip():
             raise _error(
                 409, "no_lesson_yet", "Non c'è ancora una lezione: il primo turno la scrive."

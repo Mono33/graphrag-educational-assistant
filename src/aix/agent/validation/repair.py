@@ -134,6 +134,27 @@ def on_teacher_material(quote: str, lesson: str) -> bool:
     return "[[material:" in lesson[start : len(lesson) if end == -1 else end]
 
 
+_QUOTED = re.compile(r"«[^»]*»|“[^”]*”|\"[^\"\n]*\"")
+
+
+def quotes_teacher_material(quote: str, lesson: str) -> bool:
+    """Whether ``quote`` falls inside a quotation, «…», in a line citing the documents.
+
+    A paraphrase of the teacher's document may be corrected; a quotation may not:
+    changed, it puts in the document words that are not there. On 2026-10-20 the
+    judge «corrected» «istallare» to «installare» and rewrote «Non si spararono
+    mai un colpo…» inside the quotation marks.
+    """
+    span = locate(quote, lesson)
+    if span is None or not on_teacher_material(quote, lesson):
+        return False
+    start = lesson.rfind("\n", 0, span[0]) + 1
+    end = lesson.find("\n", span[1])
+    line = lesson[start : len(lesson) if end == -1 else end]
+    inside = (span[0] - start, span[1] - start)
+    return any(m.start() <= inside[0] and inside[1] <= m.end() for m in _QUOTED.finditer(line))
+
+
 @dataclass
 class Change:
     """One change the repair made: the text before and after, and why."""
@@ -215,6 +236,8 @@ Regole:
 - la prima riga (il titolo, con i suoi minuti) resta identica;
 - cambia il meno possibile: stessi tempi, stessi materiali, stessi nomi delle \
 strategie, stesso stile; non aggiungere sezioni;
+- le citazioni tra virgolette «…» dei documenti della docente, e i marcatori \
+[[material:…]] accanto, restano identiche, carattere per carattere;
 - se un problema non si può correggere dentro questo brano, lascia il brano com'è."""
 
 _REVISE_USER = """## Richiesta della docente
@@ -236,6 +259,14 @@ def _acceptable(old: str, new: str) -> bool:
         return False
     if _MINUTES.findall(old_title) != _MINUTES.findall(new_title):
         return False
+    # Every quotation of the teacher's documents, and every marker, still there as it was.
+    for line in old.splitlines():
+        if "[[material:" in line and any(m.group(0) not in new for m in _QUOTED.finditer(line)):
+            return False
+    markers = re.compile(r"\[\[material:[^\]]+\]\]")
+    for marker in set(markers.findall(old)):
+        if new.count(marker) < old.count(marker):
+            return False
     return 0.5 * len(old) <= len(new) <= 2.0 * len(old) + 300
 
 

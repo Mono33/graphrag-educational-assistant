@@ -3839,3 +3839,33 @@ corretta, in «u-na». Ora le divisioni corrette sono anch'esse fatti [corretto]
 (al massimo 30 per lezione), e un problema su una citazione che una verifica dà
 per corretta viene scartato. Banco del giudice: 17/17, segnalazioni bloccanti
 sulle lezioni pulite da 49 a 44.
+
+### 2026-10-20 — Le conversazioni della WebUI rigiocate via API, prima del push
+
+Le tre conversazioni di Angelo di oggi (Guerra fredda con Cold-War.pdf, ciclo
+dell'acqua con Klein_ppt, Guerra fredda sul grafo neuro) rigiocate via API come
+farebbe AIxLearning: stessi messaggi, profilo e PDF, più handoff, affinamento,
+idempotenza, isolamento e due turni contemporanei. Prima esecuzione: 85
+controlli su 88, con quattro rilievi:
+
+- **due turni contemporanei:** il secondo veniva rifiutato come `no_lesson_yet`
+  invece di `already_running`. Corretto;
+- **turno di handoff:** non resta nella sessione (voluto: una domanda senza
+  risposta). Ora è scritto nella guida per i dev, che devono conservare
+  `handoff_query`;
+- **«applica le correzioni alla lezione»:** sulla WebUI ha avuto una risposta,
+  via API un handoff. È la lettura del modello, entrambe ragionevoli: scritto
+  nella guida;
+- **citazioni del documento:** il giudice aveva cambiato testo tra virgolette
+  copiato dal PDF («istallare» → «installare», una frase parafrasata dentro le
+  «»). Ora una citazione tra «» su una riga che cita gli allegati non si
+  modifica: diventa un punto da verificare. Una riscrittura dell'attività che
+  altera una citazione o perde un marcatore viene scartata. Le parafrasi del
+  documento si correggono ancora, segnate «dal tuo documento: verifica».
+
+Funziona come sulla WebUI: tipo di ogni turno, eventi del giudice, intestazione,
+nota sulle fonti, citazioni risolte, export, media, ripetizione con la stessa
+chiave senza rigenerare, isolamento tra utenti finali. Le query al grafo sono
+tutte didattiche. Alla domanda sulla disabilità cognitiva media la risposta via
+API è corretta («il grafo non ha strategie dedicate»), mentre quella della WebUI
+di stamattina era sbagliata.

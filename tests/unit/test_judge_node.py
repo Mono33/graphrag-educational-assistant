@@ -262,3 +262,16 @@ async def test_a_correction_of_a_line_from_the_teacher_s_document_is_flagged_for
 
     assert "si dissolse dopo le dimissioni [[material:abc#p4]]" in out["final_lesson_plan"]
     assert [f["teacher_material"] for f in out["judge_summary"]["fixed"]] == [True]
+
+
+async def test_a_quotation_of_the_teacher_s_document_becomes_a_point_to_check(judged):
+    answers, _ = judged
+    draft = (
+        DRAFT + "- Dal testo: «Nel 1962 l'URSS cercò di istallare missili» [[material:abc#p3]].\n"
+    )
+    answers.append(_report(_issue("cercò di istallare missili", "cercò di installare missili")))
+
+    out = await judge_node({"final_lesson_plan": draft})
+
+    assert out["final_lesson_plan"] == draft
+    assert [n["quote"] for n in out["review_notes"]] == ["cercò di istallare missili"]

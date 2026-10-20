@@ -162,6 +162,17 @@ The result's `kind`:
 This is the WebUI's behaviour: a question gets a fast answer; «make me a lesson
 on volcanoes» does not silently rewrite the lesson, it asks first.
 
+A `handoff` turn is **not kept in the session**: `GET /sessions/{id}` does not
+list it, because a message with no answer would sit in the history as a question
+nobody took. The client keeps `handoff_query` and, if the user confirms, resends
+it with `mode: "lesson"` (that turn is kept). Whether a request is a question or
+a new lesson is the model's reading: «applica le correzioni alla lezione» was
+answered in the WebUI («which corrections?») and handed off in an API replay of
+the same conversation. Both readings are reasonable; the client must handle both.
+
+Two turns of the same session at once: the second is refused with
+`409 already_running`; retry it when the first ends (or read the session).
+
 ### Streaming
 
 `POST /sessions/{id}/turns/stream` takes the same body and answers with
