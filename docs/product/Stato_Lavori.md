@@ -3869,3 +3869,20 @@ chiave senza rigenerare, isolamento tra utenti finali. Le query al grafo sono
 tutte didattiche. Alla domanda sulla disabilità cognitiva media la risposta via
 API è corretta («il grafo non ha strategie dedicate»), mentre quella della WebUI
 di stamattina era sbagliata.
+
+Seconda esecuzione sul codice corretto (`8bf694a`): **88/88 controlli**.
+
+| | durata | primo testo |
+|---|---|---|
+| lezione (5 prime lezioni e rigenerazioni) | 33–56 s | 3–36 s |
+| risposta veloce (domanda, scaletta, traduzione) | 7–9 s | 1,4–1,6 s |
+| handoff | 4 s | — |
+
+Un'eccezione: l'affinamento «semplifica» ha richiesto 154 s. 99 s sono una sola
+chiamata Text2Cypher (Gemini flash-lite) rimasta in attesa del fornitore; le
+altre durano 1–2 s. Text2Cypher usa il timeout generale `AIX_LLM_TIMEOUT_S`
+(120 s): da valutare un timeout suo, più corto, perché la ricerca ha anche altri
+canali. Da notare anche che con il PDF del ciclo dell'acqua ancora legato alla
+sessione, la lezione sui vulcani torna una volta al Writer per «documenti non
+usati» (circa 10 s in più): la regola chiede di dire in una riga che i documenti
+non riguardano la richiesta.
