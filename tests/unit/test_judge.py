@@ -142,3 +142,33 @@ def test_a_change_is_shown_to_the_verifier_as_the_whole_line_it_sits_in():
     assert after == "- l'insegnante mostra il vapore e mostra il vapore e le gocce."
     assert before == "- l'insegnante mostra il vapore e fa toccare il coperchio."
     assert in_lines("a", "assente", lesson) == ("a", "assente")
+
+
+async def test_a_computed_error_the_model_missed_is_reported_and_the_facts_are_in_the_prompt():
+    """«ga-to»: the model does not have to remember it (2026-10-20)."""
+    lesson = (
+        "# Le sillabe\n\n## Attività (20 minuti)\n- La divisione in sillabe di «gatto»: «ga-to».\n"
+    )
+    client = _Client(_answer())
+    calls = []
+    original = client._create
+
+    async def spy(**kwargs):
+        calls.append(kwargs)
+        return await original(**kwargs)
+
+    client.chat.completions.create = spy
+
+    report = await judge_lesson(lesson, client=client, model="x/y")
+
+    assert "[ERRATO] «ga-to»" in calls[0]["messages"][1]["content"]
+    assert [(i.quote, i.fix, i.computed) for i in report.issues] == [("ga-to", "gat-to", True)]
+
+
+async def test_without_facts_the_judge_is_on_its_own(monkeypatch):
+    monkeypatch.setenv("AIX_JUDGE_FACTS", "false")
+    lesson = "# Le sillabe\n- La divisione in sillabe di «gatto»: «ga-to».\n"
+
+    report = await judge_lesson(lesson, client=_Client(_answer()), model="x/y")
+
+    assert report.issues == []

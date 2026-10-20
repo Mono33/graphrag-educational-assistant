@@ -110,6 +110,11 @@ esempio, una data, una soluzione, una frase); «revisione» se va cambiata la \
 sezione intorno (gruppi e ruoli che non tornano, un'attività da ripensare): in \
 questo caso «fix» descrive in breve la correzione.
 
+Le «Verifiche fatte dal sistema», quando ci sono, sono calcoli esatti (sillabe, \
+frazioni, operazioni, minuti, alunni nei gruppi): non rifarli e non contraddirli. \
+Ogni verifica [ERRATO] è un problema da riportare, con la sua citazione e, se c'è, \
+la sua correzione; ciò che una verifica dà [corretto] non è un errore.
+
 Non segnalare ciò che è corretto, né scelte didattiche diverse dalle tue ma \
 legittime. Se non trovi problemi, la lista è vuota. Rispondi solo con JSON:
 {"issues": [{"check": "...", "severity": "...", "kind": "...", "quote": "...", \
@@ -124,7 +129,7 @@ _USER = """## Richiesta della docente
 ## Domande
 {checks}
 
-## Lezione
+{facts}## Lezione
 {lesson}"""
 
 
@@ -136,6 +141,8 @@ class Issue:
     why: str
     fix: str
     kind: str = "sostituzione"
+    #: Found by the code (``validation.facts``), not by the model.
+    computed: bool = False
 
 
 @dataclass
@@ -160,6 +167,11 @@ class JudgeReport:
 def judge_enabled() -> bool:
     """``AIX_JUDGE_ENABLED``: the judge reviews and repairs every lesson. Off by default."""
     return (os.getenv("AIX_JUDGE_ENABLED") or "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def facts_enabled() -> bool:
+    """``AIX_JUDGE_FACTS``: computed facts given to the judge. On by default."""
+    return (os.getenv("AIX_JUDGE_FACTS") or "true").strip().lower() in ("1", "true", "yes", "on")
 
 
 def judge_model() -> str:
@@ -236,6 +248,31 @@ def parse_issues(raw: str) -> list[Issue]:
     return issues
 
 
+def _missed(facts: list[Any], issues: list[Issue]) -> list[Issue]:
+    """The wrong facts the judge did not report, as problems: the model cannot forget them.
+
+    Minutes are left out: a whole-lesson count the validator already acts on, with
+    no sentence to correct in place.
+    """
+    reported = " ".join(_flat(i.quote) for i in issues)
+    missed = []
+    for fact in facts:
+        if not fact.wrong or "minuti" in fact.statement or _flat(fact.quote) in reported:
+            continue
+        missed.append(
+            Issue(
+                check=fact.check,
+                severity="bloccante",
+                quote=fact.quote,
+                why=fact.statement,
+                fix=fact.fix or fact.statement,
+                kind="sostituzione" if fact.fix else "revisione",
+                computed=True,
+            )
+        )
+    return missed
+
+
 async def judge_lesson(
     lesson: str,
     *,
@@ -245,12 +282,14 @@ async def judge_lesson(
     client: Any = None,
 ) -> JudgeReport:
     """Run the checklist on ``lesson``. Never raises: a failure is in ``error``."""
+    from aix.agent.validation.facts import computed_facts, render_facts
     from aix.core.config import config as app_config
     from aix.core.config import reasoning_extra_body
 
     model = model or judge_model()
     report = JudgeReport(model=model)
     checks = "\n".join(f"- {key}: {text}" for key, text in CHECKS.items())
+    facts = computed_facts(lesson, profile) if facts_enabled() else []
     messages = [
         {"role": "system", "content": _SYSTEM},
         {
@@ -259,6 +298,11 @@ async def judge_lesson(
                 request=request or "(non indicata)",
                 profile=_profile_text(profile),
                 checks=checks,
+                facts=(
+                    f"## Verifiche fatte dal sistema (esatte)\n{render_facts(facts)}\n\n"
+                    if facts
+                    else ""
+                ),
                 lesson=lesson,
             ),
         },
@@ -285,6 +329,7 @@ async def judge_lesson(
         report.cost = float(cost) if isinstance(cost, (int, float)) else None
         for issue in parse_issues(raw):
             (report.issues if quote_in(issue.quote, lesson) else report.unquoted).append(issue)
+        report.issues += _missed(facts, report.issues)
     except Exception as exc:  # noqa: BLE001 — the judge never breaks a lesson
         report.error = f"{type(exc).__name__}: {exc}"[:300]
         logger.warning("[judge] %s", report.error)

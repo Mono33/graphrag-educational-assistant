@@ -3774,3 +3774,36 @@ contenesse: Sonnet lo intuiva, DeepSeek no. Ora:
 - **codice, per qualunque modello** (`planner_agent.keep_pedagogy`): una query o
   un concetto che nomina l'argomento senza nulla di didattico viene tolto; se ne
   restano meno di 4 si aggiungono query didattiche di riserva.
+
+### 2026-10-20 — Il giudice riceve fatti calcolati, non fa i conti a mente
+
+Ciò che ha una sola risposta giusta lo calcola il codice
+(`aix.agent.validation.facts`), senza modello:
+
+- **sillabe**: regole dell'italiano (doppie divise, s impura, consonante più l/r,
+  ch gh gn gl sc inseparabili; dittongo o iato accettati entrambi), solo nelle
+  lezioni che parlano di sillabe. Le parole composte («suono-segno»,
+  «warm-up») sono escluse;
+- **frazioni**: equivalenze scritte nel testo e chiave dei quiz «Quale frazione è
+  equivalente a…?»;
+- **operazioni** con «=», valutate per intero («15 + 15 + 10 = 40»). Un
+  valutatore che accetta solo numeri e operatori, non esegue codice;
+- **minuti e gruppi**: i conteggi del validatore.
+
+Il giudice riceve i risultati come «Verifiche fatte dal sistema (esatte)»,
+[ERRATO] o [corretto]. Una verifica errata che il modello non riporta viene
+aggiunta comunque come problema (`Issue.computed`). Interruttore
+`AIX_JUDGE_FACTS`, acceso di default.
+
+Su 72 lezioni reali: zero falsi allarmi. Sul banco del giudice, con DeepSeek
+1017:
+
+| | senza verifiche | con verifiche |
+|---|---|---|
+| errori trovati | 16/17 (sfugge «ga-to») | 17/17 |
+| citazioni inventate | 3 | 0 |
+| costo per 33 lezioni | 0,033 $ | 0,032 $ |
+| secondi (mediana) | 5,0 | 4,6 |
+
+«ga-to» lo trova il modello stesso, guidato dalla verifica; la rete del codice
+non è servita. Sulle lezioni pulite non aggiunge problemi.
