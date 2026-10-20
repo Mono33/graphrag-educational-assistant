@@ -3807,3 +3807,26 @@ Su 72 lezioni reali: zero falsi allarmi. Sul banco del giudice, con DeepSeek
 
 «ga-to» lo trova il modello stesso, guidato dalla verifica; la rete del codice
 non è servita. Sulle lezioni pulite non aggiunge problemi.
+
+### 2026-10-20 — Qualità delle risposte unita in `chore/repo-reorg`, API completate per il giudice
+
+`feature/response-quality-improvement` è unito in `chore/repo-reorg`, dopo il
+commit di Louis del 19/10 (revisione del contratto dell'API, solo
+documentazione). Unione senza conflitti; prova end-to-end dell'API
+(`scripts/eval/api_smoke.py`) passata con il giudice acceso.
+
+Perché i dev possano integrare l'API con il giudice acceso:
+
+- **schema:** `JudgeInfo` e `JudgeCorrection` (scheda «Revisione mirata») nel
+  risultato dei turni di sessione e in `/agent/run`, accanto a `critic`, che con
+  il giudice è `null`. Il test di parità API/WebUI copre anche il giudice;
+- **eventi:** `judge_pending` e `judge` anche nel flusso one-shot e nell'unione
+  tipizzata degli eventi SSE. La descrizione dello stream nell'OpenAPI spiega le
+  due configurazioni e la pausa di revisione;
+- **documentazione:** `docs/api/Chatbot_API_Guide.md` (risultato, stream, §6) e
+  un'appendice datata in `docs/api/review_api_contract.md`, senza toccare il
+  testo della revisione di Louis;
+- **configurazione:** `deploy/.env.prod.example` e `docs/ENVIRONMENT.md` con
+  `AIX_JUDGE_ENABLED`, `AIX_JUDGE_MODEL`, `AIX_JUDGE_PROVIDER`, `AIX_JUDGE_FACTS`,
+  `AIX_REPAIR_MODEL` e `AIX_WRITER_MODEL`. Nel modello `AIX_WRITER_MAX_TOKENS`
+  passa da 2000 a 8000, come segnalato nella revisione di Louis.

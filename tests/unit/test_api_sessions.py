@@ -301,3 +301,52 @@ def test_no_lesson_no_download_and_a_bad_format_says_which_exist(api):
     _turn(api, session_id, message="Crea una lezione sulla cellula")
     bad = api.get(f"/api/v1/sessions/{session_id}/export?format=odt", headers=_as())
     assert (bad.status_code, bad.json()["detail"]["code"]) == (400, "unsupported_format")
+
+
+async def _fake_chain_with_the_judge(lesson, session):
+    """The chain with AIX_JUDGE_ENABLED: no Critic, the judge's card instead."""
+    async for event in _fake_chain(lesson, session):
+        if event.kind == "critic":
+            yield StreamEvent(kind="judge_pending", payload={"write_revision": 1})
+            yield StreamEvent(
+                kind="judge",
+                payload={
+                    "found": 2,
+                    "replaced": 1,
+                    "fixed": [
+                        {
+                            "check": "fatti",
+                            "why": "data sbagliata",
+                            "before": "1792",
+                            "after": "1789",
+                            "kind": "sostituzione",
+                            "teacher_material": True,
+                        }
+                    ],
+                    "points": [{"check": "classe", "severity": "minore", "quote": "q", "why": "w"}],
+                    "notes": 1,
+                    "write_revision": 1,
+                },
+            )
+            continue
+        yield event
+
+
+def test_with_the_judge_on_the_turn_returns_its_corrections_typed(api, monkeypatch):
+    monkeypatch.setattr("aix.webui.agent.turns.run_agent_stream", _fake_chain_with_the_judge)
+    session_id = _new_session(api)
+
+    result = _turn(api, session_id, message="Crea una lezione sulla cellula").json()
+
+    assert result["critic"] is None
+    judge = result["judge"]
+    assert (judge["found"], judge["replaced"], judge["notes"]) == (2, 1, 1)
+    assert judge["fixed"][0] == {
+        "check": "fatti",
+        "why": "data sbagliata",
+        "before": "1792",
+        "after": "1789",
+        "kind": "sostituzione",
+        "teacher_material": True,
+    }
+    assert judge["points"][0]["quote"] == "q"

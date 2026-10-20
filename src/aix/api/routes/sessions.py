@@ -5,7 +5,8 @@ lesson, the documents it may search. The API keeps it, so a chatbot sends only
 the new message and the agent behaves as in the WebUI:
 
 * the first turn writes a lesson (the whole chain: planner, Knowledge Graph,
-  the user's documents, writer, critic, citation check);
+  the user's documents, writer, citation check, then the critic -- or, with
+  AIX_JUDGE_ENABLED, the judge's targeted review in its place);
 * later turns answer in a few seconds from the lesson, the conversation and the
   documents (``kind: "answer"``), unless the request needs a new lesson -- then
   the turn comes back as ``kind: "handoff"`` and the client decides, as the
@@ -34,6 +35,7 @@ from aix.api import idempotency
 from aix.api.explain import (
     cited_documents,
     critic_info,
+    judge_info,
     lesson_structure,
     planner_info,
     retriever_info,
@@ -74,7 +76,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
 #: The phases whose payloads a turn's result carries, as the WebUI's cards show them.
-PHASES = ("planner", "retriever", "critic")
+PHASES = ("planner", "retriever", "critic", "judge")
 
 
 def _error(status_code: int, code: str, message: str, retry_after: Optional[int] = None):
@@ -461,6 +463,7 @@ async def _turn_events(
                 if "retriever" in phases
                 else None,
                 critic=critic_info(phases.get("critic")) if "critic" in phases else None,
+                judge=judge_info(phases.get("judge")) if "judge" in phases else None,
                 lesson_meta=run_meta(event.meta),
             )
         elif event.kind == "light_done":
@@ -554,14 +557,19 @@ async def _claim_turn(
     "/{session_id}/turns/stream",
     summary="Send a message and follow the turn as Server-Sent Events",
     description=(
-        "Each ``data:`` frame is JSON. Phase events carry ``kind`` (planner, retriever, "
-        "writer_pending, writer, critic, light_pending, …) and ``data``. While the text is "
+        "Each ``data:`` frame is JSON. Phase events carry ``kind`` and ``data``: planner, "
+        "retriever, writer_pending, writer, then either critic_pending and critic (judge "
+        "off) or judge_pending and judge (judge on, AIX_JUDGE_ENABLED: the targeted review, "
+        "typically 5-15 s after the text is written; ``data`` is the ``JudgeInfo`` of the "
+        "result); for a fast answer light_pending and light_done. While the text is "
         "written, ``kind: text`` frames carry the next piece (``text``) and the ``draft`` it "
         "belongs to; ``kind: draft_end`` closes a draft, and a higher ``draft`` means the "
-        "Critic asked for a revision: start the text over. The text is a preview: the last "
-        "frame is ``kind: result``, the body ``/turns`` returns under ``result``, whose "
-        "``markdown`` replaces it. A refusal or a failure is a frame ``kind: error`` with "
-        "``code`` and ``message``."
+        "lesson is being written again (a Critic revision, the attached documents left "
+        "unused, a split of the class that does not add up): start the text over. The text "
+        "is a preview: the last frame is ``kind: result``, the body ``/turns`` returns under "
+        "``result``, whose ``markdown`` replaces it -- with the judge on, it is the corrected "
+        "lesson. A refusal or a failure is a frame ``kind: error`` with ``code`` and "
+        "``message``."
     ),
 )
 async def stream_turn(

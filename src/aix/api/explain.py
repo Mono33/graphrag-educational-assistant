@@ -1,7 +1,7 @@
 """The WebUI's cards, as the API's typed explainability (2026-10-14).
 
 The WebUI builds one payload per phase (``_build_planner_payload``,
-``_build_retriever_payload``, ``_build_critic_payload`` and the run summary in
+``_build_retriever_payload``, ``_build_critic_payload``, ``_build_judge_payload`` and the run summary in
 ``aix.webui.agent.service``) and renders it as a card. The API returns the very
 same payloads, validated into published models -- nothing is recomputed, so the
 two cannot disagree. A model ignores what it does not declare; the parity test
@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from aix.api.schemas.agent import AgentRunMeta, CriticInfo, PlannerInfo, RetrieverInfo
+from aix.api.schemas.agent import AgentRunMeta, CriticInfo, JudgeInfo, PlannerInfo, RetrieverInfo
 
 
 def planner_info(payload: Optional[dict[str, Any]]) -> PlannerInfo:
@@ -25,6 +25,10 @@ def retriever_info(payload: Optional[dict[str, Any]]) -> RetrieverInfo:
 
 def critic_info(payload: Optional[dict[str, Any]]) -> CriticInfo:
     return CriticInfo.model_validate(payload or {})
+
+
+def judge_info(payload: Optional[dict[str, Any]]) -> JudgeInfo:
+    return JudgeInfo.model_validate(payload or {})
 
 
 def run_meta(meta: Optional[dict[str, Any]]) -> AgentRunMeta:

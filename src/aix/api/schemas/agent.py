@@ -236,15 +236,15 @@ class AgentRunMeta(BaseModel):
     )
     review_notes: list[ReviewNote] = Field(
         default_factory=list,
-        description="Problems the judge left for the teacher to read (AIX_JUDGE_ENABLED): "
-        "minor ones, and blocking ones no repair could make safely. Empty when the judge "
-        "is off or found nothing.",
+        description="What the judge (AIX_JUDGE_ENABLED) could not correct in the lesson: "
+        "every other problem it found is already corrected in the text. Empty when the "
+        "judge is off or corrected everything. The same list is ``judge.points``.",
     )
     judge: Optional[dict[str, Any]] = Field(
         default=None,
-        description="What the judge did: found, blocking, replaced, revised, verified, "
-        "reverted (changes judged wrong and put back), cost, seconds. Null when the judge "
-        "is off.",
+        description="The judge's raw summary, as stored: found, blocking, replaced, revised, "
+        "verified, reverted, fixed, cost, seconds. Prefer the typed ``judge`` of the turn "
+        "result (``JudgeInfo``). Null when the judge is off.",
     )
 
 
@@ -262,6 +262,58 @@ class ReviewNote(BaseModel):
 
 
 AgentRunMeta.model_rebuild()
+
+
+class JudgeCorrection(BaseModel):
+    """One correction the judge made in the lesson."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    check: str = Field(..., description="The checklist question, e.g. «esempi_lingua», «fatti».")
+    why: str = Field("", description="What was wrong.")
+    before: str = Field("", description="The text as the Writer wrote it (up to 160 chars).")
+    after: str = Field("", description="The text as it is now in the lesson (up to 160 chars).")
+    kind: str = Field(
+        "sostituzione",
+        description="«sostituzione»: the sentence replaced; «revisione»: the activity around "
+        "it rewritten (``before``/``after`` then cover the whole block, truncated).",
+    )
+    teacher_material: bool = Field(
+        False,
+        description="The corrected sentence was taken from the user's attached documents, "
+        "which the judge does not read: show it as to be checked against them.",
+    )
+
+
+class JudgeInfo(BaseModel):
+    """The targeted review (AIX_JUDGE_ENABLED): the WebUI's «Revisione mirata» card.
+
+    Runs after the Writer, in place of the Critic: it reads the whole lesson,
+    corrects in the text only what is wrong, and checks every correction. The
+    lesson the API returns is already the corrected one.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    found: int = Field(0, ge=0, description="Problems found.")
+    blocking: int = Field(0, ge=0, description="Of which blocking (content, solutions, safety).")
+    replaced: int = Field(0, ge=0, description="Corrected by replacing the sentence.")
+    revised: int = Field(0, ge=0, description="Corrected by rewriting the activity around it.")
+    reverted: int = Field(
+        0, ge=0, description="Corrections judged wrong on verification and put back."
+    )
+    fixed: list[JudgeCorrection] = Field(
+        default_factory=list, description="The corrections now in the lesson."
+    )
+    points: list[ReviewNote] = Field(
+        default_factory=list, description="What could not be corrected: to check by hand."
+    )
+    notes: int = Field(0, ge=0, description="len(points).")
+    notes_blocking: int = Field(0, ge=0, description="Of the points, the blocking ones.")
+    seconds: Optional[float] = Field(None, description="Time the review took.")
+    error: str = Field(
+        "", description="Set when the review failed: the lesson is then the uncorrected one."
+    )
 
 
 # The three cards below take the WebUI's payloads as they are (``extra="ignore"``):
@@ -385,7 +437,13 @@ class AgentRunResponse(BaseModel):
         "errors that bailed before the retriever ran.",
     )
     critic: Optional[CriticInfo] = Field(
-        default=None, description="The critic's last judgement on the lesson."
+        default=None,
+        description="The critic's last judgement on the lesson. Null when the judge is on "
+        "(AIX_JUDGE_ENABLED): the Critic is then not in the chain.",
+    )
+    judge: Optional[JudgeInfo] = Field(
+        default=None,
+        description="The targeted review, when the judge is on. Null when it is off.",
     )
 
     model_config = ConfigDict(
@@ -480,6 +538,18 @@ class CriticEvent(_SSEEventBase):
     kind: Literal["critic"] = "critic"
 
 
+class JudgePendingEvent(_SSEEventBase):
+    """The judge has started its review (AIX_JUDGE_ENABLED): typically 5-15 s."""
+
+    kind: Literal["judge_pending"] = "judge_pending"
+
+
+class JudgeEvent(_SSEEventBase):
+    """The judge's review is done: ``data`` is a :class:`JudgeInfo`."""
+
+    kind: Literal["judge"] = "judge"
+
+
 class DoneEvent(_SSEEventBase):
     kind: Literal["done"] = "done"
 
@@ -495,6 +565,8 @@ AgentStreamEvent = Union[
     WriterPendingEvent,
     WriterEvent,
     CriticEvent,
+    JudgePendingEvent,
+    JudgeEvent,
     DoneEvent,
     ErrorEvent,
 ]
@@ -514,6 +586,11 @@ __all__ = [
     "WriterPendingEvent",
     "WriterEvent",
     "CriticEvent",
+    "JudgePendingEvent",
+    "JudgeEvent",
+    "JudgeInfo",
+    "JudgeCorrection",
+    "ReviewNote",
     "DoneEvent",
     "ErrorEvent",
 ]

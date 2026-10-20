@@ -2099,6 +2099,19 @@ async def stream_agent_events(
                                 ).strip(),
                             },
                         )
+                    elif should_continue_to_revision(final_state) == "judge":
+                        # The same events as the WebUI's stream: the one-shot API
+                        # shows the judge at work, and returns its card.
+                        yield StreamEvent(
+                            kind="judge_pending",
+                            payload={"write_revision": write_revision_idx},
+                        )
+
+                elif node_name == "judge":
+                    yield StreamEvent(
+                        kind="judge",
+                        payload=_build_judge_payload(final_state, write_revision_idx),
+                    )
 
         # ── Done ────────────────────────────────────────────────────────
         elapsed = time.monotonic() - started_at

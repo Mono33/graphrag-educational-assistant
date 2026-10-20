@@ -11,10 +11,11 @@ from __future__ import annotations
 
 import pytest
 
-from aix.api.schemas.agent import AgentRunMeta, CriticInfo, PlannerInfo, RetrieverInfo
+from aix.api.schemas.agent import AgentRunMeta, CriticInfo, JudgeInfo, PlannerInfo, RetrieverInfo
 from aix.api.schemas.sessions import AnswerMeta
 from aix.webui.agent.service import (
     _build_critic_payload,
+    _build_judge_payload,
     _build_planner_payload,
     _build_retriever_payload,
     _extract_meta,
@@ -54,6 +55,27 @@ STATE = {
     "revision_instructions": "",
     "final_metadata": {"scores": {"average_score": 4.2}},
     "lesson_plan_draft": "# Lezione",
+    "judge_summary": {
+        "found": 3,
+        "blocking": 1,
+        "replaced": 1,
+        "revised": 1,
+        "reverted": 0,
+        "seconds": 6.2,
+        "fixed": [
+            {
+                "check": "esempi_lingua",
+                "why": "gatto si divide gat-to",
+                "before": "ga-to",
+                "after": "gat-to",
+                "kind": "sostituzione",
+                "teacher_material": False,
+            }
+        ],
+    },
+    "review_notes": [
+        {"check": "fatti", "severity": "bloccante", "quote": "q", "why": "w", "fix": "f"}
+    ],
 }
 
 ANSWER_META = {
@@ -75,6 +97,7 @@ def _missing(payload: dict, model) -> list[str]:
         ("planner", lambda: _build_planner_payload(STATE), PlannerInfo),
         ("retriever", lambda: _build_retriever_payload(STATE), RetrieverInfo),
         ("critic", lambda: {**_build_critic_payload(STATE), "write_revision": 1}, CriticInfo),
+        ("judge", lambda: _build_judge_payload(STATE, 1), JudgeInfo),
         ("run summary", lambda: {**_extract_meta(STATE), "duration_seconds": 1.0}, AgentRunMeta),
         ("answer", lambda: ANSWER_META, AnswerMeta),
     ],
@@ -95,3 +118,12 @@ def test_the_api_returns_the_values_not_only_the_names():
     assert retriever.reused is True
     assert retriever.reuse_reason == "stesso argomento"
     assert planner.subject_concepts == ["Guerra fredda"]
+
+
+def test_the_judge_s_corrections_reach_the_api_typed():
+    """With the judge on, the Critic's card is empty: the judge's is the one to read."""
+    judge = JudgeInfo.model_validate(_build_judge_payload(STATE, 1))
+
+    assert (judge.found, judge.replaced, judge.revised) == (3, 1, 1)
+    assert judge.fixed[0].after == "gat-to" and judge.fixed[0].teacher_material is False
+    assert [p.quote for p in judge.points] == ["q"] and judge.notes == 1

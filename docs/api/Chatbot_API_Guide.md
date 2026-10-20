@@ -155,7 +155,7 @@ The result's `kind`:
 
 | `kind` | When | Time | What to show |
 | --- | --- | --- | --- |
-| `lesson` | the first turn, `mode: lesson`, a refinement | ~30–90 s | `markdown`, plus `structure`, `planner`, `retriever`, `critic`, `lesson_meta` |
+| `lesson` | the first turn, `mode: lesson`, a refinement | ~30–90 s | `markdown`, plus `structure`, `planner`, `retriever`, `critic` or `judge` (see §6), `lesson_meta` |
 | `answer` | a question about the lesson or the documents | ~3–6 s | `markdown`; the lesson did not change |
 | `handoff` | in `auto`, the request needs a new lesson | ~1–2 s | ask the user; to proceed, resend `handoff_query` with `mode: "lesson"` (or `"answer"` to have it answered here) |
 
@@ -166,10 +166,18 @@ on volcanoes» does not silently rewrite the lesson, it asks first.
 
 `POST /sessions/{id}/turns/stream` takes the same body and answers with
 Server-Sent Events. Each `data:` frame is JSON with a `kind`:
-`planner`, `retriever`, `writer_pending`, `writer`, `critic`, `done` for a lesson,
-`light_pending`, `light_done`, `light_escalate` for an answer or a hand-off. The
-last frame is `{"kind": "result", "result": {…the same body /turns returns…}}`.
-A refusal or failure is a frame `{"kind": "error", "status": …, "code": …, "message": …}`.
+`planner`, `retriever`, `writer_pending`, `writer`, then the review, `done` for a
+lesson; `light_pending`, `light_done`, `light_escalate` for an answer or a
+hand-off. The review depends on the server's configuration:
+
+| Server | Review events | What they mean |
+| --- | --- | --- |
+| judge off (default) | `critic_pending`, `critic` | the Critic scores the lesson and may ask for a rewrite (a new `draft`) |
+| judge on (`AIX_JUDGE_ENABLED=true`) | `judge_pending`, `judge` | the judge reads the whole lesson and corrects in place only what is wrong, typically 5–15 s after the text is written; `judge.data` is the `JudgeInfo` of the result |
+
+Handle both: a client must not assume either. The last frame is
+`{"kind": "result", "result": {…the same body /turns returns…}}`. A refusal or
+failure is a frame `{"kind": "error", "status": …, "code": …, "message": …}`.
 
 The text arrives while it is written, for lessons and answers alike:
 
@@ -177,16 +185,22 @@ The text arrives while it is written, for lessons and answers alike:
 {"kind": "text", "text": "# La cellula\n\nLa cellula è", "draft": 1}
 {"kind": "text", "text": " l'unità della vita…", "draft": 1}
 {"kind": "draft_end", "draft": 1}
-{"kind": "critic", "data": {"approved": false, …}}
-{"kind": "text", "text": "# La cellula\n\n…", "draft": 2}
+{"kind": "judge_pending", "data": {…}}
+{"kind": "judge", "data": {"found": 3, "replaced": 2, "fixed": […], …}}
+{"kind": "result", "result": {"markdown": "# La cellula\n\n…", "judge": {…}, …}}
 ```
 
 - Append `text` to what you show.
-- When `draft` grows, the Critic asked for a revision: **clear the text and start
-  over**.
+- When `draft` grows, the lesson is being written again (a Critic revision, the
+  attached documents left unused, groups that do not add up to the class):
+  **clear the text and start over**.
+- Between `draft_end` and `result` there can be a pause of several seconds (the
+  review): show that the lesson is being checked, using `critic_pending` or
+  `judge_pending`.
 - The text is a **preview**. The final `result.markdown` has passed the checks:
-  tidied, unsupported citations removed, citations resolved to document names.
-  **Replace** the preview with it.
+  tidied, corrected by the judge when it is on, unsupported citations removed,
+  citations resolved to document names. **Replace** the preview with it: with
+  the judge on, it differs from the preview wherever a correction was made.
 - The internal `[[material:…]]` citation markers never appear in the preview.
 - On a `light_escalate` (hand-off), discard the preview.
 - A piece can be a few characters or a few words. Show it as it comes; if you
@@ -196,7 +210,11 @@ The text arrives while it is written, for lessons and answers alike:
 
 - `markdown`: the lesson. Citations of the user's documents are written as
   «(dispensa.pdf, p. 3)» and listed at the end under «Fonti dai tuoi
-  materiali». The first line is a machine-readable AI-generated comment.
+  materiali» («Sources from your materials» under an answer written in
+  English). Under the title, the class and the duration from the profile
+  («**Livello:** Primaria · 22 alunni», «**Durata:** 60 minuti»); at the end, the
+  sources note (whether the content comes from the user's documents or from
+  external sources). The first line is a machine-readable AI-generated comment.
 - `structure`: `title`, `duration_minutes`, `sections` (title, level, minutes),
   `timed_outline`, `warnings` (e.g. minutes that do not add up).
 - `cited_documents`: names of the documents cited.
@@ -206,9 +224,20 @@ The text arrives while it is written, for lessons and answers alike:
   media in `media`), `coverage_tier`, `retrieval_outcome`, `kg_unreachable`
   (the graph did not answer: not the same as an out-of-scope question), and
   `reused` with its reason when a follow-up reused an earlier search.
-- `critic`: approved or not, score (0-5 and percent), the assessment and the
-  revision instructions.
-- `lesson_meta`: duration, revisions, scores, counts, UDL coverage.
+- `critic` (judge off): approved or not, score (0-5 and percent), the assessment
+  and the revision instructions. `null` when the judge is on.
+- `judge` (judge on, `JudgeInfo`): the targeted review, the WebUI's «Revisione
+  mirata» card. `found` problems, of which `blocking`; `fixed`, the corrections
+  now in the lesson, each with `check`, `why`, `before` → `after` and
+  `teacher_material` (the sentence came from the user's documents, which the judge
+  does not read: show it as «to check against your document»); `points`, what
+  could not be corrected, to check by hand; `reverted`, corrections judged wrong
+  on verification and put back; `error` when the review failed (the lesson is then
+  the uncorrected one). `null` when the judge is off. The WebUI shows nothing of
+  this under the lesson: the corrections are already in `markdown`, and the card is
+  where the teacher sees what changed.
+- `lesson_meta`: duration, revisions, scores, counts, UDL coverage; with the judge
+  on also `review_notes` (= `judge.points`) and the judge's raw summary.
 - `GET /sessions/{id}/media`: papers, Wikipedia and videos on the subject, found
   live (the WebUI's right panel; empty when nothing is found).
 - `ai_disclosure` in the body and `X-AI-Generated: true` in the headers (AI Act
@@ -254,8 +283,8 @@ those cases until the envelope is normalized.
 
 `POST /api/v1/agent/run` and `/agent/stream` still generate one lesson from one
 request, without a session or documents. They now also return the `critic`
-card and the extra planner and retriever fields. For anything conversational,
-use sessions.
+card (or the `judge` card, when the judge is on) and the extra planner and
+retriever fields. For anything conversational, use sessions.
 
 ---
 

@@ -46,13 +46,14 @@ from typing import Optional
 from fastapi import APIRouter, Body, Depends, HTTPException, Response, status
 from sse_starlette.sse import EventSourceResponse
 
-from aix.api.explain import critic_info, planner_info, retriever_info, run_meta
+from aix.api.explain import critic_info, judge_info, planner_info, retriever_info, run_meta
 from aix.api.principals import require_caller
 from aix.api.schemas import (
     AgentRunMeta,
     AgentRunRequest,
     AgentRunResponse,
     CriticInfo,
+    JudgeInfo,
     PlannerInfo,
     RetrieverInfo,
 )
@@ -281,6 +282,7 @@ async def run_agent(
     planner_info: Optional[PlannerInfo] = None
     retriever_info: Optional[RetrieverInfo] = None
     critic: Optional[CriticInfo] = None
+    judge: Optional[JudgeInfo] = None
     final_lesson_plan: str = ""
     final_meta: Optional[AgentRunMeta] = None
     error_message: Optional[str] = None
@@ -320,6 +322,8 @@ async def run_agent(
                     retriever_info = _retriever_payload_to_pydantic(event.payload or {})
                 elif event.kind == "critic":
                     critic = critic_info(event.payload or {})
+                elif event.kind == "judge":
+                    judge = judge_info(event.payload or {})
                 elif event.kind == "done":
                     final_lesson_plan = event.lesson_plan_md or ""
                     final_meta = _meta_to_pydantic(event.meta or {})
@@ -353,6 +357,7 @@ async def run_agent(
                 planner=planner_info,
                 retriever=retriever_info,
                 critic=critic,
+                judge=judge,
             )
     except AtCapacity as exc:
         raise HTTPException(

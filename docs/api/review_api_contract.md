@@ -368,3 +368,37 @@ candidate**:
 - appropriate for Dev onboarding and protected staging;
 - still dependent on security, privacy, provenance and joint product decisions
   before production freeze.
+
+## Addendum — 20 October 2026: the judge in place of the Critic
+
+Merged into `chore/repo-reorg` after this review, from
+`feature/response-quality-improvement`. Additive: with `AIX_JUDGE_ENABLED`
+unset or `false` nothing above changes.
+
+With `AIX_JUDGE_ENABLED=true` the Critic leaves the chain. After the Writer, a
+judge reads the whole lesson, corrects in the text only what is wrong
+(replacements and rewrites of the activity around a problem, each verified), and
+receives computed facts it does not have to work out (syllable splits, fraction
+equivalences and quiz keys, arithmetic, minutes, pupils in the groups). A lesson
+that ignores the attached documents still goes back to the Writer once, by a
+check in code.
+
+What changes for a client:
+
+- **Turn result:** `critic` is `null`; a typed `judge` (`JudgeInfo`) carries
+  `found`, `blocking`, `fixed[]` (each correction: `check`, `why`, `before`,
+  `after`, `kind`, `teacher_material`), `points[]` (what could not be corrected),
+  `reverted`, `seconds`, `error`. The same on `/agent/run`.
+- **Streaming:** `judge_pending` and `judge` instead of `critic_pending` and
+  `critic`; a pause of typically 5–15 s between the end of the text and the
+  result. The final `result.markdown` is the corrected lesson and differs from
+  the preview wherever a correction was made: the replace-the-preview rule above
+  is now essential, not cosmetic.
+- **Mercure adapter:** preserve `judge_pending`/`judge` as phase events, as for
+  `critic`; a client should handle both configurations.
+- **`lesson_meta.review_notes`:** now only what the judge could not correct
+  (= `judge.points`).
+
+The parity guard (`tests/unit/test_api_webui_parity.py`) covers the judge's card,
+and `scripts/eval/api_smoke.py` passed end to end against a stack with the judge
+on (upload, session, lesson, answer, hand-off, exports, media, catalog).

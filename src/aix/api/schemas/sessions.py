@@ -11,7 +11,7 @@ from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
-from aix.api.schemas.agent import AgentRunMeta, CriticInfo, PlannerInfo, RetrieverInfo
+from aix.api.schemas.agent import AgentRunMeta, CriticInfo, JudgeInfo, PlannerInfo, RetrieverInfo
 from aix.api.schemas.educational_profile import EducationalProfile
 
 #: The AI Act Art. 50 notice, in the body as well as the ``X-AI-Generated`` header.
@@ -130,7 +130,16 @@ class TurnResult(BaseModel):
     structure: Optional[LessonStructure] = Field(None, description="For a lesson.")
     planner: Optional[PlannerInfo] = Field(None, description="For a lesson: the planner card.")
     retriever: Optional[RetrieverInfo] = Field(None, description="For a lesson: the search card.")
-    critic: Optional[CriticInfo] = Field(None, description="For a lesson: the critic card.")
+    critic: Optional[CriticInfo] = Field(
+        None,
+        description="For a lesson: the critic card. Null when the judge is on (the Critic is "
+        "then not in the chain).",
+    )
+    judge: Optional[JudgeInfo] = Field(
+        None,
+        description="For a lesson, when the judge is on (AIX_JUDGE_ENABLED): the targeted "
+        "review -- what it corrected (already in ``markdown``) and what is left to check.",
+    )
     lesson_meta: Optional[AgentRunMeta] = Field(None, description="For a lesson: the run summary.")
     answer_meta: Optional[AnswerMeta] = Field(None, description="For an answer.")
     ai_disclosure: str = AI_DISCLOSURE
