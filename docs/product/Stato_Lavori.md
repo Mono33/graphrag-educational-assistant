@@ -3673,3 +3673,41 @@ checklist di ciò che controlla. Quando finisce, la scheda dice:
 
 Il riepilogo del giudice (`judge_summary.fixed`) porta ora anche le correzioni
 mantenute.
+
+### 2026-10-20 — Tre Writer e «tutto DeepSeek»: costi, lettura e correzioni nel codice
+
+Con `AIX_WRITER_MODEL` (nuovo, vuoto = `LLM_MODEL`) si confrontano i Writer senza
+cambiare riparazioni e risposte veloci. Stessi 8 casi, giudice acceso, niente
+Critic; costi da Langfuse, per lezione più follow-up:
+
+| configurazione | costo | lettura alla cieca |
+|---|---|---|
+| Haiku Writer, Sonnet pianificatore e giudice (oggi) | 0,050 $ | mai prima, ultima in 4 casi su 8 |
+| DeepSeek V4.1 Flash 1017 come Writer | 0,046 $ | prima in 3 casi su 8, molto variabile |
+| Sonnet 5.5 come Writer | 0,095 $ | prima in 5 casi su 8, costante |
+| tutto DeepSeek 1017 (pianificatore, giudice, riparazioni, follow-up) | 0,0055 $ | contro Sonnet Writer: Sonnet meglio in 5, DeepSeek in 1, 2 pari |
+
+DeepSeek passa da OpenRouter solo per i fornitori a zero data retention (ZDR attivo
+sull'account): 17 per la versione 1017, esclusi DeepSeek stesso, Alibaba,
+GMICloud e AtlasCloud. Decart e Wafer girano a 4 bit. Come giudice, sul banco dei
+17 errori, DeepSeek ne trova 16 (Sonnet 17) e costa 0,036 $ per 33 lezioni contro
+0,64 $, ma segnala come bloccanti 60 punti sulle lezioni pulite (Sonnet 26). Come
+Text2Cypher scrive query che Neo4j rifiuta: lì resta Gemini flash-lite.
+
+La differenza tra DeepSeek e Sonnet sta quasi tutta in difetti che il codice
+corregge, e vale per qualunque Writer (`aix.agent.validation.lesson_shape`, nel
+nodo di scrittura):
+
+- **intestazione** («**Livello:** Primaria · 22 alunni», «**Durata:** 60 minuti»)
+  dal profilo, quando il Writer non la scrive (5 lezioni DeepSeek su 8);
+- **fonti** ridotte ai nomi del grafo che il testo usa (fino a 17 elencati). Gli
+  altri riferimenti della riga (articoli, video, link) restano sempre;
+- **categorie del grafo** come «(EmotionalRegulation)» tolte dal testo per la
+  docente;
+- **gruppi**: nuova regola del validatore `group_total`. I gruppi di una riga
+  devono sommare gli alunni della classe («cinque gruppi da 4 e uno da 5» per
+  21). Su 72 lezioni segnala i 2 errori veri e nessun falso allarme.
+
+Nel prompt del Writer (commit `f97dc6f`): il nome del grafo tra parentesi anche
+quando la classe non ha bisogni dichiarati (con Sonnet il follow-up diceva
+«usati: nessuno»), e niente gergo anche nelle risposte che non sono lezioni.

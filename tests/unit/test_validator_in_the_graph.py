@@ -105,7 +105,10 @@ async def test_an_infeasible_lesson_is_sent_back_to_the_writer():
     assert writer.write.await_count == 2, "the first draft was not deliverable"
     assert critic.critique.await_count == 1, "the Critic only ever saw the fixed one"
     assert final["validation_passed"] is True
-    assert final["final_lesson_plan"] == FEASIBLE
+    # With the header the write node adds from the class profile (``lesson_shape``).
+    from aix.agent.validation.lesson_shape import ensure_header
+
+    assert final["final_lesson_plan"] == ensure_header(FEASIBLE, PROFILE)
 
 
 async def test_the_rewrite_carries_only_the_remediation():

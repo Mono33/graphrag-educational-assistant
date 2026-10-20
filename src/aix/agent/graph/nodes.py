@@ -829,6 +829,7 @@ async def write_node(state: AgentState) -> dict[str, Any]:
             drop_unknown_markers,
             drop_unsupported_citations,
         )
+        from aix.agent.validation.lesson_shape import shape_lesson
 
         # Every draft passes through here -- first version and revisions -- and
         # from here it reaches the WebUI, the exports and the public API alike.
@@ -848,6 +849,9 @@ async def write_node(state: AgentState) -> dict[str, Any]:
                 language=state.get("language", "it"),
             ),
         )
+        # The header from the class profile, the sources cut to what the body
+        # uses, no graph categories in the teacher's text: see ``lesson_shape``.
+        lesson_plan = shape_lesson(lesson_plan, state.get("educational_profile"))
         lesson_plan = drop_unknown_markers(lesson_plan, state.get("material_context_items"))
 
         lesson_plan = await drop_unsupported_citations(
