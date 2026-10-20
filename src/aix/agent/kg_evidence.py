@@ -873,7 +873,11 @@ def usage(
     avoid = advised_against(nodes, relationships, profile, request)
 
     usable = [n for n in ranked if kind(n) in ("strategy", "tool", "environment", "udl")]
-    used = [_name(n) for n in usable if _in_lesson(_name(n), lesson_lower)]
+    # Used: any element of the graph the lesson names, not only the strategies --
+    # Autonomy, Competence and Relatedness are outcomes in the neuro graph, and a
+    # lesson built on them said «Usati: 0» (blind read, 2026-10-20).
+    named = [n for n in ranked if kind(n) not in ("need", "context", "myth", "noise")]
+    used = list(dict.fromkeys(_name(n) for n in named if _in_lesson(_name(n), lesson_lower)))
 
     unused: list[str] = []
     for node in ranked:

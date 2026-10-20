@@ -3711,3 +3711,7 @@ nodo di scrittura):
 Nel prompt del Writer (commit `f97dc6f`): il nome del grafo tra parentesi anche
 quando la classe non ha bisogni dichiarati (con Sonnet il follow-up diceva
 «usati: nessuno»), e niente gergo anche nelle risposte che non sono lezioni.
+
+Il follow-up conta come usato ogni elemento del grafo che la lezione nomina, non
+solo le strategie: Autonomy, Competence e Relatedness sono esiti nel grafo di
+neuroscienze, e una lezione costruita su di loro diceva «Usati: 0».

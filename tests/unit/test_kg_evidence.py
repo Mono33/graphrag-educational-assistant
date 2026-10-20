@@ -473,3 +473,14 @@ def test_a_suggestion_the_lesson_labels_is_used_whatever_kind_of_node_it_is():
     assert "Adaptive Strategies" in found["used"]
     assert not any(u.startswith("Adaptive Strategies") for u in found["unused_for_needs"])
     assert found["where"]["Adaptive Strategies"] == "Differenziazione"
+
+
+def test_an_outcome_the_lesson_builds_on_is_used():
+    """Autonomy, Competence, Relatedness: outcomes in the neuro graph, «Usati: 0»
+    in the follow-up of a lesson built on them (2026-10-20)."""
+    from aix.agent.kg_evidence import usage
+
+    nodes = NODES + [{"name": "Autonomy", "labels": ["Outcome"], "category": "IntrinsicMotivation"}]
+    lesson = "## Attività\n- Ogni gruppo sceglie il compito: autonomia (*Autonomy*)."
+
+    assert "Autonomy" in usage(nodes, RELS, PROFILE, lesson)["used"]
