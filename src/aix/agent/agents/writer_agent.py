@@ -32,6 +32,7 @@ from aix.agent.prompts.writer_prompt import (
     WRITER_LEARNING_ENVIRONMENT_NOTE,
     WRITER_MATERIAL_MAPS_BLOCK,
     WRITER_MATERIAL_PASSAGES_APPENDIX,
+    WRITER_PLAIN_LANGUAGE_RULE,
     WRITER_REVISION_TEMPLATE,
     WRITER_TEACHER_UPLOADS_APPENDIX,
     WRITER_USER_TEMPLATE_HYBRID,
@@ -76,6 +77,7 @@ def writer_model() -> Optional[str]:
     light turns: comparing writers meant changing all three (2026-10-19).
     """
     return (os.getenv("AIX_WRITER_MODEL") or "").strip() or None
+
 
 # Floor for the retry after a reasoning model spends its whole budget thinking
 # and returns nothing. Retrying under the same ceiling — which is what happened
@@ -735,6 +737,8 @@ class WriterAgent:
         system_prompt = apply_kg_basis(system_prompt, domain)
         if is_lesson:
             system_prompt += WRITER_KG_EVIDENCE_RULES
+        else:
+            system_prompt += WRITER_PLAIN_LANGUAGE_RULE
 
         # NEW Phase B: Add domain-specific extensions
         if DOMAIN_EXTENSIONS_AVAILABLE:

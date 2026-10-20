@@ -117,6 +117,19 @@ documento — le affermazioni si citano dai passaggi.
 # which the graph advises against for a class of that size. Appended to the
 # system prompt of the lesson intents; the text is the same on every lesson, so
 # it stays in the cached prefix.
+#: The jargon rule for answers that are not lesson plans (recommended strategies,
+#: explanations): it lived only in the lesson's rules, and a list of strategies
+#: said «Il KG segnala scaffolding e chunking con confidenza molto alta»
+#: (blind read of three writers, 2026-10-20).
+WRITER_PLAIN_LANGUAGE_RULE = """
+
+## Language for the teacher
+Never write «nodo», «KG», «Knowledge Graph», confidence labels («VERY_HIGH», \
+«confidenza molto alta») or scores in the text: say «la ricerca» when you need to. \
+Name a strategy in Italian, with the graph's English name in brackets the first \
+time it appears.
+"""
+
 WRITER_KG_EVIDENCE_RULES = """
 
 ## Using the Knowledge Graph evidence
@@ -138,14 +151,16 @@ class has no declared or named need (no «Bisogni della classe» section above),
 do not invent pupils with ADHD, dyslexia, autism or any other need: \
 **Differenziazione** then offers options for every pupil — more than one way to \
 take in the content, to take part, to show what they learned — each tied to an \
-activity. Under the Knowledge Graph in `*Fonti:*`, a name that is not in the \
-evidence above is not a node of this graph.
+activity, and each of the graph's strategies named in the same shape: \
+<strategia in italiano> (<graph's name>). Under the Knowledge Graph in `*Fonti:*`, \
+a name that is not in the evidence above is not a node of this graph.
 - «Profilo della classe nel Knowledge Graph» says what the graph suggests and \
 advises against for a class like this one (its size, its features): follow it \
 when you choose the format of the activities.
 - Prefer the graph's strategies to generic ones. A strategy the graph did not \
 return is your own choice: do not list it under the Knowledge Graph in `*Fonti:*`.
-- Write this as plain prose, with no brackets, tags or labels such as «(KG)». \
+- Write this as plain prose. The graph's name in brackets after a strategy is \
+the one bracket allowed: no tags or labels such as «(KG)». \
 In the body of the lesson never write «nodo», «KG», «Knowledge Graph», confidence \
 labels («VERY_HIGH», «confidenza media») or scores: the graph is named only in \
 `*Fonti:*` and in the closing note. Name a strategy in Italian, with the graph's \
