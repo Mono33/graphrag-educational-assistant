@@ -910,11 +910,13 @@ def _passages_about_the_request(state: AgentState, passages: list[dict[str, Any]
     words = {
         w.lower()
         for w in _TOPIC_WORD.findall(f"{subject} {state.get('raw_user_turn') or ''}")
-        if w.lower() not in _GENERIC_WORDS
+        if len(w) >= 5 and w.lower() not in _GENERIC_WORDS
     }
     text = " ".join(str(p.get("text") or "") for p in passages).lower()
-    # A stem, so «vulcani» meets «vulcanica» and «eruzione» meets «eruzioni».
-    return any(w[: max(4, min(len(w), 6))] in text for w in words)
+    # The start of a word of the passages: «vulcani» meets «vulcanica», «eruzione»
+    # «eruzioni». Never inside a word, and never a short stem: «lava» (from «magma
+    # e lava») met «lavare i capi» in the water-cycle handout.
+    return any(re.search(rf"(?<![\w]){re.escape(w if len(w) < 7 else w[:6])}", text) for w in words)
 
 
 def _ignores_the_documents(state: AgentState) -> bool:

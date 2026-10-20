@@ -333,7 +333,12 @@ async def test_the_critic_s_approval_does_not_stand_for_a_draft_that_ignores_the
 
 
 WATER = [
-    {"score": 0.52, "text": "Il ciclo idrologico: evaporazione, condensazione, precipitazioni."}
+    {
+        "score": 0.52,
+        # «lavare» is here on purpose: «lava» (from «magma e lava») met it.
+        "text": "Il ciclo idrologico: evaporazione, condensazione, precipitazioni. "
+        "L'acqua serve per cucinare e lavare i capi di abbigliamento.",
+    }
 ]
 
 
