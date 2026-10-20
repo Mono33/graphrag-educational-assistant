@@ -3934,3 +3934,24 @@ docente autenticato che avesse l'id di una lezione altrui poteva leggerne il
 testo mentre veniva scritto. Ora risponde 404 come le altre rotte; il test
 `test_bruno_cannot_follow_annas_lesson_as_it_is_written` fallisce senza la
 correzione.
+
+### 2026-10-20 — Online su staging: API per AIxLearning e qualità delle risposte
+
+PR #16 (`chore/repo-reorg` → `main`, prima con `main` unito per la correzione di
+`writer-stream`) e #17 (`main` → `staging`), unite da Angelo. Immagine `:staging`
+`f609d65`, migrazione `ac54b8d1e902 → d41f7a2c9b13` (tabella per l'idempotenza
+dell'API) eseguita all'avvio. Configurazione solo per lo staging, nel blocco
+`environment:` di `api-staging` in `cloud-infra` (il `.env` è condiviso con la
+produzione):
+
+- `AIX_JUDGE_ENABLED=true`;
+- `LLM_MODEL`, `AIX_PLANNER_MODEL`, `AIX_JUDGE_MODEL`, `AIX_CITATION_CHECK_MODEL` su
+  `deepseek/deepseek-v4.1-flash-1017`, con ZDR attivo sull'account OpenRouter;
+- Text2Cypher resta su Gemini flash-lite (dal `.env`).
+
+Sonda all'avvio verso DeepSeek riuscita; `/api/v1/health` con `code_version`
+`f609d65`, confermato da Angelo.
+
+Nota per i prossimi deploy: `docker compose up -d` non scarica l'immagine nuova
+(serve `docker compose pull api-staging`, o aspettare Watchtower), e nei 30–60 s
+dell'avvio il container non risponde ancora sulla porta 8765.
