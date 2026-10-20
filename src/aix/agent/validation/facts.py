@@ -173,6 +173,17 @@ def syllable_facts(lesson: str) -> list[Fact]:
             target = next((w for w in words if _close(w, joined)), joined)
             accepted = syllabifications(target)
             if token in accepted:
+                # Said too: a judge that does not know «lu-na» is right «corrected»
+                # it to «u-na» (2026-10-20). Capped, a list of examples can be long.
+                if sum(not f.wrong for f in facts) < 30:
+                    facts.append(
+                        Fact(
+                            check="esempi_lingua",
+                            quote=token,
+                            statement=f"«{token}» è una divisione in sillabe corretta",
+                            wrong=False,
+                        )
+                    )
                 continue
             right = sorted(accepted, key=len)[0]
             facts.append(

@@ -327,7 +327,11 @@ async def judge_lesson(
         report.output_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
         cost = getattr(usage, "cost", None)
         report.cost = float(cost) if isinstance(cost, (int, float)) else None
+        right = [_flat(f.quote) for f in facts if not f.wrong]
         for issue in parse_issues(raw):
+            if any(_flat(issue.quote) and _flat(issue.quote) in quote for quote in right):
+                # A computed fact says this is right («lu-na»): the model is wrong.
+                continue
             (report.issues if quote_in(issue.quote, lesson) else report.unquoted).append(issue)
         report.issues += _missed(facts, report.issues)
     except Exception as exc:  # noqa: BLE001 — the judge never breaks a lesson

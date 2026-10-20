@@ -93,3 +93,10 @@ def test_the_groups_are_a_fact_against_the_class():
     [fact] = count_facts("- Gruppi da 4 (cinque gruppi) e un gruppo da 5.", profile)
 
     assert fact.wrong and "25 alunni" in fact.statement
+
+
+def test_a_right_split_is_said_too_so_the_judge_does_not_correct_it():
+    """«lu-na» «corrected» to «u-na» by a judge that did not know it was right (2026-10-20)."""
+    facts = syllable_facts("# Le sillabe\n- Carte-parola (parole bisillabe e trisillabe: *ma-re, pa-ne, lu-na, ta-vo-lo*).")
+
+    assert {f.quote for f in facts if not f.wrong} == {"ma-re", "pa-ne", "lu-na", "ta-vo-lo"}

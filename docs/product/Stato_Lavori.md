@@ -3830,3 +3830,12 @@ Perché i dev possano integrare l'API con il giudice acceso:
   `AIX_JUDGE_ENABLED`, `AIX_JUDGE_MODEL`, `AIX_JUDGE_PROVIDER`, `AIX_JUDGE_FACTS`,
   `AIX_REPAIR_MODEL` e `AIX_WRITER_MODEL`. Nel modello `AIX_WRITER_MAX_TOKENS`
   passa da 2000 a 8000, come segnalato nella revisione di Louis.
+
+Verifica sul vero dopo l'unione (stack locale, tutto DeepSeek, giudice acceso):
+la prova end-to-end dell'API passa, e un turno in streaming emette `judge_pending` e
+`judge` e restituisce `critic: null` con il `judge` tipizzato. È emerso un errore
+del giudice: in un elenco «ma-re, pa-ne, ca-sa, lu-na…» aveva cambiato «lu-na»,
+corretta, in «u-na». Ora le divisioni corrette sono anch'esse fatti [corretto]
+(al massimo 30 per lezione), e un problema su una citazione che una verifica dà
+per corretta viene scartato. Banco del giudice: 17/17, segnalazioni bloccanti
+sulle lezioni pulite da 49 a 44.

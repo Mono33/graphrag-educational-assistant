@@ -172,3 +172,21 @@ async def test_without_facts_the_judge_is_on_its_own(monkeypatch):
     report = await judge_lesson(lesson, client=_Client(_answer()), model="x/y")
 
     assert report.issues == []
+
+
+async def test_a_problem_on_what_the_facts_say_is_right_is_dropped():
+    lesson = "# Le sillabe\n\n## Attività (20 minuti)\n- Parole bisillabe: *ma-re, lu-na, ca-sa*.\n"
+    answer = _answer(
+        {
+            "check": "esempi_lingua",
+            "severity": "bloccante",
+            "kind": "sostituzione",
+            "quote": "lu-na",
+            "why": "w",
+            "fix": "u-na",
+        }
+    )
+
+    report = await judge_lesson(lesson, client=_Client(answer), model="x/y")
+
+    assert report.issues == []
