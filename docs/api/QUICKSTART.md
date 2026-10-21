@@ -74,6 +74,75 @@ Show `markdown`; what else to do depends on `kind`:
 
 Always show `ai_disclosure` (AI Act Art. 50) next to generated content.
 
+## How a chat works, end to end
+
+The browser never calls the agent: your **backend** does, with the credentials.
+
+```text
+teacher's browser ──(1) message──▶ your backend / worker ──(2) POST /turns/stream──▶ agent
+       ▲                                   │  ◀──(3) text frames, then result──────────┘
+       └──────(4) relay (Mercure…)─────────┘
+```
+
+1. The teacher writes in your chat. Your frontend sends it to your backend.
+2. Your backend (e.g. a Dramatiq job) looks up the chat's `session_id` in your
+   database — or creates the session on the chat's first message and stores it —
+   and calls `/turns/stream`.
+3. The agent sends the text while it is written, then one `result` frame.
+4. Your backend relays the pieces to the browser (Mercure, WebSocket…) and,
+   at the end, stores `result.markdown` as the chat's assistant message.
+
+What your database needs: **chat id → `session_id`**, and **uploaded file →
+`material_id`**. Nothing else: the agent keeps the history.
+
+A worker in Python (`httpx`); `publish` is whatever sends to the browser:
+
+```python
+import json, httpx
+
+BASE = "https://agente.aiforlearning.digital/api/v1"
+AUTH = ("<username>", "<password>")          # from your server's settings
+
+def send_message(session_id, teacher_id, message, job_id, publish, mode="auto"):
+    headers = {"X-End-User-Id": teacher_id, "Idempotency-Key": job_id}
+    draft = 0
+    with httpx.stream("POST", f"{BASE}/sessions/{session_id}/turns/stream",
+                      auth=AUTH, headers=headers,
+                      json={"message": message, "mode": mode},
+                      timeout=httpx.Timeout(10, read=180)) as r:
+        if r.status_code != 200:              # 401, 404, 409 idempotency…
+            r.read()
+            raise RuntimeError(r.status_code, r.text)
+        for line in r.iter_lines():
+            if not line.startswith("data:"):
+                continue
+            frame = json.loads(line[5:])
+            kind = frame["kind"]
+            if kind == "text":
+                if frame["draft"] != draft:   # the lesson is written again
+                    draft = frame["draft"]
+                    publish({"type": "reset"})
+                publish({"type": "text", "text": frame["text"]})
+            elif kind in ("judge_pending", "critic_pending"):
+                publish({"type": "status", "text": "Sto controllando la lezione…"})
+            elif kind == "light_escalate":    # a hand-off: drop the preview
+                publish({"type": "reset"})
+            elif kind == "error":             # already_running, rate_limited…
+                raise RuntimeError(frame["status"], frame.get("code"), frame.get("message"))
+            elif kind == "result":
+                result = frame["result"]
+                if result["kind"] == "handoff":
+                    publish({"type": "confirm_new_lesson", "query": result["handoff_query"]})
+                else:
+                    publish({"type": "final", "markdown": result["markdown"]})
+                return result
+```
+
+If the teacher confirms a hand-off, call `send_message(…, result["handoff_query"],
+<new job id>, publish, mode="lesson")`. The other frames (`planner`,
+`retriever`, `judge`…) are the explanation the WebUI shows in its side cards:
+ignore them, or show them if you want.
+
 ## Three rules that save you trouble
 
 1. **Use streaming in the UI.** `POST /sessions/{id}/turns/stream` takes the same

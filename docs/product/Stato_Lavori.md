@@ -3992,3 +3992,10 @@ consegnato (`openapi.json` non si legge: si importa in Postman o genera il
 client). `Chatbot_API_Guide.md` rimanda alla quickstart come punto di partenza.
 Da mandare: `QUICKSTART.md`, `Chatbot_API_Guide.md`, `openapi.json`; le
 credenziali a parte.
+
+Aggiunta alla quickstart (2026-10-21): «How a chat works, end to end». Il
+browser non chiama mai l'agente, lo fa il backend della piattaforma con le
+credenziali; nel loro database servono solo chat → `session_id` e file →
+`material_id`; un worker Python d'esempio che legge lo stream e lo inoltra al
+browser (reset sul nuovo draft, stato durante la revisione, conferma
+sull'hand-off, sostituzione col `result.markdown`).
