@@ -123,6 +123,8 @@ def send_message(session_id, teacher_id, message, job_id, publish, mode="auto"):
                     draft = frame["draft"]
                     publish({"type": "reset"})
                 publish({"type": "text", "text": frame["text"]})
+            elif kind in ("planner", "retriever", "judge", "critic"):
+                publish({"type": "card", "card": kind, "data": frame["data"]})
             elif kind in ("judge_pending", "critic_pending"):
                 publish({"type": "status", "text": "Sto controllando la lezione…"})
             elif kind == "light_escalate":    # a hand-off: drop the preview
@@ -139,9 +141,32 @@ def send_message(session_id, teacher_id, message, job_id, publish, mode="auto"):
 ```
 
 If the teacher confirms a hand-off, call `send_message(…, result["handoff_query"],
-<new job id>, publish, mode="lesson")`. The other frames (`planner`,
-`retriever`, `judge`…) are the explanation the WebUI shows in its side cards:
-ignore them, or show them if you want.
+<new job id>, publish, mode="lesson")`.
+
+## Showing what the WebUI shows: the cards and the media
+
+Everything the WebUI shows next to a lesson comes from the API, with the same
+field names (a test keeps the two in step):
+
+| WebUI | During the stream (frame `kind`, its `data`) | In the final `result` |
+| --- | --- | --- |
+| Planner card: intent, scope, concepts, searches | `planner`, after ~3–5 s | `result.planner` |
+| Knowledge Graph card: what was found, coverage | `retriever`, after ~10 s | `result.retriever` |
+| Curated resources from the graph (videos, articles, textbooks) | inside `retriever` → `media` | `result.retriever.media` |
+| «Revisione mirata» card: corrections made, points to check | `judge_pending` (show «checking…»), then `judge` | `result.judge` |
+| Right panel: papers, Wikipedia, videos found live | — | `GET /sessions/{id}/media`, after the lesson |
+
+- In the stream, show each card as its frame arrives, as the WebUI does; the
+  `result` frame carries them all again, so a client that does not stream gets
+  the same cards from `/turns`.
+- `judge`: `fixed` lists each correction (`why`, `before` → `after`; with
+  `teacher_material: true`, say «to check against your document»), `points` what
+  could not be corrected. The corrections are already in `markdown`.
+- `GET /sessions/{id}/media`: call it once after a lesson; it searches the first
+  time (a few seconds) and replays afterwards. Empty lists when nothing is found.
+- With the judge off on a server, the review card is `critic` instead of `judge`
+  (`critic_pending`, `critic`): handle both.
+- An `answer` turn has no cards: the lesson and its cards stay as they were.
 
 ## Three rules that save you trouble
 

@@ -3999,3 +3999,10 @@ credenziali; nel loro database servono solo chat → `session_id` e file →
 `material_id`; un worker Python d'esempio che legge lo stream e lo inoltra al
 browser (reset sul nuovo draft, stato durante la revisione, conferma
 sull'hand-off, sostituzione col `result.markdown`).
+
+Ancora la quickstart (2026-10-21): «Showing what the WebUI shows». Le schede
+del pianificatore, del grafo e della revisione mirata e le risorse curate
+arrivano nello stream (frame `planner`, `retriever` → `media`, `judge`) e di
+nuovo nel `result`, con gli stessi campi della WebUI (lo garantisce
+`test_api_webui_parity.py`); il pannello delle risorse trovate in rete è
+`GET /sessions/{id}/media`. Il worker d'esempio inoltra anche le schede.
