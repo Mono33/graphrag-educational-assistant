@@ -4083,3 +4083,12 @@ per mantenerla:
    rifiuta una rottura, salvo `--breaking "motivo"`.
 
 Suite: 1389 passati.
+
+### 2026-10-21 — Online su staging: contratto che cresce soltanto, lezioni rilette con le schede
+
+PR fino alla #21 (`main` → `staging`), unite da Angelo. Lo staging gira a
+`41473b4`, che contiene `63dcc1f`; `db_revision` invariata (`d41f7a2c9b13`).
+Verificato da fuori: `/api/v1/sessions` senza credenziali risponde
+`{"detail": {"code": "unauthorized", …}}`. I dev di AIxLearning hanno i
+documenti come Google Docs su un Drive condiviso (il repo resta il master) e
+sono stati avvisati delle novità da Angelo.
