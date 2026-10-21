@@ -4109,3 +4109,21 @@ stessa richiesta in locale il 20/10 la citava. Lo stream mostra due passaggi
 del writer: da capire nei log dello staging (`[Documents]`, controllo
 citazioni) se è la riscrittura per documenti non usati o il controllo delle
 citazioni ad aver tolto i riferimenti. Report: `C:\axl\api_replay\report-staging.md`.
+
+### 2026-10-21 — La riscrittura per i documenti non usati elenca i marcatori da copiare
+
+Dai log dello staging, la lezione senza citazioni: DeepSeek ha costruito la
+lezione sulla dispensa senza un solo marcatore; il controllo documenti ha
+chiesto la riscrittura («con i loro marcatori»), e la riscrittura è uscita di
+nuovo senza. Il giudice non c'entra (una sua revisione che perde un marcatore
+viene scartata).
+
+Ora la richiesta di riscrittura (`documents_unused_instruction`) elenca i
+marcatori dei sei passaggi più pertinenti, da copiare così come sono; mai il
+testo dei passaggi, che resta dato e non istruzione. Il router la riconosce
+ancora dal prefisso.
+
+Prova in locale, stessa richiesta e stessa dispensa, tutto DeepSeek, 5 volte:
+**5 lezioni su 5 citano** (6–13 citazioni). In 3 casi su 5 la prima stesura
+non citava: il problema era frequente, la riscrittura lo copriva solo a volte.
+Con l'elenco, tutte e 3 le riscritture citano. Suite: 1390 passati.

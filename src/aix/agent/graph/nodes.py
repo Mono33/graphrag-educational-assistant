@@ -883,6 +883,36 @@ DOCUMENTS_UNUSED_INSTRUCTION = (
     "i documenti parlano d'altro non cambiare argomento, dillo in una riga."
 )
 
+#: How many markers the rewrite request lists: the most relevant passages.
+_MARKERS_TO_COPY = 6
+
+
+def documents_unused_instruction(state: AgentState) -> str:
+    """The rewrite request, with the markers of the most relevant passages to copy.
+
+    «With their markers» in the abstract was not enough: on staging (2026-10-21)
+    DeepSeek built a lesson on the handout, was asked to cite it, and rewrote it
+    again without one marker. Listed, a marker only has to be copied. Markers
+    only, never the passages' text: what a document says is data for the
+    Writer, not an instruction (``instruction_trust``).
+    """
+    items = state.get("material_context_items") or []
+    relevant = sorted(
+        (i for i in items if float(i.get("score") or 0) >= RELEVANT_PASSAGE_SCORE),
+        key=lambda i: float(i.get("score") or 0),
+        reverse=True,
+    )
+    markers = list(dict.fromkeys(str(i["citation"]) for i in relevant if i.get("citation")))
+    if not markers:
+        return DOCUMENTS_UNUSED_INSTRUCTION
+    listed = "\n".join(f"- {marker}" for marker in markers[:_MARKERS_TO_COPY])
+    return (
+        f"{DOCUMENTS_UNUSED_INSTRUCTION}\n\nI marcatori dei passaggi più pertinenti: "
+        "copiali così come sono, subito dopo ogni frase che prende qualcosa da quel "
+        f"passaggio, e solo lì:\n{listed}"
+    )
+
+
 #: Words of a request that say nothing about its subject.
 _GENERIC_WORDS = frozenset(
     "lezione lezioni classe classi alunni alunno studenti studente attività attivita "
@@ -1014,7 +1044,9 @@ async def critique_node(state: AgentState) -> dict[str, Any]:
             logger.info("[Node: Critique] the draft cites none of the attached documents: revising")
             approved = False
             revision_instructions = (
-                (revision_instructions or "").rstrip() + "\n\n" + DOCUMENTS_UNUSED_INSTRUCTION
+                (revision_instructions or "").rstrip()
+                + "\n\n"
+                + documents_unused_instruction(state)
             ).strip()
 
         updates = {
@@ -1063,7 +1095,7 @@ async def documents_check_node(state: AgentState) -> dict[str, Any]:
         logger.info("[Node: Documents] the draft cites none of the attached documents: revising")
         return {
             "approved": False,
-            "revision_instructions": DOCUMENTS_UNUSED_INSTRUCTION,
+            "revision_instructions": documents_unused_instruction(state),
             "revision_count": revisions + 1,
             "current_step": "documents_unused",
         }

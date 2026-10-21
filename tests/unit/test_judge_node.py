@@ -166,6 +166,34 @@ async def test_without_the_critic_a_lesson_that_ignores_the_documents_goes_back_
     assert second["approved"] and second["final_lesson_plan"] == DRAFT
 
 
+async def test_the_rewrite_request_lists_the_markers_to_copy():
+    """Staging, 2026-10-21: asked «with their markers», DeepSeek rewrote without one."""
+    from aix.agent.graph.nodes import documents_check_node
+
+    marker = "[[material:{n}#page={n}&block=b{n}]]"
+    items = [
+        {"score": 0.5, "text": "Il Piano Marshall", "citation": marker.format(n=1)},
+        {"score": 0.9, "text": "La cortina di ferro", "citation": marker.format(n=2)},
+        {"score": 0.2, "text": "Le ricette", "citation": marker.format(n=3)},
+        {"score": 0.9, "text": "La cortina di ferro", "citation": marker.format(n=2)},
+    ]
+    state = {
+        "lesson_plan_draft": DRAFT,
+        "material_context_items": items,
+        "revision_count": 0,
+        "max_revisions": 1,
+    }
+
+    out = await documents_check_node(state)
+
+    request = out["revision_instructions"]
+    assert request.startswith(DOCUMENTS_UNUSED_INSTRUCTION)  # the router still knows it
+    listed = [line[2:] for line in request.splitlines() if line.startswith("- [[material:")]
+    assert listed == [marker.format(n=2), marker.format(n=1)]  # most relevant first, once
+    assert not any(text in request for text in ("Marshall", "cortina", "ricette"))  # never text
+    assert should_continue_to_revision({**state, **out}) == "revise"
+
+
 async def test_a_lesson_without_documents_goes_straight_to_the_judge(monkeypatch):
     from aix.agent.graph.nodes import documents_check_node
 
