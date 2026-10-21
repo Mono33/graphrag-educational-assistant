@@ -4092,3 +4092,20 @@ Verificato da fuori: `/api/v1/sessions` senza credenziali risponde
 `{"detail": {"code": "unauthorized", …}}`. I dev di AIxLearning hanno i
 documenti come Google Docs su un Drive condiviso (il repo resta il master) e
 sono stati avvisati delle novità da Angelo.
+
+### 2026-10-21 — Prova completa dell'API sullo staging (`41473b4`)
+
+Replay delle tre conversazioni d'esempio con l'account `aixl-staging`, come farà
+AIxLearning: **107/108 controlli superati**, dati di prova cancellati. Passano
+anche i controlli nuovi: errori `unauthorized` e `invalid_request`, schede
+salvate su ogni lezione (5 su 5), nessun `kg_digest` nei `meta`, `/media` con
+`curated` e `?turn_index=`. Tempi: lezione 34–70 s (primo testo 8–28 s),
+risposta 6–9 s, hand-off 4 s.
+
+Unico fallimento: la prima lezione della conversazione «Guerra fredda, grafo
+neuro» parla della dispensa ma non la cita con la pagina (`cited_documents`
+vuoto); le due lezioni successive della stessa conversazione la citano, e la
+stessa richiesta in locale il 20/10 la citava. Lo stream mostra due passaggi
+del writer: da capire nei log dello staging (`[Documents]`, controllo
+citazioni) se è la riscrittura per documenti non usati o il controllo delle
+citazioni ad aver tolto i riferimenti. Report: `C:\axl\api_replay\report-staging.md`.
