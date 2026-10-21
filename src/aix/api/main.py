@@ -458,11 +458,12 @@ except Exception as exc:  # noqa: BLE001
 # sessions that converse about a lesson, the catalog. Mounted on their own so a
 # defect in these additive surfaces cannot remove the agent/context APIs.
 try:
+    from aix.api import errors
     from aix.api.routes import catalog_router, materials_router, sessions_router
 
-    app.include_router(materials_router, prefix="/api/v1")
-    app.include_router(sessions_router, prefix="/api/v1")
-    app.include_router(catalog_router, prefix="/api/v1")
+    for integration_router in (materials_router, sessions_router, catalog_router):
+        app.include_router(integration_router, prefix="/api/v1", responses=errors.ERROR_RESPONSES)
+    errors.install(app)
     logger.info("✅ Materials, sessions and catalog API mounted under /api/v1")
 except Exception as exc:  # noqa: BLE001
     logger.warning("⚠️ Materials/sessions API not loaded (skipping): %s", exc)

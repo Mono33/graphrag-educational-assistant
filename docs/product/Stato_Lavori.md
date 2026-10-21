@@ -4058,3 +4058,28 @@ Configurato il service account dell'istanza di staging di AIxLearning:
 che condivide il `.env`, non la legge. Verificato da Angelo: senza credenziali
 `401`, con le credenziali `200`. Per controllare cosa vede il container senza
 stampare segreti: `service_clients()` con le sole lunghezze delle password.
+
+### 2026-10-21 — Il contratto cresce soltanto: la promessa ai dev, scritta e controllata
+
+Alla riunione Angelo ha promesso ai dev che il JSON dell'API non cambierà
+forma, al massimo si amplierà, anche con sandbox e flusso agentico. Tre cose
+per mantenerla:
+
+1. **Le regole per il client** (QUICKSTART, «Compatibility»): ignorare campi,
+   eventi e valori sconosciuti; `kind` e `role` come stringhe; client generati
+   tolleranti. Nel contratto `TurnResult.kind`, `TurnOut.kind` e `TurnOut.role`
+   sono stringhe con i valori noti nella descrizione, non enum chiuse: un
+   client generato da un'enum fallirebbe al primo `kind` nuovo.
+2. **Un solo formato di errore** su `/sessions`, `/materials`, `/catalog`
+   (`aix.api.errors`): anche credenziali (401 `unauthorized`), indirizzi
+   inesistenti (404 `not_found`) e richieste malformate (422 `invalid_request`
+   con `errors`) sono `{"detail": {"code", "message"}}`. `/context` e
+   `/agent/*` invariati. È l'unico cambiamento di forma, fatto prima che i dev
+   integrino.
+3. **Il controllo** (`aix.api.contract`): `tests/unit/test_api_contract.py`
+   fallisce se una rotta, un campo o un valore sparisce, se un tipo cambia, se
+   una richiesta chiede di più, o se il contratto è cresciuto senza riesportare
+   `docs/api/openapi.json`. `scripts/ops/export_openapi.py` lo riesporta e
+   rifiuta una rottura, salvo `--breaking "motivo"`.
+
+Suite: 1389 passati.

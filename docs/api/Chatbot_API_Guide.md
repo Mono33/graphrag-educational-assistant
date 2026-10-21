@@ -298,22 +298,24 @@ choices from it rather than hard-coding them.
 
 ## 9. Errors
 
-Application errors from the materials and sessions routes use
-`{"detail": {"code": "…", "message": "…"}}`. The `message` is Italian, for a
-person; the `code` is stable, for your code. Authentication failures, standard
-FastAPI request-validation errors and some errors from the older one-shot
-`/agent/*` routes have their established shapes, so clients must also handle
-those cases until the envelope is normalized.
+Every error of `/materials`, `/sessions` and `/catalog` is
+`{"detail": {"code": "…", "message": "…"}}` (since 2026-10-21, credentials and
+malformed requests included). The `message` is Italian, for a person; the
+`code` is stable, for your code. A malformed request is `422 invalid_request`
+with the wrong fields in `detail.errors` (`loc`, `msg`, `type`). The older
+`/context` and `/agent/*` routes keep their established shapes.
 
 | HTTP | `code` | Meaning |
 | --- | --- | --- |
-| 401 | — | Missing or wrong credentials. |
+| 401 | `unauthorized` | Missing or wrong credentials. |
+| 404 | `not_found` | No such address. |
 | 404 | `unknown_session`, `unknown_material`, `no_lesson_yet` | Not this end user's, or no lesson to download yet. |
 | 404 | `library_disabled` | Document uploads are switched off on this server. |
 | 409 | `already_running` | A turn of this session is still running. |
 | 409 | `materials_preparing` | A bound document is still being read. Retry when `ready`. |
 | 409 | `no_lesson_yet` | `mode: answer` before the first lesson. |
 | 413 / 422 | `too_large`, `magic_mismatch`, … | The document was refused. |
+| 422 | `invalid_request` | The body or a parameter is malformed: `detail.errors` says which. |
 | 422 | `empty_message`, `invalid_end_user_id` | Fix the request. |
 | 429 | `rate_limited` | Too many turns (default 10 a minute per end user). Wait `Retry-After` seconds. |
 | 502 | `generation_failed` | The generation failed; retry. |
@@ -394,8 +396,12 @@ These points are intentionally visible to Dev because they remain joint work:
 - **Provenance:** citations are resolved in Markdown and document names are
   returned, but there is not yet a structured source/version/page payload or a
   page-preview endpoint.
-- **Errors:** handle both the application `{code, message}` envelope and
-  standard FastAPI validation/authentication errors.
+- ~~**Errors:** handle both the application `{code, message}` envelope and
+  standard FastAPI validation/authentication errors.~~ Done 2026-10-21: one
+  envelope on the integration routes (§9).
+- **Contract stability:** the contract only grows (QUICKSTART, «Compatibility»);
+  `tests/unit/test_api_contract.py` fails on a breaking change, and
+  `scripts/ops/export_openapi.py` refuses to export one.
 - **Credits and exports:** agree how `lesson`, `answer` and `handoff` are
   charged, and whether AIxLearning keeps its own watermark/export pipeline.
 - **Tracing:** agree a correlation identifier across AIxLearning, GraphRAG and

@@ -201,17 +201,41 @@ for any other pair the data does not exist (`404`).
 
 ## Errors to handle
 
-The body is `{"detail": {"code": "…", "message": "…"}}`: branch on `code`, show
-`message` (Italian) to the person.
+Every error of `/sessions`, `/materials` and `/catalog` has the same body,
+`{"detail": {"code": "…", "message": "…"}}`: branch on `code`, show `message`
+(Italian) to the person. A malformed request adds the wrong fields under
+`detail.errors`.
 
 | HTTP | `code` | What to do |
 | --- | --- | --- |
-| 401 | — | wrong credentials |
+| 401 | `unauthorized` | wrong credentials |
+| 422 | `invalid_request` | a bug in your request: `detail.errors` says which field |
 | 404 | `unknown_session`, `unknown_material` | not this teacher's, or deleted |
 | 409 | `already_running` | a message of this session is still running: retry later |
 | 409 | `materials_preparing` | a document is still being read: wait for `ready` |
 | 429 | `rate_limited` | too many messages: wait `Retry-After` seconds |
 | 502 / 503 | `generation_failed`, `at_capacity` | retry shortly |
+
+## Compatibility: the contract only grows
+
+We add, we never take away. A field, a route or a value is never removed,
+renamed or given another type, and a request never needs more than before. New
+features (for example an agent that works in several steps) arrive as **new
+optional fields, new stream events and new routes**. A change that cannot be
+made this way would go to a new `/api/v2`, with `/api/v1` kept.
+
+For this to protect your code, your client must:
+
+1. **ignore fields it does not know**, in every response;
+2. **ignore stream frames whose `kind` it does not know**;
+3. **treat `kind` and `role` as plain strings**: a turn with a `kind` other than
+   `lesson`, `answer` or `handoff` is shown as its `markdown`; an unknown error
+   `code` is handled by its HTTP status and its `message` shown;
+4. if you generate a client from `openapi.json`, generate it **tolerant**: unknown
+   fields allowed, no closed enums on what you receive.
+
+`openapi.json` is checked against the code by an automatic test: a change that
+breaks it does not get through.
 
 ## The files you receive
 

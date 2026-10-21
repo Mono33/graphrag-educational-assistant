@@ -251,6 +251,11 @@ their FastAPI or plain-string shapes. The Dev client therefore needs either:
 - a documented union of error shapes; or
 - a normalization handler that guarantees one versioned envelope.
 
+*Done 2026-10-21 (Angelo):* a normalization handler on `/sessions`,
+`/materials` and `/catalog` (`aix.api.errors`): 401 `unauthorized`, 404
+`not_found`, 422 `invalid_request` with `errors`; `/context` and `/agent/*`
+unchanged. The contract is guarded by `tests/unit/test_api_contract.py`.
+
 #### Production Writer token setting
 
 The code default and local generated environment use

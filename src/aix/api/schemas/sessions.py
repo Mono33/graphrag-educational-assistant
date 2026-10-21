@@ -107,10 +107,13 @@ class AnswerMeta(BaseModel):
 class TurnResult(BaseModel):
     session_id: str
     turn_index: Optional[int] = None
-    kind: Literal["lesson", "answer", "handoff"] = Field(
+    # A string, not an enum: a later version may add a kind (an agentic step, say),
+    # and a client generated from an enum would fail to read it (2026-10-21).
+    kind: str = Field(
         ...,
         description=(
-            "lesson: a new version of the lesson (``markdown``). answer: a reply about the "
+            "Today one of lesson, answer, handoff; treat any other value as text to "
+            "show (``markdown``). lesson: a new version of the lesson (``markdown``). answer: a reply about the "
             "lesson and its documents (``markdown``); the lesson did not change. handoff: "
             "the request needs a new lesson -- send ``handoff_query`` again with "
             "``mode: lesson`` (or ``mode: answer`` to have it answered here)."
@@ -147,8 +150,12 @@ class TurnResult(BaseModel):
 
 class TurnOut(BaseModel):
     turn_index: int
-    role: Literal["user", "assistant"]
-    kind: Literal["message", "lesson", "answer"]
+    role: str = Field(..., description="Today user or assistant; a later version may add others.")
+    kind: str = Field(
+        ...,
+        description="Today message (the user's), lesson or answer; treat any other value "
+        "as text to show (``markdown``).",
+    )
     markdown: str
     created_at: Optional[datetime] = None
     meta: dict[str, Any] = Field(
