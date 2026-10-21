@@ -4048,3 +4048,13 @@ Prova vera in locale (tutto DeepSeek, una lezione sul ciclo dell'acqua): le
 schede rilette sono identiche a quelle del risultato (tranne `media`, ora in
 `/media` → `curated`: 5 video, 3 citazioni, 4 link); `?turn_index=1` dà la
 stessa risposta senza cercare di nuovo. Suite: 1375 passati.
+
+### 2026-10-21 — Credenziali dell'API sullo staging
+
+Configurato il service account dell'istanza di staging di AIxLearning:
+`aixl-staging`. Sulla VM, in `cloud-infra`: la password nel `.env` come
+`AIX_API_CLIENTS_STAGING='{"aixl-staging":"…"}'` e, nel blocco `environment:` di
+`api-staging`, `AIX_API_CLIENTS: ${AIX_API_CLIENTS_STAGING}`. Così la produzione,
+che condivide il `.env`, non la legge. Verificato da Angelo: senza credenziali
+`401`, con le credenziali `200`. Per controllare cosa vede il container senza
+stampare segreti: `service_clients()` con le sole lunghezze delle password.
