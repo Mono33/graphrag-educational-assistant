@@ -4006,3 +4006,21 @@ arrivano nello stream (frame `planner`, `retriever` → `media`, `judge`) e di
 nuovo nel `result`, con gli stessi campi della WebUI (lo garantisce
 `test_api_webui_parity.py`); il pannello delle risorse trovate in rete è
 `GET /sessions/{id}/media`. Il worker d'esempio inoltra anche le schede.
+
+### 2026-10-21 — `docs/api` riletta contro la quickstart
+
+- `openapi.json` confrontato con il codice: identico (21 rotte, stessi schemi).
+- `PRIVATE_MATERIALS_API.md` eliminato: doppione della §3 di
+  `Chatbot_API_Guide.md` (il flag della libreria e l'audit sono già in
+  `ENVIRONMENT.md`).
+- `API_INTEGRATION_GUIDE.md` (`/context`): tolte le parti su come avviare il
+  nostro server (installazione, Docker, Gunicorn, percorsi `graphaixlearning/`
+  che non esistono più); al loro posto l'accesso (URL dello staging, Basic
+  auth); gli esempi Python, curl e JS con le credenziali.
+- `Explainability_API_Guide_for_Frontend.md`: dice che vale solo per
+  `/context` (campi verificati sul codice) e rimanda alla quickstart per le
+  schede della chat.
+- La quickstart dice quali file non servono per la chat; README con quickstart
+  e `openapi.json`; nella guida le voci chiuse dell'accettazione dello staging.
+- `ENVIRONMENT.md`: una riga sola per `AIX_API_CLIENTS` (erano due), con il
+  modo di darla al solo `api-staging` sulla VM.

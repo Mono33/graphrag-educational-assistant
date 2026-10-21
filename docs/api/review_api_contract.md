@@ -27,7 +27,7 @@ AIxLearning platform is still joint AI/Dev work.
 This review covers:
 
 - `docs/api/Chatbot_API_Guide.md`;
-- `docs/api/PRIVATE_MATERIALS_API.md`;
+- `docs/api/PRIVATE_MATERIALS_API.md` (since merged into `Chatbot_API_Guide.md` §3);
 - `docs/product/Analisi_Integrazione_AIxLearning.md`;
 - the routes and schemas under `src/aix/api/`;
 - the shared turn orchestration in `src/aix/webui/agent/turns.py`;

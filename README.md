@@ -17,7 +17,7 @@ single FastAPI process.
 | Run it on your laptop | [Running it locally](#running-it-locally) |
 | Understand the agent | [The agentic flow](#the-agentic-flow) |
 | Know which env var does what | [`docs/ENVIRONMENT.md`](docs/ENVIRONMENT.md) — every variable the code reads |
-| Integrate the conversational API from another service | [`docs/api/Chatbot_API_Guide.md`](docs/api/Chatbot_API_Guide.md) |
+| Integrate the conversational API from another service | [`docs/api/QUICKSTART.md`](docs/api/QUICKSTART.md), then [`docs/api/Chatbot_API_Guide.md`](docs/api/Chatbot_API_Guide.md) |
 | Call the GraphRAG-only context endpoint | [`docs/api/API_INTEGRATION_GUIDE.md`](docs/api/API_INTEGRATION_GUIDE.md) |
 | Wire up Claude Desktop / Cursor | [`docs/integrations/MCP_Setup.md`](docs/integrations/MCP_Setup.md) |
 | A step-by-step first run | [`docs/runbooks/QUICKSTART.md`](docs/runbooks/QUICKSTART.md) |
@@ -659,10 +659,12 @@ monitoring goes to GlitchTip/Sentry when `SENTRY_DSN` is set.
 | [`docs/ENVIRONMENT.md`](docs/ENVIRONMENT.md) | Every environment variable, its default, the consequence of omitting it |
 | [`docs/runbooks/QUICKSTART.md`](docs/runbooks/QUICKSTART.md) | Step-by-step first run |
 | [`docs/runbooks/GraphRAG_Data_Pipeline_Guide.md`](docs/runbooks/GraphRAG_Data_Pipeline_Guide.md) | Rebuilding the KG from raw team data |
+| [`docs/api/QUICKSTART.md`](docs/api/QUICKSTART.md) | One page for the integrating devs: access, the calls, a chat end to end, the cards and media |
 | [`docs/api/Chatbot_API_Guide.md`](docs/api/Chatbot_API_Guide.md) | Dev guide for materials, sessions, turns, streaming and exports |
-| [`docs/api/API_INTEGRATION_GUIDE.md`](docs/api/API_INTEGRATION_GUIDE.md) | Legacy/specialized guide for the GraphRAG-only `/context` integration |
+| [`docs/api/openapi.json`](docs/api/openapi.json) | The exported `/api` contract, for Postman, Swagger or a client generator |
+| [`docs/api/API_INTEGRATION_GUIDE.md`](docs/api/API_INTEGRATION_GUIDE.md) | The GraphRAG-only `/context` integration (not the chat) |
 | [`docs/api/review_api_contract.md`](docs/api/review_api_contract.md) | Audit of the current API contract, readiness and remaining gaps |
-| [`docs/api/Explainability_API_Guide_for_Frontend.md`](docs/api/Explainability_API_Guide_for_Frontend.md) | The explainability payload the frontend renders |
+| [`docs/api/Explainability_API_Guide_for_Frontend.md`](docs/api/Explainability_API_Guide_for_Frontend.md) | The explanation fields of a `/context` response |
 | [`docs/integrations/MCP_Setup.md`](docs/integrations/MCP_Setup.md) | MCP client onboarding |
 | [`docs/architecture/`](docs/architecture/) | Architecture analyses, ADR-0001 (frontend platform) |
 | [`docs/release/`](docs/release/) | Functional and technical release documentation |

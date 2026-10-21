@@ -203,5 +203,10 @@ The body is `{"detail": {"code": "…", "message": "…"}}`: branch on `code`, s
 | `Chatbot_API_Guide.md` | every detail: profile codes, stream events, what a lesson carries, downloads |
 | `openapi.json` | **not to read**: import it in Postman or Swagger, or generate a typed client from it |
 
+Not needed for the chat: `API_INTEGRATION_GUIDE.md` and
+`Explainability_API_Guide_for_Frontend.md` describe `POST /context`, the
+Knowledge Graph context for tools that build their own prompts;
+`review_api_contract.md` is the AI team's review of this contract.
+
 Codes accepted in the profile (classes, BES, intents) come from
 `GET /catalog`: build your menus from it rather than hard-coding them.

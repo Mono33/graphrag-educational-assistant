@@ -5,6 +5,12 @@
 **Date:** April 2026
 **API Version:** 1.1.0+
 
+> **Scope:** the explanation fields of `POST /api/v1/context` only (see
+> [`API_INTEGRATION_GUIDE.md`](API_INTEGRATION_GUIDE.md)). Checked against the
+> code on 2026-10-21: the fields below are still returned. **Not for the chat**:
+> the cards of a conversational lesson (planner, Knowledge Graph, review, media)
+> are in [`QUICKSTART.md`](QUICKSTART.md) and `Chatbot_API_Guide.md` §6.
+
 ---
 
 ## Overview

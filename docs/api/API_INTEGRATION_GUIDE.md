@@ -2,24 +2,22 @@
 
 This document explains how to use the FastAPI module that provides educational context from the GraphRAG knowledge graph.
 
-> **Scope:** this is the guide for the established, GraphRAG-only
-> `/api/v1/context` integration. Dev teams integrating the conversational agent,
-> private documents, persistent sessions, turns, streaming and exports should
-> use [`Chatbot_API_Guide.md`](Chatbot_API_Guide.md). The `/context` endpoint
-> remains supported for tools that only need Knowledge Graph context.
+> **Scope:** only `POST /api/v1/context`, for tools that put Knowledge Graph
+> context into their own prompts. **Not needed for the chat**: for the
+> conversational agent (documents, sessions, turns, streaming, exports) start
+> from [`QUICKSTART.md`](QUICKSTART.md). The explanation fields of a `/context`
+> response are in [`Explainability_API_Guide_for_Frontend.md`](Explainability_API_Guide_for_Frontend.md).
 
 ---
 
 ## 📋 Table of Contents
 
 1. [Overview](#overview)
-2. [Quick Start](#quick-start)
+2. [Access](#access)
 3. [API Endpoints](#api-endpoints)
 4. [Request & Response Format](#request--response-format)
 5. [Integration Options](#integration-options)
 6. [Code Examples](#code-examples)
-7. [Deployment](#deployment)
-8. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -44,34 +42,16 @@ Teacher Query → [Translation] → [Cypher Generation] → [Neo4j Retrieval]
 
 ---
 
-## Quick Start
+## Access
 
-### 1. Install Dependencies
+| | |
+| --- | --- |
+| Staging | `https://agente.aiforlearning.digital/api/v1` |
+| Auth | HTTP Basic: the instance's client name and password, the same as for the chat API ([`QUICKSTART.md`](QUICKSTART.md)) |
 
-```bash
-cd graphaixlearning
-pip install -r requirements.txt
-```
-
-### 2. Set Environment Variables
-
-Create a `.env` file with:
-```
-NEO4J_URI=bolt://localhost:7687
-NEO4J_USER=neo4j
-NEO4J_PASSWORD=your_password
-OPENAI_API_KEY=your_openai_key
-```
-
-### 3. Run the API
-
-```bash
-uvicorn aix.api.main:app --reload --port 8000
-```
-
-### 4. Test It
-
-Open browser: http://localhost:8000/docs
+Without credentials `/context` answers `401` (since 2026-10-20). `GET /context/domains`
+and `GET /health` stay open. The contract of every route is in
+[`openapi.json`](openapi.json).
 
 ---
 
@@ -82,8 +62,6 @@ Open browser: http://localhost:8000/docs
 | `/api/v1/context` | POST | Get educational context for a query |
 | `/api/v1/context/domains` | GET | List available knowledge domains |
 | `/api/v1/health` | GET | Health check with dependency status |
-| `/docs` | GET | Swagger UI documentation |
-| `/redoc` | GET | ReDoc documentation |
 
 ---
 
@@ -182,13 +160,15 @@ The response includes a domain-aware pre-formatted text section ready for prompt
 ```python
 import requests
 
-API_URL = "http://localhost:8000/api/v1/context"
+API_URL = "https://agente.aiforlearning.digital/api/v1/context"
+AUTH = (CLIENT_NAME, CLIENT_PASSWORD)  # from your server's settings
 
 def get_graphrag_context(user_prompt: str, domain: str = "neuro") -> str:
     """Get educational context from GraphRAG API"""
     try:
         response = requests.post(
             API_URL,
+            auth=AUTH,
             json={
                 "query": user_prompt,
                 "domain": domain,
@@ -212,7 +192,7 @@ final_prompt = base_prompt + "\n\n" + graphrag_block
 Use the structured `context` data to inject KG content at specific points in the production prompt.
 
 ```python
-response = requests.post(API_URL, json={"query": user_query, "domain": "neuro"})
+response = requests.post(API_URL, auth=AUTH, json={"query": user_query, "domain": "neuro"})
 data = response.json()
 
 if data["success"]:
@@ -242,7 +222,7 @@ if data["success"]:
 Access the complete domain expertise: system prompt, lesson schema, and pre-formatted KG context.
 
 ```python
-response = requests.post(API_URL, json={"query": user_query, "domain": "neuro"})
+response = requests.post(API_URL, auth=AUTH, json={"query": user_query, "domain": "neuro"})
 data = response.json()
 
 if data["success"]:
@@ -274,10 +254,12 @@ Environment variables like **number of students**, **class level**, **special ne
 ```python
 import requests
 
-API_URL = "http://localhost:8000/api/v1/context"
+API_URL = "https://agente.aiforlearning.digital/api/v1/context"
+AUTH = (CLIENT_NAME, CLIENT_PASSWORD)  # from your server's settings
 
 response = requests.post(
     API_URL,
+    auth=AUTH,
     json={
         "query": "Come posso introdurre strategie metacognitive nella mia classe?",
         "domain": "neuro",
@@ -294,12 +276,8 @@ else:
 
 ### cURL
 
-Since 2026-10-20 `/context` needs the same HTTP Basic credentials as the other
-API routes (the instance's client name and password, see
-`docs/api/Chatbot_API_Guide.md`); without them it answers `401`.
-
 ```bash
-curl -X POST "http://localhost:8000/api/v1/context" \
+curl -X POST "https://agente.aiforlearning.digital/api/v1/context" \
   -u "$CLIENT_NAME:$CLIENT_PASSWORD" \
   -H "Content-Type: application/json" \
   -d '{
@@ -312,9 +290,13 @@ curl -X POST "http://localhost:8000/api/v1/context" \
 ### JavaScript (fetch)
 
 ```javascript
-const response = await fetch('http://localhost:8000/api/v1/context', {
+// On your server, never in the browser: the credentials stay there.
+const response = await fetch('https://agente.aiforlearning.digital/api/v1/context', {
   method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': 'Basic ' + Buffer.from(`${CLIENT_NAME}:${CLIENT_PASSWORD}`).toString('base64'),
+  },
   body: JSON.stringify({
     query: 'Come gestire la classe?',
     domain: 'neuro',
@@ -325,110 +307,3 @@ const response = await fetch('http://localhost:8000/api/v1/context', {
 const data = await response.json();
 console.log(data.formatted_prompt_section);
 ```
-
----
-
-## Deployment
-
-### Local Development
-
-```bash
-uvicorn aix.api.main:app --reload --port 8000
-```
-
-### Production (with Gunicorn)
-
-```bash
-gunicorn aix.api.main:app -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8000
-```
-
-### Docker
-
-```dockerfile
-FROM python:3.11-slim
-
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install -r requirements.txt
-
-COPY . .
-
-CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
-```
-
-```bash
-docker build -t graphrag-api .
-docker run -p 8000:8000 --env-file .env graphrag-api
-```
-
----
-
-## Troubleshooting
-
-### Common Issues
-
-| Issue | Solution |
-|-------|----------|
-| `ModuleNotFoundError: No module named 'api'` | Run from `graphaixlearning/` directory |
-| `Neo4j connection failed` | Check `.env` credentials and Neo4j is running |
-| `OpenAI API error` | Verify `OPENAI_API_KEY` in `.env` |
-| `Timeout on queries` | First query loads Node2Vec model (~5s), subsequent faster |
-| `0 relationships returned` | Normal for some queries; check logs for details |
-
-### Checking Health
-
-```bash
-curl http://localhost:8000/api/v1/health
-```
-
-Response:
-```json
-{
-  "status": "healthy",
-  "neo4j_connected": true,
-  "version": "1.1.0",
-  "domain_configs_loaded": ["neuro", "udl"]
-}
-```
-
-### Viewing Logs
-
-The API logs detailed information:
-```
-INFO: Processing context request: domain=neuro, query=...
-INFO: [P1 Filter] Structural+Vector neighbors: 37 → Filtered: 9
-INFO: Context generated successfully in 21059ms
-```
-
----
-
-## API Module Structure
-
-```
-graphaixlearning/api/
-├── __init__.py              # Package initialization
-├── main.py                  # FastAPI app entry point
-├── graphrag_client.py       # Helper client for external integration
-├── routes/
-│   ├── __init__.py
-│   └── context.py           # Main /context endpoint
-├── schemas/
-│   ├── __init__.py
-│   └── models.py            # Pydantic request/response models
-└── templates/
-    └── graphrag_prompt.txt  # Example Jinja2 template
-```
-
----
-
-## Support
-
-For questions or issues:
-- Check the Swagger docs: http://localhost:8000/docs
-- Review logs for detailed error messages
-- Contact the AI Team
-
----
-
-*Last updated: January 2026 (v1.1.0 — domain-aware prompts, domain_prompt_context)*
-

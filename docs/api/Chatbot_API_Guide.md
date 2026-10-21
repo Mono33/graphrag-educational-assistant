@@ -333,7 +333,7 @@ before production. The implementation review is
 
 The older [`API_INTEGRATION_GUIDE.md`](API_INTEGRATION_GUIDE.md) documents the
 GraphRAG-only `/context` integration; it is not the guide for the new
-conversational flow.
+conversational flow. (The former `PRIVATE_MATERIALS_API.md` is merged into §3.)
 
 ### What the platform must persist
 
@@ -396,7 +396,9 @@ Before Dev starts end-to-end testing:
 - enable and audit durable material storage;
 - configure one service credential per platform instance;
 - restrict the staging API by network policy;
-- protect `/docs`, `/redoc`, `/openapi.json` and `/context`;
-- export a version-pinned OpenAPI document for the Dev implementation;
+- ~~protect `/docs`, `/redoc`, `/openapi.json` and `/context`~~ — done 2026-10-20:
+  `/context` needs credentials, the docs are off on staging and production;
+- ~~export a version-pinned OpenAPI document for the Dev implementation~~ — done:
+  [`openapi.json`](openapi.json);
 - run `scripts/eval/api_smoke.py` against the deployed stack;
 - verify that two instances using the same end-user value remain isolated.
