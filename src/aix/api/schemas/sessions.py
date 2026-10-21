@@ -151,7 +151,23 @@ class TurnOut(BaseModel):
     kind: Literal["message", "lesson", "answer"]
     markdown: str
     created_at: Optional[datetime] = None
-    meta: dict[str, Any] = Field(default_factory=dict)
+    meta: dict[str, Any] = Field(
+        default_factory=dict,
+        description="For a lesson: the run summary (scores, counts, UDL coverage). "
+        "For an answer: model, seconds, passages.",
+    )
+    planner: Optional[PlannerInfo] = Field(
+        None, description="For a lesson: its planner card, as when it was written."
+    )
+    retriever: Optional[RetrieverInfo] = Field(
+        None,
+        description="For a lesson: its Knowledge Graph card. The curated media are in "
+        "``GET /sessions/{id}/media?turn_index=…`` → ``curated``.",
+    )
+    critic: Optional[CriticInfo] = Field(None, description="For a lesson, with the judge off.")
+    judge: Optional[JudgeInfo] = Field(
+        None, description="For a lesson, with the judge on: the «Revisione mirata» card."
+    )
 
 
 class SessionMaterial(BaseModel):
@@ -183,8 +199,17 @@ class SessionOut(SessionSummary):
 
 
 class SessionMedia(BaseModel):
-    """Resources on the lesson's subject, found live (papers, Wikipedia, videos)."""
+    """The resources shown with a lesson: the Knowledge Graph's curated ones, and
+    those found live (papers, Wikipedia, videos) for the WebUI's right panel."""
 
+    turn_index: Optional[int] = Field(
+        None, description="The lesson turn these resources belong to; null when none."
+    )
+    curated: dict[str, Any] = Field(
+        default_factory=dict,
+        description="The Knowledge Graph's curated resources, the lesson result's "
+        "``retriever.media``: videos, resources, citations, open textbooks.",
+    )
     videos: list[dict[str, Any]] = Field(default_factory=list)
     citations: list[dict[str, Any]] = Field(default_factory=list)
     wikipedia: list[dict[str, Any]] = Field(default_factory=list)

@@ -257,7 +257,13 @@ def test_the_media_panel_is_empty_when_the_live_search_is_off(api, monkeypatch):
     response = api.get(f"/api/v1/sessions/{session_id}/media", headers=_as())
 
     assert response.status_code == 200
-    assert response.json() == {"videos": [], "citations": [], "wikipedia": []}
+    assert response.json() == {
+        "turn_index": None,
+        "curated": {},
+        "videos": [],
+        "citations": [],
+        "wikipedia": [],
+    }
 
 
 def test_the_catalog_has_the_webui_s_choices(api):
@@ -371,3 +377,132 @@ def test_an_answer_during_a_turn_is_already_running_not_no_lesson_yet(status, pl
         _form(TurnRequest(message="E per l'Attività 2?", mode="answer"), lesson)
 
     assert (refused.value.status_code, refused.value.detail["code"]) == (409, code)
+
+
+# --- What a lesson keeps (2026-10-21): its cards and its resources, readable later
+
+
+CARDS = {
+    "planner": {"intent": "lesson_creation", "subject_concepts": ["cellula"]},
+    "retriever": {"nodes_count": 12, "top_concepts": ["Mitocondrio"]},
+    "judge": {
+        "found": 1,
+        "replaced": 1,
+        "fixed": [{"check": "fatti", "before": "a", "after": "b"}],
+    },
+}
+CURATED = {"videos": [{"title": "La cellula in 5 minuti", "url": "https://example.org/v"}]}
+LIVE = {"wikipedia": [{"title": "Cellula", "url": "https://it.wikipedia.org/wiki/Cellula"}]}
+
+
+def _fake_chain_that_keeps(meta):
+    async def chain(lesson, session):
+        from aix.webui.lessons.models import LessonMediaSnapshot
+
+        turn = max(
+            [m.turn_index for m in (await session.run_sync(lambda s: lesson.messages))] or [1]
+        )
+        lesson.lesson_plan_md = LESSON_MD
+        lesson.status = "complete"
+        session.add(
+            LessonMessage(
+                lesson_id=lesson.id,
+                role="assistant",
+                content_md=LESSON_MD,
+                turn_index=turn,
+                agent_kind="writer",
+                meta_json=meta,
+            )
+        )
+        session.add(
+            LessonMediaSnapshot(
+                lesson_id=lesson.id,
+                turn_index=turn,
+                owner_id=lesson.owner_id,
+                curated_json=CURATED,
+                live_json=LIVE,
+                live_fetched=True,
+            )
+        )
+        await session.commit()
+        yield StreamEvent(kind="done", lesson_plan_md=LESSON_MD, meta={"duration_seconds": 1.0})
+
+    return chain
+
+
+def test_a_lesson_read_later_still_has_its_cards(api, monkeypatch):
+    meta = {"approved": True, "scores": {"average_score": 4.0}, "cards": CARDS, "kg_digest": "…"}
+    monkeypatch.setattr("aix.webui.agent.turns.run_agent_stream", _fake_chain_that_keeps(meta))
+    session_id = _new_session(api)
+    _turn(api, session_id, message="Crea una lezione sulla cellula")
+
+    turns = api.get(f"/api/v1/sessions/{session_id}", headers=_as()).json()["turns"]
+
+    question, lesson = turns
+    assert question["planner"] is None
+    assert lesson["planner"]["subject_concepts"] == ["cellula"]
+    assert lesson["retriever"]["top_concepts"] == ["Mitocondrio"]
+    assert lesson["judge"]["fixed"][0]["after"] == "b"
+    assert lesson["critic"] is None
+    # The cards are typed above; the graph digest is the light turns' material.
+    assert lesson["meta"] == {"approved": True, "scores": {"average_score": 4.0}}
+
+
+def test_a_lesson_saved_before_the_cards_still_has_its_judge(api, monkeypatch):
+    meta = {
+        "approved": True,
+        "judge": {"found": 2, "blocking": 1, "fixed": [{"check": "fatti", "after": "b"}]},
+        "review_notes": [{"check": "classe", "severity": "bloccante", "quote": "q", "why": "w"}],
+    }
+    monkeypatch.setattr("aix.webui.agent.turns.run_agent_stream", _fake_chain_that_keeps(meta))
+    session_id = _new_session(api)
+    _turn(api, session_id, message="Crea una lezione sulla cellula")
+
+    lesson = api.get(f"/api/v1/sessions/{session_id}", headers=_as()).json()["turns"][1]
+
+    assert lesson["planner"] is None
+    judge = lesson["judge"]
+    assert (judge["found"], judge["notes"], judge["notes_blocking"]) == (2, 1, 1)
+    assert judge["points"][0]["quote"] == "q"
+
+
+def test_the_media_has_the_curated_resources_and_an_earlier_lesson_s(api, monkeypatch):
+    monkeypatch.setattr("aix.webui.agent.turns.run_agent_stream", _fake_chain_that_keeps({}))
+
+    async def no_live_search(lesson):
+        raise AssertionError("what was shown is replayed, not searched again")
+
+    monkeypatch.setattr("aix.api.routes.sessions.live_media_for_lesson", no_live_search)
+    session_id = _new_session(api)
+    _turn(api, session_id, message="Crea una lezione sulla cellula")
+
+    latest = api.get(f"/api/v1/sessions/{session_id}/media", headers=_as()).json()
+    earlier = api.get(f"/api/v1/sessions/{session_id}/media?turn_index=1", headers=_as()).json()
+    missing = api.get(f"/api/v1/sessions/{session_id}/media?turn_index=9", headers=_as()).json()
+
+    assert latest["turn_index"] == 1
+    assert latest["curated"]["videos"][0]["title"] == "La cellula in 5 minuti"
+    assert latest["wikipedia"][0]["title"] == "Cellula"
+    assert earlier == latest
+    assert missing["curated"] == {} and missing["turn_index"] is None
+
+
+def test_a_lesson_turn_keeps_the_cards_the_webui_showed():
+    from aix.webui.agent.service import lesson_cards
+
+    state = {
+        "query_intent": "lesson_creation",
+        "retrieved_nodes": [{"name": "Mitocondrio"}],
+        "curated_media": {"videos": [{"title": "v"}]},
+        "judge_summary": {"found": 1, "fixed": []},
+        "review_notes": [],
+    }
+
+    with_judge = lesson_cards(state)
+    with_critic = lesson_cards({**state, "judge_summary": None})
+
+    assert set(with_judge) == {"planner", "retriever", "judge"}
+    assert "media" not in with_judge["retriever"]  # kept in the media snapshot
+    assert with_judge["retriever"]["top_concepts"] == ["Mitocondrio"]
+    assert set(with_critic) == {"planner", "retriever", "critic"}
+    json.dumps(with_judge)  # saved as JSON with the message

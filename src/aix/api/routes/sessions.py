@@ -57,7 +57,7 @@ from aix.api.schemas.sessions import (
 from aix.api.token_stream import DraftEnd, TextDelta, with_text
 from aix.core.ai_marking import AI_GENERATED_HEADER, AI_GENERATED_HEADER_VALUE
 from aix.export.service import ExportRefused, render_lesson_export
-from aix.webui.agent.service import StreamEvent
+from aix.webui.agent.service import StreamEvent, stored_cards
 from aix.webui.agent.turns import TurnAccepted, TurnRefused, accept_turn, drive_turn
 from aix.webui.auth.models import User
 from aix.webui.db import get_async_session
@@ -65,7 +65,9 @@ from aix.webui.lessons.live_media import live_media_for_lesson
 from aix.webui.lessons.media_snapshots import (
     latest_display_snapshot_safe,
     latest_user_turn,
+    sanitize_curated_media,
     save_live_snapshot,
+    snapshot_for_turn_safe,
 )
 from aix.webui.lessons.models import Lesson, LessonMessage
 from aix.webui.materials import library
@@ -236,35 +238,55 @@ async def delete_session(
     await session.commit()
 
 
+def _media(
+    live: Optional[dict[str, Any]], turn_index: Optional[int], curated: dict[str, Any]
+) -> SessionMedia:
+    return SessionMedia.model_validate(
+        {**(live or {}), "turn_index": turn_index, "curated": curated}
+    )
+
+
 @router.get(
     "/{session_id}/media",
     response_model=SessionMedia,
-    summary="Resources on the lesson's subject, found live",
+    summary="The resources shown with a lesson: curated and found live",
     description=(
-        "Papers, Wikipedia and videos on the lesson's subject, as the WebUI's right panel "
-        "shows them after a lesson. Best effort: empty when nothing is found or the live "
-        "search is off. The curated resources of the Knowledge Graph are in the lesson "
-        "turn's ``retriever.media``."
+        "What the WebUI shows with a lesson: ``curated``, the Knowledge Graph's resources "
+        "(the lesson result's ``retriever.media``), and the papers, Wikipedia pages and "
+        "videos found live on the lesson's subject (the right panel). Without "
+        "``turn_index``, the latest lesson's: the live search runs the first time and is "
+        "replayed afterwards. With ``turn_index`` (a lesson turn of ``GET /sessions/{id}``), "
+        "what that lesson kept, with no new search. Best effort: empty when nothing was "
+        "found or the live search is off."
     ),
 )
 async def session_media(
     session_id: str,
+    turn_index: Optional[int] = None,
     owner: User = Depends(current_owner),
     session: AsyncSession = Depends(get_async_session),
 ) -> SessionMedia:
     lesson = await _lesson(session, owner, session_id)
+    if turn_index is not None:
+        # An earlier lesson: what it kept, never a new search.
+        kept = await snapshot_for_turn_safe(
+            session, lesson_id=lesson.id, owner_id=owner.id, turn_index=turn_index
+        )
+        if kept is None:
+            return SessionMedia()
+        return _media(kept.live_json, kept.turn_index, sanitize_curated_media(kept.curated_json))
     # Louis's rule for the WebUI panel: what was shown is replayed, a provider is
     # asked once. A session has no panel to load during the run, so the first
     # call searches and remembers, and every later call replays.
     saved = await latest_display_snapshot_safe(session, lesson_id=lesson.id, owner_id=owner.id)
+    curated = sanitize_curated_media(saved.curated_json) if saved is not None else {}
+    kept_turn = saved.turn_index if saved is not None else None
     if saved is not None and saved.live_fetched:
-        return SessionMedia.model_validate(saved.live_json or {})
+        return _media(saved.live_json, kept_turn, curated)
     panel = await live_media_for_lesson(lesson)
     if panel is None:
-        return SessionMedia()
-    turn_index = (
-        saved.turn_index if saved is not None else await latest_user_turn(session, lesson.id)
-    )
+        return _media(None, kept_turn, curated)
+    turn_index = kept_turn if kept_turn is not None else await latest_user_turn(session, lesson.id)
     try:
         async with session.begin_nested():
             await save_live_snapshot(
@@ -278,7 +300,7 @@ async def session_media(
     except Exception:  # noqa: BLE001 — the answer matters more than remembering it
         await session.rollback()
         logger.warning("[api.sessions] media snapshot not saved for session=%s", lesson.id)
-    return SessionMedia.model_validate(panel)
+    return _media(panel, turn_index, curated)
 
 
 @router.get(
@@ -355,6 +377,12 @@ async def _session_out(session: AsyncSession, lesson: Lesson, owner: User) -> Se
             "message" if row.role == "user" else "answer" if row.agent_kind == "tutor" else "lesson"
         )
         text = row.content_md or ""
+        meta = dict(row.meta_json or {})
+        # The cards are returned typed, below; the graph digest is the light
+        # turns' working material, not something to show.
+        meta.pop("cards", None)
+        meta.pop("kg_digest", None)
+        cards = stored_cards(row.meta_json) if kind == "lesson" else {}
         turns.append(
             TurnOut(
                 turn_index=row.turn_index,
@@ -364,7 +392,11 @@ async def _session_out(session: AsyncSession, lesson: Lesson, owner: User) -> Se
                 if row.role == "user"
                 else await resolve_for_lesson(text, session, lesson),
                 created_at=row.created_at,
-                meta=row.meta_json or {},
+                meta=meta,
+                planner=planner_info(cards["planner"]) if "planner" in cards else None,
+                retriever=retriever_info(cards["retriever"]) if "retriever" in cards else None,
+                critic=critic_info(cards["critic"]) if "critic" in cards else None,
+                judge=judge_info(cards["judge"]) if "judge" in cards else None,
             )
         )
     materials = [

@@ -1274,6 +1274,39 @@ def _build_judge_payload(state: dict[str, Any], write_revision: int = 1) -> dict
     }
 
 
+def lesson_cards(state: dict[str, Any]) -> dict[str, Any]:
+    """The cards a lesson turn keeps with its message (2026-10-21).
+
+    Until then they lived only in the stream: a lesson reopened later, in the
+    WebUI or through ``GET /api/v1/sessions/{id}``, had its numbers but not its
+    planner and Knowledge Graph cards. The curated media stay apart, in the
+    turn's media snapshot.
+    """
+    retriever = _build_retriever_payload(state)
+    retriever.pop("media", None)
+    cards: dict[str, Any] = {
+        "planner": _build_planner_payload(state),
+        "retriever": retriever,
+    }
+    if state.get("judge_summary") is not None:
+        cards["judge"] = _build_judge_payload(state)
+    else:
+        cards["critic"] = _build_critic_payload(state)
+    return cards
+
+
+def stored_cards(meta: Optional[dict[str, Any]]) -> dict[str, Any]:
+    """The cards of a saved lesson turn. A turn saved before ``lesson_cards``
+    existed still has its judge's summary and notes, so that card is rebuilt."""
+    meta = meta or {}
+    cards = dict(meta.get("cards") or {})
+    if "judge" not in cards and isinstance(meta.get("judge"), dict):
+        cards["judge"] = _build_judge_payload(
+            {"judge_summary": meta["judge"], "review_notes": meta.get("review_notes") or []}
+        )
+    return cards
+
+
 def _extract_meta(final_state: dict[str, Any]) -> dict[str, Any]:
     """Run summary used by the final lesson card and the run-complete banner."""
     media = final_state.get("curated_media") or {}
@@ -1760,12 +1793,15 @@ async def run_agent_stream(
         from aix.agent.kg_evidence import digest as kg_digest
 
         kept = kg_digest(final_state, lesson=lesson_plan_md)
+        saved_meta = {**meta, "cards": lesson_cards(final_state)}
+        if kept:
+            saved_meta["kg_digest"] = kept
         await _persist_assistant_turn(
             session=session,
             lesson_id=lesson.id,
             owner_id=lesson.owner_id,
             content_md=lesson_plan_md,
-            meta={**meta, "kg_digest": kept} if kept else meta,
+            meta=saved_meta,
             curated_media=final_state.get("curated_media") or {},
         )
 

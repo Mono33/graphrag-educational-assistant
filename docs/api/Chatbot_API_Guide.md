@@ -143,6 +143,14 @@ library_disabled`).
 `cited_documents`), every turn, and the bound documents. `GET /sessions` lists
 them; `DELETE /sessions/{id}` deletes one.
 
+Each turn has `turn_index`, `role`, `kind` (`message`, `lesson`, `answer`),
+`markdown` and `created_at`. A `lesson` turn also carries the cards it was
+written with, `planner`, `retriever` and `judge` (or `critic`), so a lesson
+reopened later shows them as the WebUI did (kept since 2026-10-21; an older
+lesson has only its `judge`), and `meta`, its run summary. Every version of the
+lesson stays in the turns; `lesson_markdown` and the export are the current
+one.
+
 The language is detected from the messages, as in the WebUI.
 
 ## 5. Turns
@@ -266,8 +274,13 @@ The text arrives while it is written, for lessons and answers alike:
   where the teacher sees what changed.
 - `lesson_meta`: duration, revisions, scores, counts, UDL coverage; with the judge
   on also `review_notes` (= `judge.points`) and the judge's raw summary.
-- `GET /sessions/{id}/media`: papers, Wikipedia and videos on the subject, found
-  live (the WebUI's right panel; empty when nothing is found).
+- `GET /sessions/{id}/media`: the resources shown with the lesson. `curated`,
+  the Knowledge Graph's (the same as `retriever.media`), and `videos`,
+  `citations`, `wikipedia`, found live on the subject (the WebUI's right panel).
+  The live search runs the first time and is replayed afterwards.
+  `?turn_index=N` returns what an earlier lesson showed, with no new search;
+  `turn_index` in the answer says which lesson the resources belong to. Empty
+  when nothing was found.
 - `ai_disclosure` in the body and `X-AI-Generated: true` in the headers (AI Act
   Art. 50): show the notice next to generated content.
 

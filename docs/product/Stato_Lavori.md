@@ -4024,3 +4024,27 @@ nuovo nel `result`, con gli stessi campi della WebUI (lo garantisce
   e `openapi.json`; nella guida le voci chiuse dell'accettazione dello staging.
 - `ENVIRONMENT.md`: una riga sola per `AIX_API_CLIENTS` (erano due), con il
   modo di darla al solo `api-staging` sulla VM.
+
+### 2026-10-21 — Una lezione riletta dopo ha le sue schede e le sue risorse
+
+I dev di AIxLearning devono mostrare le lezioni passate come la WebUI. Prima
+le schede del pianificatore e del grafo vivevano solo nello stream, e le
+risorse curate del grafo, pur salvate nella `lesson_media_snapshot`, non
+uscivano dall'API.
+
+- Ogni lezione salva con il messaggio le sue schede (`lesson_cards`):
+  pianificatore, grafo (senza `media`, che resta nella snapshot), giudice o
+  Critic.
+- `GET /sessions/{id}`: ogni turno `lesson` ha `planner`, `retriever`, `judge`
+  (o `critic`) tipizzati; per le lezioni salvate prima il giudice è ricostruito
+  dal riepilogo già salvato. Da `meta` escono `cards` e `kg_digest` (materiale
+  dei turni brevi, non da mostrare).
+- `GET /sessions/{id}/media`: anche `curated` e `turn_index`; con
+  `?turn_index=N` le risorse di una lezione precedente, senza nuove ricerche.
+- Quickstart: «Reading it all back later», con la tabella di cosa si rilegge e
+  come; guida §4 e §6; `openapi.json` riesportato.
+
+Prova vera in locale (tutto DeepSeek, una lezione sul ciclo dell'acqua): le
+schede rilette sono identiche a quelle del risultato (tranne `media`, ora in
+`/media` → `curated`: 5 video, 3 citazioni, 4 link); `?turn_index=1` dà la
+stessa risposta senza cercare di nuovo. Suite: 1375 passati.

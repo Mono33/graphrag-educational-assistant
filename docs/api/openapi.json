@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "GraphRAG Educational API",
-    "description": "AIxLearning integration contract, exported 2026-10-20 from chore/repo-reorg (staging f609d65 + the security fixes of the same day). Only the /api routes. Guide: docs/api/Chatbot_API_Guide.md. Authentication: HTTP Basic with the instance's client name and password, plus X-End-User-Id.",
+    "description": "AIxLearning integration contract, exported 2026-10-21 from chore/repo-reorg. Only the /api routes. Start from docs/api/QUICKSTART.md; details in docs/api/Chatbot_API_Guide.md. Authentication: HTTP Basic with the instance's client name and password, plus X-End-User-Id.",
     "version": "1.1.0"
   },
   "paths": {
@@ -1415,8 +1415,8 @@
         "tags": [
           "sessions"
         ],
-        "summary": "Resources on the lesson's subject, found live",
-        "description": "Papers, Wikipedia and videos on the lesson's subject, as the WebUI's right panel shows them after a lesson. Best effort: empty when nothing is found or the live search is off. The curated resources of the Knowledge Graph are in the lesson turn's ``retriever.media``.",
+        "summary": "The resources shown with a lesson: curated and found live",
+        "description": "What the WebUI shows with a lesson: ``curated``, the Knowledge Graph's resources (the lesson result's ``retriever.media``), and the papers, Wikipedia pages and videos found live on the lesson's subject (the right panel). Without ``turn_index``, the latest lesson's: the live search runs the first time and is replayed afterwards. With ``turn_index`` (a lesson turn of ``GET /sessions/{id}``), what that lesson kept, with no new search. Best effort: empty when nothing was found or the live search is off.",
         "operationId": "session_media_api_v1_sessions__session_id__media_get",
         "security": [
           {
@@ -1437,6 +1437,22 @@
             "schema": {
               "type": "string",
               "title": "Session Id"
+            }
+          },
+          {
+            "name": "turn_index",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Turn Index"
             }
           },
           {
@@ -5003,6 +5019,24 @@
       },
       "SessionMedia": {
         "properties": {
+          "turn_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Turn Index",
+            "description": "The lesson turn these resources belong to; null when none."
+          },
+          "curated": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Curated",
+            "description": "The Knowledge Graph's curated resources, the lesson result's ``retriever.media``: videos, resources, citations, open textbooks."
+          },
           "videos": {
             "items": {
               "additionalProperties": true,
@@ -5030,7 +5064,7 @@
         },
         "type": "object",
         "title": "SessionMedia",
-        "description": "Resources on the lesson's subject, found live (papers, Wikipedia, videos)."
+        "description": "The resources shown with a lesson: the Knowledge Graph's curated ones, and\nthose found live (papers, Wikipedia, videos) for the WebUI's right panel."
       },
       "SessionOut": {
         "properties": {
@@ -5269,7 +5303,52 @@
           "meta": {
             "additionalProperties": true,
             "type": "object",
-            "title": "Meta"
+            "title": "Meta",
+            "description": "For a lesson: the run summary (scores, counts, UDL coverage). For an answer: model, seconds, passages."
+          },
+          "planner": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlannerInfo"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For a lesson: its planner card, as when it was written."
+          },
+          "retriever": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RetrieverInfo"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For a lesson: its Knowledge Graph card. The curated media are in ``GET /sessions/{id}/media?turn_index=…`` → ``curated``."
+          },
+          "critic": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CriticInfo"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For a lesson, with the judge off."
+          },
+          "judge": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JudgeInfo"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For a lesson, with the judge on: the «Revisione mirata» card."
           }
         },
         "type": "object",

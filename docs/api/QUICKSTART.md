@@ -152,7 +152,7 @@ field names (a test keeps the two in step):
 | --- | --- | --- |
 | Planner card: intent, scope, concepts, searches | `planner`, after ~3–5 s | `result.planner` |
 | Knowledge Graph card: what was found, coverage | `retriever`, after ~10 s | `result.retriever` |
-| Curated resources from the graph (videos, articles, textbooks) | inside `retriever` → `media` | `result.retriever.media` |
+| Curated resources from the graph (videos, articles, textbooks) | inside `retriever` → `media` | `result.retriever.media`; later `GET /sessions/{id}/media` → `curated` |
 | «Revisione mirata» card: corrections made, points to check | `judge_pending` (show «checking…»), then `judge` | `result.judge` |
 | Right panel: papers, Wikipedia, videos found live | — | `GET /sessions/{id}/media`, after the lesson |
 
@@ -163,10 +163,28 @@ field names (a test keeps the two in step):
   `teacher_material: true`, say «to check against your document»), `points` what
   could not be corrected. The corrections are already in `markdown`.
 - `GET /sessions/{id}/media`: call it once after a lesson; it searches the first
-  time (a few seconds) and replays afterwards. Empty lists when nothing is found.
+  time (a few seconds) and replays afterwards. It returns both the curated
+  resources (`curated`) and those found live (`videos`, `citations`,
+  `wikipedia`). Empty lists when nothing is found.
 - With the judge off on a server, the review card is `critic` instead of `judge`
   (`critic_pending`, `critic`): handle both.
 - An `answer` turn has no cards: the lesson and its cards stay as they were.
+
+## Reading it all back later
+
+Everything is kept by the agent; your platform needs only the ids. Use the
+**same** credentials and the **same** `X-End-User-Id` as when it was created:
+for any other pair the data does not exist (`404`).
+
+| To show | Call | What you get |
+| --- | --- | --- |
+| A teacher's past lessons | `GET /sessions` | each session: `session_id`, title, status, dates; most recent first |
+| One conversation | `GET /sessions/{id}` | the class profile, the current lesson, the documents, and `turns`: every message, answer and **every version of the lesson**, in order |
+| The cards of a past lesson | each `turns[]` item with `kind: "lesson"` | `planner`, `retriever`, `judge` (or `critic`), as when it was written; `meta` has its scores and counts |
+| The resources of a past lesson | `GET /sessions/{id}/media?turn_index=N` (`N` = that lesson's `turn_index`) | `curated` and the live ones it showed; no new search |
+| The current lesson as a file | `GET /sessions/{id}/export?format=docx` | `md`, `txt`, `pdf`, `docx`, `outline` |
+| A teacher's documents | `GET /materials` | each with `attached_lesson_ids`, the sessions using it; the original file at `GET /materials/{id}/versions/{version_id}/source` |
+| A teacher's saved resources | `GET /materials/saved/resources` | the bookmarked videos and articles |
 
 ## Three rules that save you trouble
 
