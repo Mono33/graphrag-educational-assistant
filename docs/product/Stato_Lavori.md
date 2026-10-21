@@ -4127,3 +4127,6 @@ Prova in locale, stessa richiesta e stessa dispensa, tutto DeepSeek, 5 volte:
 **5 lezioni su 5 citano** (6–13 citazioni). In 3 casi su 5 la prima stesura
 non citava: il problema era frequente, la riscrittura lo copriva solo a volte.
 Con l'elenco, tutte e 3 le riscritture citano. Suite: 1390 passati.
+
+Online su staging a `e6668b7` (PR #23, unite da Angelo da terminale con `gh`;
+immagine aggiornata sulla VM con `docker compose pull`).
