@@ -29,6 +29,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from aix.core.redact import private
+
 logger = logging.getLogger(__name__)
 
 
@@ -192,7 +194,7 @@ class MetricsCalculator:
 
         logger.info("=" * 80)
         logger.info("📊 QUERY METRICS CALCULATION START")
-        logger.info(f"   Original Query: {query[:100]}...")
+        logger.info("   Original Query: %s", private(query, keep=100))
         logger.info(f"   Domain: {query_domain}")
         logger.info(f"   Evaluation Mode: {self.mode}")
 

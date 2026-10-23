@@ -35,6 +35,7 @@ from aix.api.schemas import (
     RetrievalPhase,
     ScoringBreakdown,
 )
+from aix.core.redact import private
 from aix.domains import get_domain_config
 from aix.retrieval.context_builder import ConfidenceLevel as CBConfidenceLevel
 
@@ -896,7 +897,7 @@ async def get_context(
 
     try:
         logger.info(
-            f"Processing context request: domain={request.domain}, query={request.query[:50]}..."
+            f"Processing context request: domain={request.domain}, query={private(request.query)}"
         )
 
         domain = request.domain.value

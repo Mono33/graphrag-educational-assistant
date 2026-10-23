@@ -199,6 +199,12 @@ for any other pair the data does not exist (`404`).
 3. **One message at a time per session.** A second message while the first is
    still running gets `409 already_running`: wait and retry.
 
+Optional but useful: send **`X-Request-ID`** with your own id for the call (your
+Dramatiq message id, for example; letters, digits and `. _ : -`, up to 64). It
+comes back in the response's `X-Request-ID` (we make one up when you send none)
+and it is on every line of our logs and in our trace of the call. When something
+goes wrong, give us that id: we find the call at once.
+
 ## Errors to handle
 
 Every error of `/sessions`, `/materials` and `/catalog` has the same body,

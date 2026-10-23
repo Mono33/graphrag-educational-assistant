@@ -51,6 +51,14 @@ A runnable version of this flow: `scripts/eval/api_smoke.py`.
 - A WebUI teacher calling with their own login (JWT cookie) acts as themselves;
   their API sessions also appear in their WebUI.
 
+### Correlation: `X-Request-ID`
+
+Send `X-Request-ID: <your id for this call>` (letters, digits and `. _ : -`, up
+to 64 characters; a Dramatiq message id fits). Every response carries
+`X-Request-ID`: yours, or one we made when you sent none or one we could not
+use. The id is on every line of our logs for the call and in the metadata of
+its Langfuse trace: quote it when you report a problem.
+
 ### Retries: `Idempotency-Key`
 
 Send `Idempotency-Key: <a unique id for this attempt's job>` on
@@ -404,8 +412,8 @@ These points are intentionally visible to Dev because they remain joint work:
   `scripts/ops/export_openapi.py` refuses to export one.
 - **Credits and exports:** agree how `lesson`, `answer` and `handoff` are
   charged, and whether AIxLearning keeps its own watermark/export pipeline.
-- **Tracing:** agree a correlation identifier across AIxLearning, GraphRAG and
-  Langfuse.
+- ~~**Tracing:** agree a correlation identifier across AIxLearning, GraphRAG and
+  Langfuse.~~ Done 2026-10-23: `X-Request-ID` (§2).
 
 ### Minimum staging acceptance
 

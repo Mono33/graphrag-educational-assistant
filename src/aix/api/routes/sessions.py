@@ -61,7 +61,7 @@ from aix.webui.agent.service import StreamEvent, stored_cards
 from aix.webui.agent.turns import TurnAccepted, TurnRefused, accept_turn, drive_turn
 from aix.webui.auth.models import User
 from aix.webui.db import get_async_session
-from aix.webui.lessons.live_media import live_media_for_lesson
+from aix.webui.lessons.live_media import lesson_subjects, live_media_for_lesson
 from aix.webui.lessons.media_snapshots import (
     latest_display_snapshot_safe,
     latest_user_turn,
@@ -283,7 +283,7 @@ async def session_media(
     kept_turn = saved.turn_index if saved is not None else None
     if saved is not None and saved.live_fetched:
         return _media(saved.live_json, kept_turn, curated)
-    panel = await live_media_for_lesson(lesson)
+    panel = await live_media_for_lesson(lesson, await lesson_subjects(session, lesson.id))
     if panel is None:
         return _media(None, kept_turn, curated)
     turn_index = kept_turn if kept_turn is not None else await latest_user_turn(session, lesson.id)

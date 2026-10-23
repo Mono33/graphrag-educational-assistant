@@ -119,7 +119,11 @@ from aix.webui.features import (
     register as _register_feature_flags,
 )
 from aix.webui.lessons.display import lesson_to_row
-from aix.webui.lessons.live_media import _media_live_enabled, live_media_for_lesson
+from aix.webui.lessons.live_media import (
+    _media_live_enabled,
+    lesson_subjects,
+    live_media_for_lesson,
+)
 from aix.webui.lessons.media_snapshots import (
     latest_display_snapshot_safe,
     latest_user_turn,
@@ -562,7 +566,7 @@ async def lesson_media_live(
 
     # Only an active run may go to live providers (``live_media_for_lesson``
     # checks the flag, the topic and the concepts). ``None``: nothing searched.
-    panel = await live_media_for_lesson(lesson)
+    panel = await live_media_for_lesson(lesson, await lesson_subjects(session, lesson.id))
     if panel is None:
         return empty
 

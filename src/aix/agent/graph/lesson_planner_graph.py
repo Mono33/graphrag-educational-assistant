@@ -53,6 +53,7 @@ from aix.agent.graph.nodes import (
     write_node,
 )
 from aix.agent.graph.state import AgentInput, AgentState, create_initial_state
+from aix.core.redact import private
 
 logger = logging.getLogger(__name__)
 
@@ -481,7 +482,7 @@ class LessonPlannerPipeline:
         Returns:
             Dictionary with lesson plan and metadata
         """
-        logger.info(f"[Pipeline] Starting for query: {query[:50]}...")
+        logger.info("[Pipeline] Starting for query: %s", private(query))
 
         # Normalize Pydantic models to dict so the LangGraph state stays
         # JSON-serializable across nodes / checkpoints.

@@ -51,10 +51,16 @@ from aix.api import __version__
 from aix.api.routes import context_router
 from aix.api.schemas import HealthResponse
 
-# Configure logging
+# Configure logging. ``[%(request_id)s]``: the request a line belongs to
+# (``core.request_id``), ``-`` outside one.
+from aix.core.request_id import RequestIdFilter, RequestIdMiddleware  # noqa: E402
+
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - [%(request_id)s] %(message)s",
 )
+for _handler in logging.getLogger().handlers:
+    _handler.addFilter(RequestIdFilter())
 logger = logging.getLogger(__name__)
 
 
@@ -439,6 +445,10 @@ try:
     logger.info("✅ CSRF protection active on /webui and /auth")
 except Exception as exc:  # noqa: BLE001
     logger.warning("⚠️ CSRF middleware not loaded: %s", exc)
+
+# Added last, so it is the outermost: every request, and every log line and
+# trace inside it, has its id before anything else runs.
+app.add_middleware(RequestIdMiddleware)
 
 # Include routers
 app.include_router(context_router, prefix="/api/v1")

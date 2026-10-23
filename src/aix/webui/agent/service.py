@@ -70,6 +70,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aix.core.ai_marking import ensure_marking
+from aix.core.redact import private
 from aix.webui.errors import report as _report_failure
 from aix.webui.lessons.media_snapshots import save_curated_snapshot
 
@@ -1561,11 +1562,11 @@ async def run_agent_stream(
         final_state.update(initial_state)
 
         logger.info(
-            "[webui.agent] starting run lesson_id=%s domain=%s query=%r "
+            "[webui.agent] starting run lesson_id=%s domain=%s query=%s "
             "uploads=%s thread_id=%s history_turns=%s",
             lesson.id,
             lesson.domain,
-            raw_query[:80],
+            private(raw_query, keep=80),
             len(getattr(lesson, "uploaded_files_json", None) or []),
             run_config["configurable"]["thread_id"],
             # Number of completed prior turns (= half of history length,
@@ -1981,12 +1982,12 @@ async def stream_agent_events(
         final_state.update(initial_state)
 
         logger.info(
-            "[api.agent] starting run session_id=%s thread_id=%s domain=%s query=%r "
+            "[api.agent] starting run session_id=%s thread_id=%s domain=%s query=%s "
             "max_revisions=%s profile=%s teacher_ctx_chars=%s",
             session_id,
             effective_thread_id,
             domain,
-            query[:80],
+            private(query, keep=80),
             effective_max_revisions,
             "yes" if educational_profile else "no",
             len(teacher_provided_context or ""),

@@ -10,6 +10,8 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 
+from aix.core.redact import private
+
 # Import domain configuration system
 from aix.domains import get_domain_config
 from aix.retrieval.context_builder import ConfidenceLevel, EducationalContext
@@ -223,7 +225,7 @@ Generate your pedagogical response:"""
                 - metadata: Generation metadata
         """
         try:
-            logger.info(f"Generating response for query: {original_query[:50]}...")
+            logger.info("Generating response for query: %s", private(original_query))
 
             # Prepare prompt inputs
             prompt_inputs = self._prepare_prompt_inputs(educational_context, original_query)

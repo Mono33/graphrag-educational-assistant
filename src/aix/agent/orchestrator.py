@@ -12,6 +12,8 @@ from typing import Any, Optional
 # Load environment variables FIRST (for OPENAI_API_KEY)
 from dotenv import load_dotenv
 
+from aix.core.redact import private
+
 load_dotenv()
 
 logger = logging.getLogger(__name__)
@@ -183,7 +185,7 @@ class AgentOrchestrator:
         Returns:
             LessonPlanResult containing the lesson plan and metadata
         """
-        logger.info(f"[Orchestrator] Creating lesson plan: {query[:50]}...")
+        logger.info("[Orchestrator] Creating lesson plan: %s", private(query))
 
         pipeline = self.get_pipeline()
 

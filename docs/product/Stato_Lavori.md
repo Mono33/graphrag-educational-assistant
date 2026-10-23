@@ -4148,3 +4148,27 @@ l'immagine precedente: nessun modo di tornare indietro.
 Funziona dal primo deploy dopo questo commit (le immagini precedenti non hanno
 il tag del commit). Da verificare: quanto spazio occupano le immagini nel
 registry e se Scaleway permette una regola che tenga solo le ultime N.
+
+### 2026-10-23 — WP-D1: log senza le parole delle docenti, un id per ogni richiesta
+
+- **Log** (`aix.core.redact.private`): dove `ENVIRONMENT` è staging,
+  production o rehearsal, le richieste delle docenti e le frasi delle lezioni
+  compaiono come lunghezza e impronta («<132 car. #acd258d8>»), in una dozzina di
+  punti (avvio del turno, pianificatore, traduzione Text2Cypher, controllo
+  citazioni, media live, `/context`…). `AIX_LOG_TEACHER_TEXT=true` le rimette.
+  Restano intere in Langfuse e nel database.
+- **Ricerca live delle risorse**: mandava ai motori esterni (YouTube, Wikipedia,
+  OpenAlex) il messaggio intero della docente come «concetto». Ora una
+  richiesta lunga non esce più: al suo posto i concetti del pianificatore
+  salvati con la lezione. Una richiesta breve resta il concetto cercato, perché
+  le parole italiane trovano la Wikipedia italiana e quelle del pianificatore,
+  in inglese, no.
+- **`X-Request-ID`** (`aix.core.request_id`): preso dal chiamante se usabile,
+  altrimenti generato; torna nella risposta, è su ogni riga di log
+  (`[id]`) e nei metadati della traccia Langfuse. Documentato nella quickstart e
+  nella guida §2.
+
+Prova in locale (codice copiato nel container: la build si è fermata per un
+errore DNS di Docker dopo il riavvio): una lezione con `X-Request-ID:
+prova-d1-turno` → l'id torna nella risposta ed è su 482 righe; nessuna riga
+contiene le parole della richiesta. Suite: 1401 passati.

@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Optional
 
+from aix.core.redact import private
+
 # Import domain configuration system
 from aix.domains import get_domain_config
 
@@ -894,7 +896,7 @@ class EducationalContextBuilder:
         """
 
         try:
-            logger.info(f"Building context for query: {original_query[:50]}...")
+            logger.info("Building context for query: %s", private(original_query))
 
             # Extract components
             nodes = retrieval_result.get("nodes", [])

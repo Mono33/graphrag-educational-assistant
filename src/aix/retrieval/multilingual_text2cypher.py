@@ -8,6 +8,7 @@ import logging
 import re
 
 from aix.core.config import config, text2cypher_timeout
+from aix.core.redact import private
 
 # Import domain configuration system for scalable architecture
 from aix.domains import get_domain_config
@@ -504,7 +505,7 @@ class MultilingualText2Cypher:
                 if translated.lower().startswith(prefix.lower()):
                     translated = translated[len(prefix) :].lstrip(":\n ").strip()
 
-            logger.info(f"[OpenAI Translation] {italian_query[:50]}... → {translated[:50]}...")
+            logger.info("[OpenAI Translation] %s → %s", private(italian_query), private(translated))
 
             return translated
 
@@ -623,13 +624,13 @@ class MultilingualText2Cypher:
         query_types = self.detect_query_type(query)
 
         logger.info(
-            f"Processing {language} query (domain={domain}) with types {query_types}: {query[:50]}..."
+            f"Processing {language} query (domain={domain}) with types {query_types}: {private(query)}"
         )
 
         # Enhance Italian queries for better Neo4j mapping with domain-specific terms
         if language == "italian":
             enhanced_query = self.enhance_italian_query(query, domain=domain)
-            logger.info(f"Enhanced query: {enhanced_query}")
+            logger.info("Enhanced query: %s", private(enhanced_query))
         else:
             enhanced_query = query
 

@@ -24,6 +24,7 @@ from aix.core import prompt_cache
 from aix.core.concurrency import guarded_chat_completion
 from aix.core.config import config as app_config
 from aix.core.config import extract_response_content
+from aix.core.redact import private
 
 logger = logging.getLogger(__name__)
 
@@ -451,7 +452,7 @@ class PlannerAgent:
         Returns:
             RetrievalPlan with structured search parameters
         """
-        logger.info(f"[PlannerAgent] Analyzing query: {query[:50]}...")
+        logger.info("[PlannerAgent] Analyzing query: %s", private(query))
 
         client = self._get_client()
 

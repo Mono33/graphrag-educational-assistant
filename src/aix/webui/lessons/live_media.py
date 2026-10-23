@@ -15,7 +15,11 @@ import logging
 import re
 from typing import Any, Optional
 
-from aix.webui.lessons.models import Lesson
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from aix.core.redact import private
+from aix.webui.lessons.models import Lesson, LessonMessage
 
 logger = logging.getLogger(__name__)
 
@@ -109,20 +113,36 @@ def _live_media_ranking_content(lesson: Lesson) -> Optional[str]:
     return text[:_RANK_CONTENT_MAX_CHARS]
 
 
-def _live_media_concepts(lesson: Lesson) -> list[str]:
+#: A request longer than this is a message, not a topic: it is not searched.
+_TOPIC_MAX_CHARS = 60
+_TOPIC_MAX_WORDS = 8
+
+
+def _live_media_concepts(lesson: Lesson, subjects: Optional[list[str]] = None) -> list[str]:
     """Derive the live-media SEARCH concepts from a lesson (Phase 3.1).
 
     Each concept becomes a live API search (quota-bearing), so we favor the most
     *specific* signals and demote broad ones:
       1. ``specific_topic`` (argomento) — the cleanest topical anchor (e.g. "adhd").
-      2. the teacher query, stripped of "crea una lezione su …" instruction noise.
+      2. the teacher query stripped of "crea una lezione su …", when what is
+         left is a topic; when it is a whole message, the subjects the planner
+         drew from it instead (``subject_concepts``, kept with the lesson since
+         2026-10-21). The planner writes them in English, which the Italian
+         Wikipedia does not find: the teacher's own words come first.
       3. ``subject_area`` (materia) — DEMOTED to a fallback: broad terms like
          "Scienze" waste a search and dilute relevance, so it is only added when
          we still have fewer than 2 specific concepts.
     Returns a de-duplicated, ordered list (possibly empty); the service caps it.
+
+    Each concept is sent to outside providers (YouTube, Wikipedia, OpenAlex…).
+    Until 2026-10-23 a whole request went there as a "concept" -- «una classe
+    eterogenea, due bambini con ADHD…» -- which searches badly and tells a
+    stranger about a class.
     """
     profile = lesson.educational_profile_json or {}
     cleaned_query = _clean_lesson_query((getattr(lesson, "teacher_query", None) or "").strip())
+    if len(cleaned_query) > _TOPIC_MAX_CHARS or len(cleaned_query.split()) > _TOPIC_MAX_WORDS:
+        cleaned_query = ""
 
     concepts: list[str] = []
     seen: set[str] = set()
@@ -138,7 +158,11 @@ def _live_media_concepts(lesson: Lesson) -> list[str]:
 
     # Specific signals first (argomento, then the cleaned query)…
     _add(profile.get("specific_topic"))
-    _add(cleaned_query)
+    if cleaned_query:
+        _add(cleaned_query)
+    else:
+        for subject in (subjects or [])[:2]:
+            _add(subject)
     # …broad subject area only as a fallback when specifics are thin.
     if len(concepts) < 2:
         _add(profile.get("subject_area"))
@@ -175,7 +199,28 @@ def _live_media_ranking_query(lesson: Lesson) -> Optional[str]:
     return " · ".join(ordered) or None
 
 
-async def live_media_for_lesson(lesson: Lesson) -> Optional[dict[str, Any]]:
+async def lesson_subjects(session: AsyncSession, lesson_id: Any) -> list[str]:
+    """The subjects the planner drew for the latest lesson of a session, if kept."""
+    try:
+        meta = await session.scalar(
+            select(LessonMessage.meta_json)
+            .where(
+                LessonMessage.lesson_id == lesson_id,
+                LessonMessage.role == "assistant",
+                LessonMessage.agent_kind == "writer",
+            )
+            .order_by(LessonMessage.turn_index.desc(), LessonMessage.created_at.desc())
+            .limit(1)
+        )
+    except Exception:  # noqa: BLE001 — the panel falls back to the profile and the request
+        return []
+    planner = ((meta or {}).get("cards") or {}).get("planner") or {}
+    return [str(s) for s in planner.get("subject_concepts") or [] if str(s).strip()]
+
+
+async def live_media_for_lesson(
+    lesson: Lesson, subjects: Optional[list[str]] = None
+) -> Optional[dict[str, Any]]:
     """The panel's buckets (``videos``, ``citations``, ``wikipedia``) found now.
 
     ``None`` when nothing was searched -- the live layer is off, the lesson has
@@ -185,7 +230,7 @@ async def live_media_for_lesson(lesson: Lesson) -> Optional[dict[str, Any]]:
     """
     if not _media_live_enabled() or not _lesson_has_live_media_context(lesson):
         return None
-    concepts = _live_media_concepts(lesson)
+    concepts = _live_media_concepts(lesson, subjects)
     if not concepts:
         return None
     try:
@@ -207,7 +252,7 @@ async def live_media_for_lesson(lesson: Lesson) -> Optional[dict[str, Any]]:
     logger.info(
         "[media-live] lesson_id=%s concepts=%s → %d videos, %d citations, %d wikipedia",
         lesson.id,
-        concepts,
+        [private(concept) for concept in concepts],
         len(panel.get("videos") or []),
         len(panel.get("citations") or []),
         len(panel.get("wikipedia") or []),

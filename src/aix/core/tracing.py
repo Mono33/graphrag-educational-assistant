@@ -149,6 +149,11 @@ def start_run(
     """Open a trace for one turn or one ingestion; a no-op when tracing is off."""
     if not tracing_enabled():
         return Run()
+    from aix.core import request_id
+
+    # The platform's request id, so a trace is found from what AIxLearning logged.
+    if request_id.current():
+        metadata = {**(metadata or {}), "request_id": request_id.current()}
     try:
         from langfuse import propagate_attributes
 

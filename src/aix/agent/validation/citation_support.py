@@ -39,6 +39,7 @@ import re
 from typing import Any, Optional
 
 from aix.core import prompt_cache, result_cache
+from aix.core.redact import private
 
 logger = logging.getLogger(__name__)
 
@@ -498,9 +499,9 @@ async def drop_unsupported_citations(
             draft = draft[: occurrence["start"]] + draft[occurrence["end"] :]
             removed += 1
             logger.info(
-                "[citation-check] removed %s — the passage does not support: %.80s",
+                "[citation-check] removed %s — the passage does not support: %s",
                 occurrence["marker"],
-                occurrence["claim"],
+                private(occurrence["claim"], keep=80),
             )
 
     if removed:
