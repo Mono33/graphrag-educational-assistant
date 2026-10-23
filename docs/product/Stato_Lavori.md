@@ -4130,3 +4130,21 @@ Con l'elenco, tutte e 3 le riscritture citano. Suite: 1390 passati.
 
 Online su staging a `e6668b7` (PR #23, unite da Angelo da terminale con `gh`;
 immagine aggiornata sulla VM con `docker compose pull`).
+
+### 2026-10-23 — WP-D1: rollback senza tenere immagini sulla VM
+
+Le immagini stanno nel registry Scaleway
+(`rg.fr-par.scw.cloud/wonderful-education/graphrag-aixlearning`); ogni deploy
+sovrascriveva il tag `:staging`, e Watchtower con `--cleanup` cancella dalla VM
+l'immagine precedente: nessun modo di tornare indietro.
+
+- `deploy-api.yaml`: ogni immagine ha anche il tag del suo commit
+  (`staging-e6668b7`), lo stesso `code_version` di `/api/v1/health`.
+- `rollback-api.yaml` (lancio a mano, da GitHub o con `gh workflow run`):
+  ripunta `:staging` (o `:latest`) all'immagine di un commit precedente, nel
+  registry, senza ricostruire né scaricare. Watchtower la prende entro 5 minuti.
+- Sulla VM resta solo l'immagine in uso: `--cleanup` può restare.
+
+Funziona dal primo deploy dopo questo commit (le immagini precedenti non hanno
+il tag del commit). Da verificare: quanto spazio occupano le immagini nel
+registry e se Scaleway permette una regola che tenga solo le ultime N.
